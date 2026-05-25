@@ -1,0 +1,165 @@
+{% extends 'base.html' %}
+{% block title %}Holiday Management{% endblock %}
+{% block page_title %}Holiday Management{% endblock %}
+{% block content %}
+
+{# ── Year Filter + Add Button ────────────────────────────────────── #}
+<div class="d-flex align-items-center justify-content-between mb-3">
+  <form method="GET" class="d-flex align-items-center gap-2">
+    <label class="small text-muted mb-0">Year:</label>
+    <select name="year" class="form-select form-select-sm" style="width:100px" onchange="this.form.submit()">
+      {% for y in range(year - 1, year + 3) %}
+      <option value="{{ y }}" {% if y == year %}selected{% endif %}>{{ y }}</option>
+      {% endfor %}
+    </select>
+  </form>
+  <button class="btn btn-primary btn-sm" data-bs-toggle="modal" data-bs-target="#addHolidayModal">
+    <i class="bi bi-plus-circle me-1"></i>Add Holiday
+  </button>
+</div>
+
+{# ── Holidays Table ──────────────────────────────────────────────── #}
+<div class="card">
+  <div class="table-responsive">
+    <table class="table table-hover mb-0">
+      <thead class="table-light">
+        <tr>
+          <th>Description</th>
+          <th>Date</th>
+          <th>Day</th>
+          <th>Recurring</th>
+          <th>Source</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for h in holidays %}
+        <tr>
+          <td>{{ h.description }}</td>
+          <td>{{ h.date.strftime('%b %d, %Y') }}</td>
+          <td class="text-muted small">{{ h.date.strftime('%A') }}</td>
+          <td>
+            {% if h.recurring %}
+              <span class="badge bg-info text-dark">Every year</span>
+            {% else %}
+              <span class="badge bg-secondary">One-time</span>
+            {% endif %}
+          </td>
+          <td>
+            {% if h.source == 'own' %}
+              <span class="badge bg-primary">Portal</span>
+            {% else %}
+              <span class="badge bg-secondary">OrangeHRM</span>
+            {% endif %}
+          </td>
+          <td>
+            {% if h.source == 'own' %}
+              <button class="btn btn-sm btn-outline-secondary me-1"
+                      onclick="openEditModal({{ h.id }}, '{{ h.description|e }}', '{{ h.date }}', {{ h.recurring }})">
+                <i class="bi bi-pencil"></i>
+              </button>
+              <form method="POST" class="d-inline"
+                    onsubmit="return confirm('Delete {{ h.description|e }}?');">
+                <input type="hidden" name="action" value="delete">
+                <input type="hidden" name="holiday_id" value="{{ h.id }}">
+                <button type="submit" class="btn btn-sm btn-outline-danger">
+                  <i class="bi bi-trash"></i>
+                </button>
+              </form>
+            {% else %}
+              <span class="text-muted small">Managed in OrangeHRM</span>
+            {% endif %}
+          </td>
+        </tr>
+        {% else %}
+        <tr>
+          <td colspan="6" class="text-center text-muted py-4">No holidays found for {{ year }}.</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+{# ── Add Modal ───────────────────────────────────────────────────── #}
+<div class="modal fade" id="addHolidayModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <form method="POST">
+        <input type="hidden" name="action" value="add">
+        <div class="modal-header">
+          <h5 class="modal-title">Add Holiday</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <div class="mb-3">
+            <label class="form-label">Description</label>
+            <input type="text" name="description" class="form-control" placeholder="e.g. Christmas Day" required>
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Date</label>
+            <input type="date" name="date" class="form-control" required>
+          </div>
+          <div class="form-check">
+            <input type="checkbox" name="recurring" class="form-check-input" id="addRecurring">
+            <label class="form-check-label" for="addRecurring">
+              Recurring every year
+            </label>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+          <button type="submit" class="btn btn-primary">Add Holiday</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+{# ── Edit Modal ──────────────────────────────────────────────────── #}
+<div class="modal fade" id="editHolidayModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <form method="POST">
+        <input type="hidden" name="action" value="edit">
+        <input type="hidden" name="holiday_id" id="editHolidayId">
+        <div class="modal-header">
+          <h5 class="modal-title">Edit Holiday</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <div class="mb-3">
+            <label class="form-label">Description</label>
+            <input type="text" name="description" id="editDescription" class="form-control" required>
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Date</label>
+            <input type="date" name="date" id="editDate" class="form-control" required>
+          </div>
+          <div class="form-check">
+            <input type="checkbox" name="recurring" class="form-check-input" id="editRecurring">
+            <label class="form-check-label" for="editRecurring">
+              Recurring every year
+            </label>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+          <button type="submit" class="btn btn-primary">Save Changes</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<script>
+function openEditModal(id, description, date, recurring) {
+  document.getElementById('editHolidayId').value   = id;
+  document.getElementById('editDescription').value = description;
+  document.getElementById('editDate').value         = date;
+  document.getElementById('editRecurring').checked  = recurring === 1;
+  new bootstrap.Modal(document.getElementById('editHolidayModal')).show();
+}
+</script>
+
+{% endblock %}

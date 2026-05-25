@@ -1,0 +1,59 @@
+{% extends 'base.html' %}
+{% block title %}Facilities & Repair Request{% endblock %}
+{% block page_title %}Facilities & Repair Request{% endblock %}
+{% block content %}
+
+<div class="row justify-content-center">
+  <div class="col-lg-7">
+    <div class="card">
+      <div class="card-body p-4">
+        <p class="text-muted small mb-4">Fill in the details below to submit a facilities maintenance or repair request.</p>
+        <form method="POST">
+
+          <div class="mb-4">
+            <h6 class="fw-semibold mb-3"><i class="bi bi-person me-2"></i>1. Requester Information</h6>
+            <div class="mb-3">
+              <label class="form-label small fw-semibold">Name</label>
+              <input type="text" class="form-control form-control-sm" value="{{ user.name }}" disabled>
+            </div>
+            <div class="mb-3">
+              <label class="form-label small fw-semibold">Department / Location <span class="text-danger">*</span></label>
+              <input type="text" name="department_location" class="form-control form-control-sm"
+                     placeholder="e.g. IT Department, 2nd Floor" required
+                     value="{{ request.form.get('department_location', '') }}">
+            </div>
+          </div>
+
+          <div class="mb-4">
+            <h6 class="fw-semibold mb-3"><i class="bi bi-calendar-check me-2"></i>2. Date of Last Maintenance</h6>
+            <div class="mb-3">
+              <label class="form-label small fw-semibold">If known (enter N/A if unknown) <span class="text-danger">*</span></label>
+              <input type="text" name="last_maintenance" class="form-control form-control-sm"
+                     placeholder="e.g. January 2025 or N/A" required
+                     value="{{ request.form.get('last_maintenance', '') }}">
+            </div>
+          </div>
+
+          <div class="mb-4">
+            <h6 class="fw-semibold mb-3"><i class="bi bi-exclamation-triangle me-2"></i>3. Issue Description</h6>
+            <div class="mb-3">
+              <label class="form-label small fw-semibold">Nature of the Issue (please describe in detail) <span class="text-danger">*</span></label>
+              <textarea name="issue_description" class="form-control form-control-sm" rows="4"
+                        placeholder="Describe the issue clearly..." required>{{ request.form.get('issue_description', '') }}</textarea>
+            </div>
+          </div>
+
+          <div class="d-flex gap-2 justify-content-end">
+            <a href="{{ url_for('dashboard') }}" class="btn btn-secondary btn-sm">Cancel</a>
+            <button type="submit" class="btn btn-primary btn-sm">
+              <i class="bi bi-send me-1"></i>Submit Request
+            </button>
+          </div>
+
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+
+{% endblock %}

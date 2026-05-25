@@ -1,0 +1,77 @@
+{% extends 'base.html' %}
+{% block title %}Material Requests — Final Approval{% endblock %}
+{% block page_title %}Material Requests — Final Approval{% endblock %}
+{% block content %}
+
+<div class="card">
+  <div class="table-responsive">
+    <table class="table table-hover mb-0" style="font-size:.85rem;">
+      <thead>
+        <tr style="background:var(--bg-secondary);color:var(--text-muted);font-size:.75rem;text-transform:uppercase;">
+          <th>Employee</th>
+          <th>Category</th>
+          <th>Item</th>
+          <th>Qty</th>
+          <th>Reason</th>
+          <th>Admin Remark</th>
+          <th>Purchase Details</th>
+          <th>Filed At</th>
+          <th>Action</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in requests %}
+        <tr>
+          <td><strong>{{ r.employee_name }}</strong><br>
+              <span class="text-muted small">{{ r.employee_id }}</span></td>
+          <td><span class="badge bg-secondary">{{ r.category }}</span></td>
+          <td>{{ r.item_name }}</td>
+          <td>{{ r.quantity }}</td>
+          <td class="text-muted small">{{ r.reason or '—' }}</td>
+          <td>
+            <span class="badge {% if r.admin_remarks == 'On Stock' %}bg-success{% else %}bg-warning text-dark{% endif %}">
+              {{ r.admin_remarks }}
+            </span>
+            {% if r.admin_remarks == 'On Stock' %}
+            <div class="text-muted small">~36 hrs</div>
+            {% else %}
+            <div class="text-muted small">~1 week</div>
+            {% endif %}
+          </td>
+          <td class="small">
+            {% if r.purchase_item_desc %}
+            <b>{{ r.purchase_item_desc }}</b><br>
+            Qty: {{ r.purchase_quantity }}<br>
+            Unit: ₱{{ r.purchase_unit_cost }}<br>
+            <b>Total: ₱{{ r.purchase_total }}</b>
+            {% else %}—{% endif %}
+          </td>
+          <td class="text-muted small">{{ r.created_at.strftime('%b %d, %Y %H:%M') }}</td>
+          <td style="min-width:220px;">
+            <form method="POST" action="{{ url_for('material_final_action') }}">
+              <input type="hidden" name="req_id" value="{{ r.id }}">
+              <textarea name="remarks" class="form-control form-control-sm mb-1"
+                        rows="1" placeholder="Remarks (optional)"
+                        style="font-size:.78rem;"></textarea>
+              <div class="d-flex gap-1">
+                <button name="action" value="approve"
+                        class="btn btn-sm btn-success flex-fill">
+                  <i class="bi bi-check-lg me-1"></i>Approve
+                </button>
+                <button name="action" value="reject"
+                        class="btn btn-sm btn-danger flex-fill"
+                        onclick="return confirm('Reject this request?');">
+                  <i class="bi bi-x-lg me-1"></i>Reject
+                </button>
+              </div>
+            </form>
+          </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="9" class="text-center text-muted py-4">No pending requests.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

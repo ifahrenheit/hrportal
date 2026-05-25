@@ -1,0 +1,43 @@
+{% extends 'base.html' %}
+{% block page_title %}Admin — File Leave{% endblock %}
+{% block content %}
+<h6 class="text-muted text-uppercase fw-semibold mb-3" style="letter-spacing:.07em;">File Leave for Employee</h6>
+<div class="card p-4">
+  <form method="POST">
+    <div class="mb-3">
+      <label class="form-label fw-semibold">Employee</label>
+      <select name="employee_id" class="form-select" required onchange="this.form.submit()">
+        <option value="">-- Select Employee --</option>
+        {% for e in employees %}
+        <option value="{{ e.employee_id }}" {% if selected_emp|string == e.employee_id|string %}selected{% endif %}>{{ e.schedule_name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    {% if balances %}
+    <div class="mb-3">
+      <label class="form-label fw-semibold">Leave Type</label>
+      <select name="leave_type_id" class="form-select" required>
+        {% for b in balances %}
+        <option value="{{ b.leave_type_id }}">{{ b.leave_type_name }} ({{ "%.1f"|format(b.remaining_hours) }} hrs remaining)</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="row mb-3">
+      <div class="col">
+        <label class="form-label fw-semibold">Start Date</label>
+        <input type="date" name="start_date" class="form-control" required>
+      </div>
+      <div class="col">
+        <label class="form-label fw-semibold">End Date</label>
+        <input type="date" name="end_date" class="form-control" required>
+      </div>
+    </div>
+    <div class="mb-3">
+      <label class="form-label fw-semibold">Notes</label>
+      <textarea name="notes" class="form-control" rows="2"></textarea>
+    </div>
+    <button type="submit" class="btn btn-primary">File Leave</button>
+    {% endif %}
+  </form>
+</div>
+{% endblock %}

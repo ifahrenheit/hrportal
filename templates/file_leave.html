@@ -1,0 +1,140 @@
+{% extends 'base.html' %}
+{% block title %}File Leave{% endblock %}
+{% block page_title %}File Leave{% endblock %}
+{% block content %}
+<div class="row g-4">
+  <div class="col-md-5">
+    <div class="card p-4">
+      <h6 class="fw-semibold mb-3">Submit Leave Request</h6>
+      <form method="POST" id="leaveForm">
+        <div class="mb-3">
+          <label class="form-label">Leave Type</label>
+          <select class="form-select" name="leave_type_id" id="leaveTypeId" required>
+            <option value="">— Select —</option>
+            {% for b in balances %}
+            <option value="{{ b.leave_type_id }}" data-hrs="{{ b.remaining_hours }}" data-days="{{ b.remaining_days }}">
+              {{ b.leave_type_name }} ({{ "%.1f"|format(b.remaining_hours) }} hrs left)
+            </option>
+            {% endfor %}
+            {% for b in portal_balances %}
+            <option value="{{ b.leave_type_id }}" data-hrs="{{ b.remaining_hours }}" data-days="{{ b.remaining_days }}">
+              {{ b.leave_type_name }} ({{ "%.1f"|format(b.remaining_hours) }} hrs left) [Portal]
+            </option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="mb-3">
+          <label class="form-label">Duration</label>
+          <select class="form-select" name="duration" id="durationSelect">
+            <option value="full">Full Day Leave</option>
+            <option value="first_half">1st Half of the Shift Leave</option>
+            <option value="second_half">2nd Half of the Shift Leave</option>
+            <option value="remaining" id="remainingOption" style="display:none;">Use Remaining Balance (<span id="remainingHrsLabel">0</span> hrs)</option>
+          </select>
+        </div>
+        <div class="mb-3">
+          <label class="form-label">Start Date</label>
+          <input type="date" class="form-control" name="start_date" id="startDate" required>
+        </div>
+        <div class="mb-3" id="endDateWrap">
+          <label class="form-label">End Date</label>
+          <input type="date" class="form-control" name="end_date" id="endDate" required>
+        </div>
+        <div class="mb-3">
+          <label class="form-label">Notes <span class="text-muted">(optional)</span></label>
+          <textarea class="form-control" name="notes" rows="2" placeholder="Reason..."></textarea>
+        </div>
+        <button type="submit" class="btn btn-primary w-100" id="submitBtn" disabled>
+          <i class="bi bi-send me-1"></i> Submit Leave
+        </button>
+      </form>
+    </div>
+  </div>
+  <div class="col-md-7">
+    <div class="card">
+      <div class="card-body pb-2">
+        <h6 class="fw-semibold mb-3"><i class="bi bi-clock-history me-1"></i>My Leaves This Year</h6>
+        {% if recent_leaves %}
+        <div class="table-responsive">
+          <table class="table table-sm table-hover mb-0">
+            <thead class="table-light">
+              <tr><th style="width:70px">Date</th><th>Type</th><th style="width:55px">Hours</th><th style="width:80px">Status</th><th style="width:60px"></th></tr>
+            </thead>
+            <tbody>
+              {% for r in recent_leaves %}
+              <tr>
+                <td class="small">{{ r.leave_date.strftime('%b %d') }}</td>
+                <td class="small">{{ r.leave_type_name }}</td>
+                <td class="small">{% if r.is_off_day %}—{% else %}{{ r.hours_deducted }}{% endif %}</td>
+                <td>
+                  {% if r.status == 'approved' %}<span class="badge bg-success" style="font-size:.65rem;">Approved</span>
+                  {% elif r.status == 'scheduled' %}<span class="badge bg-info text-dark" style="font-size:.65rem;">Scheduled</span>
+                  {% elif r.status == 'pending' %}<span class="badge bg-warning text-dark" style="font-size:.65rem;">Pending</span>
+                  {% elif r.status == 'rejected' %}<span class="badge bg-danger" style="font-size:.65rem;">Rejected</span>
+                  {% elif r.status == 'cancelled' %}<span class="badge bg-secondary" style="font-size:.65rem;">Cancelled</span>
+                  {% endif %}
+                </td>
+                <td>
+                  {% if r.status in ('pending', 'scheduled') %}
+                  <form method="POST" action="{{ url_for('cancel_leave', leave_id=r.id) }}"
+                        onsubmit="return confirm('Cancel this leave?');">
+                    <button type="submit" class="btn btn-outline-danger btn-sm py-0 px-2" style="font-size:.7rem;">Cancel</button>
+                  </form>
+                  {% endif %}
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        {% else %}
+        <p class="text-muted small mb-0">No leaves filed this year.</p>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+    <div class="card p-4" id="previewCard" style="display:none;">
+      <h6 class="fw-semibold mb-3"><i class="bi bi-eye me-1"></i>Preview Breakdown</h6>
+      <div id="previewContent"></div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+function checkForm() {
+  const type  = document.getElementById('leaveTypeId').value;
+  const start = document.getElementById('startDate').value;
+  const end   = document.getElementById('endDate').value;
+  const btn   = document.getElementById('submitBtn');
+  if (type && start && end) {
+    btn.removeAttribute('disabled');
+  } else {
+    btn.setAttribute('disabled', true);
+  }
+  // Show/hide remaining balance option
+  updateRemainingOption();
+}
+function updateRemainingOption() {
+  const sel = document.getElementById('leaveTypeId');
+  const opt = sel.options[sel.selectedIndex];
+  const remainingOpt = document.getElementById('remainingOption');
+  if (!opt || !remainingOpt) return;
+  const hrs = parseFloat(opt.getAttribute('data-hrs') || 0);
+  if (hrs > 0 && hrs < 10) {
+    remainingOpt.style.display = '';
+    document.getElementById('remainingHrsLabel').textContent = hrs.toFixed(1);
+    remainingOpt.textContent = 'Use Remaining Balance (' + hrs.toFixed(1) + ' hrs)';
+  } else {
+    remainingOpt.style.display = 'none';
+    // Reset to full if remaining was selected but no longer valid
+    const dur = document.getElementById('durationSelect');
+    if (dur.value === 'remaining') dur.value = 'full';
+  }
+}
+document.getElementById('leaveTypeId').addEventListener('change', checkForm);
+document.getElementById('startDate').addEventListener('change', checkForm);
+document.getElementById('endDate').addEventListener('change', checkForm);
+</script>
+{% endblock %}

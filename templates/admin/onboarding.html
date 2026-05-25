@@ -1,0 +1,375 @@
+{% extends "base.html" %}
+{% block title %}Onboarding{% endblock %}
+{% block page_title %}<i class="bi bi-person-plus-fill me-2" style="color:var(--accent)"></i>Employee Onboarding{% endblock %}
+
+{% block content %}
+<div class="row g-4">
+
+  {# ── LEFT: Form ──────────────────────────────────────── #}
+  <div class="col-lg-6">
+    <div class="card p-4">
+      <h6 class="fw-semibold mb-4" style="font-family:Outfit,sans-serif;">
+        <i class="bi bi-person-vcard me-2" style="color:var(--accent)"></i>New Employee Details
+      </h6>
+
+      <div class="row g-3 mb-3">
+        <div class="col-6">
+          <label class="form-label" style="font-size:.82rem;color:var(--text-muted)">Employee ID <span class="text-danger">*</span></label>
+          <input type="text" class="form-control form-control-sm" id="employee_id" placeholder="e.g. 2025-001" autocomplete="off">
+        </div>
+        <div class="col-6">
+          <label class="form-label" style="font-size:.82rem;color:var(--text-muted)">First Name <span class="text-danger">*</span> <span style="font-size:.72rem;color:var(--text-muted)">(include 2nd name if any)</span></label>
+          <input type="text" class="form-control form-control-sm" id="first_name" placeholder="e.g. Andrew Vincent" autocomplete="off">
+        </div>
+      </div>
+
+      <div class="row g-3 mb-3">
+        <div class="col-5">
+          <label class="form-label" style="font-size:.82rem;color:var(--text-muted)">Middle Name <span style="font-size:.75rem;color:var(--text-muted)">(optional)</span></label>
+          <input type="text" class="form-control form-control-sm" id="middle_name" placeholder="e.g. Copia" autocomplete="off">
+        </div>
+        <div class="col-5">
+          <label class="form-label" style="font-size:.82rem;color:var(--text-muted)">Last Name <span class="text-danger">*</span></label>
+          <input type="text" class="form-control form-control-sm" id="last_name" placeholder="e.g. Secuya" autocomplete="off">
+        </div>
+        <div class="col-2">
+          <label class="form-label" style="font-size:.82rem;color:var(--text-muted)">Suffix</label>
+          <input type="text" class="form-control form-control-sm" id="suffix" placeholder="Jr.">
+        </div>
+      </div>
+
+      <div class="row g-3 mb-3">
+        <div class="col-7">
+          <label class="form-label" style="font-size:.82rem;color:var(--text-muted)">Corporate Email <span class="text-danger">*</span></label>
+          <input type="email" class="form-control form-control-sm" id="email" placeholder="firstname.lastname@cohere.ph" autocomplete="off">
+        </div>
+        <div class="col-5">
+          <label class="form-label" style="font-size:.82rem;color:var(--text-muted)">Birthdate</label>
+          <input type="date" class="form-control form-control-sm" id="birthdate">
+        </div>
+      </div>
+
+      <div class="row g-3 mb-3">
+        <div class="col-6">
+          <label class="form-label" style="font-size:.82rem;color:var(--text-muted)">Training Date</label>
+          <input type="date" class="form-control form-control-sm" id="training_date">
+        </div>
+        <div class="col-6">
+          <label class="form-label" style="font-size:.82rem;color:var(--text-muted)">
+            Operational Date <span style="font-size:.75rem;color:var(--text-muted)">(optional)</span>
+          </label>
+          <input type="date" class="form-control form-control-sm" id="operational_date">
+        </div>
+      </div>
+
+      <div class="row g-3 mb-3">
+        <div class="col-6">
+          <label class="form-label" style="font-size:.82rem;color:var(--text-muted)">Account / Program</label>
+          <input type="text" class="form-control form-control-sm" id="account" placeholder="e.g. GYG">
+        </div>
+        <div class="col-6">
+          <label class="form-label" style="font-size:.82rem;color:var(--text-muted)">Team Leader</label>
+          <input type="text" class="form-control form-control-sm" id="tl" placeholder="TL Name">
+        </div>
+      </div>
+
+      <div class="row g-3 mb-3">
+        <div class="col-6">
+          <label class="form-label" style="font-size:.82rem;color:var(--text-muted)">Group</label>
+          <input type="text" class="form-control form-control-sm" id="group_name" placeholder="e.g. CS">
+        </div>
+        <div class="col-6">
+          <label class="form-label" style="font-size:.82rem;color:var(--text-muted)">Batch</label>
+          <input type="text" class="form-control form-control-sm" id="batch" placeholder="e.g. Batch 12">
+        </div>
+      </div>
+
+      <div class="mb-4">
+        <label class="form-label" style="font-size:.82rem;color:var(--text-muted)">Active Directory Target</label>
+        <div class="d-flex gap-3 mt-1">
+          <div class="form-check">
+            <input class="form-check-input" type="radio" name="ad_target" id="ad_COHERE" value="COHERE" checked>
+            <label class="form-check-label" style="font-size:.85rem" for="ad_COHERE">COHERE AD</label>
+          </div>
+          <div class="form-check">
+            <input class="form-check-input" type="radio" name="ad_target" id="ad_NUMA" value="NUMA">
+            <label class="form-check-label" style="font-size:.85rem" for="ad_NUMA">NUMA AD</label>
+          </div>
+          <div class="form-check">
+            <input class="form-check-input" type="radio" name="ad_target" id="ad_BOTH" value="BOTH">
+            <label class="form-check-label" style="font-size:.85rem" for="ad_BOTH">Both</label>
+          </div>
+        </div>
+      </div>
+
+      <div class="alert alert-info py-2 px-3 mb-4 d-flex align-items-center gap-2" style="font-size:.83rem;">
+        <i class="bi bi-lock-fill"></i>
+        Default password for all accounts:
+        <strong class="ms-1 font-monospace">***REMOVED***</strong>
+        <span class="ms-1" style="color:var(--text-muted)">(temporary — must change on first login)</span>
+      </div>
+
+      <button class="btn btn-primary w-100" id="onboardBtn" onclick="runOnboarding()">
+        <i class="bi bi-play-fill me-1"></i>Create Employee Accounts
+      </button>
+    </div>
+  </div>
+
+  {# ── RIGHT: Status Panel ──────────────────────────────── #}
+  <div class="col-lg-6">
+
+    <div class="card p-4" id="statusCard" style="display:none">
+      <div class="d-flex justify-content-between align-items-center mb-3">
+        <h6 class="fw-semibold mb-0" style="font-family:Outfit,sans-serif;">
+          <i class="bi bi-list-check me-2" style="color:var(--accent)"></i>Provisioning Status
+        </h6>
+        <span id="overallBadge" class="badge rounded-pill px-3" style="font-size:.78rem"></span>
+      </div>
+      <div id="empSummary" class="rounded-3 p-3 mb-3" style="background:var(--bg);border:1px solid var(--border);font-size:.83rem"></div>
+      <div id="stepList"></div>
+      <div class="alert alert-warning py-2 px-3 mt-3 mb-0" style="font-size:.82rem">
+        <i class="bi bi-hand-index-thumb-fill me-1"></i>
+        <strong>Manual steps:</strong> Biometrics (fingerprint enrollment on day 1) and Slack invite must be done manually.
+      </div>
+    </div>
+
+    <div class="card p-4 d-flex align-items-center justify-content-center" id="placeholderCard"
+         style="min-height:300px;border-style:dashed;border-color:var(--border);">
+      <div class="text-center" style="color:var(--text-muted)">
+        <i class="bi bi-person-plus" style="font-size:2.5rem;opacity:.3"></i>
+        <p class="mt-2 mb-0" style="font-size:.87rem">Provisioning results will appear here</p>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+{# ── Recent Onboardings ────────────────────────────────── #}
+<div class="card mt-4">
+  <div class="card-body">
+    <h6 class="fw-semibold mb-3" style="font-family:Outfit,sans-serif;">
+      <i class="bi bi-clock-history me-2" style="color:var(--accent)"></i>Recent Onboardings
+    </h6>
+    <div class="table-responsive">
+      <table class="table table-hover mb-0">
+        <thead>
+          <tr>
+            <th>Employee ID</th>
+            <th>Name</th>
+            <th>Email</th>
+            <th>Training Date</th>
+            <th>Status</th>
+            <th>Account</th>
+          </tr>
+        </thead>
+        <tbody id="recentTbody">
+          <tr><td colspan="6" class="text-center py-3" style="color:var(--text-muted);font-size:.85rem">Loading...</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const STEPS = [
+  { key: 'keycloak_created',          icon: 'bi-key-fill',         label: 'Keycloak SSO' },
+  { key: 'orangehrm_created',         icon: 'bi-people-fill',      label: 'OrangeHRM' },
+  { key: 'email_created',             icon: 'bi-envelope-fill',    label: 'Email Account' },
+  { key: 'dashboard_account_created', icon: 'bi-speedometer2',     label: 'Dashboard Login' },
+  { key: 'ad_created',                icon: 'bi-hdd-network-fill', label: 'Active Directory' },
+  { key: 'biometric_queued',          icon: 'bi-fingerprint',      label: 'Biometrics Queued' },
+];
+const MANUAL = [
+  { icon: 'bi-fingerprint', label: 'Biometrics', note: 'Enroll fingerprints on day 1' },
+  { icon: 'bi-slack',       label: 'Slack',      note: 'Invite manually (free plan)' },
+];
+
+function validate() {
+  let ok = true;
+  ['employee_id','first_name','last_name','email'].forEach(id => {
+    const el = document.getElementById(id);
+    if (!el.value.trim()) { el.classList.add('is-invalid'); ok = false; }
+    else el.classList.remove('is-invalid');
+  });
+  if (!ok) document.querySelector('.is-invalid')?.focus();
+  return ok;
+}
+
+async function runOnboarding() {
+  if (!validate()) return;
+
+  const btn = document.getElementById('onboardBtn');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Provisioning…';
+
+  document.getElementById('statusCard').style.display    = null;
+  document.getElementById('placeholderCard').style.display = 'none';
+  document.getElementById('stepList').innerHTML = loadingRows();
+  document.getElementById('overallBadge').textContent = '';
+  document.getElementById('empSummary').innerHTML = `
+    <div class="d-flex gap-3 flex-wrap">
+      <span><strong>${esc(document.getElementById('employee_id').value)}</strong></span>
+      <span>${esc([document.getElementById('first_name').value, document.getElementById('middle_name').value, document.getElementById('last_name').value, document.getElementById('suffix').value].filter(Boolean).join(' '))}</span>
+      <span style="color:var(--text-muted)">${esc(document.getElementById('email').value)}</span>
+    </div>`;
+
+  try {
+    const res  = await fetch('/hrportal/api/onboard', {
+      method:  'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        employee_id:      document.getElementById('employee_id').value.trim(),
+        first_name:       document.getElementById('first_name').value.trim(),
+        middle_name:      document.getElementById('middle_name').value.trim() || null,
+        last_name:        document.getElementById('last_name').value.trim(),
+        suffix:           document.getElementById('suffix').value.trim() || null,
+        schedule_name:    [document.getElementById('first_name').value.trim(), document.getElementById('middle_name').value.trim(), document.getElementById('last_name').value.trim(), document.getElementById('suffix').value.trim()].filter(Boolean).join(' '),
+        email:            document.getElementById('email').value.trim(),
+        birthdate:        document.getElementById('birthdate').value || null,
+        training_date:    document.getElementById('training_date').value || null,
+        operational_date: document.getElementById('operational_date').value || null,
+        account:          document.getElementById('account').value.trim() || null,
+        tl:               document.getElementById('tl').value.trim() || null,
+        group_name:       document.getElementById('group_name').value.trim() || null,
+        batch:            document.getElementById('batch').value.trim() || null,
+        ad_target:        document.querySelector('input[name="ad_target"]:checked')?.value || 'COHERE',
+      })
+    });
+    const data = await res.json();
+
+    if (data.error) {
+      toast(data.error, 'danger');
+      resetBtn(btn);
+      return;
+    }
+    renderResults(data);
+    loadRecent();
+  } catch(e) {
+    toast('Network error: ' + e.message, 'danger');
+    resetBtn(btn);
+  }
+}
+
+function loadingRows() {
+  return STEPS.map(s => `
+    <div class="d-flex align-items-center gap-3 py-2" style="border-bottom:1px solid var(--border)">
+      <div class="spinner-border spinner-border-sm" style="color:var(--accent);flex-shrink:0"></div>
+      <i class="bi ${s.icon}" style="font-size:.95rem;color:var(--text-muted);flex-shrink:0"></i>
+      <span style="font-size:.87rem">${s.label}</span>
+    </div>`).join('');
+}
+
+function renderResults(data) {
+  const allOk  = STEPS.every(s => data[s.key]);
+  const anyFail= STEPS.some(s => !data[s.key]);
+  const badge  = document.getElementById('overallBadge');
+  badge.textContent  = allOk ? 'All automated steps complete' : anyFail ? 'Some steps need attention' : 'Done';
+  badge.style.cssText = allOk ? 'background:#d1fae5;color:#065f46' : 'background:#fef3c7;color:#92400e';
+
+  let html = STEPS.map(s => {
+    const ok    = data[s.key];
+    const extra = s.key === 'ad_created' && data.ad_username
+      ? `<span style="font-size:.75rem;color:var(--text-muted);margin-left:auto">@${esc(data.ad_username)}</span>` : '';
+    return `
+    <div class="d-flex align-items-center gap-3 py-2" style="border-bottom:1px solid var(--border)">
+      <i class="bi ${ok ? 'bi-check-circle-fill' : 'bi-x-circle-fill'}"
+         style="font-size:1rem;color:${ok ? 'var(--success)' : 'var(--danger)'};flex-shrink:0"></i>
+      <i class="bi ${s.icon}" style="font-size:.95rem;color:var(--text-muted);flex-shrink:0"></i>
+      <span style="font-size:.87rem;flex:1">${s.label}</span>
+      ${extra}
+    </div>`;
+  }).join('');
+
+  MANUAL.forEach(m => {
+    html += `
+    <div class="d-flex align-items-center gap-3 py-2" style="border-bottom:1px solid var(--border)">
+      <i class="bi bi-hand-index-thumb" style="font-size:1rem;color:var(--warning);flex-shrink:0"></i>
+      <i class="bi ${m.icon}" style="font-size:.95rem;color:var(--text-muted);flex-shrink:0"></i>
+      <span style="font-size:.87rem;flex:1">${m.label}</span>
+      <span style="font-size:.75rem;color:var(--text-muted)">${m.note}</span>
+    </div>`;
+  });
+
+  if (data.temp_password) {
+    html += `
+    <div class="rounded-3 p-3 mt-3" style="background:var(--bg);border:1px solid var(--border)">
+      <div style="font-size:.75rem;color:var(--text-muted);margin-bottom:.25rem">Temporary password</div>
+      <code style="font-size:.9rem;color:var(--accent)">${esc(data.temp_password)}</code>
+      <span style="font-size:.75rem;color:var(--text-muted);margin-left:.5rem">— must change on first login</span>
+    </div>`;
+  }
+
+  document.getElementById('stepList').innerHTML = html;
+
+  const btn = document.getElementById('onboardBtn');
+  btn.disabled = false;
+  btn.innerHTML = '<i class="bi bi-arrow-counterclockwise me-1"></i>Onboard Another';
+  btn.onclick = () => {
+    ['employee_id','first_name','middle_name','last_name','suffix','email','birthdate','training_date',
+     'operational_date','account','tl','group_name','batch'].forEach(id => {
+      document.getElementById(id).value = '';
+    });
+    document.getElementById('statusCard').style.display     = 'none';
+    document.getElementById('placeholderCard').style.display = null;
+    btn.innerHTML = '<i class="bi bi-play-fill me-1"></i>Create Employee Accounts';
+    btn.onclick   = runOnboarding;
+  };
+
+  toast('Employee provisioned successfully!', 'success');
+}
+
+async function loadRecent() {
+  try {
+    const res  = await fetch('/hrportal/api/search-employee?q=a');
+    if (!res.ok) return;
+  } catch(e) {}
+
+  const tbody = document.getElementById('recentTbody');
+  try {
+    const res  = await fetch('/hrportal/api/recent-onboardings');
+    if (!res.ok) { tbody.innerHTML = noRows(6, 'No recent onboardings'); return; }
+    const rows = await res.json();
+    if (!rows.length) { tbody.innerHTML = noRows(6, 'No recent onboardings'); return; }
+    tbody.innerHTML = rows.map(r => `
+      <tr>
+        <td><span class="emp-id-copy fw-500" style="font-size:.83rem;font-family:monospace"
+                  onclick="copyEmpId(this,'${esc(r.employee_id)}')">${esc(r.employee_id)}</span></td>
+        <td style="font-size:.87rem">${esc(r.schedule_name||'')}</td>
+        <td style="font-size:.83rem;color:var(--text-muted)">${esc(r.email||'')}</td>
+        <td style="font-size:.83rem">${r.training_date||'—'}</td>
+        <td><span class="badge" style="background:#dbeafe;color:#1e40af;font-size:.72rem">${esc(r.onboarding_status||'In Progress')}</span></td>
+        <td style="font-size:.83rem">${esc(r.account||'—')}</td>
+      </tr>`).join('');
+  } catch(e) {
+    tbody.innerHTML = noRows(6, 'Could not load recent onboardings');
+  }
+}
+
+function noRows(cols, msg) {
+  return `<tr><td colspan="${cols}" class="text-center py-3" style="color:var(--text-muted);font-size:.85rem">${msg}</td></tr>`;
+}
+function resetBtn(btn) {
+  btn.disabled  = false;
+  btn.innerHTML = '<i class="bi bi-play-fill me-1"></i>Create Employee Accounts';
+}
+function esc(s) {
+  if (!s) return '';
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+function toast(msg, type) {
+  const t = document.createElement('div');
+  t.className = `alert alert-${type} position-fixed shadow`;
+  t.style.cssText = 'top:1.25rem;right:1.25rem;z-index:9999;min-width:300px;font-size:.87rem';
+  t.innerHTML = `<i class="bi bi-${type==='success'?'check-circle-fill':'exclamation-triangle-fill'} me-2"></i>${esc(msg)}`;
+  document.body.appendChild(t);
+  setTimeout(() => t.remove(), 4500);
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  document.getElementById('training_date').value = new Date().toISOString().split('T')[0];
+  loadRecent();
+});
+</script>
+{% endblock %}

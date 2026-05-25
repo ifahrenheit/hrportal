@@ -1,0 +1,155 @@
+{% extends 'base.html' %}
+{% block title %}OT/RDW Tickets{% endblock %}
+{% block page_title %}OT/RDW Tickets{% endblock %}
+{% block content %}
+
+<style>
+.req-card { border-left: 3px solid var(--border); margin-bottom: .5rem; }
+.req-card.type-ot  { border-left-color: #0d6efd; }
+.req-card.type-rdw { border-left-color: #ffc107; }
+.tl-header { background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: .4rem .85rem; margin-bottom: .6rem; margin-top: 1rem; display: flex; align-items: center; gap: .5rem; }
+.tl-header:first-of-type { margin-top: 0; }
+</style>
+
+<div class="card mb-3">
+  <div class="card-body pb-2">
+    <form method="GET" class="row g-2 align-items-end">
+      <div class="col-6 col-md-2">
+        <label class="form-label small mb-1">Date From</label>
+        <input type="date" name="date_from" class="form-control form-control-sm" value="{{ date_from }}">
+      </div>
+      <div class="col-6 col-md-2">
+        <label class="form-label small mb-1">Date To</label>
+        <input type="date" name="date_to" class="form-control form-control-sm" value="{{ date_to }}">
+      </div>
+      <div class="col-6 col-md-1">
+        <label class="form-label small mb-1">Type</label>
+        <select name="req_type" class="form-select form-select-sm" onchange="this.form.submit()">
+          <option value="">All</option>
+          <option value="OT"  {% if req_type == 'OT'  %}selected{% endif %}>OT</option>
+          <option value="RDW" {% if req_type == 'RDW' %}selected{% endif %}>RDW</option>
+        </select>
+      </div>
+      <div class="col-6 col-md-2">
+        <label class="form-label small mb-1">TL</label>
+        <select name="tl" class="form-select form-select-sm">
+          <option value="">All TLs</option>
+          {% for tl in tl_list %}
+          <option value="{{ tl }}" {% if tl == tl_filter %}selected{% endif %}>{{ tl }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-6 col-md-2">
+        <label class="form-label small mb-1">Employee</label>
+        <input type="text" name="emp_search" class="form-control form-control-sm"
+               placeholder="Name or ID..." value="{{ emp_search }}">
+      </div>
+      <div class="col-12 col-md-3 d-flex gap-2">
+        <button type="submit" class="btn btn-primary btn-sm"><i class="bi bi-search me-1"></i>Filter</button>
+        <a href="{{ url_for('admin_ot_tickets') }}" class="btn btn-outline-secondary btn-sm">Clear</a>
+        <span class="text-muted small align-self-center ms-auto">{{ grouped_list|length }} request{{ 's' if grouped_list|length != 1 }} · {{ records|length }} ticket{{ 's' if records|length != 1 }}</span>
+      </div>
+    </form>
+  </div>
+</div>
+
+{% if grouped_list %}
+  {% set ns = namespace(current_tl=None) %}
+  {% for req in grouped_list %}
+    {% if req.tl != ns.current_tl %}
+      {% set ns.current_tl = req.tl %}
+      <div class="tl-header">
+        <i class="bi bi-people-fill text-primary"></i>
+        <strong>{{ req.tl }}</strong>
+      </div>
+    {% endif %}
+    <div class="card req-card type-{{ req.req_type|lower }}">
+      <div class="card-body py-2 px-3">
+        <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+          <div class="d-flex align-items-center gap-2 flex-wrap">
+            <span class="fw-bold">{{ req.employee_name or '—' }}</span>
+            <span class="text-muted small emp-id-copy" onclick="copyEmpId(this,'{{ req.employee_id }}')" title="Click to copy">{{ req.employee_id }}</span>
+            {% if req.req_type == 'OT' %}
+              <span class="badge bg-primary">OT</span>
+              <span class="badge bg-warning text-dark">{{ req.details }}</span>
+            {% else %}
+              <span class="badge bg-warning text-dark">RDW</span>
+              <span class="badge bg-info text-dark">{{ req.details }}</span>
+            {% endif %}
+            {% if req.tickets %}
+            <span class="badge bg-secondary" style="cursor:pointer;"
+                  onclick="showTickets('{{ req.req_type }}', {{ req.req_id }}, '{{ req.employee_name }}')"
+                  title="Click to view tickets">
+              {{ req.tickets|length }} ticket(s) 🔍
+            </span>
+            {% else %}
+            <span class="badge bg-danger">No tickets</span>
+            {% endif %}
+            {% if req.req_status == 'Approved' %}
+              <span class="badge bg-success">Approved</span>
+            {% elif req.req_status == 'Pending' %}
+              <span class="badge bg-warning text-dark">Pending</span>
+            {% elif req.req_status == 'Rejected' %}
+              <span class="badge bg-danger">Rejected</span>
+            {% endif %}
+          </div>
+          <div class="text-end" style="font-size:.82rem;">
+            <div class="fw-bold">{% if req.req_date %}{{ req.req_date.strftime('%Y-%m-%d') }}{% endif %}</div>
+            <div class="text-muted">{{ req.start_time }} → {{ req.end_time }}</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  {% endfor %}
+{% else %}
+  <div class="alert alert-info"><i class="bi bi-info-circle me-2"></i>No tickets found for this period.</div>
+{% endif %}
+
+<div class="modal fade" id="ticketModal" tabindex="-1">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h6 class="modal-title fw-bold" id="ticketModalTitle">Tickets</h6>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body p-0">
+        <div id="ticketModalBody" class="p-3"></div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">Close</button>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function showTickets(reqType, reqId, empName) {
+  document.getElementById('ticketModalTitle').textContent = 'Tickets - ' + empName;
+  document.getElementById('ticketModalBody').innerHTML =
+    '<div class="text-center py-3"><div class="spinner-border spinner-border-sm text-primary"></div><span class="ms-2 text-muted">Loading...</span></div>';
+  new bootstrap.Modal(document.getElementById('ticketModal')).show();
+  var url = reqType === 'OT' ? '/api/ot-tickets/' + reqId : '/api/rd-tickets/' + reqId;
+  fetch(url).then(function(r) { return r.json(); }).then(function(tickets) {
+    if (!tickets.length) {
+      document.getElementById('ticketModalBody').innerHTML = '<p class="text-muted p-3 mb-0">No tickets found.</p>';
+      return;
+    }
+    var rows = tickets.map(function(t, i) {
+      return '<tr><td class="text-muted small">' + (i+1) + '</td>' +
+             '<td class="font-monospace fw-bold"><a href="https://getyourguidesupport.zendesk.com/agent/tickets/' + t.ticket_number + '" target="_blank">' + t.ticket_number + '</a></td>' +
+             '<td><span class="badge bg-secondary" style="font-size:.7rem;">' + t.status + '</span></td>' +
+             '<td class="text-muted small">' + t.created_at + '</td></tr>';
+    }).join('');
+    document.getElementById('ticketModalBody').innerHTML =
+      '<table class="table table-sm table-hover align-middle mb-0">' +
+      '<thead class="table-light"><tr><th>#</th><th>Ticket</th><th>Status</th><th>Created</th></tr></thead>' +
+      '<tbody>' + rows + '</tbody></table>' +
+      '<div class="px-3 py-2 text-muted small border-top">' + tickets.length + ' ticket(s)</div>';
+  }).catch(function() {
+    document.getElementById('ticketModalBody').innerHTML = '<p class="text-danger p-3 mb-0">Failed to load.</p>';
+  });
+}
+</script>
+{% endblock %}

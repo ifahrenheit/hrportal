@@ -1,0 +1,81 @@
+{% extends 'base.html' %}
+{% block title %}Material Request — SOM Review{% endblock %}
+{% block page_title %}Material Requests — SOM Review{% endblock %}
+{% block content %}
+
+<div class="card">
+  <div class="table-responsive">
+    <table class="table table-hover mb-0" style="font-size:.85rem;">
+      <thead>
+        <tr style="background:var(--bg-secondary);color:var(--text-muted);font-size:.75rem;text-transform:uppercase;">
+          <th>Employee</th>
+          <th>Category</th>
+          <th>Item</th>
+          <th>Qty</th>
+          <th>Date Needed</th>
+          <th>Reason</th>
+          <th>Filed At</th>
+          <th>Status</th>
+          <th>Action</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in requests %}
+        <tr>
+          <td><strong>{{ r.employee_name }}</strong><br><span class="text-muted small">{{ r.employee_id }}</span></td>
+          <td><span class="badge bg-secondary">{{ r.category }}</span></td>
+          <td>{{ r.item_name }}</td>
+          <td>{{ r.quantity }}</td>
+          <td>{{ r.date_needed.strftime('%b %d, %Y') if r.date_needed else '—' }}</td>
+          <td class="text-muted small" style="max-width:200px;">{{ r.reason or '—' }}</td>
+          <td class="text-muted small">{{ r.created_at.strftime('%b %d, %Y %H:%M') }}</td>
+          <td>
+            {% if r.status == 'Pending' %}
+              <span class="badge bg-warning text-dark">Pending</span>
+            {% elif r.status == 'Recommended' %}
+              <span class="badge bg-info text-dark">Recommended</span>
+            {% elif r.status == 'Awaiting Confirmation' %}
+              <span class="badge" style="background:#b45309;color:#fff;">Awaiting Confirmation</span>
+            {% elif r.status == 'Served' %}
+              <span class="badge" style="background:#065f46;color:#fff;">Served ✓</span>
+            {% elif r.status == 'Rejected' %}
+              <span class="badge bg-danger">Rejected</span>
+            {% else %}
+              <span class="badge bg-secondary">{{ r.status }}</span>
+            {% endif %}
+          </td>
+          <td style="min-width:220px;">
+            {% if r.status == 'Pending' %}
+            <form method="POST" action="{{ url_for('material_som_action') }}">
+              <input type="hidden" name="req_id" value="{{ r.id }}">
+              <textarea name="remarks" class="form-control form-control-sm mb-1"
+                        rows="1" placeholder="Remarks (optional)"
+                        style="font-size:.78rem;"></textarea>
+              <div class="d-flex gap-1">
+                <button name="action" value="recommend"
+                        class="btn btn-sm btn-success flex-fill">
+                  <i class="bi bi-check-lg me-1"></i>Recommend
+                </button>
+                <button name="action" value="reject"
+                        class="btn btn-sm btn-danger flex-fill"
+                        onclick="return confirm('Reject this request?');">
+                  <i class="bi bi-x-lg me-1"></i>Reject
+                </button>
+              </div>
+            </form>
+            {% else %}
+            <span class="text-muted small">
+              {{ r.som_name or '—' }}<br>
+              {% if r.som_remarks %}<em>{{ r.som_remarks }}</em>{% endif %}
+            </span>
+            {% endif %}
+          </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="9" class="text-center text-muted py-4">No material requests found.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

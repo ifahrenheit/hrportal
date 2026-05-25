@@ -1,0 +1,187 @@
+{% extends "base.html" %}
+{% block title %}Magic CWS Balance Management{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-3">
+
+  <div class="d-flex align-items-center justify-content-between mb-3 flex-wrap gap-2">
+    <h5 class="mb-0 fw-bold">
+      <i class="bi bi-lightning-charge-fill me-2" style="color:#6f42c1"></i>Magic CWS Balance Management
+    </h5>
+    <form method="POST" action="/admin/magic-cws-balance/prepopulate"
+          onsubmit="return confirm('Pre-populate from OrangeHRM Magic Leave? Existing rows will be skipped.')">
+      <button class="btn btn-sm btn-outline-secondary">
+        <i class="bi bi-cloud-download me-1"></i>Pre-populate from OrangeHRM
+      </button>
+    </form>
+  </div>
+
+  <!-- Bulk Add Card -->
+  <div class="card border-0 shadow-sm mb-4">
+    <div class="card-header bg-white fw-bold border-bottom">
+      <i class="bi bi-plus-circle me-2 text-success"></i>Bulk Add Hours
+    </div>
+    <div class="card-body">
+      <p class="text-muted small mb-2">
+        Paste rows in format: <code>employee_id, hours</code> — one per line.
+        Tab-separated also works (paste directly from Excel).
+      </p>
+      <form method="POST" action="/admin/magic-cws-balance/bulk-add">
+        <div class="row g-3">
+          <div class="col-md-6">
+            <textarea name="bulk_data" class="form-control font-monospace" rows="6"
+                      placeholder="210528-16, 10&#10;210601-01, 8&#10;210715-03, 10"
+                      required></textarea>
+          </div>
+          <div class="col-md-6">
+            <label class="form-label small fw-bold">Reason / Notes</label>
+            <textarea name="reason" class="form-control" rows="3"
+                      placeholder="e.g. OT incentive — April 2026"></textarea>
+            <button type="submit" class="btn btn-success btn-sm mt-3 px-4">
+              <i class="bi bi-upload me-1"></i>Apply Bulk Add
+            </button>
+          </div>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Balance Table -->
+  <div class="card border-0 shadow-sm mb-4">
+    <div class="card-header bg-white fw-bold border-bottom">
+      <i class="bi bi-table me-2"></i>Current Balances
+      <span class="badge bg-secondary ms-2">{{ balances|length }}</span>
+    </div>
+    <div class="table-responsive">
+      <table class="table table-sm table-hover mb-0 small" id="balTable">
+        <thead class="table-light">
+          <tr>
+            <th>Employee</th>
+            <th>ID</th>
+            <th>TL</th>
+            <th class="text-center">Initial Hrs</th>
+            <th class="text-center">Used Hrs</th>
+            <th class="text-center">Remaining</th>
+            <th>Last Updated</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+        {% for b in balances %}
+        <tr>
+          <td class="fw-bold">{{ b.employee_name or '—' }}</td>
+          <td><span class="text-muted font-monospace small">{{ b.employee_id or '—' }}</span></td>
+          <td class="text-muted small">{{ b.tl or '—' }}</td>
+          <td class="text-center">{{ b.initial_hrs }}</td>
+          <td class="text-center text-danger">{{ b.used_hrs }}</td>
+          <td class="text-center fw-bold"
+              style="color:{{ '#198754' if b.remaining_hrs > 0 else '#dc3545' }}">
+            {{ b.remaining_hrs }}
+          </td>
+          <td class="text-muted small">
+            {{ b.updated_at.strftime('%b %d, %Y') if b.updated_at else '—' }}
+          </td>
+          <td>
+            <button class="btn btn-outline-secondary btn-sm py-0 px-2"
+                    onclick="openEdit('{{ b.emp_number }}','{{ b.employee_id }}','{{ b.employee_name }}','{{ b.initial_hrs }}','{{ b.used_hrs }}')">
+              <i class="bi bi-pencil"></i>
+            </button>
+          </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="7" class="text-center text-muted py-3">
+          No balances yet. Use Pre-populate to load from OrangeHRM.
+        </td></tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Adjustment Log -->
+  {% if adjustments %}
+  <div class="card border-0 shadow-sm">
+    <div class="card-header bg-white fw-bold border-bottom">
+      <i class="bi bi-clock-history me-2"></i>Recent Adjustments
+    </div>
+    <div class="table-responsive">
+      <table class="table table-sm table-hover mb-0 small">
+        <thead class="table-light">
+          <tr>
+            <th>Employee</th><th>ID</th>
+            <th class="text-center">Hours Added</th>
+            <th>Reason</th><th>Added By</th><th>Date</th>
+          </tr>
+        </thead>
+        <tbody>
+        {% for a in adjustments %}
+        <tr>
+          <td>{{ a.employee_name or '—' }}</td>
+          <td class="font-monospace small text-muted">{{ a.employee_id or '—' }}</td>
+          <td class="text-center fw-bold"
+              style="color:{{ '#198754' if a.hours_added > 0 else '#dc3545' }}">
+            {{ '+' if a.hours_added > 0 else '' }}{{ a.hours_added }}
+          </td>
+          <td class="text-muted">{{ a.reason or '—' }}</td>
+          <td class="text-muted">{{ a.added_by_name or '—' }}</td>
+          <td class="text-muted">{{ a.created_at.strftime('%b %d, %Y %H:%M') if a.created_at else '—' }}</td>
+        </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  {% endif %}
+
+</div>
+
+<!-- Edit Modal -->
+<div class="modal fade" id="editModal" tabindex="-1">
+  <div class="modal-dialog modal-sm">
+    <div class="modal-content">
+      <div class="modal-header py-2">
+        <h6 class="modal-title fw-bold">Edit Balance</h6>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <form method="POST" action="/admin/magic-cws-balance/edit">
+        <div class="modal-body">
+          <input type="hidden" name="emp_number" id="editEmpNumber">
+          <input type="hidden" name="employee_id" id="editEmployeeId">
+          <p class="fw-bold mb-3" id="editEmpName"></p>
+          <div class="mb-3">
+            <label class="form-label small fw-bold">Initial Hrs</label>
+            <input type="number" name="initial_hrs" id="editInitialHrs"
+                   class="form-control" step="0.5" min="0" required>
+          </div>
+          <div class="mb-3">
+            <label class="form-label small fw-bold">Used Hrs</label>
+            <input type="number" name="used_hrs" id="editUsedHrs"
+                   class="form-control" step="0.5" min="0" required>
+          </div>
+          <div class="mb-2">
+            <label class="form-label small fw-bold">Reason</label>
+            <input type="text" name="reason" class="form-control"
+                   placeholder="e.g. manual correction">
+          </div>
+        </div>
+        <div class="modal-footer py-2">
+          <button type="button" class="btn btn-sm btn-secondary" data-bs-dismiss="modal">Cancel</button>
+          <button type="submit" class="btn btn-sm btn-primary">Save</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<script>
+function openEdit(empNum, empId, empName, initialHrs, usedHrs) {
+  document.getElementById('editEmpNumber').value  = empNum;
+  document.getElementById('editEmployeeId').value = empId;
+  document.getElementById('editEmpName').textContent = empName;
+  document.getElementById('editInitialHrs').value = initialHrs;
+  document.getElementById('editUsedHrs').value    = usedHrs;
+  new bootstrap.Modal(document.getElementById('editModal')).show();
+}
+</script>
+
+{% endblock %}

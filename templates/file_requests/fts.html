@@ -1,0 +1,86 @@
+{% extends "base.html" %}
+{% block title %}File FTS{% endblock %}
+{% block page_title %}Failure to Swipe{% endblock %}
+{% block content %}
+
+<div class="mb-3">
+  <a href="{{ url_for('file_requests_hub') }}" class="btn btn-sm btn-outline-secondary">← Back to File Requests</a>
+</div>
+
+{% if message %}
+<div class="alert alert-{{ msg_type }} alert-dismissible fade show" role="alert">
+  {{ message }}
+  <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+</div>
+{% endif %}
+
+<div class="card mb-4">
+  <div class="card-body p-4">
+    <h6 class="fw-bold mb-3">Submit FTS Request</h6>
+    <form method="POST">
+      <div class="row g-3">
+        <div class="col-md-4">
+          <label class="form-label fw-500">FTS Date <span class="text-danger">*</span></label>
+          <input type="date" name="fts_date" class="form-control" required>
+        </div>
+        <div class="col-md-4">
+          <label class="form-label fw-500">FTS Time <span class="text-danger">*</span></label>
+          <input type="time" name="fts_time" class="form-control" required>
+        </div>
+        <div class="col-md-4">
+          <label class="form-label fw-500">FTS Type <span class="text-danger">*</span></label>
+          <select name="fts_type" class="form-select" required>
+            <option value="">-- Select --</option>
+            <option value="IN">IN</option>
+            <option value="OUT">OUT</option>
+          </select>
+        </div>
+      </div>
+      <button type="submit" class="btn btn-primary mt-3 px-4">Submit Request</button>
+    </form>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-body p-4">
+    <h6 class="fw-bold mb-3">Your FTS History</h6>
+    {% if history %}
+    <div class="table-responsive">
+      <table class="table table-hover align-middle mb-0">
+        <thead>
+          <tr>
+            <th>Date</th><th>Time</th><th>Type</th>
+            <th>Status</th><th>Approver</th><th>Approved At</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for r in history %}
+          <tr>
+            <td>{{ r.fts_date }}</td>
+            <td>{{ r.fts_time }}</td>
+            <td>
+              <span class="badge {{ 'bg-success' if r.fts_type == 'IN' else 'bg-danger' }}">
+                {{ r.fts_type }}
+              </span>
+            </td>
+            <td>
+              <span class="badge
+                {% if r.status == 'Pending' %}bg-warning text-dark
+                {% elif r.status == 'Approved' %}bg-success
+                {% else %}bg-danger{% endif %}">
+                {{ r.status }}
+              </span>
+            </td>
+            <td>{{ r.approver_name or '—' }}</td>
+            <td>{{ r.approved_at or '—' }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <p class="text-muted mb-0">No FTS requests yet.</p>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

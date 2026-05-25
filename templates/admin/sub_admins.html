@@ -1,0 +1,190 @@
+{% extends 'base.html' %}
+{% block title %}Sub-Admin Management{% endblock %}
+{% block page_title %}Sub-Admin Management{% endblock %}
+{% block content %}
+<style>
+  .perm-toggle { display:flex; align-items:center; gap:.5rem; padding:.4rem .75rem; border-radius:8px; border:1px solid var(--border); background:var(--bg); cursor:pointer; font-size:.82rem; user-select:none; }
+  .perm-toggle input { display:none; }
+  .perm-toggle .pill { width:34px; height:18px; border-radius:9px; background:var(--border); position:relative; transition:background .2s; flex-shrink:0; }
+  .perm-toggle .pill::after { content:''; position:absolute; width:14px; height:14px; border-radius:50%; background:#fff; top:2px; left:2px; transition:left .2s; }
+  .perm-toggle input:checked ~ .pill { background:var(--accent); }
+  .perm-toggle input:checked ~ .pill::after { left:18px; }
+  .emp-card { border:1px solid var(--border); border-radius:12px; background:var(--surface); padding:1.25rem; margin-bottom:1rem; }
+  .emp-card.is-subadmin { border-color:var(--accent); }
+  .perms-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(200px,1fr)); gap:.5rem; margin-top:.75rem; }
+</style>
+
+<div class="card mb-4 p-3">
+  <h6 class="fw-semibold mb-3"><i class="bi bi-people-fill me-2"></i>Bulk Assign by Group</h6>
+  <form method="POST">
+    <input type="hidden" name="action" value="bulk_group">
+    <div class="row g-2 align-items-end">
+      <div class="col-md-3">
+        <label class="form-label small mb-1">Group</label>
+        <select name="bulk_group" class="form-select form-select-sm" required>
+          <option value="">— Select Group —</option>
+          {% for g in groups %}
+          <option value="{{ g }}">{{ g }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-md-9">
+        <label class="form-label small mb-1">Permissions to assign</label>
+        <div class="d-flex flex-wrap gap-2">
+          {% for key, icon, label in perm_labels %}
+          <div class="form-check form-check-inline">
+            <input class="form-check-input" type="checkbox" name="{{ key }}" id="bulk_{{ key }}">
+            <label class="form-check-label small" for="bulk_{{ key }}">{{ label }}</label>
+          </div>
+          {% endfor %}
+        </div>
+      </div>
+      <div class="col-12 mt-2">
+        <button type="submit" class="btn btn-primary btn-sm">
+          <i class="bi bi-check2-all me-1"></i>Apply to Group
+        </button>
+        <span class="text-muted small ms-2">This will override existing permissions for all employees in the selected group.</span>
+      </div>
+    </div>
+  </form>
+</div>
+<div class="alert alert-info mb-4">
+  <i class="bi bi-info-circle me-2"></i>
+  Sub-admins can access specific features you enable. They <strong>cannot</strong> manage other sub-admins or change admin accounts.
+</div>
+
+<div class="mb-3 d-flex gap-2 align-items-center">
+  <input type="text" id="empSearch" class="form-control form-control-sm"
+         placeholder="Search employee..." style="max-width:280px;" oninput="filterEmps()">
+  <select id="groupFilter" class="form-select form-select-sm" style="width:auto;" onchange="filterEmps()">
+    <option value="">All Groups</option>
+    {% for g in groups %}
+    <option value="{{ g }}">{{ g }}</option>
+    {% endfor %}
+  </select>
+  <select id="roleFilter" class="form-select form-select-sm" style="width:auto;" onchange="filterEmps()">
+    <option value="">All Employees</option>
+    <option value="subadmin">Sub-Admins Only</option>
+    <option value="none">No Role Assigned</option>
+  </select>
+  <span class="text-muted small ms-auto" id="empCount"></span>
+</div>
+
+{% set perm_labels = [
+  ('can_all_leaves',   'bi-people',         'All Leaves'),
+  ('can_all_requests',  'bi-inbox',          'All Requests'),
+  ('can_approve',      'bi-check-circle',   'Approve/Reject'),
+  ('can_file_for_emp', 'bi-person-plus',    'File for Employee'),
+  ('can_schedules',    'bi-table',          'Schedules'),
+  ('can_reports',      'bi-bar-chart-line', 'Reports'),
+  ('can_work_mode',    'bi-people-fill',    'Work Mode'),
+  ('can_settings',     'bi-gear',           'Settings'),
+  ('can_entitlements', 'bi-credit-card',    'Entitlements'),
+  ('can_file_requests','bi-file-earmark-text','File Requests'),
+  ('can_material_requests','bi-box-seam','Material Requests'),
+  ('can_final_approval','bi-patch-check','Final Approval'),
+  ('can_view_tickets','bi-ticket-perforated','View OT/RDW Tickets'),
+  ('can_facilities_review','bi-tools','Facilities Reviewer'),
+  ('can_facilities_final','bi-patch-check-fill','Facilities Final Approver'),
+  ('can_view_approved_items','bi-bag-check','Purchaser View (Materials)'),
+  ('can_onboarding','bi-person-check','Onboarding / Offboarding'),
+  ('can_inventory','bi-boxes','Inventory Management'),
+  ('can_absences','bi-person-x','Absence Report'),
+  ('can_it_tickets','bi-headset','IT Ticket Queue'),
+  ('can_hr_tickets','bi-person-badge','HR Ticket Queue'),
+] %}
+
+<div id="empList">
+{% for e in employees %}
+{% set is_sub = e.can_all_leaves is not none %}
+<div class="emp-card {% if is_sub %}is-subadmin{% endif %}" 
+     data-name="{{ e.emp_lastname }} {{ e.emp_firstname }}" 
+     data-role="{{ 'subadmin' if is_sub else 'none' }}"
+     data-group="{{ e.group_name or '' }}">
+  <form method="POST">
+    <input type="hidden" name="emp_number" value="{{ e.emp_number }}">
+    <input type="hidden" name="employee_id" value="{{ e.employee_id }}">
+    <div class="d-flex align-items-center justify-content-between mb-2 flex-wrap gap-2">
+      <div>
+        <span class="fw-semibold">{{ e.emp_lastname }}, {{ e.emp_firstname }}</span>
+        <span class="text-muted small ms-2">{{ e.employee_id }}</span>
+        {% if e.group_name %}<span class="badge ms-1" style="background:var(--bg);color:var(--text-muted);border:1px solid var(--border);font-size:.65rem;">{{ e.group_name }}</span>{% endif %}
+        {% if is_sub %}
+        <span class="badge ms-2" style="background:#dbeafe;color:#1e40af;font-size:.7rem;">Sub-Admin</span>
+        {% endif %}
+      </div>
+      <div class="d-flex gap-2">
+        <button type="submit" name="action" value="save" class="btn btn-sm btn-primary">
+          <i class="bi bi-save me-1"></i>Save
+        </button>
+        <a href="#" onclick="loginAs('{{ e.employee_id }}'); return false;"
+         class="btn btn-sm btn-outline-info">
+        <i class="bi bi-person-fill-gear me-1"></i>Login As
+      </a>
+      {% if is_sub %}
+        <button type="submit" name="action" value="remove"
+                class="btn btn-sm btn-outline-danger"
+                onclick="return confirm('Remove sub-admin role from this employee?');">
+          <i class="bi bi-x-circle me-1"></i>Remove
+        </button>
+        {% endif %}
+      </div>
+    </div>
+    <div class="perms-grid">
+      {% for perm, icon, label in perm_labels %}
+      <label class="perm-toggle">
+        <input type="checkbox" name="{{ perm }}" {% if e[perm] %}checked{% endif %}>
+        <span class="pill"></span>
+        <i class="bi {{ icon }}"></i> {{ label }}
+      </label>
+      {% endfor %}
+    </div>
+  </form>
+</div>
+{% endfor %}
+</div>
+
+{% endblock %}
+{% block scripts %}
+<script>
+function filterEmps() {
+  const q     = document.getElementById('empSearch').value.toLowerCase();
+  const role  = document.getElementById('roleFilter').value;
+  const group = document.getElementById('groupFilter') ? document.getElementById('groupFilter').value : '';
+  sessionStorage.setItem('subadmin_search', document.getElementById('empSearch').value);
+  sessionStorage.setItem('subadmin_role', role);
+  if (document.getElementById('groupFilter')) sessionStorage.setItem('subadmin_group', group);
+  var count = 0;
+  document.querySelectorAll('#empList .emp-card').forEach(card => {
+    const name      = card.dataset.name.toLowerCase();
+    const cardRole  = card.dataset.role;
+    const cardGroup = card.dataset.group || '';
+    const matchQ     = !q || name.includes(q);
+    const matchRole  = !role || cardRole === role;
+    const matchGroup = !group || cardGroup === group;
+    const show = matchQ && matchRole && matchGroup;
+    card.style.display = show ? '' : 'none';
+    if (show) count++;
+  });
+  var el = document.getElementById('empCount');
+  if (el) el.textContent = count + ' employee' + (count !== 1 ? 's' : '');
+}
+
+document.addEventListener("DOMContentLoaded", function() {
+  const saved = sessionStorage.getItem('subadmin_search');
+  const savedRole = sessionStorage.getItem('subadmin_role');
+  const savedGroup = sessionStorage.getItem('subadmin_group');
+  if (saved) document.getElementById('empSearch').value = saved;
+  if (savedRole) document.getElementById('roleFilter').value = savedRole;
+  if (savedGroup && document.getElementById('groupFilter')) document.getElementById('groupFilter').value = savedGroup;
+  filterEmps();
+});
+function loginAs(empNumber) {
+  var form = document.createElement('form');
+  form.method = 'POST';
+  form.action = '/admin/login-as/' + empNumber;
+  document.body.appendChild(form);
+  form.submit();
+}
+</script>
+{% endblock %}

@@ -1,0 +1,255 @@
+{% extends 'base.html' %}
+{% block title %}Reports{% endblock %}
+{% block page_title %}Reports & Analytics{% endblock %}
+{% block content %}
+
+<div class="d-flex align-items-center gap-3 mb-4">
+  <form method="GET" class="d-flex align-items-center gap-2" id="yearForm">
+    <input type="hidden" name="tab" id="tabInput" value="{{ tab }}">
+    <label class="small fw-semibold text-muted">Year:</label>
+    <select name="year" class="form-select form-select-sm" style="width:auto;" onchange="this.form.submit()">
+      {% for y in range(2024, 2028) %}
+      <option value="{{ y }}" {% if y == year %}selected{% endif %}>{{ y }}</option>
+      {% endfor %}
+    </select>
+  </form>
+  <span class="text-muted small">Showing data for <strong>{{ year }}</strong></span>
+</div>
+
+<!-- Tabs -->
+<ul class="nav nav-tabs mb-3" id="reportTabs">
+  <li class="nav-item">
+    <a class="nav-link {% if tab != 'detail' %}active{% endif %}" href="?year={{ year }}&tab=overview">
+      <i class="bi bi-table me-1"></i>Balance Overview
+    </a>
+  </li>
+  <li class="nav-item">
+    <a class="nav-link {% if tab == 'detail' %}active{% endif %}" href="?year={{ year }}&tab=detail">
+      <i class="bi bi-list-ul me-1"></i>Leave Details
+    </a>
+  </li>
+</ul>
+
+{% if tab == 'detail' %}
+<!-- ── DETAIL TAB ──────────────────────────────────────────── -->
+<div class="card mb-4">
+  <div class="p-3 border-bottom d-flex gap-2 align-items-center flex-wrap">
+    <input type="text" id="detSearch" class="form-control form-control-sm"
+           placeholder="Search by name or employee ID..." style="max-width:300px;"
+           oninput="filterDetTable()">
+    <div class="ms-2">
+      <label class="small fw-semibold text-muted me-1">From:</label>
+      <input type="date" id="detFrom" class="form-control form-control-sm d-inline-block" style="width:auto;" value="{{ year }}-01-01" onchange="filterDetTable()">
+      <label class="small fw-semibold text-muted mx-1">To:</label>
+      <input type="date" id="detTo" class="form-control form-control-sm d-inline-block" style="width:auto;" value="{{ year }}-12-31" onchange="filterDetTable()">
+    </div>
+    <span id="detCount" class="text-muted small ms-2"></span>
+    <a href="{{ url_for('admin_reports') }}?year={{ year }}&export=1"
+       class="btn btn-sm btn-success ms-auto">
+      <i class="bi bi-download"></i> Download CSV
+    </a>
+  </div>
+  <div class="table-responsive">
+    <table class="table mb-0" id="detTable">
+      <thead class="table-dark">
+        <tr>
+          <th>Employee ID</th>
+          <th>First Name</th>
+          <th>Last Name</th>
+          <th>Leave Type</th>
+          <th class="text-center">Total</th>
+          <th class="text-center">Used</th>
+          <th class="text-center">Remaining</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for e in emp_balances %}
+        {% set visible_types = [] %}
+        {% for lt in leave_types %}
+          {% set t = e.types.get(lt.name, {'total':0,'used':0,'remaining':0}) %}
+          {% if t.total > 0 %}{% set _ = visible_types.append(lt) %}{% endif %}
+        {% endfor %}
+        {% for lt in visible_types %}
+        {% set t = e.types.get(lt.name, {'total':0,'used':0,'remaining':0}) %}
+        <tr class="det-row"
+            data-name="{{ e.first_name|lower }} {{ e.last_name|lower }}"
+            data-id="{{ e.employee_id|lower }}">
+          {% if loop.first %}
+          <td rowspan="{{ visible_types|length }}" style="vertical-align:middle;border-right:1px solid var(--border);"><strong>{{ e.employee_id }}</strong></td>
+          <td rowspan="{{ visible_types|length }}" style="vertical-align:middle;">{{ e.first_name }}</td>
+          <td rowspan="{{ visible_types|length }}" style="vertical-align:middle;">{{ e.last_name }}</td>
+          {% endif %}
+          <td>{{ lt.name }}</td>
+          <td class="text-center">
+            {{ "%.1f"|format(t.total / 8) }}
+            <div style="font-size:.72rem;color:var(--text-muted);">{{ "%.1f"|format(t.total) }} hrs</div>
+          </td>
+          <td class="text-center">
+            {% if t.used > 0 and t.dates is defined and t.dates %}
+            <span style="cursor:pointer;text-decoration:underline dotted;color:var(--accent);"
+                  data-dates='{{ t.dates | tojson }}'
+                  onclick="showDates(this)">
+              {{ "%.1f"|format(t.used / 8) }}
+            </span>
+            <div style="font-size:.72rem;color:var(--text-muted);">{{ "%.1f"|format(t.used) }} hrs</div>
+            {% else %}
+              {{ "%.1f"|format(t.used / 8) }}
+              <div style="font-size:.72rem;color:var(--text-muted);">{{ "%.1f"|format(t.used) }} hrs</div>
+            {% endif %}
+          </td>
+          <td class="text-center">
+            {% set pct = (t.remaining / t.total * 100) if t.total > 0 else 0 %}
+            <span class="badge" style="background:{% if pct > 50 %}#d1fae5;color:#065f46;{% elif pct > 20 %}#fef3c7;color:#92400e;{% else %}#fee2e2;color:#991b1b;{% endif %}font-size:.82rem;padding:.3rem .6rem;display:inline-block;">
+              {{ "%.1f"|format(t.remaining / 8) }}
+              <div style="font-size:.68rem;opacity:.8;">{{ "%.1f"|format(t.remaining) }} hrs</div>
+            </span>
+          </td>
+        </tr>
+        {% endfor %}
+        {% else %}
+        <tr><td colspan="7" class="text-center text-muted py-4">No data for {{ year }}.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+{% else %}
+<!-- ── OVERVIEW TAB ────────────────────────────────────────── -->
+<div class="card mb-4">
+  <div class="p-3 border-bottom d-flex gap-2 align-items-center">
+    <input type="text" id="balSearch" class="form-control form-control-sm"
+           placeholder="Search by name or employee ID..." style="max-width:300px;"
+           oninput="filterBalTable()">
+    <span id="balCount" class="text-muted small ms-2"></span>
+    <a href="{{ url_for('admin_reports') }}?year={{ year }}&export=1"
+       class="btn btn-sm btn-success ms-auto">
+      <i class="bi bi-download"></i> Export CSV
+    </a>
+  </div>
+  <div class="table-responsive">
+    <table class="table mb-0" id="balTable">
+      <thead>
+        <tr>
+          <th rowspan="2" style="vertical-align:middle;">Employee ID</th>
+          <th rowspan="2" style="vertical-align:middle;">First Name</th>
+          <th rowspan="2" style="vertical-align:middle;">Last Name</th>
+          {% for lt in leave_types %}
+          <th colspan="3" class="text-center" style="border-left:2px solid var(--border);">{{ lt.name }}</th>
+          {% endfor %}
+        </tr>
+        <tr>
+          {% for lt in leave_types %}
+          <th class="text-center small" style="border-left:2px solid var(--border);">Total (hrs)</th>
+          <th class="text-center small">Used (hrs)</th>
+          <th class="text-center small">Remaining (hrs)</th>
+          {% endfor %}
+        </tr>
+      </thead>
+      <tbody>
+        {% for e in emp_balances %}
+        <tr>
+          <td><strong>{{ e.employee_id }}</strong></td>
+          <td>{{ e.first_name }}</td>
+          <td>{{ e.last_name }}</td>
+          {% for lt in leave_types %}
+          {% set t = e.types.get(lt.name, {'total':0,'used':0,'remaining':0}) %}
+          {% set pct = (t.remaining / t.total * 100) if t.total > 0 else 0 %}
+          <td class="text-center" style="border-left:2px solid var(--border);">
+            <div style="font-size:.85rem;font-weight:600;">{{ "%.1f"|format(t.total) }} hrs</div>
+            <div style="font-size:.72rem;color:var(--text-muted);">{{ "%.2f"|format(t.total / 8) }} days</div>
+          </td>
+          <td class="text-center">
+            <div style="font-size:.85rem;">{{ "%.1f"|format(t.used) }} hrs</div>
+            <div style="font-size:.72rem;color:var(--text-muted);">{{ "%.2f"|format(t.used / 8) }} days</div>
+          </td>
+          <td class="text-center">
+            <span class="badge" style="background:{% if pct > 50 %}#d1fae5;color:#065f46;{% elif pct > 20 %}#fef3c7;color:#92400e;{% else %}#fee2e2;color:#991b1b;{% endif %}font-size:.78rem;padding:.4rem .55rem;display:inline-block;">
+              {{ "%.1f"|format(t.remaining) }} hrs<br>
+              <span style="font-size:.68rem;opacity:.8;">{{ "%.2f"|format(t.remaining / 8) }} days</span>
+            </span>
+          </td>
+          {% endfor %}
+        </tr>
+        {% else %}
+        <tr><td colspan="100" class="text-center text-muted py-4">No data for {{ year }}.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+
+{% endblock %}
+
+{% block scripts %}
+<!-- Dates Modal -->
+<div class="modal fade" id="datesModal" tabindex="-1">
+  <div class="modal-dialog modal-dialog-centered modal-lg">
+    <div class="modal-content" style="background:var(--surface);color:var(--text);border:1px solid var(--border);">
+      <div class="modal-header py-2" style="border-bottom:1px solid var(--border);">
+        <h6 class="modal-title fw-bold" style="color:var(--text);">Leave Dates Used</h6>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"
+                style="filter: var(--bs-btn-close-white-filter, none);"></button>
+      </div>
+      <div class="modal-body p-0" id="datesModalBody"
+           style="background:var(--surface);color:var(--text);"></div>
+    </div>
+  </div>
+</div>
+<script>
+function filterBalTable() {
+  const q    = document.getElementById('balSearch').value.toLowerCase();
+  const rows = document.querySelectorAll('#balTable tbody tr');
+  let count  = 0;
+  rows.forEach(r => {
+    const txt = r.textContent.toLowerCase();
+    const show = !q || txt.includes(q);
+    r.style.display = show ? '' : 'none';
+    if (show) count++;
+  });
+  document.getElementById('balCount').textContent = `${count} employee${count !== 1 ? 's' : ''}`;
+}
+function filterDetTable() {
+  const q    = document.getElementById('detSearch').value.toLowerCase();
+  const rows = document.querySelectorAll('#detTable tbody tr.det-row');
+  let count  = 0;
+  rows.forEach(r => {
+    const name = r.getAttribute('data-name') || '';
+    const id   = r.getAttribute('data-id') || '';
+    const show = !q || name.includes(q) || id.includes(q);
+    r.style.display = show ? '' : 'none';
+    if (show) count++;
+  });
+  document.getElementById('detCount').textContent = `${count} record${count !== 1 ? 's' : ''}`;
+}
+{% if tab == 'detail' %}filterDetTable();{% else %}filterBalTable();{% endif %}
+
+function showDates(el) {
+  const dates = JSON.parse(el.getAttribute('data-dates'));
+  let rows = dates.map((d, i) => `
+    <tr>
+      <td class="small">${i+1}</td>
+      <td class="small fw-semibold">${d.date}</td>
+      <td class="small text-center">${d.hrs}h</td>
+      <td class="small">${d.half || '—'}</td>
+      <td class="small">${d.notes || '—'}</td>
+      <td class="small">${d.approver || '—'}</td>
+      <td class="small">${d.approved || '—'}</td>
+    </tr>`).join('');
+  document.getElementById('datesModalBody').innerHTML = `
+    <div class="table-responsive">
+      <table class="table table-sm table-hover mb-0" style="color:var(--text);">
+        <thead style="background:var(--bg);color:var(--text-muted);font-size:.75rem;text-transform:uppercase;">
+          <tr>
+            <th>#</th><th>Date</th><th>Hours</th><th>Half</th>
+            <th>Notes</th><th>Approver</th><th>Approved</th>
+          </tr>
+        </thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>`;
+  new bootstrap.Modal(document.getElementById('datesModal')).show();
+}
+</script>
+{% endblock %}

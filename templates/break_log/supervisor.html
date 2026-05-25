@@ -1,0 +1,646 @@
+{% extends "base.html" %}
+{% block title %}Supervisor Break Logs{% endblock %}
+{% block page_title %}📊 Supervisor Break Logs{% endblock %}
+
+{% block content %}
+<style>
+  /* ── Supervisor dashboard scoped styles ──────────────────────────────── */
+  .sup-stats {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 1.25rem;
+    margin-bottom: 1.5rem;
+  }
+  .sup-stat-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 1.25rem 1.5rem;
+    box-shadow: var(--card-shadow);
+  }
+  .sup-stat-card h6 {
+    font-size: .75rem;
+    text-transform: uppercase;
+    letter-spacing: .06em;
+    color: var(--text-muted);
+    font-weight: 600;
+    margin-bottom: .5rem;
+  }
+  .sup-stat-card .stat-val {
+    font-family: 'Outfit', monospace;
+    font-size: 1.75rem;
+    font-weight: 700;
+    color: var(--accent);
+  }
+
+  /* Alert settings bar */
+  .alert-bar {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: .75rem 1.25rem;
+    margin-bottom: 1.25rem;
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    flex-wrap: wrap;
+    font-size: .88rem;
+  }
+
+  /* Filters card */
+  .filters-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 1.25rem 1.5rem;
+    margin-bottom: 1.5rem;
+    box-shadow: var(--card-shadow);
+  }
+  .filters-card h6 {
+    font-size: .78rem;
+    text-transform: uppercase;
+    letter-spacing: .06em;
+    color: var(--text-muted);
+    font-weight: 700;
+    margin-bottom: 1rem;
+  }
+  .filter-row {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    gap: .75rem;
+    align-items: end;
+  }
+  .filter-group label {
+    font-size: .8rem;
+    font-weight: 500;
+    color: var(--text-muted);
+    display: block;
+    margin-bottom: .3rem;
+  }
+
+  /* Table sections */
+  .sup-table-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 1.25rem 1.5rem;
+    margin-bottom: 1.5rem;
+    box-shadow: var(--card-shadow);
+  }
+  .sup-table-card .card-heading {
+    font-family: 'Outfit', sans-serif;
+    font-size: .95rem;
+    font-weight: 700;
+    margin-bottom: 1rem;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  /* Badges */
+  .acc-badge {
+    display: inline-block;
+    padding: .25rem .65rem;
+    border-radius: 6px;
+    font-size: .72rem;
+    font-weight: 700;
+    text-transform: uppercase;
+  }
+  .acc-badge.arctic { background: rgba(16,185,129,.12); color: var(--success); border: 1px solid var(--success); }
+  .acc-badge.numa   { background: rgba(59,130,246,.12); color: var(--info);    border: 1px solid var(--info); }
+  .acc-badge.gyg    { background: rgba(245,158,11,.12); color: var(--warning); border: 1px solid var(--warning); }
+
+  .status-badge {
+    display: inline-block;
+    padding: .25rem .65rem;
+    border-radius: 6px;
+    font-size: .72rem;
+    font-weight: 700;
+    text-transform: uppercase;
+  }
+  .status-badge.active  { background: rgba(16,185,129,.15); color: var(--success); border: 1px solid var(--success); animation: sup-pulse 2s ease-in-out infinite; }
+  .status-badge.overtime{ background: rgba(239,68,68,.15);  color: var(--danger);  border: 1px solid var(--danger);  animation: sup-pulse 2s ease-in-out infinite; }
+
+  .dur-badge {
+    display: inline-block;
+    padding: .25rem .65rem;
+    background: rgba(245,158,11,.12);
+    border: 1px solid var(--warning);
+    color: var(--warning);
+    border-radius: 6px;
+    font-size: .82rem;
+    font-weight: 600;
+  }
+  .total-dur-badge {
+    display: inline-block;
+    padding: .25rem .65rem;
+    background: rgba(59,130,246,.12);
+    border: 1px solid var(--info);
+    color: var(--info);
+    border-radius: 6px;
+    font-size: .82rem;
+    font-weight: 700;
+  }
+
+  @keyframes sup-pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: .6; }
+  }
+
+  /* Copy toast */
+  .copy-toast {
+    position: fixed; top: 20px; right: 20px;
+    background: var(--success); color: #fff;
+    padding: .75rem 1.25rem; border-radius: 8px;
+    font-weight: 600; font-size: .88rem;
+    box-shadow: 0 4px 14px rgba(0,0,0,.15);
+    z-index: 9999;
+    animation: toastIn .3s ease;
+  }
+  @keyframes toastIn { from { opacity:0; transform:translateX(40px); } to { opacity:1; transform:translateX(0); } }
+</style>
+
+<!-- Stats row -->
+<div class="sup-stats">
+  <div class="sup-stat-card">
+    <h6>Active Breaks</h6>
+    <div class="stat-val" id="activeBreaksCount">—</div>
+    <div style="font-size:.8rem;color:var(--text-muted)">Currently on break</div>
+  </div>
+  <div class="sup-stat-card">
+    <h6>Total Breaks Today</h6>
+    <div class="stat-val" id="totalBreaksCount">—</div>
+    <div style="font-size:.8rem;color:var(--text-muted)">Completed breaks</div>
+  </div>
+  <div class="sup-stat-card">
+    <h6>Total Break Time</h6>
+    <div class="stat-val" id="totalBreakTime">—</div>
+    <div style="font-size:.8rem;color:var(--text-muted)">Combined duration</div>
+  </div>
+  <div class="sup-stat-card">
+    <h6>Average Duration</h6>
+    <div class="stat-val" id="avgBreakDuration">—</div>
+    <div style="font-size:.8rem;color:var(--text-muted)">Per break</div>
+  </div>
+</div>
+
+<!-- Alert settings bar -->
+<div class="alert-bar">
+  <i class="bi bi-bell" style="color:var(--warning)"></i>
+  <label style="display:flex;align-items:center;gap:.5rem;cursor:pointer;margin:0;">
+    <input type="checkbox" id="enableAlerts" checked>
+    <span>Notify when breaks exceed 1 hr 30 min</span>
+  </label>
+  <button class="btn btn-sm btn-outline-primary" onclick="enableNotifications()">
+    🔔 Enable Browser Alerts
+  </button>
+</div>
+
+<!-- Filters -->
+<div class="filters-card">
+  <h6>Filters</h6>
+  <form method="GET" id="filterForm">
+    <div class="filter-row">
+      <!-- Date filter type -->
+      <div class="filter-group">
+        <label>Date Filter</label>
+        <select name="dateFilterType" id="dateFilterType" class="form-select form-select-sm">
+          <option value="specific" {{ 'selected' if (request.args.get('dateFilterType','specific')=='specific') }}>Is on the day</option>
+          <option value="last"     {{ 'selected' if request.args.get('dateFilterType')=='last' }}>Is in the last</option>
+          <option value="range"    {{ 'selected' if request.args.get('dateFilterType')=='range' }}>Is in range</option>
+          <option value="year"     {{ 'selected' if request.args.get('dateFilterType')=='year' }}>Is in the year</option>
+          <option value="month"    {{ 'selected' if request.args.get('dateFilterType')=='month' }}>Is in the month</option>
+          <option value="this"     {{ 'selected' if request.args.get('dateFilterType')=='this' }}>Is this</option>
+        </select>
+      </div>
+
+      <!-- Specific date -->
+      <div class="filter-group" id="filter-specific" style="display:none;">
+        <label>Date</label>
+        <input type="date" name="date" id="date" class="form-control form-control-sm"
+               value="{{ request.args.get('date', filter_date) }}">
+      </div>
+
+      <!-- Last N -->
+      <div class="filter-group" id="filter-last-number" style="display:none;">
+        <label>Number</label>
+        <input type="number" name="lastNumber" id="lastNumber" class="form-control form-control-sm"
+               min="1" value="{{ request.args.get('lastNumber', 7) }}">
+      </div>
+      <div class="filter-group" id="filter-last-unit" style="display:none;">
+        <label>Unit</label>
+        <select name="lastUnit" id="lastUnit" class="form-select form-select-sm">
+          <option value="days"   {{ 'selected' if request.args.get('lastUnit','days')=='days' }}>Days</option>
+          <option value="weeks"  {{ 'selected' if request.args.get('lastUnit')=='weeks' }}>Weeks</option>
+          <option value="months" {{ 'selected' if request.args.get('lastUnit')=='months' }}>Months</option>
+          <option value="years"  {{ 'selected' if request.args.get('lastUnit')=='years' }}>Years</option>
+        </select>
+      </div>
+
+      <!-- Range -->
+      <div class="filter-group" id="filter-range-start" style="display:none;">
+        <label>Start Date</label>
+        <input type="date" name="startDate" class="form-control form-control-sm"
+               value="{{ request.args.get('startDate','') }}">
+      </div>
+      <div class="filter-group" id="filter-range-end" style="display:none;">
+        <label>End Date</label>
+        <input type="date" name="endDate" class="form-control form-control-sm"
+               value="{{ request.args.get('endDate','') }}">
+      </div>
+
+      <!-- Year -->
+      <div class="filter-group" id="filter-year" style="display:none;">
+        <label>Year</label>
+        <input type="number" name="yearNumber" class="form-control form-control-sm"
+               min="2020" max="2035" value="{{ request.args.get('yearNumber', '') }}">
+      </div>
+
+      <!-- Month -->
+      <div class="filter-group" id="filter-month-select" style="display:none;">
+        <label>Month</label>
+        <select name="monthSelect" class="form-select form-select-sm">
+          {% for i, name in [(1,'January'),(2,'February'),(3,'March'),(4,'April'),
+                             (5,'May'),(6,'June'),(7,'July'),(8,'August'),
+                             (9,'September'),(10,'October'),(11,'November'),(12,'December')] %}
+          <option value="{{ i }}" {{ 'selected' if request.args.get('monthSelect','') == (i|string) }}>{{ name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="filter-group" id="filter-month-year" style="display:none;">
+        <label>Year</label>
+        <input type="number" name="monthYear" class="form-control form-control-sm"
+               min="2020" max="2035" value="{{ request.args.get('monthYear','') }}">
+      </div>
+
+      <!-- This -->
+      <div class="filter-group" id="filter-this-unit" style="display:none;">
+        <label>Period</label>
+        <select name="thisUnit" class="form-select form-select-sm">
+          <option value="day"   {{ 'selected' if request.args.get('thisUnit','day')=='day' }}>Today</option>
+          <option value="week"  {{ 'selected' if request.args.get('thisUnit')=='week' }}>This Week</option>
+          <option value="month" {{ 'selected' if request.args.get('thisUnit')=='month' }}>This Month</option>
+          <option value="year"  {{ 'selected' if request.args.get('thisUnit')=='year' }}>This Year</option>
+        </select>
+      </div>
+
+      <!-- Agent -->
+      <div class="filter-group">
+        <label>Agent</label>
+        <select name="agent" id="agentFilter" class="form-select form-select-sm">
+          <option value="all">All Agents</option>
+          {% for agent in agents_list %}
+          <option value="{{ agent.EmployeeID }}"
+                  data-account="{{ agent.account }}"
+                  {{ 'selected' if request.args.get('agent') == agent.EmployeeID }}>
+            {{ agent.name }}
+          </option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <!-- Account -->
+      <div class="filter-group">
+        <label>Account</label>
+        <select name="account" id="accountFilter" class="form-select form-select-sm">
+          <option value="all"   {{ 'selected' if request.args.get('account','all')=='all' }}>All</option>
+          <option value="Arctic"{{ 'selected' if request.args.get('account')=='Arctic' }}>Arctic</option>
+          <option value="Numa"  {{ 'selected' if request.args.get('account')=='Numa' }}>Numa</option>
+          <option value="GYG"   {{ 'selected' if request.args.get('account')=='GYG' }}>GYG</option>
+        </select>
+      </div>
+
+      <div class="filter-group">
+        <label>&nbsp;</label>
+        <button type="submit" class="btn btn-primary btn-sm w-100">Apply</button>
+      </div>
+      <div class="filter-group">
+        <label>&nbsp;</label>
+        <button type="button" class="btn btn-success btn-sm w-100" onclick="exportCSV()">
+          📥 Export CSV
+        </button>
+      </div>
+    </div>
+  </form>
+</div>
+
+<!-- Active breaks table -->
+<div class="sup-table-card">
+  <div class="card-heading">
+    <span>🔴 Currently On Break</span>
+  </div>
+  <div class="table-responsive">
+    <table class="table table-hover mb-0">
+      <thead>
+        <tr>
+          <th>Agent</th>
+          <th>Account</th>
+          <th>Schedule</th>
+          <th>Break Started</th>
+          <th>Duration</th>
+          <th>Status</th>
+          <th>Total Today</th>
+        </tr>
+      </thead>
+      <tbody id="activeBreaksTable">
+        <tr><td colspan="7" class="text-center text-muted py-4">Loading…</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- Completed breaks table -->
+<div class="sup-table-card">
+  <div class="card-heading">
+    <span>✅ Completed Breaks</span>
+    <button class="btn btn-sm btn-outline-success" onclick="copyCompletedBreaks()">
+      📋 Copy
+    </button>
+  </div>
+  <div class="table-responsive">
+    <table class="table table-hover mb-0">
+      <thead>
+        <tr>
+          <th>Date</th>
+          <th>Agent</th>
+          <th>Account</th>
+          <th>Schedule</th>
+          <th>Start</th>
+          <th>End</th>
+          <th>Duration</th>
+          <th>Total Today</th>
+        </tr>
+      </thead>
+      <tbody id="completedBreaksTable">
+        <tr><td colspan="8" class="text-center text-muted py-4">Loading…</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const alertedBreaks    = new Set();
+let activeBreakTimers  = {};
+let liveTimerInterval  = null;
+
+document.addEventListener('DOMContentLoaded', function () {
+  if ('Notification' in window && Notification.permission === 'default') {
+    Notification.requestPermission();
+  }
+  loadData();
+  setInterval(loadData, 10000);
+  updateDateFilterDisplay();
+  document.getElementById('dateFilterType').addEventListener('change', updateDateFilterDisplay);
+
+  // Filter agents by account
+  const accountSel = document.getElementById('accountFilter');
+  const agentSel   = document.getElementById('agentFilter');
+  const allOpts    = Array.from(agentSel.options);
+  accountSel.addEventListener('change', function () {
+    const acc = this.value;
+    agentSel.innerHTML = '<option value="all">All Agents</option>';
+    allOpts.forEach(opt => {
+      if (opt.value === 'all') return;
+      if (acc === 'all' || opt.getAttribute('data-account') === acc) {
+        agentSel.appendChild(opt.cloneNode(true));
+      }
+    });
+  });
+});
+
+/* ── Utilities ─────────────────────────────────────────────────────── */
+function formatTime(s) {
+  if (!s || isNaN(s)) s = 0;
+  const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), sec = s % 60;
+  return `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(sec).padStart(2,'0')}`;
+}
+
+function formatDateTime(str) {
+  try {
+    return new Date(str).toLocaleTimeString('en-US', {
+      hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false
+    });
+  } catch(e) { return str; }
+}
+
+function formatSchedule(shiftTime, isRestDay) {
+  if (Number(isRestDay) === 1) return '<span class="text-warning fst-italic">Rest Day</span>';
+  if (!shiftTime) return '<span class="text-muted fst-italic">No Schedule</span>';
+  const m = shiftTime.match(/^(\d{2}):(\d{2})-(\d{2}):(\d{2})$/);
+  if (!m) return shiftTime;
+  const fmt = (h, min) => new Date(2000,0,1,h,min).toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit',hour12:true});
+  return `${fmt(+m[1],+m[2])} – ${fmt(+m[3],+m[4])}`;
+}
+
+function formatDate(str) {
+  if (!str) return 'N/A';
+  try {
+    const [y, mo, d] = str.split('-').map(Number);
+    return new Date(y, mo - 1, d).toLocaleDateString('en-US', {month:'short', day:'numeric', year:'numeric'});
+  } catch(e) { return str; }
+}
+
+/* ── Data loading ──────────────────────────────────────────────────── */
+async function loadData() {
+  const params = new URLSearchParams(window.location.search);
+  try {
+    const r = await fetch(`/api/supervisor/breaks?${params.toString()}`);
+    const d = await r.json();
+    if (d.success) {
+      updateStats(d.stats);
+      updateActiveBreaks(d.active_breaks, d.completed_breaks);
+      updateCompletedBreaks(d.completed_breaks);
+    }
+  } catch(e) {
+    console.error('Failed to load data:', e);
+  }
+}
+
+function updateStats(stats) {
+  document.getElementById('activeBreaksCount').textContent  = stats.active_count  ?? 0;
+  document.getElementById('totalBreaksCount').textContent   = stats.total_breaks  ?? 0;
+  document.getElementById('totalBreakTime').textContent     = formatTime(stats.total_time    ?? 0);
+  document.getElementById('avgBreakDuration').textContent   = formatTime(stats.avg_duration  ?? 0);
+}
+
+function updateActiveBreaks(breaks, completedBreaks) {
+  const tbody = document.getElementById('activeBreaksTable');
+  if (!breaks || !breaks.length) {
+    tbody.innerHTML = '<tr><td colspan="7" class="text-center text-muted py-4">No agents currently on break</td></tr>';
+    return;
+  }
+
+  // Build completed totals per agent
+  const completedTotals = {};
+  (completedBreaks || []).forEach(b => {
+    completedTotals[b.employee_id] = (completedTotals[b.employee_id] || 0) + (b.duration || 0);
+  });
+
+  tbody.innerHTML = '';
+  breaks.forEach(brk => {
+    const startMs = new Date(brk.break_start).getTime();
+    activeBreakTimers[brk.employee_id] = {
+      startTime: startMs,
+      completedToday: completedTotals[brk.employee_id] || 0
+    };
+
+    const now = Date.now();
+    const elapsed = Math.floor((now - startMs) / 1000);
+    const total   = elapsed + (completedTotals[brk.employee_id] || 0);
+    const isOT    = total > 90 * 60;
+
+    const tr = document.createElement('tr');
+    tr.id = `row-${brk.employee_id}`;
+    tr.innerHTML = `
+      <td>${brk.employee_name}</td>
+      <td><span class="acc-badge ${(brk.account_type||'').toLowerCase()}">${brk.account_type}</span></td>
+      <td>${formatSchedule(brk.shift_time, brk.is_rest_day)}</td>
+      <td>${formatDateTime(brk.break_start)}</td>
+      <td><span class="dur-badge" id="active-${brk.employee_id}">00:00:00</span></td>
+      <td><span class="status-badge ${isOT ? 'overtime' : 'active'}" id="status-${brk.employee_id}">${isOT ? '⚠️ OVERTIME' : 'ACTIVE'}</span></td>
+      <td><span class="total-dur-badge" id="total-${brk.employee_id}">00:00:00</span></td>
+    `;
+    tbody.appendChild(tr);
+  });
+
+  startLiveTimers();
+}
+
+function startLiveTimers() {
+  if (liveTimerInterval) clearInterval(liveTimerInterval);
+  liveTimerInterval = setInterval(() => {
+    const now = Date.now();
+    Object.keys(activeBreakTimers).forEach(empId => {
+      const t = activeBreakTimers[empId];
+      const elapsed = Math.floor((now - t.startTime) / 1000);
+      const total   = elapsed + (t.completedToday || 0);
+      const isOT    = total > 90 * 60;
+
+      const activeSpan = document.getElementById(`active-${empId}`);
+      const totalSpan  = document.getElementById(`total-${empId}`);
+      const statusSpan = document.getElementById(`status-${empId}`);
+      if (activeSpan) activeSpan.textContent = formatTime(elapsed);
+      if (totalSpan)  totalSpan.textContent  = formatTime(total);
+      if (statusSpan) {
+        statusSpan.className = `status-badge ${isOT ? 'overtime' : 'active'}`;
+        statusSpan.textContent = isOT ? '⚠️ OVERTIME' : 'ACTIVE';
+      }
+
+      // Alert check
+      const alertKey = `${empId}-${new Date().toDateString()}`;
+      const alertsOn = document.getElementById('enableAlerts')?.checked;
+      if (alertsOn && isOT && !alertedBreaks.has(alertKey)) {
+        alertedBreaks.add(alertKey);
+        if ('Notification' in window && Notification.permission === 'granted') {
+          const name = document.querySelector(`#row-${empId} td`)?.textContent || 'An agent';
+          new Notification('⚠️ Extended Break Alert', {
+            body: `${name} has been on break for ${Math.floor(total/60)} minutes!`,
+            tag: alertKey,
+            requireInteraction: true
+          });
+        }
+      }
+    });
+  }, 1000);
+}
+
+function updateCompletedBreaks(breaks) {
+  const tbody = document.getElementById('completedBreaksTable');
+  if (!breaks || !breaks.length) {
+    tbody.innerHTML = '<tr><td colspan="8" class="text-center text-muted py-4">No completed breaks found</td></tr>';
+    return;
+  }
+
+  // Group by agent
+  const byAgent = {};
+  breaks.forEach(b => {
+    if (!byAgent[b.employee_id]) byAgent[b.employee_id] = { breaks: [], total: 0, name: b.employee_name };
+    byAgent[b.employee_id].breaks.push(b);
+    byAgent[b.employee_id].total += (b.duration || 0);
+  });
+
+  let html = '';
+  Object.values(byAgent).forEach(agent => {
+    agent.breaks.forEach((b, i) => {
+      html += `
+        <tr>
+          <td>${formatDate(b.shift_date)}</td>
+          <td>${b.employee_name}</td>
+          <td><span class="acc-badge ${(b.account_type||'').toLowerCase()}">${b.account_type}</span></td>
+          <td>${formatSchedule(b.shift_time, b.is_rest_day)}</td>
+          <td>${formatDateTime(b.break_start)}</td>
+          <td>${formatDateTime(b.break_end)}</td>
+          <td><span class="dur-badge">${formatTime(b.duration)}</span></td>
+          <td>${i === 0 ? `<span class="total-dur-badge">${formatTime(agent.total)}</span>` : ''}</td>
+        </tr>
+      `;
+    });
+  });
+  tbody.innerHTML = html;
+}
+
+/* ── Date filter display ───────────────────────────────────────────── */
+function updateDateFilterDisplay() {
+  const type = document.getElementById('dateFilterType').value;
+  const allPanels = ['filter-specific','filter-last-number','filter-last-unit',
+                     'filter-range-start','filter-range-end','filter-year',
+                     'filter-month-select','filter-month-year','filter-this-unit'];
+  allPanels.forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.style.display = 'none';
+  });
+  const show = {
+    specific: ['filter-specific'],
+    last:     ['filter-last-number','filter-last-unit'],
+    range:    ['filter-range-start','filter-range-end'],
+    year:     ['filter-year'],
+    month:    ['filter-month-select','filter-month-year'],
+    this:     ['filter-this-unit'],
+  }[type] || [];
+  show.forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.style.display = 'flex';
+  });
+}
+
+/* ── Copy completed breaks ─────────────────────────────────────────── */
+function copyCompletedBreaks() {
+  const rows = document.querySelectorAll('#completedBreaksTable tr');
+  if (!rows.length) return;
+  let text = 'Date\tAgent\tAccount\tSchedule\tStart\tEnd\tDuration\tTotal\n';
+  rows.forEach(row => {
+    const cells = row.querySelectorAll('td');
+    if (cells.length === 8) {
+      text += Array.from(cells).map(c => c.textContent.trim()).join('\t') + '\n';
+    }
+  });
+  navigator.clipboard.writeText(text).then(() => showToast('Copied to clipboard!')).catch(() => {});
+}
+
+function showToast(msg) {
+  const el = document.createElement('div');
+  el.className = 'copy-toast';
+  el.textContent = msg;
+  document.body.appendChild(el);
+  setTimeout(() => el.remove(), 3000);
+}
+
+/* ── Export CSV ────────────────────────────────────────────────────── */
+function exportCSV() {
+  const params = new URLSearchParams(window.location.search);
+  params.set('export', 'csv');
+  window.location.href = `/api/supervisor/breaks?${params.toString()}`;
+}
+
+/* ── Notifications ─────────────────────────────────────────────────── */
+function enableNotifications() {
+  if (!('Notification' in window)) { alert('Browser does not support notifications.'); return; }
+  Notification.requestPermission().then(p => {
+    if (p === 'granted') new Notification('✅ Alerts enabled!', { body: 'You will receive break overtime alerts.' });
+    else alert('Notifications blocked. Please allow them in browser settings.');
+  });
+}
+</script>
+{% endblock %}

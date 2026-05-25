@@ -1,0 +1,258 @@
+{% extends 'base.html' %}
+{% block title %}Analytics{% endblock %}
+{% block page_title %}Analytics Dashboard{% endblock %}
+{% block content %}
+
+<style>
+  .kpi-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px,1fr)); gap: 1rem; margin-bottom: 1.5rem; }
+  .kpi-card { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 1.25rem; box-shadow: var(--card-shadow); position: relative; overflow: hidden; }
+  .kpi-card::after { content:''; position:absolute; right:-10px; top:-10px; width:70px; height:70px; border-radius:50%; background:var(--accent); opacity:.05; }
+  .kpi-label { font-size:.72rem; text-transform:uppercase; letter-spacing:.08em; color:var(--text-muted); font-weight:600; margin-bottom:.4rem; }
+  .kpi-value { font-family:'Outfit',sans-serif; font-size:2rem; font-weight:700; color:var(--text); line-height:1; }
+  .kpi-sub { font-size:.78rem; color:var(--text-muted); margin-top:.2rem; }
+  .chart-card { background:var(--surface); border:1px solid var(--border); border-radius:14px; padding:1.25rem; box-shadow:var(--card-shadow); margin-bottom:1.5rem; }
+  .chart-title { font-family:'Outfit',sans-serif; font-weight:600; font-size:.95rem; margin-bottom:1rem; }
+  .dash-grid-2 { display:grid; grid-template-columns:1fr 1fr; gap:1.5rem; margin-bottom:1.5rem; }
+  .dash-grid-3 { display:grid; grid-template-columns:1fr 1fr 1fr; gap:1.5rem; margin-bottom:1.5rem; }
+  @media(max-width:900px) { .dash-grid-2,.dash-grid-3 { grid-template-columns:1fr; } }
+  .bar-row { display:flex; align-items:center; gap:.75rem; margin-bottom:.5rem; font-size:.83rem; }
+  .bar-label { width:120px; flex-shrink:0; color:var(--text); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .bar-track { flex:1; background:var(--border); border-radius:4px; height:8px; }
+  .bar-fill { height:8px; border-radius:4px; background:var(--accent); }
+  .bar-count { width:35px; text-align:right; color:var(--text-muted); flex-shrink:0; }
+  .recent-row { display:flex; align-items:center; justify-content:space-between; padding:.5rem 0; border-bottom:1px solid var(--border); font-size:.84rem; }
+  .recent-row:last-child { border-bottom:none; }
+  .section-title { font-family:'Outfit',sans-serif; font-size:.75rem; font-weight:600; text-transform:uppercase; letter-spacing:.09em; color:var(--text-muted); margin-bottom:.85rem; }
+</style>
+
+{# ── Filters ────────────────────────────────────────────── #}
+<div class="d-flex align-items-center gap-2 mb-3 flex-wrap">
+  <span class="text-muted small">Data as of <strong>{{ today.strftime('%B %d, %Y') }}</strong>
+  — <span class="text-primary fw-semibold">{{ period_label }}</span></span>
+  <div class="ms-auto d-flex gap-1">
+    {% for p, label in [('weekly','Weekly'),('monthly','Monthly'),('quarterly','Quarterly'),('yearly','Yearly')] %}
+    <a href="{{ url_for('admin_analytics', period=p) }}"
+       class="btn btn-sm {{ 'btn-primary' if period == p else 'btn-outline-secondary' }}">
+      {{ label }}
+    </a>
+    {% endfor %}
+  </div>
+</div>
+
+{# ── KPI Cards ───────────────────────────────────────────── #}
+<div class="kpi-grid">
+  <div class="kpi-card" style="border-left:3px solid var(--accent);">
+    <div class="kpi-label">Active Employees</div>
+    <div class="kpi-value">{{ total_active }}</div>
+    <div class="kpi-sub">Current headcount</div>
+  </div>
+  <div class="kpi-card" style="border-left:3px solid #10b981;">
+    <div class="kpi-label">New Hires (MTD)</div>
+    <div class="kpi-value">{{ new_hires_mtd }}</div>
+    <div class="kpi-sub">This month</div>
+  </div>
+  <div class="kpi-card" style="border-left:3px solid #ef4444;">
+    <div class="kpi-label">Exits (MTD)</div>
+    <div class="kpi-value">{{ exits_mtd }}</div>
+    <div class="kpi-sub">This month</div>
+  </div>
+  <div class="kpi-card" style="border-left:3px solid #f59e0b;">
+    <div class="kpi-label">Attrition Rate</div>
+    <div class="kpi-value">{{ attrition_rate }}%</div>
+    <div class="kpi-sub">{{ exits_ytd }} exits YTD</div>
+  </div>
+  <div class="kpi-card" style="border-left:3px solid #6f42c1;">
+    <div class="kpi-label">WFH</div>
+    <div class="kpi-value">{{ wfh_count }}</div>
+    <div class="kpi-sub">Work from home</div>
+  </div>
+  <div class="kpi-card" style="border-left:3px solid #3b82f6;">
+    <div class="kpi-label">Email Mode</div>
+    <div class="kpi-value">{{ email_mode_count }}</div>
+    <div class="kpi-sub">Active email agents</div>
+  </div>
+  <div class="kpi-card" style="border-left:3px solid #0dcaf0;">
+    <div class="kpi-label">SME</div>
+    <div class="kpi-value">{{ sme_count }}</div>
+    <div class="kpi-sub">Subject matter experts</div>
+  </div>
+</div>
+
+{# ── Trend Chart ─────────────────────────────────────────── #}
+<div class="chart-card">
+  <div class="chart-title">Monthly Hires vs Exits (Last 12 Months)</div>
+  <canvas id="trendChart" height="80"></canvas>
+</div>
+
+{# ── Breakdowns ──────────────────────────────────────────── #}
+<div class="dash-grid-3">
+  {# By Group #}
+  <div class="chart-card mb-0">
+    <div class="chart-title">Headcount by Group</div>
+    {% set max_group = by_group[0].cnt if by_group else 1 %}
+    {% for r in by_group %}
+    <div class="bar-row">
+      <div class="bar-label" title="{{ r.group_name }}">{{ r.group_name }}</div>
+      <div class="bar-track">
+        <div class="bar-fill" style="width:{{ (r.cnt / max_group * 100)|int }}%"></div>
+      </div>
+      <div class="bar-count">{{ r.cnt }}</div>
+    </div>
+    {% endfor %}
+  </div>
+
+  {# By TL #}
+  <div class="chart-card mb-0">
+    <div class="chart-title">Headcount by Team Lead</div>
+    {% set max_tl = by_tl[0].cnt if by_tl else 1 %}
+    {% for r in by_tl %}
+    <div class="bar-row">
+      <div class="bar-label" title="{{ r.tl }}">{{ r.tl }}</div>
+      <div class="bar-track">
+        <div class="bar-fill" style="width:{{ (r.cnt / max_tl * 100)|int }}%;background:#10b981;"></div>
+      </div>
+      <div class="bar-count">{{ r.cnt }}</div>
+    </div>
+    {% endfor %}
+  </div>
+
+  {# By Tenure #}
+  <div class="chart-card mb-0">
+    <div class="chart-title">Headcount by Tenure</div>
+    {% set max_tenure = by_tenure[0].cnt if by_tenure else 1 %}
+    {% for r in by_tenure %}
+    <div class="bar-row">
+      <div class="bar-label" title="{{ r.tenure }}">{{ r.tenure }}</div>
+      <div class="bar-track">
+        <div class="bar-fill" style="width:{{ (r.cnt / max_tenure * 100)|int }}%;background:#f59e0b;"></div>
+      </div>
+      <div class="bar-count">{{ r.cnt }}</div>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+
+<div class="chart-card">
+  <div class="chart-title">Monthly Breakdown</div>
+  <div class="table-responsive">
+    <table class="table table-sm table-hover mb-0">
+      <thead class="table-light">
+        <tr>
+          <th>Month</th>
+          <th class="text-center">Headcount</th>
+          <th class="text-center">New Hires</th>
+          <th class="text-center">Exits</th>
+          <th class="text-center">Promotions</th>
+          <th class="text-center">Attrition Rate</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in monthly_breakdown %}
+        <tr>
+          <td class="fw-semibold">{{ r.month }}</td>
+          <td class="text-center">{{ r.headcount }}</td>
+          <td class="text-center">
+            {% if r.hires > 0 %}<span class="badge bg-success">+{{ r.hires }}</span>{% else %}—{% endif %}
+          </td>
+          <td class="text-center">
+            {% if r.exits > 0 %}<span class="badge bg-danger">{{ r.exits }}</span>{% else %}—{% endif %}
+          </td>
+          <td class="text-center">
+            {% if r.promotions > 0 %}<span class="badge bg-primary">{{ r.promotions }}</span>{% else %}—{% endif %}
+          </td>
+          <td class="text-center">
+            {% if r.attrition > 0 %}
+            <span class="badge {{ 'bg-danger' if r.attrition > 5 else 'bg-warning text-dark' }}">{{ r.attrition }}%</span>
+            {% else %}—{% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+{# ── Recent Activity ──────────────────────────────────────── #}
+<div class="dash-grid-2 mt-3">
+  <div class="chart-card mb-0">
+    <div class="chart-title"><i class="bi bi-person-plus-fill text-success me-2"></i>Recent Hires (Last 30 Days)</div>
+    {% for r in recent_hires %}
+    <div class="recent-row">
+      <div>
+        <div class="fw-semibold">{{ r.schedule_name }}</div>
+        <div class="text-muted small">{{ r.tl or '—' }} · {{ r.group_name or '—' }}</div>
+      </div>
+      <div class="text-muted small">{{ r.operational_date.strftime('%b %d') if r.operational_date }}</div>
+    </div>
+    {% else %}
+    <div class="text-muted small">No new hires in the last 30 days.</div>
+    {% endfor %}
+  </div>
+
+  <div class="chart-card mb-0">
+    <div class="chart-title"><i class="bi bi-person-dash-fill text-danger me-2"></i>Recent Exits (Last 30 Days)</div>
+    {% for r in recent_exits %}
+    <div class="recent-row">
+      <div>
+        <div class="fw-semibold">{{ r.schedule_name }}</div>
+        <div class="text-muted small">{{ r.tl or '—' }} · {{ r.group_name or '—' }}</div>
+      </div>
+      <div class="text-muted small">{{ r.exit_date.strftime('%b %d') if r.exit_date }}</div>
+    </div>
+    {% else %}
+    <div class="text-muted small">No exits in the last 30 days.</div>
+    {% endfor %}
+  </div>
+</div>
+
+
+
+
+
+
+{% endblock %}
+
+{% block scripts %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script>
+const monthlyData = {{ monthly_data | safe }};
+const labels = monthlyData.map(d => d.month);
+const hires  = monthlyData.map(d => d.hires);
+const exits  = monthlyData.map(d => d.exits);
+
+const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+const textColor = isDark ? '#e2e8f4' : '#1a2440';
+const gridColor = isDark ? '#1e3354' : '#e2e8f4';
+
+new Chart(document.getElementById('trendChart'), {
+  type: 'bar',
+  data: {
+    labels: labels,
+    datasets: [
+      {
+        label: 'New Hires',
+        data: hires,
+        backgroundColor: 'rgba(16,185,129,.7)',
+        borderRadius: 6,
+      },
+      {
+        label: 'Exits',
+        data: exits,
+        backgroundColor: 'rgba(239,68,68,.7)',
+        borderRadius: 6,
+      }
+    ]
+  },
+  options: {
+    responsive: true,
+    plugins: {
+      legend: { labels: { color: textColor, font: { family: 'DM Sans' } } }
+    },
+    scales: {
+      x: { ticks: { color: textColor }, grid: { color: gridColor } },
+      y: { ticks: { color: textColor }, grid: { color: gridColor }, beginAtZero: true }
+    }
+  }
+});
+</script>
+{% endblock %}

@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+{% block title %}Access Denied{% endblock %}
+{% block page_title %}Access Denied{% endblock %}
+{% block content %}
+<div class="card text-center p-5" style="max-width:500px;margin:3rem auto;">
+  <h3 class="text-danger mb-3">🚫 Access Denied</h3>
+  <p class="text-muted">You are not authorized to access the Break Log System.</p>
+  <p><strong>Your Account Type:</strong> {{ account_type }}</p>
+  <p class="text-muted">Only Arctic and Numa agents can access this system.</p>
+  <a href="{{ url_for('dashboard') }}" class="btn btn-primary mt-3">← Back to Dashboard</a>
+</div>
+{% endblock %}

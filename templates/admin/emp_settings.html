@@ -1,0 +1,139 @@
+{% extends 'base.html' %}
+{% block title %}Employee Work Mode{% endblock %}
+{% block page_title %}Employee Work Mode Settings{% endblock %}
+{% block content %}
+<div class="card p-3 mb-3">
+  <div class="d-flex align-items-center gap-3 flex-wrap">
+    <span class="small fw-semibold">Bulk Update:</span>
+    <form method="POST" class="d-flex gap-2 align-items-center flex-wrap mb-0"
+          onsubmit="return confirm('Change all employees in this group?');">
+      <input type="hidden" name="action" value="bulk">
+      <select name="bulk_group" class="form-select form-select-sm" style="width:auto;" required>
+        <option value="">Select Group...</option>
+        {% for g in groups %}
+        <option value="{{ g }}">{{ g }}</option>
+        {% endfor %}
+      </select>
+      <select name="bulk_mode" class="form-select form-select-sm" style="width:auto;" required>
+        <option value="">Select Mode...</option>
+        <option value="global">Use Global Default</option>
+        <option value="4day">4-Day (10 hrs)</option>
+        <option value="5day">5-Day (8 hrs)</option>
+      </select>
+      <button type="submit" class="btn btn-sm btn-primary">Apply to All</button>
+    </form>
+  </div>
+</div>
+<div class="card p-3 mb-3" style="border-left:3px solid var(--accent);">
+  <div class="small text-muted">
+    <i class="bi bi-info-circle me-1"></i>
+    Global default is currently <strong>{{ '4-Day' if global_mode == '4day' else '5-Day' }}</strong>.
+    Employees with no individual setting will use this default.
+  </div>
+</div>
+<div class="card">
+  <div class="p-3 border-bottom d-flex gap-2 align-items-center flex-wrap">
+    <form method="GET" class="d-flex gap-2 align-items-center flex-wrap mb-0">
+      <input type="text" name="search" class="form-control form-control-sm"
+             placeholder="Search name or ID..." id="empSearch" style="max-width:220px;"
+             value="{{ search }}">
+      <select name="group" class="form-select form-select-sm" style="width:auto;">
+        <option value="">All Groups</option>
+        {% for g in groups %}
+        <option value="{{ g }}" {% if g == group_filter %}selected{% endif %}>{{ g }}</option>
+        {% endfor %}
+      </select>
+      <select id="modeFilter" class="form-select form-select-sm" style="width:auto;" onchange="filterTable()">
+        <option value="">All Modes</option>
+        <option value="4day">4-Day</option>
+        <option value="5day">5-Day</option>
+        <option value="global">Using Global</option>
+      </select>
+      <button type="submit" class="btn btn-sm btn-primary">Filter</button>
+      {% if group_filter or search %}
+      <a href="{{ url_for('admin_emp_settings') }}" class="btn btn-sm btn-outline-secondary">Clear</a>
+      {% endif %}
+    </form>
+    <span id="empCount" class="text-muted small ms-auto"></span>
+  </div>
+  <div class="table-responsive">
+    <table class="table table-hover mb-0">
+      <thead class="table-light">
+          <tr>
+            <th>Employee</th>
+            <th>Employee ID</th>
+            <th>Group</th>
+            <th>Current Mode</th>
+            <th>Change To</th>
+          </tr>
+        </thead>
+      <tbody>
+        {% for e in employees %}
+        <tr>
+          <td>{{ e.emp_lastname }}, {{ e.emp_firstname }}</td>
+          <td class="text-muted small">{{ e.employee_id }}</td>
+          <td><span class="badge" style="background:var(--bg);color:var(--text-muted);border:1px solid var(--border);">{{ e.group_name or '—' }}</span></td>
+          <td>
+            {% if e.individual_mode %}
+              <span class="badge {% if e.individual_mode == '4day' %}bg-primary{% else %}bg-success{% endif %}">
+                {{ '4-Day' if e.individual_mode == '4day' else '5-Day' }} (Individual)
+              </span>
+            {% else %}
+              <span class="badge bg-secondary">{{ '4-Day' if global_mode == '4day' else '5-Day' }} (Global)</span>
+            {% endif %}
+          </td>
+          <td>
+            <form method="POST" class="d-flex gap-2 align-items-center">
+              <input type="hidden" name="employee_id" value="{{ e.employee_id }}">
+              <select name="work_mode" class="form-select form-select-sm" style="width:auto;">
+                <option value="global" {% if not e.individual_mode %}selected{% endif %}>Use Global Default</option>
+                <option value="4day"   {% if e.individual_mode == '4day' %}selected{% endif %}>4-Day (10 hrs)</option>
+                <option value="5day"   {% if e.individual_mode == '5day' %}selected{% endif %}>5-Day (8 hrs)</option>
+              </select>
+              <button type="submit" class="btn btn-sm btn-primary">Save</button>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+{% block scripts %}
+<script>
+function filterTable() {
+  const search = document.getElementById('empSearch').value.toLowerCase();
+  const modeEl = document.getElementById('modeFilter');
+  const mode   = modeEl.value;
+  localStorage.setItem('empSettingsModeFilter', mode);
+  const rows   = document.querySelectorAll('tbody tr');
+  let count    = 0;
+
+  rows.forEach(row => {
+    const name   = row.children[0].textContent.toLowerCase();
+    const empid  = row.children[1].textContent.toLowerCase();
+    const badge  = row.children[3].textContent.toLowerCase();
+
+    const matchSearch = !search || name.includes(search) || empid.includes(search);
+    const matchMode   = !mode
+      || (mode === 'global'  && badge.includes('global'))
+      || (mode === '4day'    && badge.includes('4-day'))
+      || (mode === '5day'    && badge.includes('5-day'));
+
+    const show = matchSearch && matchMode;
+    row.style.display = show ? '' : 'none';
+    if (show) count++;
+  });
+
+  document.getElementById('empCount').textContent = `${count} employee${count !== 1 ? 's' : ''}`;
+}
+
+// Restore mode filter from localStorage
+const savedMode = localStorage.getItem('empSettingsModeFilter');
+if (savedMode) document.getElementById('modeFilter').value = savedMode;
+// Init count on load
+filterTable();
+</script>
+{% endblock %}
+{% endblock %}

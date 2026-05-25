@@ -1,0 +1,537 @@
+{% extends 'base.html' %}
+{% block title %}{{ report.report_number }}{% endblock %}
+
+{% block content %}
+<style>
+  .ir-view-wrap { max-width:880px; margin:0 auto; }
+  .ir-back { color:var(--text-muted); font-size:13px; text-decoration:none;
+             display:inline-flex; align-items:center; gap:5px; margin-bottom:16px; }
+  .ir-back:hover { color:var(--accent); }
+  .ir-view-header {
+    background:var(--surface); border-radius:14px; padding:24px 28px;
+    box-shadow:var(--card-shadow); margin-bottom:16px;
+    display:flex; justify-content:space-between; align-items:flex-start; gap:16px;
+  }
+  .ir-report-num { font-family:'Outfit',sans-serif; font-size:22px; font-weight:700; color:var(--text); }
+  .ir-badge { display:inline-block; padding:4px 12px; border-radius:20px;
+              font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.4px; }
+  .ir-badge-pending     { background:#fef3c7; color:#92400e; }
+  .ir-badge-reviewed    { background:#dbeafe; color:#1e40af; }
+  .ir-badge-resolved    { background:#d1fae5; color:#065f46; }
+  .ir-badge-pending_hr  { background:#fee2e2; color:#991b1b; }
+  .ir-badge-resolved_hr { background:#f3f4f6; color:#374151; }
+  .ir-section {
+    background:var(--surface); border-radius:14px; padding:24px 28px;
+    box-shadow:var(--card-shadow); margin-bottom:16px;
+  }
+  .ir-section-title {
+    font-family:'Outfit',sans-serif; font-size:14px; font-weight:700;
+    color:var(--text-muted); text-transform:uppercase; letter-spacing:.6px;
+    margin-bottom:16px; display:flex; align-items:center; gap:8px;
+  }
+  .ir-field-lbl { font-size:11px; font-weight:600; color:var(--text-muted);
+                  text-transform:uppercase; letter-spacing:.4px; margin-bottom:4px; }
+  .ir-field-val { font-size:14px; color:var(--text); }
+  .ir-summary-box {
+    background:var(--bg); border-left:3px solid var(--accent);
+    padding:16px; border-radius:8px; font-size:14px; line-height:1.7; color:var(--text);
+  }
+  .edited-note { font-size:11px; color:var(--text-muted); font-style:italic; margin-left:8px; }
+  .history-link { color:var(--accent); font-size:11px; text-decoration:none; }
+  .history-link:hover { text-decoration:underline; }
+  .btn-ir-edit {
+    background:none; border:1px solid var(--border); color:var(--text-muted);
+    padding:3px 10px; border-radius:6px; font-size:12px; cursor:pointer;
+    transition:all .2s; display:inline-flex; align-items:center; gap:4px;
+  }
+  .btn-ir-edit:hover { border-color:var(--accent); color:var(--accent); }
+  .form-control, .form-select {
+    background:var(--input-bg); border:1px solid var(--border);
+    color:var(--text); border-radius:8px; font-size:13px;
+  }
+  .form-control:focus, .form-select:focus {
+    border-color:var(--accent); box-shadow:0 0 0 3px rgba(30,95,212,.12);
+    background:var(--input-bg); color:var(--text);
+  }
+  /* Attachments */
+  .attach-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(160px,1fr));
+                 gap:12px; margin-top:12px; }
+  .attach-item { border-radius:10px; overflow:hidden; cursor:pointer;
+                 border:2px solid var(--border); transition:all .2s; }
+  .attach-item:hover { border-color:var(--accent); transform:scale(1.03); }
+  .attach-item img { width:100%; height:160px; object-fit:cover; display:block; }
+  .attach-info { background:var(--bg); padding:6px 8px; font-size:11px;
+                 color:var(--text-muted); text-align:center; }
+  /* Comments */
+  .comment-item {
+    background:var(--bg); border-radius:10px; padding:16px;
+    margin-bottom:12px; border-left:3px solid var(--border); transition:all .2s;
+  }
+  .comment-item:hover { border-left-color:var(--accent); }
+  .c-author { font-weight:700; color:var(--text); font-size:14px; }
+  .c-date   { font-size:11px; color:var(--text-muted); }
+  .c-body   { font-size:13px; color:var(--text); margin-top:8px; line-height:1.6; }
+  .btn-c-edit { background:none; border:none; color:var(--text-muted); font-size:11px;
+                cursor:pointer; padding:0 6px; }
+  .btn-c-edit:hover { color:var(--accent); }
+  .c-attach-wrap { margin-top:10px; padding-top:10px; border-top:1px solid var(--border); }
+  .c-thumb { display:inline-block; margin:3px; border:2px solid var(--border);
+             border-radius:6px; overflow:hidden; cursor:pointer; transition:all .2s; }
+  .c-thumb:hover { border-color:var(--accent); transform:scale(1.05); }
+  .c-thumb img { width:80px; height:80px; object-fit:cover; display:block; }
+  /* Comment form */
+  .comment-form {
+    background:var(--bg); border:1px solid var(--border); border-radius:12px; padding:20px;
+  }
+  .comment-form-title { font-family:'Outfit',sans-serif; font-size:14px; font-weight:700;
+                        color:var(--text); margin-bottom:14px; }
+  /* Preview in comment */
+  .preview-wrap { display:flex; gap:8px; flex-wrap:wrap; margin-top:8px; }
+  .preview-item { position:relative; width:80px; height:80px;
+                  border:2px solid var(--border); border-radius:8px; overflow:hidden; }
+  .preview-item img { width:100%; height:100%; object-fit:cover; }
+  .preview-item .rm { position:absolute; top:2px; right:2px; background:var(--danger);
+                      color:white; border:none; border-radius:50%; width:18px; height:18px;
+                      cursor:pointer; font-size:11px; line-height:1;
+                      display:flex; align-items:center; justify-content:center; }
+  .btn-ir-submit {
+    background:var(--accent); color:#fff; border:none; padding:9px 24px;
+    border-radius:8px; font-weight:600; font-size:13px;
+    transition:opacity .2s; display:inline-flex; align-items:center; gap:6px;
+  }
+  .btn-ir-submit:hover { opacity:.88; color:#fff; }
+  /* Lightbox */
+  .lightbox { display:none; position:fixed; inset:0; z-index:9999;
+              background:rgba(0,0,0,.85); justify-content:center; align-items:center; }
+  .lightbox.on { display:flex; }
+  .lightbox img { max-width:90%; max-height:90%; object-fit:contain; border-radius:8px; }
+  .lb-close { position:absolute; top:16px; right:24px; color:white; font-size:36px;
+              cursor:pointer; background:none; border:none; opacity:.8; }
+  .lb-close:hover { opacity:1; }
+  /* History modal */
+  .old-val { background:#fee2e2; padding:8px; border-radius:6px; color:#991b1b; font-size:13px; }
+  .new-val { background:#d1fae5; padding:8px; border-radius:6px; color:#065f46; font-size:13px; margin-top:6px; }
+  .history-entry { background:var(--bg); border-radius:8px; padding:14px;
+                   margin-bottom:10px; border-left:3px solid var(--accent); }
+  .history-entry-header { font-size:12px; font-weight:600; color:var(--text);
+                          display:flex; justify-content:space-between; margin-bottom:8px; }
+  .divider { border:none; border-top:1px solid var(--border); margin:20px 0; }
+  .btn-sm-outline { background:none; border:1px solid var(--border); color:var(--text-muted);
+                    padding:3px 10px; border-radius:6px; font-size:12px; cursor:pointer; }
+  .btn-sm-outline:hover { border-color:var(--accent); color:var(--accent); }
+  .btn-sm-success { background:var(--success); color:#fff; border:none;
+                    padding:4px 12px; border-radius:6px; font-size:12px; cursor:pointer; }
+</style>
+
+<div class="ir-view-wrap">
+
+  <a href="{{ url_for('incident_reports.dashboard') }}" class="ir-back">
+    <i class="bi bi-arrow-left"></i> Back to Dashboard
+  </a>
+
+  {# Header #}
+  <div class="ir-view-header">
+    <div>
+      <div class="ir-report-num">
+        <i class="bi bi-clipboard2-pulse me-2" style="color:var(--accent);font-size:20px;"></i>
+        {{ report.report_number }}
+      </div>
+      <div class="mt-2">
+        <span class="ir-badge ir-badge-{{ report.status }}">
+          {{ report.status.replace('_',' ').upper() }}
+        </span>
+      </div>
+    </div>
+    <div class="d-flex gap-2 d-print-none flex-wrap">
+      <button class="btn-sm-outline" onclick="window.print()">
+        <i class="bi bi-printer me-1"></i>Print
+      </button>
+    </div>
+  </div>
+
+  {# Details #}
+  <div class="ir-section">
+    <div class="ir-section-title"><i class="bi bi-info-circle"></i>Report Details</div>
+    <div class="row g-4">
+      <div class="col-md-6">
+        <div class="ir-field-lbl">Date of Incident</div>
+        <div id="date-display">
+          <div class="ir-field-val">
+            <i class="bi bi-calendar3 me-1" style="color:var(--accent);"></i>
+            {{ report.incident_date.strftime('%B %d, %Y') if report.incident_date else '—' }}
+          </div>
+          {% if can_edit_report %}
+          <button class="btn-ir-edit mt-1 d-print-none" onclick="toggleEdit('date',true)">
+            <i class="bi bi-pencil"></i>Edit
+          </button>
+          {% endif %}
+        </div>
+        <div id="date-edit" style="display:none;" class="mt-1">
+          <input type="date" id="dateInput" class="form-control form-control-sm"
+                 value="{{ report.incident_date }}" max="{{ today }}">
+          <div class="d-flex gap-1 mt-1">
+            <button class="btn-sm-success" onclick="saveDate()">Save</button>
+            <button class="btn-sm-outline" onclick="toggleEdit('date',false)">Cancel</button>
+          </div>
+        </div>
+      </div>
+      <div class="col-md-6">
+        <div class="ir-field-lbl">Reported On</div>
+        <div class="ir-field-val">
+          <i class="bi bi-clock me-1" style="color:var(--accent);"></i>
+          {{ report.created_at.strftime('%B %d, %Y %I:%M %p') if report.created_at else '—' }}
+        </div>
+      </div>
+      <div class="col-md-6">
+        <div class="ir-field-lbl">Agent Involved</div>
+        <div class="ir-field-val">
+          <i class="bi bi-person me-1" style="color:var(--accent);"></i>
+          {{ report.employee_name }}
+          <span style="color:var(--text-muted);font-size:12px;">({{ report.employee_id }})</span>
+        </div>
+      </div>
+      <div class="col-md-6">
+        <div class="ir-field-lbl">Filed By</div>
+        <div class="ir-field-val">
+          <i class="bi bi-pencil-square me-1" style="color:var(--accent);"></i>
+          {{ report.submitted_by_name or 'N/A' }}
+          <span style="color:var(--text-muted);font-size:12px;">({{ report.submitted_by_id or '' }})</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  {# Summary #}
+  <div class="ir-section">
+    <div class="ir-section-title">
+      <i class="bi bi-file-text"></i>Incident Summary
+      {% if report.edited_at %}
+      <span class="edited-note">
+        Edited {{ report.edited_at.strftime('%b %d, %Y %I:%M %p') if report.edited_at else '' }}
+        — <a href="#" onclick="showHistory('report',{{ report.id }});return false;" class="history-link">view history</a>
+      </span>
+      {% endif %}
+    </div>
+    <div class="ir-summary-box" id="summary-display">
+      {{ report.summary | nl2br | safe }}
+    </div>
+    {% if can_edit_report %}
+    <button class="btn-ir-edit mt-2 d-print-none" id="editSumBtn" onclick="toggleEdit('summary',true)">
+      <i class="bi bi-pencil"></i>Edit Summary
+    </button>
+    {% endif %}
+    <div id="summary-edit" style="display:none;" class="mt-2">
+      <textarea id="summaryTA" class="form-control" rows="6">{{ report.summary }}</textarea>
+      <div class="d-flex gap-1 mt-2">
+        <button class="btn-sm-success" onclick="saveSummary()">Save</button>
+        <button class="btn-sm-outline" onclick="toggleEdit('summary',false)">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  {# Attachments #}
+  {% if attachments %}
+  <div class="ir-section">
+    <div class="ir-section-title">
+      <i class="bi bi-paperclip"></i>Attachments ({{ attachments|length }})
+    </div>
+    <div class="attach-grid">
+      {% for att in attachments %}
+      <div class="attach-item" onclick="openLB('{{ url_for('incident_reports.serve_upload', filename=att.file_name) }}')">
+        <img src="{{ url_for('incident_reports.serve_upload', filename=att.file_name) }}" alt="">
+        <div class="attach-info">{{ (att.file_size/1024)|int }} KB</div>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+
+  {# Comments #}
+  <div class="ir-section d-print-none">
+    <div class="ir-section-title"><i class="bi bi-chat-dots"></i>Comments & Updates</div>
+
+    {% if not comments %}
+    <p style="color:var(--text-muted);font-size:13px;font-style:italic;">No comments yet.</p>
+    {% else %}
+    {% for c in comments %}
+    <div class="comment-item">
+      <div class="d-flex justify-content-between align-items-start">
+        <div>
+          <span class="c-author">{{ c.employee_name }}</span>
+          <span class="badge bg-secondary ms-1" style="font-size:10px;">{{ c.employee_id }}</span>
+          {% if c.edited_at %}
+          <span class="edited-note">(Edited —
+            <a href="#" onclick="showHistory('comment',{{ c.id }});return false;" class="history-link">history</a>)
+          </span>
+          {% endif %}
+        </div>
+        <div class="d-flex align-items-center gap-1">
+          <span class="c-date">{{ c.created_at.strftime('%b %d, %Y %I:%M %p') if c.created_at else '' }}</span>
+          {% if user.is_admin or c.employee_id == user.employee_id %}
+          <button class="btn-c-edit" onclick="toggleCEdit({{ c.id }},true)">
+            <i class="bi bi-pencil"></i>
+          </button>
+          {% endif %}
+        </div>
+      </div>
+      <div class="c-body" id="c-display-{{ c.id }}">{{ c.comment | nl2br | safe }}</div>
+      <div id="c-edit-{{ c.id }}" style="display:none;" class="mt-2">
+        <textarea id="c-ta-{{ c.id }}" class="form-control" rows="4">{{ c.comment }}</textarea>
+        <div class="d-flex gap-1 mt-1">
+          <button class="btn-sm-success" onclick="saveComment({{ c.id }})">Save</button>
+          <button class="btn-sm-outline" onclick="toggleCEdit({{ c.id }},false)">Cancel</button>
+        </div>
+      </div>
+      {% if comment_attachments.get(c.id) %}
+      <div class="c-attach-wrap">
+        <div style="font-size:11px;color:var(--text-muted);font-weight:600;margin-bottom:4px;">
+          <i class="bi bi-paperclip me-1"></i>Attachments
+        </div>
+        {% for ca in comment_attachments[c.id] %}
+        <div class="c-thumb" onclick="openLB('{{ url_for('incident_reports.serve_upload', filename=ca.file_name) }}')">
+          <img src="{{ url_for('incident_reports.serve_upload', filename=ca.file_name) }}" alt="">
+        </div>
+        {% endfor %}
+      </div>
+      {% endif %}
+    </div>
+    {% endfor %}
+    {% endif %}
+
+    {# Add Comment #}
+    <div class="comment-form mt-3">
+      <div class="comment-form-title"><i class="bi bi-chat-left-text me-2"></i>Add a Comment</div>
+      <form id="commentForm">
+        <input type="hidden" name="report_number" value="{{ report.report_number }}">
+        <div class="mb-3">
+          <textarea class="form-control" name="comment" rows="4" required
+                    placeholder="Coaching notes, updates, or relevant information…"></textarea>
+        </div>
+        <div class="mb-3">
+          <label style="font-size:12px;font-weight:600;color:var(--text-muted);">
+            <i class="bi bi-paperclip me-1"></i>Attachments (optional, up to 4)
+          </label>
+          <input type="file" class="form-control form-control-sm mt-1" id="cAttachInput"
+                 multiple accept="image/*">
+          <div class="preview-wrap" id="cPreviewWrap"></div>
+        </div>
+        {% if user.is_admin or user.is_supervisor or user.is_hr or user.is_sga %}
+        <div class="mb-3">
+          <label style="font-size:12px;font-weight:600;color:var(--text-muted);">
+            <i class="bi bi-arrow-repeat me-1"></i>Update Status (optional)
+          </label>
+          <select class="form-select form-select-sm mt-1" name="status_action">
+            <option value="">Post comment only</option>
+            {% if not user.is_hr and not user.is_sga %}
+            <option value="reviewed">Mark as Reviewed</option>
+            <option value="resolved">Mark as Resolved ✅</option>
+            <option value="pending_hr">📋 Mark as Pending HR</option>
+            <option value="resolved_hr">✅ Mark as Resolved HR</option>
+            {% else %}
+            <option value="pending_hr">📋 Mark as Pending HR</option>
+            <option value="resolved_hr">✅ Mark as Resolved HR</option>
+            {% endif %}
+          </select>
+        </div>
+        {% endif %}
+        <div class="d-flex justify-content-end">
+          <button type="submit" class="btn-ir-submit" id="commentBtn">
+            <span id="cBtnText"><i class="bi bi-send"></i>Post Comment</span>
+            <span id="cBtnSpin" class="spinner-border spinner-border-sm d-none"></span>
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+</div>
+
+{# Lightbox #}
+<div id="lightbox" class="lightbox">
+  <button class="lb-close" onclick="closeLB()">×</button>
+  <img id="lbImg" src="" alt="">
+</div>
+
+{# History Modal #}
+<div class="modal fade" id="historyModal" tabindex="-1">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content" style="background:var(--surface);color:var(--text);border:1px solid var(--border);">
+      <div class="modal-header" style="background:var(--accent);color:#fff;border:none;">
+        <h6 class="modal-title fw-bold"><i class="bi bi-clock-history me-2"></i>Edit History</h6>
+        <button class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body" id="historyBody">
+        <div class="text-center py-4">
+          <div class="spinner-border" style="color:var(--accent);"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+const REPORT_ID  = {{ report.id }};
+const REPORT_NUM = "{{ report.report_number }}";
+const TODAY      = "{{ today }}";
+let cCompressed  = [];
+
+// Lightbox
+function openLB(src){ document.getElementById('lbImg').src=src; document.getElementById('lightbox').classList.add('on'); }
+function closeLB(){ document.getElementById('lightbox').classList.remove('on'); }
+document.addEventListener('keydown',e=>{ if(e.key==='Escape') closeLB(); });
+document.addEventListener('click',e=>{
+  if(e.target.classList.contains('attach-item')||e.target.closest('.attach-item')){
+    const img=e.target.closest('.attach-item')?.querySelector('img');
+    if(img) openLB(img.src);
+  }
+  if(e.target.classList.contains('c-thumb')||e.target.closest('.c-thumb')){
+    const img=e.target.closest('.c-thumb')?.querySelector('img');
+    if(img) openLB(img.src);
+  }
+});
+
+// Edit toggles
+function toggleEdit(type,show){
+  if(type==='date'){
+    document.getElementById('date-display').style.display=show?'none':'';
+    document.getElementById('date-edit').style.display=show?'':'none';
+  } else {
+    document.getElementById('summary-display').style.display=show?'none':'';
+    document.getElementById('summary-edit').style.display=show?'':'none';
+    const b=document.getElementById('editSumBtn');
+    if(b) b.style.display=show?'none':'';
+  }
+}
+
+async function saveDate(){
+  const fd=new FormData();
+  fd.append('report_id',REPORT_ID);
+  fd.append('incident_date',document.getElementById('dateInput').value);
+  fd.append('summary',document.getElementById('summaryTA').value||
+            document.getElementById('summary-display').textContent.trim());
+  const r=await fetch('{{ url_for("incident_reports.edit_report") }}',{method:'POST',body:fd});
+  const d=await r.json();
+  if(d.success) location.reload(); else alert('Error: '+d.message);
+}
+
+async function saveSummary(){
+  const fd=new FormData();
+  fd.append('report_id',REPORT_ID);
+  fd.append('summary',document.getElementById('summaryTA').value);
+  fd.append('incident_date','{{ report.incident_date }}');
+  const r=await fetch('{{ url_for("incident_reports.edit_report") }}',{method:'POST',body:fd});
+  const d=await r.json();
+  if(d.success) location.reload(); else alert('Error: '+d.message);
+}
+
+function toggleCEdit(id,show){
+  document.getElementById('c-display-'+id).style.display=show?'none':'';
+  document.getElementById('c-edit-'+id).style.display=show?'':'none';
+}
+
+async function saveComment(id){
+  const fd=new FormData();
+  fd.append('comment_id',id);
+  fd.append('comment',document.getElementById('c-ta-'+id).value);
+  const r=await fetch('{{ url_for("incident_reports.edit_comment") }}',{method:'POST',body:fd});
+  const d=await r.json();
+  if(d.success) location.reload(); else alert('Error: '+d.message);
+}
+
+// Edit history modal
+async function showHistory(type,id){
+  const modal=new bootstrap.Modal(document.getElementById('historyModal'));
+  document.getElementById('historyBody').innerHTML=
+    '<div class="text-center py-4"><div class="spinner-border" style="color:var(--accent);"></div></div>';
+  modal.show();
+  try{
+    const r=await fetch(`{{ url_for("incident_reports.edit_history") }}?type=${type}&id=${id}`);
+    const d=await r.json();
+    if(!d.success||!d.history.length){
+      document.getElementById('historyBody').innerHTML=
+        '<p class="text-center" style="color:var(--text-muted);">No history available.</p>';
+      return;
+    }
+    let html='';
+    d.history.forEach(h=>{
+      html+=`<div class="history-entry">
+        <div class="history-entry-header">
+          <span>${h.editor_name||'Unknown'} edited <em>${type==='report'?h.field_name:'this comment'}</em></span>
+          <span style="color:var(--text-muted);font-size:11px;">${new Date(h.edited_at).toLocaleString()}</span>
+        </div>
+        <div class="old-val">${type==='report'?(h.old_value||'(empty)'):(h.old_content||'').replace(/\n/g,'<br>')}</div>
+        <div class="new-val">${type==='report'?(h.new_value||'(empty)'):(h.new_content||'').replace(/\n/g,'<br>')}</div>
+      </div>`;
+    });
+    document.getElementById('historyBody').innerHTML=html;
+  } catch(e){
+    document.getElementById('historyBody').innerHTML=
+      '<p class="text-center text-danger">Error loading history.</p>';
+  }
+}
+
+// Comment attachments
+document.getElementById('cAttachInput').addEventListener('change',async function(e){
+  const files=Array.from(e.target.files);
+  if(files.length+cCompressed.length>4){alert('Max 4 images.');e.target.value='';return;}
+  for(const f of files){
+    if(!f.type.startsWith('image/')) continue;
+    cCompressed.push(await compressImage(f));
+  }
+  renderCPreviews(); e.target.value='';
+});
+
+async function compressImage(file){
+  return new Promise(resolve=>{
+    const reader=new FileReader();
+    reader.onload=e=>{
+      const img=new Image();
+      img.onload=()=>{
+        let [w,h]=[img.width,img.height]; const max=1920;
+        if(w>max||h>max){if(w>h){h=h/w*max;w=max;}else{w=w/h*max;h=max;}}
+        const cv=document.createElement('canvas'); cv.width=w; cv.height=h;
+        cv.getContext('2d').drawImage(img,0,0,w,h);
+        cv.toBlob(blob=>{
+          resolve({file:new File([blob],file.name,{type:'image/jpeg'}),
+                   preview:cv.toDataURL('image/jpeg',.8)});
+        },'image/jpeg',.8);
+      };
+      img.src=e.target.result;
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
+function renderCPreviews(){
+  const wrap=document.getElementById('cPreviewWrap'); wrap.innerHTML='';
+  cCompressed.forEach((item,i)=>{
+    const div=document.createElement('div'); div.className='preview-item';
+    const img=document.createElement('img'); img.src=item.preview;
+    const rm=document.createElement('button'); rm.className='rm'; rm.type='button';
+    rm.innerHTML='×'; rm.onclick=()=>{cCompressed.splice(i,1);renderCPreviews();};
+    div.append(img,rm); wrap.appendChild(div);
+  });
+}
+
+// Submit comment
+document.getElementById('commentForm').addEventListener('submit',async function(e){
+  e.preventDefault();
+  const ta=this.querySelector('[name="comment"]');
+  const sa=this.querySelector('[name="status_action"]');
+  if(sa&&sa.value&&!ta.value.trim()){alert('Comment required when updating status.');ta.focus();return;}
+  if(!ta.value.trim()){alert('Please enter a comment.');ta.focus();return;}
+  const btn=document.getElementById('commentBtn');
+  const txt=document.getElementById('cBtnText');
+  const spin=document.getElementById('cBtnSpin');
+  btn.disabled=true; txt.classList.add('d-none'); spin.classList.remove('d-none');
+  const fd=new FormData(this);
+  cCompressed.forEach(item=>fd.append('comment_attachments[]',item.file));
+  try{
+    const r=await fetch('{{ url_for("incident_reports.add_comment") }}',{method:'POST',body:fd});
+    const d=await r.json();
+    if(d.success) location.reload(); else alert('❌ '+d.message);
+  } catch(err){ alert('❌ Error: '+err.message); }
+  finally{ btn.disabled=false; txt.classList.remove('d-none'); spin.classList.add('d-none'); }
+});
+</script>
+{% endblock %}

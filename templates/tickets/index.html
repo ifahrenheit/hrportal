@@ -1,0 +1,177 @@
+{% extends 'base.html' %}
+{% block title %}My Tickets{% endblock %}
+
+{% block content %}
+<div class="container-fluid px-4 py-3">
+
+  {# Flash messages #}
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% for cat, msg in messages %}
+      <div class="alert alert-{{ cat }} alert-dismissible fade show py-2" role="alert">
+        {{ msg }}<button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+      </div>
+    {% endfor %}
+  {% endwith %}
+
+  <div class="row g-4">
+
+    {# ── File a Ticket ── #}
+    <div class="col-lg-4">
+      <div class="card shadow-sm border-0 h-100">
+        <div class="card-header bg-primary text-white fw-semibold">
+          <i class="bi bi-plus-circle me-1"></i> File a Ticket
+        </div>
+        <div class="card-body">
+          <form method="POST" action="{{ url_for('tickets_submit') }}">
+
+            {# Team #}
+            <div class="mb-3">
+              <label class="form-label small fw-semibold">Team <span class="text-danger">*</span></label>
+              <div class="d-flex gap-3">
+                <div class="form-check">
+                  <input class="form-check-input" type="radio" name="team" id="teamIT" value="IT" checked>
+                  <label class="form-check-label" for="teamIT">💻 IT</label>
+                </div>
+                <div class="form-check">
+                  <input class="form-check-input" type="radio" name="team" id="teamHR" value="HR">
+                  <label class="form-check-label" for="teamHR">🧑‍💼 HR</label>
+                </div>
+              </div>
+            </div>
+
+            {# Category — filtered by JS #}
+            <div class="mb-3">
+              <label class="form-label small fw-semibold">Category <span class="text-danger">*</span></label>
+              <select name="category_id" id="categorySelect" class="form-select form-select-sm" required>
+                <option value="">— Select —</option>
+                {% for cat in categories %}
+                  <option value="{{ cat.id }}" data-team="{{ cat.team }}">{{ cat.name }}</option>
+                {% endfor %}
+              </select>
+            </div>
+
+            {# Subject #}
+            <div class="mb-3">
+              <label class="form-label small fw-semibold">Subject <span class="text-danger">*</span></label>
+              <input type="text" name="subject" class="form-control form-control-sm"
+                     placeholder="Brief description of the issue" required maxlength="255">
+            </div>
+
+            {# Description #}
+            <div class="mb-3">
+              <label class="form-label small fw-semibold">Details</label>
+              <textarea name="description" class="form-control form-control-sm" rows="4"
+                        placeholder="Steps to reproduce, error messages, etc."></textarea>
+            </div>
+
+            {# Priority #}
+            <div class="mb-3">
+              <label class="form-label small fw-semibold">Priority</label>
+              <select name="priority" class="form-select form-select-sm">
+                <option value="Low">Low</option>
+                <option value="Normal" selected>Normal</option>
+                <option value="High">High</option>
+                <option value="Urgent">Urgent</option>
+              </select>
+            </div>
+
+            <button type="submit" class="btn btn-primary btn-sm w-100">
+              <i class="bi bi-send me-1"></i>Submit Ticket
+            </button>
+          </form>
+        </div>
+      </div>
+    </div>
+
+    {# ── My Tickets ── #}
+    <div class="col-lg-8">
+      <div class="card shadow-sm border-0">
+        <div class="card-header d-flex align-items-center justify-content-between">
+          <span class="fw-semibold"><i class="bi bi-ticket-perforated me-1"></i>My Tickets</span>
+          <div class="d-flex gap-2">
+            {% set statuses = ['','Open','In Progress','Pending','Resolved','Closed'] %}
+            <select class="form-select form-select-sm" style="width:auto"
+                    onchange="location.href='{{ url_for('tickets_index') }}?status='+this.value">
+              {% for s in statuses %}
+                <option value="{{ s }}" {% if s == status_filter %}selected{% endif %}>
+                  {{ s if s else 'All Status' }}
+                </option>
+              {% endfor %}
+            </select>
+          </div>
+        </div>
+
+        {% if my_tickets %}
+        <div class="table-responsive">
+          <table class="table table-hover table-sm align-middle mb-0">
+            <thead class="table-light small">
+              <tr>
+                <th>Ticket #</th>
+                <th>Team</th>
+                <th>Category</th>
+                <th>Subject</th>
+                <th>Priority</th>
+                <th>Status</th>
+                <th>Filed</th>
+              </tr>
+            </thead>
+            <tbody class="small">
+              {% for t in my_tickets %}
+              <tr class="cursor-pointer" onclick="location.href='{{ url_for('ticket_detail', ticket_number=t.ticket_number) }}'">
+                <td class="font-monospace text-primary fw-semibold">{{ t.ticket_number }}</td>
+                <td>
+                  <span class="badge {% if t.team == 'IT' %}bg-info text-dark{% else %}bg-warning text-dark{% endif %}">
+                    {{ t.team }}
+                  </span>
+                </td>
+                <td>{{ t.category_name }}</td>
+                <td>{{ t.subject }}</td>
+                <td>
+                  {% set pc = {'Low':'secondary','Normal':'info','High':'warning','Urgent':'danger'} %}
+                  <span class="badge bg-{{ pc.get(t.priority,'secondary') }}">{{ t.priority }}</span>
+                </td>
+                <td>
+                  {% set sc = {'Open':'primary','In Progress':'warning','Pending':'secondary','Resolved':'success','Closed':'dark'} %}
+                  <span class="badge bg-{{ sc.get(t.status,'secondary') }}">{{ t.status }}</span>
+                </td>
+                <td class="text-muted">
+                  {{ t.created_at.strftime('%b %d, %Y') if t.created_at else '—' }}
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        {% else %}
+        <div class="card-body text-center text-muted py-5">
+          <i class="bi bi-ticket fs-1 d-block mb-2 opacity-25"></i>
+          No tickets found.
+        </div>
+        {% endif %}
+
+      </div>
+    </div>
+
+  </div>{# /row #}
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// Filter category dropdown by selected team
+function filterCategories() {
+  const team = document.querySelector('input[name="team"]:checked').value;
+  const sel  = document.getElementById('categorySelect');
+  sel.value  = '';
+  Array.from(sel.options).forEach(opt => {
+    if (!opt.value) return; // keep placeholder
+    opt.hidden = opt.dataset.team !== team;
+  });
+}
+
+document.querySelectorAll('input[name="team"]').forEach(r => {
+  r.addEventListener('change', filterCategories);
+});
+filterCategories(); // run on load
+</script>
+{% endblock %}

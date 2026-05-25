@@ -1,0 +1,208 @@
+{% extends 'base.html' %}
+{% block title %}New Incident Report{% endblock %}
+
+{% block content %}
+<style>
+  .ir-form-wrap { max-width:760px; margin:0 auto; }
+  .ir-form-header {
+    display:flex; align-items:center; gap:10px; margin-bottom:24px;
+  }
+  .ir-form-header a { color:var(--text-muted); font-size:13px; text-decoration:none; }
+  .ir-form-header a:hover { color:var(--accent); }
+  .ir-form-title {
+    font-family:'Outfit',sans-serif; font-size:20px; font-weight:700; color:var(--text);
+  }
+  .ir-card {
+    background:var(--surface); border-radius:14px; padding:28px;
+    box-shadow:var(--card-shadow);
+  }
+  .form-label { font-size:13px; font-weight:600; color:var(--text); margin-bottom:5px; }
+  .form-label .req { color:var(--danger); margin-left:2px; }
+  .form-control, .form-select {
+    background:var(--input-bg); border:1px solid var(--border);
+    color:var(--text); border-radius:8px; font-size:13px;
+  }
+  .form-control:focus, .form-select:focus {
+    border-color:var(--accent); box-shadow:0 0 0 3px rgba(30,95,212,.12);
+    background:var(--input-bg); color:var(--text);
+  }
+  .form-text { font-size:11px; color:var(--text-muted); margin-top:4px; }
+  .escalate-box {
+    background:var(--bg); border:1px solid var(--border);
+    border-left:3px solid var(--warning); border-radius:10px; padding:14px 16px;
+  }
+  .escalate-box label { font-size:13px; font-weight:600; color:var(--text); cursor:pointer; }
+  .escalate-box .form-text { margin-left:24px; }
+  .preview-wrap { display:flex; gap:10px; flex-wrap:wrap; margin-top:10px; }
+  .preview-item {
+    position:relative; width:110px; height:110px;
+    border:2px solid var(--border); border-radius:10px; overflow:hidden;
+  }
+  .preview-item img { width:100%; height:100%; object-fit:cover; }
+  .preview-item .rm {
+    position:absolute; top:4px; right:4px; background:var(--danger); color:white;
+    border:none; border-radius:50%; width:22px; height:22px;
+    cursor:pointer; font-size:13px; line-height:1;
+    display:flex; align-items:center; justify-content:center;
+  }
+  .preview-item .info {
+    position:absolute; bottom:0; left:0; right:0;
+    background:rgba(0,0,0,.55); color:white; padding:3px 5px;
+    font-size:10px; text-align:center;
+  }
+  .btn-ir-submit {
+    background:var(--accent); color:#fff; border:none; padding:11px 32px;
+    border-radius:10px; font-weight:700; font-size:14px;
+    transition:opacity .2s,transform .2s; display:inline-flex; align-items:center; gap:8px;
+  }
+  .btn-ir-submit:hover { opacity:.88; color:#fff; transform:translateY(-1px); }
+  .divider { border:none; border-top:1px solid var(--border); margin:20px 0; }
+</style>
+
+<div class="ir-form-wrap">
+  <div class="ir-form-header">
+    <a href="{{ url_for('incident_reports.dashboard') }}">
+      <i class="bi bi-arrow-left me-1"></i>Back to Dashboard
+    </a>
+  </div>
+  <div class="ir-form-title mb-4">
+    <i class="bi bi-clipboard2-plus me-2" style="color:var(--accent);"></i>New Incident Report
+  </div>
+
+  <div class="ir-card">
+    <form id="irForm">
+
+      <div class="mb-4">
+        <label class="form-label">Date of Incident <span class="req">*</span></label>
+        <input type="date" class="form-control" name="incident_date"
+               max="{{ now.strftime('%Y-%m-%d') if now else '' }}" required>
+      </div>
+
+      <div class="mb-4">
+        <label class="form-label">Agent Involved <span class="req">*</span></label>
+        <select class="form-select" name="employee_id" required>
+          <option value="">— Select agent —</option>
+          {% for emp in employees %}
+          <option value="{{ emp.employee_id }}">
+            {{ emp.full_name }} ({{ emp.employee_id }})
+          </option>
+          {% endfor %}
+        </select>
+        <div class="form-text">Select the agent who was involved in this incident.</div>
+      </div>
+
+      <div class="mb-4">
+        <label class="form-label">Incident Summary <span class="req">*</span></label>
+        <textarea class="form-control" name="summary" rows="6" required
+                  placeholder="Describe what happened in detail…"></textarea>
+      </div>
+
+      <hr class="divider">
+
+      <div class="mb-4">
+        <div class="escalate-box">
+          <div class="form-check">
+            <input class="form-check-input" type="checkbox" id="escalate_to_hr"
+                   name="escalate_to_hr" value="1">
+            <label class="form-check-label" for="escalate_to_hr">
+              <i class="bi bi-exclamation-triangle-fill me-1" style="color:var(--warning);"></i>
+              Escalate to HR immediately — Written Explanation Required
+            </label>
+          </div>
+          <div class="form-text">
+            Check this if the incident requires immediate HR attention and a written explanation from the agent.
+          </div>
+        </div>
+      </div>
+
+      <div class="mb-4">
+        <label class="form-label">
+          <i class="bi bi-paperclip me-1"></i>Attachments
+          <span style="font-weight:400;color:var(--text-muted);">(optional, up to 4 images)</span>
+        </label>
+        <input type="file" class="form-control" id="attachInput" multiple accept="image/*">
+        <div class="form-text">Images are auto-compressed before upload.</div>
+        <div class="preview-wrap" id="previewWrap"></div>
+      </div>
+
+      <div class="d-flex justify-content-end pt-2">
+        <button type="submit" class="btn-ir-submit" id="submitBtn">
+          <span id="btnText"><i class="bi bi-send"></i> Submit Report</span>
+          <span id="btnSpinner" class="spinner-border spinner-border-sm d-none"></span>
+        </button>
+      </div>
+
+    </form>
+  </div>
+</div>
+
+<script>
+let compressed = [];
+const MAX = 4;
+
+document.getElementById('attachInput').addEventListener('change', async function(e) {
+  const files = Array.from(e.target.files);
+  if(files.length + compressed.length > MAX){ alert(`Max ${MAX} images.`); e.target.value=''; return; }
+  for(const f of files){
+    if(!f.type.startsWith('image/')){ alert('Images only.'); continue; }
+    compressed.push(await compressImage(f));
+  }
+  renderPreviews(); e.target.value='';
+});
+
+async function compressImage(file){
+  return new Promise(resolve=>{
+    const reader=new FileReader();
+    reader.onload=e=>{
+      const img=new Image();
+      img.onload=()=>{
+        let [w,h]=[img.width,img.height]; const max=1920;
+        if(w>max||h>max){ if(w>h){h=h/w*max;w=max;}else{w=w/h*max;h=max;} }
+        const cv=document.createElement('canvas'); cv.width=w; cv.height=h;
+        cv.getContext('2d').drawImage(img,0,0,w,h);
+        cv.toBlob(blob=>{
+          const cf=new File([blob],file.name,{type:'image/jpeg'});
+          resolve({file:cf,orig:file.size,comp:cf.size,preview:cv.toDataURL('image/jpeg',.8)});
+        },'image/jpeg',.8);
+      };
+      img.src=e.target.result;
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
+function renderPreviews(){
+  const wrap=document.getElementById('previewWrap'); wrap.innerHTML='';
+  compressed.forEach((item,i)=>{
+    const div=document.createElement('div'); div.className='preview-item';
+    const img=document.createElement('img'); img.src=item.preview;
+    const rm=document.createElement('button'); rm.className='rm'; rm.type='button';
+    rm.innerHTML='×'; rm.onclick=()=>{ compressed.splice(i,1); renderPreviews(); };
+    const info=document.createElement('div'); info.className='info';
+    info.textContent=`${Math.round(item.comp/1024)}KB`;
+    div.append(img,rm,info); wrap.appendChild(div);
+  });
+}
+
+document.getElementById('irForm').addEventListener('submit', async function(e){
+  e.preventDefault();
+  const btn=document.getElementById('submitBtn');
+  const txt=document.getElementById('btnText');
+  const spin=document.getElementById('btnSpinner');
+  btn.disabled=true; txt.classList.add('d-none'); spin.classList.remove('d-none');
+  const fd=new FormData(this);
+  compressed.forEach(item=>fd.append('attachments[]',item.file));
+  try{
+    const res=await fetch('{{ url_for("incident_reports.submit_report") }}',{method:'POST',body:fd});
+    const data=await res.json();
+    if(data.success){
+      alert(`✅ Report submitted!\nIR #: ${data.report_number}`);
+      this.reset(); compressed=[]; renderPreviews();
+    } else { alert('❌ '+data.message); }
+  } catch(err){ alert('❌ Error: '+err.message); }
+  finally{
+    btn.disabled=false; txt.classList.remove('d-none'); spin.classList.add('d-none');
+  }
+});
+</script>
+{% endblock %}

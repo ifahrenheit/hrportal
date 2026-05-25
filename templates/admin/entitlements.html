@@ -1,0 +1,152 @@
+{% extends 'base.html' %}
+{% block title %}Entitlements{% endblock %}
+{% block page_title %}Leave Entitlements{% endblock %}
+{% block content %}
+<div class="row g-4">
+  <div class="col-md-4">
+    <div class="card p-4">
+      <h6 class="fw-semibold mb-3">Assign Entitlement <span class="badge bg-primary ms-1" style="font-size:.7rem;">Portal DB</span></h6>
+      <form method="POST">
+        <input type="hidden" name="action" value="assign">
+        <div class="mb-3">
+          <label class="form-label small fw-semibold">Employee</label>
+          <select name="employee_id" class="form-select" required>
+            <option value="">Select employee...</option>
+            {% for e in employees %}
+            <option value="{{ e.employee_id }}">{{ e.emp_lastname }}, {{ e.emp_firstname }} ({{ e.employee_id }})</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="mb-3">
+          <label class="form-label small fw-semibold">Leave Type</label>
+          <select name="leave_type_id" class="form-select" required>
+            <option value="">Select type...</option>
+            {% for lt in leave_types %}
+            <option value="{{ lt.id }}">{{ lt.name }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="mb-3">
+          <label class="form-label small fw-semibold">Days</label>
+          <input type="number" name="no_of_days" class="form-control" step="0.5" min="0" value="12" required>
+        </div>
+        <div class="mb-3">
+          <label class="form-label small fw-semibold">Year</label>
+          <input type="number" name="year" class="form-control" value="{{ year_filter }}" required>
+        </div>
+        <button type="submit" class="btn btn-primary w-100">Save Entitlement</button>
+      </form>
+      <hr>
+      <div class="text-muted small">
+        <i class="bi bi-info-circle me-1"></i>
+        Use <strong>Portal DB</strong> for 2027 onwards.<br>
+        OrangeHRM entitlements are <strong>read-only</strong> for reference.
+      </div>
+    </div>
+  </div>
+
+  <div class="col-md-8">
+    <div class="card">
+      <div class="p-3 border-bottom d-flex gap-2 align-items-center flex-wrap">
+        <form method="GET" class="d-flex gap-2 align-items-center flex-wrap mb-0">
+          <input type="text" name="search" class="form-control form-control-sm" placeholder="Search employee..." value="{{ search }}" style="width:200px;">
+          <select name="year" class="form-select form-select-sm" style="width:auto;">
+            {% for y in range(2025, 2030) %}
+            <option value="{{ y }}" {% if y == year_filter %}selected{% endif %}>{{ y }}</option>
+            {% endfor %}
+          </select>
+          <button class="btn btn-sm btn-primary">Filter</button>
+        </form>
+      </div>
+
+      <!-- Tabs -->
+      <ul class="nav nav-tabs px-3 pt-2" id="entitlementTabs">
+        <li class="nav-item">
+          <a class="nav-link active" data-bs-toggle="tab" href="#tab-ohrm">
+            OrangeHRM <span class="badge bg-secondary ms-1">{{ ohrm_entitlements|length }}</span>
+          </a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" data-bs-toggle="tab" href="#tab-portal">
+            Portal DB <span class="badge bg-primary ms-1">{{ entitlements|length }}</span>
+          </a>
+        </li>
+      </ul>
+
+      <div class="tab-content">
+        <!-- OrangeHRM Tab -->
+        <div class="tab-pane fade show active" id="tab-ohrm">
+          <div class="px-3 py-2 bg-light border-bottom text-muted small">
+            <i class="bi bi-lock me-1"></i> Read-only — managed in OrangeHRM
+          </div>
+          <div class="table-responsive">
+            <table class="table mb-0">
+              <thead class="table-light">
+                <tr><th>Employee</th><th>Leave Type</th><th>Days</th><th>Used</th><th>Remaining</th></tr>
+              </thead>
+              <tbody>
+                {% for e in ohrm_entitlements %}
+                <tr>
+                  <td>
+                    <div class="fw-semibold small">{{ e.emp_name }}</div>
+                    <div class="text-muted" style="font-size:.75rem;">{{ e.employee_id }}</div>
+                  </td>
+                  <td class="small">{{ e.leave_type_name }}</td>
+                  <td class="small">{{ "%.2f"|format(e.no_of_days) }}</td>
+                  <td class="small">{{ "%.2f"|format(e.days_used) }}</td>
+                  <td class="small fw-semibold" style="color:{% if (e.no_of_days - e.days_used) <= 2 %}#ef4444{% else %}var(--text){% endif %};">
+                    {{ "%.2f"|format(e.no_of_days - e.days_used) }}
+                  </td>
+                </tr>
+                {% else %}
+                <tr><td colspan="5" class="text-center text-muted py-4">No OrangeHRM entitlements found.</td></tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Portal DB Tab -->
+        <div class="tab-pane fade" id="tab-portal">
+          <div class="px-3 py-2 bg-light border-bottom text-muted small">
+            <i class="bi bi-database me-1"></i> Managed here — use for 2027 onwards
+          </div>
+          <div class="table-responsive">
+            <table class="table mb-0">
+              <thead class="table-light">
+                <tr><th>Employee</th><th>Leave Type</th><th>Days</th><th>Used</th><th>Remaining</th><th></th></tr>
+              </thead>
+              <tbody>
+                {% for e in entitlements %}
+                <tr>
+                  <td>
+                    <div class="fw-semibold small">{{ e.emp_name }}</div>
+                    <div class="text-muted" style="font-size:.75rem;">{{ e.employee_id }}</div>
+                  </td>
+                  <td class="small">{{ e.leave_type_name }}</td>
+                  <td class="small">{{ e.no_of_days }}</td>
+                  <td class="small">{{ e.days_used }}</td>
+                  <td class="small fw-semibold" style="color:{% if (e.no_of_days - e.days_used) <= 2 %}#ef4444{% else %}var(--text){% endif %};">
+                    {{ "%.2f"|format(e.no_of_days - e.days_used) }}
+                  </td>
+                  <td>
+                    <form method="POST" onsubmit="return confirm('Delete this entitlement?');">
+                      <input type="hidden" name="action" value="delete">
+                      <input type="hidden" name="ent_id" value="{{ e.id }}">
+                      <button class="btn btn-sm btn-outline-danger">Delete</button>
+                    </form>
+                  </td>
+                </tr>
+                {% else %}
+                <tr><td colspan="6" class="text-center text-muted py-4">No portal entitlements found.</td></tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+{% endblock %}

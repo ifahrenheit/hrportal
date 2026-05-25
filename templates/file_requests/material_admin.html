@@ -1,0 +1,403 @@
+{% extends 'base.html' %}
+{% block title %}Material Requests — Admin Review<script>
+// Restore last filter on page load if no filter in URL
+(function() {
+  var params = new URLSearchParams(window.location.search);
+  if (!params.has('status')) {
+    var saved = localStorage.getItem('matAdminFilter');
+    if (saved !== null) {
+      window.location.href = window.location.pathname + '?status=' + encodeURIComponent(saved);
+    }
+  }
+})();
+</script>
+{% endblock %}
+{% block page_title %}Material Requests — Admin Review{% endblock %}
+{% block content %}
+
+<div class="d-flex gap-2 mb-3 flex-wrap align-items-center">
+  <span class="text-muted small me-1">Filter:</span>
+  {% for label, val in [('All',''),('Actionable','actionable'),('Recommended','Recommended'),('Approved','Approved'),('Awaiting Confirmation','Awaiting Confirmation'),('Served','Served'),('Rejected','Rejected')] %}
+  <a href="{{ url_for('material_admin_review', status=val) }}"
+     class="btn btn-sm {% if status_filter == val %}btn-primary{% else %}btn-outline-secondary{% endif %}"
+     onclick="localStorage.setItem('matAdminFilter','{{ val }}')">
+    {{ label }}
+  </a>
+  {% endfor %}
+</div>
+
+<div class="card">
+  <div class="table-responsive">
+    <table class="table table-hover mb-0" style="font-size:.85rem;">
+      <thead>
+        <tr style="background:var(--bg-secondary);color:var(--text-muted);font-size:.75rem;text-transform:uppercase;">
+          <th onclick="sortTable(0)" style="cursor:pointer;user-select:none;">Employee <span id="sa0">⇅</span></th>
+          <th onclick="sortTable(1)" style="cursor:pointer;user-select:none;">Category <span id="sa1">⇅</span></th>
+          <th onclick="sortTable(2)" style="cursor:pointer;user-select:none;">Item <span id="sa2">⇅</span></th>
+          <th>Qty</th>
+          <th onclick="sortTable(4,'date')" style="cursor:pointer;user-select:none;">Date Needed <span id="sa4">⇅</span></th>
+          <th>Reason</th>
+          <th>SOM</th>
+          <th onclick="sortTable(7,'date')" style="cursor:pointer;user-select:none;">Filed At <span id="sa7">⇅</span></th>
+          <th>Status</th>
+          <th>Action</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in requests %}
+        <tr>
+          <td><strong>{{ r.employee_name }}</strong><br>
+              <span class="text-muted small">{{ r.employee_id }}</span></td>
+          <td><span class="badge bg-secondary">{{ r.category }}</span></td>
+          <td>{{ r.item_name }}
+            {% if r.is_special %}
+              {% if r.payment_required %}
+                <br><span class="badge bg-warning text-dark" title="{{ r.payment_reason }}">💰 PHP {{ '%.2f'|format(r.amount_due) }}</span>
+              {% else %}
+                <br><span class="badge bg-success">✅ Free</span>
+              {% endif %}
+            {% endif %}
+          </td>
+          <td>{{ r.quantity }}</td>
+          <td>{{ r.date_needed.strftime('%b %d, %Y') if r.date_needed else '—' }}</td>
+          <td class="text-muted small" style="max-width:160px;">{{ r.reason or '—' }}</td>
+          <td class="text-muted small">
+            {{ r.som_name or '—' }}
+            {% if r.som_remarks %}<br><em>{{ r.som_remarks }}</em>{% endif %}
+          </td>
+          <td class="text-muted small">{{ r.created_at.strftime('%b %d, %Y %H:%M') }}</td>
+          <td>
+            {% if r.status == 'Pending' %}
+              <span class="badge bg-warning text-dark">Pending</span>
+            {% elif r.status == 'Recommended' %}
+              <span class="badge bg-info text-dark">Recommended</span>
+            {% elif r.status == 'Pending Final Approval' %}
+              <span class="badge bg-primary">Pending Final Approval</span>
+            {% elif r.status == 'Approved' %}
+              <span class="badge bg-success">Approved</span>
+            {% elif r.status == 'Awaiting Confirmation' %}
+              <span class="badge" style="background:#b45309;color:#fff;">Awaiting Confirmation</span>
+            {% elif r.status == 'Served' %}
+              <span class="badge" style="background:#065f46;color:#fff;">Served ✓</span>
+            {% elif r.status == 'Released' %}
+              <span class="badge" style="background:#065f46;color:#fff;">Released</span>
+            {% elif r.status == 'Rejected' %}
+              <span class="badge bg-danger">Rejected</span>
+            {% else %}
+              <span class="badge bg-secondary">{{ r.status }}</span>
+            {% endif %}
+          </td>
+          <td style="min-width:220px;">
+            {% if r.status not in ('Released', 'Rejected') and r.request_group_id %}
+            <a href="{{ url_for('material_edit', group_id=r.request_group_id) }}"
+               class="btn btn-outline-secondary btn-sm mb-1 w-100"
+               style="font-size:.75rem;">
+              <i class="bi bi-pencil me-1"></i>Edit
+            </a>
+            {% endif %}
+            {% if r.status == "Recommended" %}
+            <div class="d-flex gap-1">
+              <button class="btn btn-sm btn-success flex-fill"
+                      onclick="showStockModal({{ r.id }}, '{{ r.item_name|e }}', {{ r.quantity }})">
+                <i class="bi bi-box me-1"></i>On Stock
+              </button>
+              <button class="btn btn-sm btn-warning text-dark flex-fill"
+                      onclick="showPurchaseModal({{ r.id }}, '{{ r.item_name|e }}', {{ r.quantity }})">
+                <i class="bi bi-cart me-1"></i>Purchase
+              </button>
+              <form method="POST" action="{{ url_for('material_admin_action') }}" style="display:inline;">
+                <input type="hidden" name="req_id" value="{{ r.id }}">
+                <input type="hidden" name="action" value="reject">
+                <input type="hidden" name="_filter" value="{{ status_filter }}">
+                <input type="hidden" name="admin_remarks" value="">
+                <button type="submit" class="btn btn-sm btn-danger"
+                        onclick="return confirm('Reject this request?')">
+                  <i class="bi bi-x-lg"></i>
+                </button>
+              </form>
+            {% elif r.status == 'Pending' and r.category == 'Medicine' %}
+              <div class="d-flex gap-1">
+                <button class="btn btn-sm btn-success"
+                        onclick="showReleaseModal({{ r.id }}, '{{ r.employee_name|e }}', '{{ r.item_name|e }}')">
+                  <i class="bi bi-box-arrow-right me-1"></i>Release
+                </button>
+                <a href="{{ url_for('material_request_pdf', req_id=r.id) }}"
+                   class="btn btn-sm btn-outline-secondary"
+                   title="Download MRF PDF" target="_blank">
+                  <i class="bi bi-file-earmark-pdf text-danger"></i>
+                </a>
+              </div>
+            {% elif r.status == "Pending" %}
+              <span class="text-muted small">Awaiting SOM recommendation</span>
+            {% elif r.status == 'Recommended' and r.category == 'Medicine' %}
+              <div class="d-flex gap-1">
+                <button class="btn btn-sm btn-success"
+                        onclick="showReleaseModal({{ r.id }}, '{{ r.employee_name|e }}', '{{ r.item_name|e }}')">
+                  <i class="bi bi-box-arrow-right me-1"></i>Release
+                </button>
+                <a href="{{ url_for('material_request_pdf', req_id=r.id) }}"
+                   class="btn btn-sm btn-outline-secondary"
+                   title="Download MRF PDF" target="_blank">
+                  <i class="bi bi-file-earmark-pdf text-danger"></i>
+                </a>
+              </div>
+            {% elif r.status == 'Approved' %}
+              <div class="d-flex gap-1">
+                <button class="btn btn-sm btn-success"
+                        onclick="showReleaseModal({{ r.id }}, '{{ r.employee_name|e }}', '{{ r.item_name|e }}')">
+                  <i class="bi bi-box-arrow-right me-1"></i>Release
+                </button>
+                <a href="{{ url_for('material_request_pdf', req_id=r.id) }}"
+                   class="btn btn-sm btn-outline-secondary"
+                   title="Download MRF PDF" target="_blank">
+                  <i class="bi bi-file-earmark-pdf text-danger"></i>
+                </a>
+              </div>
+            {% else %}
+            <span class="text-muted small">
+              {% if r.is_special and r.payment_required %}
+                {% if r.payment_collected %}
+                  <span class="badge bg-success mb-1">💰 Payment Collected</span><br>
+                {% else %}
+                  <form method="POST" action="{{ url_for('material_mark_payment', req_id=r.id) }}" class="mb-1">
+                    <button class="btn btn-sm btn-warning" onclick="return confirm('Mark payment as collected?')">
+                      <i class="bi bi-cash me-1"></i>Mark Paid
+                    </button>
+                  </form>
+                {% endif %}
+              {% endif %}
+              {{ r.admin_name or '—' }}<br>
+              {% if r.admin_remarks %}
+                <span class="badge {% if r.admin_remarks == 'On Stock' %}bg-success{% else %}bg-warning text-dark{% endif %}">
+                  {{ r.admin_remarks }}
+                </span>
+              {% endif %}
+              {% if r.status == 'Awaiting Confirmation' %}
+                <br><span class="badge" style="background:#b45309;color:#fff;">Awaiting Confirmation</span>
+              {% elif r.status == 'Served' %}
+                <br><span class="badge" style="background:#065f46;color:#fff;">Served ✓</span>
+              {% elif r.status == 'Released' %}
+                <br><span class="badge" style="background:#065f46;color:#fff;">Released</span>
+                {% if r.release_notes %}<br><em class="small">{{ r.release_notes }}</em>{% endif %}
+              {% endif %}
+              <br>
+              <a href="{{ url_for('material_request_pdf', req_id=r.id) }}"
+                 class="btn btn-sm btn-outline-secondary mt-1"
+                 title="Download MRF PDF" target="_blank">
+                <i class="bi bi-file-earmark-pdf text-danger"></i> MRF PDF
+              </a>
+            </span>
+            {% endif %}
+          </td>
+        </tr>
+        {% set group_logs = logs_by_group.get(r.request_group_id, []) %}
+        {% if group_logs %}
+        <tr style="background:var(--bg);">
+          <td colspan="10" class="py-1 px-3">
+            <details>
+              <summary class="small text-muted" style="cursor:pointer;list-style:none;">
+                <i class="bi bi-clock-history me-1"></i>
+                {{ group_logs|length }} edit{{ 's' if group_logs|length > 1 else '' }}
+              </summary>
+              <div class="mt-1">
+                {% for log in group_logs %}
+                <div class="small d-flex gap-2 align-items-start py-1 border-bottom">
+                  <i class="bi bi-pencil text-muted" style="font-size:.75rem;margin-top:.2rem;"></i>
+                  <div>
+                    <span class="fw-semibold">{{ log.performed_by }}</span>
+                    <span class="text-muted ms-1" style="font-size:.75rem;">{{ log.created_at.strftime('%b %d, %Y %H:%M') }}</span>
+                    <div class="text-muted" style="font-size:.78rem;">{{ log.details }}</div>
+                  </div>
+                </div>
+                {% endfor %}
+              </div>
+            </details>
+          </td>
+        </tr>
+        {% endif %}
+        {% else %}
+        <tr><td colspan="10" class="text-center text-muted py-4">No requests found.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div class="modal fade" id="stockModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Confirm — On Stock</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <form method="POST" action="{{ url_for('material_admin_action') }}">
+        <div class="modal-body">
+          <input type="hidden" name="req_id" id="stockReqId">
+          <input type="hidden" name="action" value="process">
+          <input type="hidden" name="admin_remarks" value="On Stock">
+          <p>Mark this request as <strong>On Stock</strong>?</p>
+          <p class="text-muted small">Item will be ready within <strong>36 hours</strong>. This will be sent to the final approver.</p>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
+          <button type="submit" class="btn btn-success btn-sm">Confirm — On Stock</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<!-- Purchase Modal -->
+<div class="modal fade" id="purchaseModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Purchase Form</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <form method="POST" action="{{ url_for('material_admin_action') }}">
+        <div class="modal-body">
+          <input type="hidden" name="req_id" id="purchaseReqId">
+          <input type="hidden" name="action" value="process">
+          <input type="hidden" name="admin_remarks" value="Need to Purchase">
+          <div class="mb-3">
+            <label class="form-label small fw-semibold">Item Description</label>
+            <textarea name="purchase_item_desc" id="purchaseItemDesc"
+                      class="form-control form-control-sm" rows="2" required></textarea>
+          </div>
+          <div class="mb-3">
+            <label class="form-label small fw-semibold">Quantity</label>
+            <input type="number" name="purchase_quantity" id="purchaseQty"
+                   class="form-control form-control-sm" min="1" required
+                   oninput="calcTotal()">
+          </div>
+          <div class="mb-3">
+            <label class="form-label small fw-semibold">Unit Cost (₱)</label>
+            <input type="number" name="purchase_unit_cost" id="purchaseUnitCost"
+                   class="form-control form-control-sm" step="0.01" min="0.01" required
+                   oninput="calcTotal()">
+          </div>
+          <div class="mb-3">
+            <label class="form-label small fw-semibold">Total Amount (₱)</label>
+            <input type="number" name="purchase_total" id="purchaseTotal"
+                   class="form-control form-control-sm" step="0.01" readonly
+                   style="background:var(--bg);">
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
+          <button type="submit" class="btn btn-warning btn-sm text-dark">Submit Purchase Request</button>
+        </div>
+      </form>
+    </div>
+  </div>
+{% endblock %}
+</div>
+
+{% block scripts %}
+<script>
+function showStockModal(reqId, item, qty) {
+  document.getElementById('stockReqId').value = reqId;
+  new bootstrap.Modal(document.getElementById('stockModal')).show();
+}
+
+function showPurchaseModal(reqId, item, qty) {
+  document.getElementById('purchaseReqId').value = reqId;
+  document.getElementById('purchaseItemDesc').value = item;
+  document.getElementById('purchaseQty').value = qty;
+  document.getElementById('purchaseUnitCost').value = '';
+  document.getElementById('purchaseTotal').value = '';
+  new bootstrap.Modal(document.getElementById('purchaseModal')).show();
+}
+
+function showReleaseModal(reqId, empName, itemName) {
+  document.getElementById('releaseReqId').value = reqId;
+  document.getElementById('releaseEmpName').textContent = empName;
+  document.getElementById('releaseItemName').textContent = itemName;
+  new bootstrap.Modal(document.getElementById('releaseModal')).show();
+}
+
+document.querySelector('#purchaseModal form').addEventListener('submit', function(e) {
+  const unit = parseFloat(document.getElementById('purchaseUnitCost').value) || 0;
+  const total = parseFloat(document.getElementById('purchaseTotal').value) || 0;
+  if (unit <= 0 || total <= 0) {
+    e.preventDefault();
+    alert('Unit Cost and Total Amount must be greater than 0.');
+    return false;
+  }
+});
+
+function calcTotal() {
+  const qty  = parseFloat(document.getElementById('purchaseQty').value) || 0;
+  const unit = parseFloat(document.getElementById('purchaseUnitCost').value) || 0;
+  document.getElementById('purchaseTotal').value = (qty * unit).toFixed(2);
+}
+</script>
+<div class="modal fade" id="releaseModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Release Item</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <form method="POST" action="{{ url_for('material_release_action') }}">
+        <div class="modal-body">
+          <input type="hidden" name="req_id" id="releaseReqId">
+          <input type="hidden" name="_filter" id="releaseFilter" value="{{ status_filter }}">
+          <p>Release <strong id="releaseItemName"></strong> to <strong id="releaseEmpName"></strong>?</p>
+          <div class="mb-3">
+            <label class="form-label small fw-semibold">Release Notes (optional)</label>
+            <textarea name="release_notes" class="form-control form-control-sm" rows="2"
+                      placeholder="e.g. Handed over at IT desk"></textarea>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
+          <button type="submit" class="btn btn-success btn-sm">
+            <i class="bi bi-box-arrow-right me-1"></i>Confirm Release
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<script>
+var sortDirs = {};
+function sortTable(col, type) {
+  var tbody = document.querySelector('table tbody');
+  var allRows = Array.from(tbody.querySelectorAll('tr'));
+  // Group rows: main row + any following rows that have colspan (log rows)
+  var groups = [];
+  var i = 0;
+  while (i < allRows.length) {
+    var group = [allRows[i]];
+    i++;
+    while (i < allRows.length && allRows[i].querySelector('td[colspan]')) {
+      group.push(allRows[i]);
+      i++;
+    }
+    groups.push(group);
+  }
+  var dir = sortDirs[col] === 1 ? -1 : 1;
+  sortDirs[col] = dir;
+  groups.sort(function(a, b) {
+    var aT = a[0].cells[col] ? a[0].cells[col].innerText.trim() : '';
+    var bT = b[0].cells[col] ? b[0].cells[col].innerText.trim() : '';
+    if (type === 'date') {
+      var aD = new Date(aT === '—' ? 0 : aT);
+      var bD = new Date(bT === '—' ? 0 : bT);
+      return (aD - bD) * dir;
+    }
+    return aT.localeCompare(bT) * dir;
+  });
+  groups.forEach(function(g) { g.forEach(function(r) { tbody.appendChild(r); }); });
+  [0,1,2,4,7].forEach(function(c) {
+    var el = document.getElementById('sa'+c);
+    if (el) el.textContent = '⇅';
+  });
+  var arrow = document.getElementById('sa'+col);
+  if (arrow) arrow.textContent = dir === 1 ? '↑' : '↓';
+}
+</script>
+{% endblock %}

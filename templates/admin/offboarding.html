@@ -1,0 +1,423 @@
+{% extends "base.html" %}
+{% block title %}Offboarding{% endblock %}
+{% block page_title %}<i class="bi bi-person-dash-fill me-2" style="color:var(--danger)"></i>Employee Offboarding{% endblock %}
+
+{% block content %}
+
+<div class="alert alert-warning d-flex align-items-center gap-2 mb-4 py-2" style="font-size:.84rem">
+  <i class="bi bi-exclamation-triangle-fill fs-5"></i>
+  <span><strong>Disable only — do not delete.</strong> All accounts are disabled and retained for audit.
+  Keycloak is disabled first to immediately block SSO access across all systems.</span>
+</div>
+
+<div class="row g-4">
+
+  {# ── LEFT: Search + Form ──────────────────────────────── #}
+  <div class="col-lg-5">
+
+    <div class="card p-4 mb-3">
+      <h6 class="fw-semibold mb-3" style="font-family:Outfit,sans-serif;">
+        <i class="bi bi-search me-2" style="color:var(--accent)"></i>Find Employee
+      </h6>
+      <div class="position-relative">
+        <input type="text" id="searchInput" class="form-control form-control-sm"
+               placeholder="Search by ID, name, or email…"
+               oninput="searchEmployee(this.value)" autocomplete="off">
+        <div id="searchDropdown"
+             style="display:none;position:absolute;top:100%;left:0;right:0;z-index:200;
+                    background:var(--surface);border:1px solid var(--border);border-radius:8px;
+                    box-shadow:0 4px 16px rgba(0,0,0,.12);max-height:260px;overflow-y:auto;margin-top:2px">
+        </div>
+      </div>
+    </div>
+
+    <div class="card p-4 mb-3" id="empCard" style="display:none">
+      <div class="d-flex align-items-start gap-3 mb-3">
+        <div id="empAvatar"
+             style="width:44px;height:44px;border-radius:50%;background:#fee2e2;
+                    display:flex;align-items:center;justify-content:center;
+                    font-weight:600;font-size:.9rem;color:#991b1b;flex-shrink:0">??</div>
+        <div>
+          <div class="fw-semibold" id="empName" style="font-size:.97rem"></div>
+          <div style="font-size:.8rem;color:var(--text-muted)" id="empId"></div>
+          <div style="font-size:.8rem;color:var(--text-muted)" id="empEmail"></div>
+        </div>
+      </div>
+      <div class="row g-2" style="font-size:.83rem">
+        <div class="col-6">
+          <div style="font-size:.75rem;color:var(--text-muted)">Account</div>
+          <div class="fw-500" id="empAccount">—</div>
+        </div>
+        <div class="col-6">
+          <div style="font-size:.75rem;color:var(--text-muted)">Team Leader</div>
+          <div class="fw-500" id="empTl">—</div>
+        </div>
+        <div class="col-6">
+          <div style="font-size:.75rem;color:var(--text-muted)">Status</div>
+          <div class="fw-500" id="empStatus">—</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card p-4" id="offboardForm" style="display:none">
+      <h6 class="fw-semibold mb-3" style="font-family:Outfit,sans-serif;">
+        <i class="bi bi-clipboard-x me-2" style="color:var(--danger)"></i>Exit Details
+      </h6>
+
+      <div class="mb-3">
+        <label class="form-label" style="font-size:.82rem;color:var(--text-muted)">Exit Date <span class="text-danger">*</span></label>
+        <input type="date" class="form-control form-control-sm" id="exit_date">
+      </div>
+
+      <div class="mb-3">
+        <label class="form-label" style="font-size:.82rem;color:var(--text-muted)">Reason</label>
+        <select class="form-select form-select-sm" id="reason">
+          <option>Voluntary Resignation</option>
+          <option>End of Contract</option>
+          <option>Termination</option>
+          <option>Abandonment</option>
+          <option>Retirement</option>
+          <option>Other</option>
+        </select>
+      </div>
+
+      <div class="mb-4">
+        <label class="form-label" style="font-size:.82rem;color:var(--text-muted)">
+          Notes <span style="font-size:.75rem;color:var(--text-muted)">(optional)</span>
+        </label>
+        <textarea class="form-control form-control-sm" id="notes" rows="2" placeholder="Any additional notes…"></textarea>
+      </div>
+
+      <div class="rounded-3 p-3 mb-4" style="background:#fef2f2;border:1px solid #fecaca">
+        <div class="fw-500 mb-2" style="font-size:.82rem;color:#991b1b">
+          <i class="bi bi-shield-exclamation me-1"></i>Confirm before proceeding
+        </div>
+        <div class="form-check mb-1">
+          <input class="form-check-input" type="checkbox" id="chk1" onchange="updateOffboardBtn()">
+          <label class="form-check-label" style="font-size:.81rem" for="chk1">Final pay has been processed or is in progress</label>
+        </div>
+        <div class="form-check mb-1">
+          <input class="form-check-input" type="checkbox" id="chk2" onchange="updateOffboardBtn()">
+          <label class="form-check-label" style="font-size:.81rem" for="chk2">IT assets / equipment have been retrieved</label>
+        </div>
+        <div class="form-check">
+          <input class="form-check-input" type="checkbox" id="chk3" onchange="updateOffboardBtn()">
+          <label class="form-check-label" style="font-size:.81rem" for="chk3">All active projects have been handed over</label>
+        </div>
+      </div>
+
+      <button class="btn btn-danger w-100" id="offboardBtn" onclick="runOffboarding()" disabled>
+        <i class="bi bi-door-open me-1"></i>Process Offboarding
+      </button>
+      <p class="text-center mt-2 mb-0" style="font-size:.75rem;color:var(--text-muted)">
+        Check all boxes above to enable
+      </p>
+    </div>
+  </div>
+
+  {# ── RIGHT: Results Panel ─────────────────────────────── #}
+  <div class="col-lg-7">
+
+    <div class="card p-4" id="resultsCard" style="display:none">
+      <div class="d-flex justify-content-between align-items-center mb-3">
+        <h6 class="fw-semibold mb-0" style="font-family:Outfit,sans-serif;">
+          <i class="bi bi-list-check me-2" style="color:var(--danger)"></i>Offboarding Status
+        </h6>
+        <span id="offOverallBadge" class="badge rounded-pill px-3" style="font-size:.78rem"></span>
+      </div>
+      <div id="offEmpSummary" class="rounded-3 p-3 mb-3"
+           style="background:var(--bg);border:1px solid var(--border);font-size:.83rem"></div>
+      <div id="offStepList"></div>
+      <div class="alert alert-info py-2 px-3 mt-3 mb-0" style="font-size:.82rem">
+        <i class="bi bi-fingerprint me-1"></i>
+        <strong>Biometrics:</strong> Deactivate in the biometric admin panel — do not delete (preserves attendance history).
+        &nbsp;<i class="bi bi-slack me-1"></i>
+        <strong>Slack:</strong> Deactivate manually via workspace admin (free plan).
+      </div>
+    </div>
+
+    <div class="card p-4 d-flex align-items-center justify-content-center" id="offPlaceholder"
+         style="min-height:300px;border-style:dashed;border-color:var(--border);">
+      <div class="text-center" style="color:var(--text-muted)">
+        <i class="bi bi-person-dash" style="font-size:2.5rem;opacity:.3"></i>
+        <p class="mt-2 mb-1" style="font-size:.87rem">Search for an employee to begin offboarding</p>
+        <p class="mb-0" style="font-size:.78rem;opacity:.7">Results will appear here after processing</p>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+{# ── Recent Offboardings ───────────────────────────────── #}
+<div class="card mt-4">
+  <div class="card-body">
+    <h6 class="fw-semibold mb-3" style="font-family:Outfit,sans-serif;">
+      <i class="bi bi-clock-history me-2" style="color:var(--danger)"></i>Recent Offboardings
+    </h6>
+    <div class="table-responsive">
+      <table class="table table-hover mb-0">
+        <thead>
+          <tr>
+            <th>Employee ID</th>
+            <th>Name</th>
+            <th>Exit Date</th>
+            <th>Reason</th>
+            <th>Keycloak</th>
+            <th>AD</th>
+            <th>Email</th>
+            <th>Dashboard</th>
+            <th>OrangeHRM</th>
+            <th>Status</th>
+            <th>Biometric</th>
+            <th>Processed By</th>
+          </tr>
+        </thead>
+        <tbody id="recentOffTbody">
+          <tr><td colspan="9" class="text-center py-3" style="color:var(--text-muted);font-size:.85rem">Loading…</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let selectedEmployee = null;
+let searchTimeout    = null;
+
+const OFF_STEPS = [
+  { key: 'keycloak_disabled',     icon: 'bi-key-fill',         label: 'Keycloak SSO',        note: 'Blocks all SSO logins immediately' },
+  { key: 'ad_disabled',           icon: 'bi-hdd-network-fill', label: 'Active Directory',     note: 'Domain access revoked' },
+  { key: 'email_suspended',       icon: 'bi-envelope-fill',    label: 'Email locked',         note: 'Password rotated, mailbox retained' },
+  { key: 'dashboard_disabled',    icon: 'bi-speedometer2',     label: 'Dashboard disabled',   note: 'Login account deactivated' },
+  { key: 'orangehrm_updated',     icon: 'bi-people-fill',      label: 'OrangeHRM updated',    note: 'Termination record created' },
+  { key: 'status_updated',        icon: 'bi-person-x-fill',    label: 'Status → Separated',   note: 'Employee status updated' },
+  { key: 'biometric_deactivated', icon: 'bi-fingerprint',      label: 'Biometrics disabled',  note: 'Deactivated on all local servers + blade' },
+];
+const OFF_MANUAL = [
+  { icon: 'bi-slack', label: 'Slack', note: 'Deactivate via workspace admin' },
+];
+
+function searchEmployee(q) {
+  clearTimeout(searchTimeout);
+  const dd = document.getElementById('searchDropdown');
+  if (q.length < 2) { dd.style.display = 'none'; return; }
+  searchTimeout = setTimeout(async () => {
+    try {
+      const res  = await fetch(`/hrportal/api/search-employee?q=${encodeURIComponent(q)}`);
+      const rows = await res.json();
+      if (!rows.length) {
+        dd.innerHTML = '<div style="padding:.75rem 1rem;font-size:.84rem;color:var(--text-muted)">No active employees found</div>';
+      } else {
+        dd.innerHTML = rows.map(r => `
+          <div onclick='selectEmployee(${JSON.stringify(r)})'
+               style="padding:.6rem 1rem;cursor:pointer;border-bottom:1px solid var(--border);font-size:.85rem"
+               onmouseover="this.style.background='var(--bg)'" onmouseout="this.style.background=''">
+            <div class="fw-500">${esc(r.schedule_name)}
+              <span style="color:var(--text-muted);font-size:.78rem;margin-left:.4rem">${esc(r.employee_id)}</span>
+            </div>
+            <div style="color:var(--text-muted);font-size:.78rem">${esc(r.email)} · ${esc(r.status)}${r.account ? ' · ' + esc(r.account) : ''}</div>
+          </div>`).join('');
+      }
+      dd.style.display = 'block';
+    } catch(e) {}
+  }, 280);
+}
+
+function selectEmployee(emp) {
+  selectedEmployee = emp;
+  document.getElementById('searchDropdown').style.display = 'none';
+  document.getElementById('searchInput').value = emp.schedule_name;
+
+  const initials = emp.schedule_name.split(' ').map(w => w[0]).slice(0,2).join('').toUpperCase();
+  document.getElementById('empAvatar').textContent  = initials;
+  document.getElementById('empName').textContent    = emp.schedule_name;
+  document.getElementById('empId').textContent      = emp.employee_id;
+  document.getElementById('empEmail').textContent   = emp.email;
+  document.getElementById('empAccount').textContent = emp.account || '—';
+  document.getElementById('empTl').textContent      = emp.tl || '—';
+  document.getElementById('empStatus').textContent  = emp.status;
+
+  document.getElementById('empCard').style.display      = null;
+  document.getElementById('offboardForm').style.display = null;
+  document.getElementById('exit_date').value = new Date().toISOString().split('T')[0];
+
+  ['chk1','chk2','chk3'].forEach(id => { document.getElementById(id).checked = false; });
+  updateOffboardBtn();
+}
+
+function updateOffboardBtn() {
+  const allChecked = ['chk1','chk2','chk3'].every(id => document.getElementById(id).checked);
+  document.getElementById('offboardBtn').disabled = !allChecked;
+}
+
+async function runOffboarding() {
+  if (!selectedEmployee) return;
+
+  const confirmed = confirm(
+    `⚠️ You are about to offboard:\n\n` +
+    `${selectedEmployee.schedule_name} (${selectedEmployee.employee_id})\n\n` +
+    `This will disable their accounts across all systems.\nContinue?`
+  );
+  if (!confirmed) return;
+
+  const btn = document.getElementById('offboardBtn');
+  btn.disabled  = true;
+  btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Processing…';
+
+  document.getElementById('resultsCard').style.display   = null;
+  document.getElementById('offPlaceholder').style.display = 'none';
+  document.getElementById('offStepList').innerHTML = loadingRowsOff();
+  document.getElementById('offEmpSummary').innerHTML = `
+    <div class="d-flex gap-3 flex-wrap">
+      <span><strong>${esc(selectedEmployee.schedule_name)}</strong></span>
+      <span style="font-family:monospace">${esc(selectedEmployee.employee_id)}</span>
+      <span style="color:var(--text-muted)">${esc(selectedEmployee.email)}</span>
+    </div>`;
+
+  try {
+    const res  = await fetch(`/hrportal/api/offboard/${selectedEmployee.employee_id}`, {
+      method:  'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        exit_date: document.getElementById('exit_date').value,
+        reason:    document.getElementById('reason').value,
+        notes:     document.getElementById('notes').value,
+      })
+    });
+    const data = await res.json();
+
+    if (data.error) {
+      toast(data.error, 'danger');
+      btn.disabled  = false;
+      btn.innerHTML = '<i class="bi bi-door-open me-1"></i>Process Offboarding';
+      return;
+    }
+    renderOffResults(data);
+    loadRecentOff();
+  } catch(e) {
+    toast('Network error: ' + e.message, 'danger');
+    btn.disabled  = false;
+    btn.innerHTML = '<i class="bi bi-door-open me-1"></i>Process Offboarding';
+  }
+}
+
+function loadingRowsOff() {
+  return OFF_STEPS.map(s => `
+    <div class="d-flex align-items-center gap-3 py-2" style="border-bottom:1px solid var(--border)">
+      <div class="spinner-border spinner-border-sm" style="color:var(--danger);flex-shrink:0"></div>
+      <i class="bi ${s.icon}" style="font-size:.95rem;color:var(--text-muted);flex-shrink:0"></i>
+      <span style="font-size:.87rem">${s.label}</span>
+    </div>`).join('');
+}
+
+function renderOffResults(data) {
+  const allOk  = OFF_STEPS.every(s => data[s.key]);
+  const anyFail= OFF_STEPS.some(s => !data[s.key]);
+  const badge  = document.getElementById('offOverallBadge');
+  badge.textContent  = allOk ? 'Offboarding complete' : anyFail ? 'Partial — check failed steps' : 'Processed';
+  badge.style.cssText = allOk ? 'background:#d1fae5;color:#065f46' : 'background:#fee2e2;color:#991b1b';
+
+  let html = OFF_STEPS.map(s => `
+    <div class="d-flex align-items-center gap-3 py-2" style="border-bottom:1px solid var(--border)">
+      <i class="bi ${data[s.key] ? 'bi-check-circle-fill' : 'bi-x-circle-fill'}"
+         style="font-size:1rem;color:${data[s.key] ? 'var(--success)' : 'var(--danger)'};flex-shrink:0"></i>
+      <i class="bi ${s.icon}" style="font-size:.95rem;color:var(--text-muted);flex-shrink:0"></i>
+      <div style="flex:1">
+        <div style="font-size:.87rem">${s.label}</div>
+        <div style="font-size:.75rem;color:var(--text-muted)">${s.note}</div>
+      </div>
+    </div>`).join('');
+
+  OFF_MANUAL.forEach(m => {
+    html += `
+    <div class="d-flex align-items-center gap-3 py-2" style="border-bottom:1px solid var(--border)">
+      <i class="bi bi-hand-index-thumb" style="font-size:1rem;color:var(--warning);flex-shrink:0"></i>
+      <i class="bi ${m.icon}" style="font-size:.95rem;color:var(--text-muted);flex-shrink:0"></i>
+      <div style="flex:1">
+        <div style="font-size:.87rem">${m.label}</div>
+        <div style="font-size:.75rem;color:var(--text-muted)">${m.note}</div>
+      </div>
+    </div>`;
+  });
+
+  document.getElementById('offStepList').innerHTML = html;
+
+  const btn = document.getElementById('offboardBtn');
+  btn.disabled  = false;
+  btn.className = 'btn btn-outline-secondary w-100';
+  btn.innerHTML = '<i class="bi bi-arrow-counterclockwise me-1"></i>Offboard Another';
+  btn.onclick   = () => {
+    selectedEmployee = null;
+    document.getElementById('searchInput').value          = '';
+    document.getElementById('empCard').style.display      = 'none';
+    document.getElementById('offboardForm').style.display = 'none';
+    document.getElementById('resultsCard').style.display  = 'none';
+    document.getElementById('offPlaceholder').style.display = null;
+    btn.className = 'btn btn-danger w-100';
+    btn.innerHTML = '<i class="bi bi-door-open me-1"></i>Process Offboarding';
+    btn.onclick   = runOffboarding;
+    btn.disabled  = true;
+  };
+
+  toast(`${esc(data.employee_name)} has been offboarded.`, 'success');
+}
+
+async function loadRecentOff() {
+  const tbody = document.getElementById('recentOffTbody');
+  try {
+    const res  = await fetch('/hrportal/api/recent-offboardings');
+    if (!res.ok) { tbody.innerHTML = noRows(12, 'Could not load recent offboardings'); return; }
+    const rows = await res.json();
+    if (!rows.length) { tbody.innerHTML = noRows(12, 'No offboardings yet'); return; }
+
+    const tick = v => v
+      ? '<i class="bi bi-check-circle-fill" style="color:var(--success)"></i>'
+      : '<i class="bi bi-x-circle-fill" style="color:var(--danger)"></i>';
+
+    tbody.innerHTML = rows.map(r => `
+      <tr>
+        <td style="font-size:.82rem;font-family:monospace">${esc(r.employee_id)}</td>
+        <td style="font-size:.87rem">${esc(r.employee_name||'—')}</td>
+        <td style="font-size:.82rem">${r.exit_date||'—'}</td>
+        <td style="font-size:.82rem">${esc(r.reason||'—')}</td>
+        <td class="text-center">${tick(r.keycloak_disabled)}</td>
+        <td class="text-center">${tick(r.ad_disabled)}</td>
+        <td class="text-center">${tick(r.email_suspended)}</td>
+        <td class="text-center">${tick(r.dashboard_disabled)}</td>
+        <td class="text-center">${tick(r.orangehrm_updated)}</td>
+        <td class="text-center">${tick(r.status_updated)}</td>
+        <td class="text-center">${tick(r.biometric_deactivated)}</td>
+        <td style="font-size:.82rem;color:var(--text-muted)">${esc(r.processed_by||'—')}</td>
+      </tr>`).join('');
+  } catch(e) {
+    tbody.innerHTML = noRows(12, 'Could not load recent offboardings');
+  }
+}
+
+function noRows(cols, msg) {
+  return `<tr><td colspan="${cols}" class="text-center py-3" style="color:var(--text-muted);font-size:.85rem">${msg}</td></tr>`;
+}
+function esc(s) {
+  if (!s) return '';
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+function toast(msg, type) {
+  const t = document.createElement('div');
+  t.className = `alert alert-${type} position-fixed shadow`;
+  t.style.cssText = 'top:1.25rem;right:1.25rem;z-index:9999;min-width:300px;font-size:.87rem';
+  t.innerHTML = `<i class="bi bi-${type==='success'?'check-circle-fill':'exclamation-triangle-fill'} me-2"></i>${esc(msg)}`;
+  document.body.appendChild(t);
+  setTimeout(() => t.remove(), 4500);
+}
+
+document.addEventListener('click', e => {
+  if (!e.target.closest('#searchInput') && !e.target.closest('#searchDropdown')) {
+    document.getElementById('searchDropdown').style.display = 'none';
+  }
+});
+
+document.addEventListener('DOMContentLoaded', loadRecentOff);
+</script>
+{% endblock %}

@@ -1,0 +1,400 @@
+{% extends "base.html" %}
+{% block title %}Break Log{% endblock %}
+{% block page_title %}⏱ Break Log System{% endblock %}
+
+{% block content %}
+<style>
+  /* ── Break Log scoped styles ─────────────────────────────────────────── */
+  .bl-grid {
+    display: grid;
+    grid-template-columns: 380px 1fr;
+    gap: 1.5rem;
+    align-items: start;
+  }
+  @media (max-width: 1024px) { .bl-grid { grid-template-columns: 1fr; } }
+
+  .bl-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 1.5rem;
+    box-shadow: var(--card-shadow);
+  }
+
+  .bl-card-title {
+    font-family: 'Outfit', sans-serif;
+    font-size: .85rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: .06em;
+    color: var(--text-muted);
+    margin-bottom: 1.25rem;
+  }
+
+  /* Shift date banner */
+  .shift-banner {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: .65rem 1rem;
+    margin-bottom: 1.5rem;
+    display: flex;
+    align-items: center;
+    gap: .75rem;
+    font-size: .9rem;
+    flex-wrap: wrap;
+  }
+  .shift-banner .shift-label {
+    font-weight: 600;
+    color: var(--accent);
+  }
+  .shift-banner .overnight-tag {
+    font-size: .8rem;
+    color: var(--warning);
+    background: rgba(245,158,11,.1);
+    border: 1px solid var(--warning);
+    border-radius: 6px;
+    padding: .2rem .6rem;
+  }
+
+  /* Break toggle button */
+  .break-btn {
+    width: 100%;
+    padding: 1rem;
+    border: none;
+    border-radius: 12px;
+    font-family: 'Outfit', sans-serif;
+    font-size: 1rem;
+    font-weight: 700;
+    cursor: pointer;
+    transition: all .25s ease;
+    text-transform: uppercase;
+    letter-spacing: .04em;
+  }
+  .break-btn.start {
+    background: var(--success);
+    color: #fff;
+    box-shadow: 0 4px 14px rgba(16,185,129,.3);
+  }
+  .break-btn.start:hover { transform: translateY(-2px); box-shadow: 0 6px 18px rgba(16,185,129,.4); }
+  .break-btn.end {
+    background: var(--danger);
+    color: #fff;
+    box-shadow: 0 4px 14px rgba(239,68,68,.3);
+  }
+  .break-btn.end:hover { transform: translateY(-2px); box-shadow: 0 6px 18px rgba(239,68,68,.4); }
+  .break-btn:disabled { opacity: .5; cursor: not-allowed; transform: none !important; }
+
+  /* Timer */
+  .break-status-box {
+    margin-top: 1.25rem;
+    padding: 1rem;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    text-align: center;
+    display: none;
+  }
+  .break-status-box.active {
+    border-color: var(--success);
+    background: rgba(16,185,129,.05);
+  }
+  .break-status-label {
+    font-size: .8rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    color: var(--success);
+    margin-bottom: .5rem;
+  }
+  .break-timer {
+    font-family: 'Outfit', monospace;
+    font-size: 2rem;
+    font-weight: 700;
+    color: var(--accent);
+    letter-spacing: 2px;
+  }
+  .break-start-time {
+    font-size: .78rem;
+    color: var(--text-muted);
+    margin-top: .25rem;
+  }
+
+  /* Overtime alert */
+  .ot-alert {
+    background: rgba(239,68,68,.08);
+    border: 1.5px solid var(--danger);
+    border-radius: 10px;
+    padding: .85rem 1rem;
+    margin-bottom: 1.25rem;
+    text-align: center;
+    display: none;
+    animation: bl-pulse 2s ease-in-out infinite;
+  }
+  .ot-alert h6 { color: var(--danger); font-weight: 700; margin-bottom: .25rem; }
+  .ot-alert p  { color: var(--text); font-size: .85rem; margin: 0; }
+
+  @keyframes bl-pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: .65; }
+  }
+
+  /* Total time display */
+  .total-label {
+    font-family: 'Outfit', monospace;
+    font-size: .9rem;
+    font-weight: 700;
+    color: var(--warning);
+  }
+  .total-label.overtime { color: var(--danger) !important; animation: bl-pulse 2s ease-in-out infinite; }
+
+  /* Duration badge */
+  .dur-badge {
+    display: inline-block;
+    padding: .25rem .65rem;
+    background: rgba(245,158,11,.12);
+    border: 1px solid var(--warning);
+    color: var(--warning);
+    border-radius: 6px;
+    font-size: .82rem;
+    font-weight: 600;
+  }
+
+  /* Account badge */
+  .acc-badge {
+    display: inline-block;
+    padding: .3rem .7rem;
+    border-radius: 6px;
+    font-size: .75rem;
+    font-weight: 700;
+    text-transform: uppercase;
+  }
+  .acc-badge.arctic { background: rgba(16,185,129,.12); color: var(--success); border: 1px solid var(--success); }
+  .acc-badge.numa   { background: rgba(59,130,246,.12); color: var(--info);    border: 1px solid var(--info); }
+</style>
+
+<!-- Shift date banner -->
+<div class="shift-banner">
+  <i class="bi bi-calendar3" style="color:var(--accent)"></i>
+  <span class="shift-label">
+    Current Shift: {{ shift_date | replace('-', '-') }}
+  </span>
+  {% set hour = now().hour if now is defined else '' %}
+  {# overnight tag shown via JS below #}
+  <span class="overnight-tag" id="overnightTag" style="display:none;">
+    ⏰ Overnight shift
+  </span>
+</div>
+
+<div id="alertContainer"></div>
+
+<!-- Overtime alert -->
+<div class="ot-alert" id="overtimeAlert">
+  <h6>⚠️ Break Time Exceeded</h6>
+  <p>Your total break time today has exceeded 1 hour 30 minutes. Please return to work.</p>
+</div>
+
+<div class="bl-grid">
+
+  <!-- Control panel -->
+  <div class="bl-card" style="position:sticky;top:1.5rem;">
+    <div class="bl-card-title">Break Control</div>
+
+    <button id="breakToggle" class="break-btn start" onclick="toggleBreak()">
+      ▶ Start Break
+    </button>
+
+    <div id="breakStatus" class="break-status-box">
+      <div class="break-status-label">Break in Progress</div>
+      <div class="break-timer" id="timer">00:00:00</div>
+      <div class="break-start-time" id="startTime"></div>
+    </div>
+  </div>
+
+  <!-- Logs section -->
+  <div class="bl-card">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+      <div class="bl-card-title mb-0">Today's Break Logs</div>
+      <span class="total-label" id="totalBreakTime">Total: 00:00:00</span>
+    </div>
+
+    <div class="table-responsive">
+      <table class="table table-hover mb-0">
+        <thead>
+          <tr>
+            <th>Start Time</th>
+            <th>End Time</th>
+            <th>Duration</th>
+          </tr>
+        </thead>
+        <tbody id="breakLogsTable">
+          <tr><td colspan="3" class="text-center text-muted py-4">Loading…</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  // Show overnight tag if before 9 AM
+  if (new Date().getHours() < 9) {
+    document.getElementById('overnightTag').style.display = 'inline-block';
+  }
+
+  let timerInterval  = null;
+  let breakStartTime = null;
+  let isOnBreak      = false;
+
+  document.addEventListener('DOMContentLoaded', function () {
+    checkActiveBreak();
+    loadBreakLogs();
+    if ('Notification' in window && Notification.permission === 'default') {
+      Notification.requestPermission();
+    }
+  });
+
+  function showAlert(message, type) {
+    const container = document.getElementById('alertContainer');
+    const el = document.createElement('div');
+    el.className = `alert alert-${type} alert-dismissible fade show`;
+    el.innerHTML = `${message}<button type="button" class="btn-close" data-bs-dismiss="alert"></button>`;
+    container.appendChild(el);
+    setTimeout(() => el.remove(), 5000);
+  }
+
+  function formatTime(seconds) {
+    const h = Math.floor(seconds / 3600);
+    const m = Math.floor((seconds % 3600) / 60);
+    const s = seconds % 60;
+    return `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
+  }
+
+  function formatDateTime(dateString) {
+    return new Date(dateString).toLocaleTimeString('en-US', {
+      hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false
+    });
+  }
+
+  function updateTimer() {
+    if (!breakStartTime) return;
+    const diff = Math.floor((Date.now() - new Date(breakStartTime)) / 1000);
+    document.getElementById('timer').textContent = formatTime(diff);
+    loadBreakLogs();
+  }
+
+  function startTimer(startTime) {
+    breakStartTime = startTime;
+    isOnBreak = true;
+    const btn = document.getElementById('breakToggle');
+    btn.className = 'break-btn end';
+    btn.innerHTML = '■ End Break';
+    const box = document.getElementById('breakStatus');
+    box.style.display = 'block';
+    box.className = 'break-status-box active';
+    document.getElementById('startTime').textContent = 'Started at ' + formatDateTime(startTime);
+    updateTimer();
+    timerInterval = setInterval(updateTimer, 1000);
+  }
+
+  function stopTimer() {
+    isOnBreak = false;
+    breakStartTime = null;
+    if (timerInterval) { clearInterval(timerInterval); timerInterval = null; }
+    const btn = document.getElementById('breakToggle');
+    btn.className = 'break-btn start';
+    btn.innerHTML = '▶ Start Break';
+    document.getElementById('breakStatus').style.display = 'none';
+    document.getElementById('timer').textContent = '00:00:00';
+  }
+
+  async function checkActiveBreak() {
+    try {
+      const r = await fetch('/api/break?action=check_active');
+      const d = await r.json();
+      if (d.success && d.activeBreak) startTimer(d.activeBreak.break_start);
+    } catch(e) { console.error(e); }
+  }
+
+  async function toggleBreak() {
+    const btn = document.getElementById('breakToggle');
+    btn.disabled = true;
+    try {
+      const action = isOnBreak ? 'end' : 'start';
+      const r = await fetch('/api/break', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action })
+      });
+      const d = await r.json();
+      if (d.success) {
+        showAlert(d.message, 'success');
+        if (action === 'start') startTimer(d.break_start);
+        else { stopTimer(); loadBreakLogs(); }
+      } else {
+        showAlert(d.error || 'An error occurred', 'danger');
+      }
+    } catch(e) {
+      showAlert('Network error occurred', 'danger');
+    } finally {
+      btn.disabled = false;
+    }
+  }
+
+  async function loadBreakLogs() {
+    try {
+      const r = await fetch('/api/break?action=get_logs');
+      const d = await r.json();
+      const tbody   = document.getElementById('breakLogsTable');
+      const totalEl = document.getElementById('totalBreakTime');
+      const otAlert = document.getElementById('overtimeAlert');
+
+      if (d.success && d.breaks && d.breaks.length > 0) {
+        tbody.innerHTML = d.breaks.map(log => `
+          <tr>
+            <td>${formatDateTime(log.break_start)}</td>
+            <td>${formatDateTime(log.break_end)}</td>
+            <td><span class="dur-badge">${formatTime(log.duration)}</span></td>
+          </tr>
+        `).join('');
+
+        let total = d.total_break_time;
+        if (isOnBreak && breakStartTime) {
+          total += Math.floor((Date.now() - new Date(breakStartTime)) / 1000);
+        }
+        totalEl.textContent = 'Total: ' + formatTime(total);
+
+        const MAX = 90 * 60;
+        if (total > MAX) {
+          totalEl.classList.add('overtime');
+          otAlert.style.display = 'block';
+          if (!sessionStorage.getItem('overtimeNotified')) {
+            showOvertimeNotification(total);
+            sessionStorage.setItem('overtimeNotified', 'true');
+          }
+        } else {
+          totalEl.classList.remove('overtime');
+          otAlert.style.display = 'none';
+        }
+      } else {
+        tbody.innerHTML = '<tr><td colspan="3" class="text-center text-muted py-4">No breaks logged yet today</td></tr>';
+        totalEl.textContent = 'Total: 00:00:00';
+        totalEl.classList.remove('overtime');
+        otAlert.style.display = 'none';
+      }
+    } catch(e) { console.error(e); }
+  }
+
+  function showOvertimeNotification(totalSeconds) {
+    const minutes = Math.floor(totalSeconds / 60);
+    if ('Notification' in window && Notification.permission === 'granted') {
+      new Notification('⚠️ Break Time Exceeded', {
+        body: `You've been on break for ${minutes} minutes today. Please return to work.`,
+        requireInteraction: true,
+        tag: 'overtime-alert'
+      });
+    }
+  }
+</script>
+{% endblock %}

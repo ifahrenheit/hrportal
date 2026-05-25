@@ -1,0 +1,273 @@
+{% extends 'base.html' %}
+{% block title %}Material Request{% endblock %}
+{% block page_title %}File Material Request{% endblock %}
+{% block content %}
+
+{% if error %}
+<div class="alert alert-danger">{{ error }}</div>
+{% endif %}
+{% if success %}
+<div class="alert alert-success">{{ success }}</div>
+{% endif %}
+
+<div class="row g-4">
+  <div class="col-md-5">
+    <div class="card p-4">
+      <h6 class="fw-semibold mb-3">New Material Request</h6>
+      <form method="POST" id="materialForm">
+        <div class="mb-3">
+          <label class="form-label small fw-semibold">Date Needed</label>
+          <input type="date" name="date_needed" class="form-control form-control-sm">
+        </div>
+        <div class="mb-3">
+          <label class="form-label small fw-semibold">Reason / Justification</label>
+          <textarea name="reason" class="form-control form-control-sm" rows="2"
+                    placeholder="Why do you need these items?"></textarea>
+        </div>
+        <div class="mb-2">
+          <label class="form-label small fw-semibold">Items <span class="text-danger">*</span></label>
+          <div id="itemsContainer">
+            <div class="item-row d-flex gap-2 mb-2 align-items-center">
+              <select name="category[]" class="form-select form-select-sm cat-select" style="width:140px;flex-shrink:0;" required onchange="categoryChanged(this)">
+                <option value="">Category</option>
+                {% for cat in categories %}
+                <option value="{{ cat }}">{{ cat }}</option>
+                {% endfor %}
+              </select>
+              <select name="item_name[]" class="form-select form-select-sm item-select" required disabled onchange="itemChanged(this)">
+                <option value="">Select category first</option>
+              </select>
+              <div class="payment-info"></div>
+              <input type="number" name="quantity[]" class="form-control form-control-sm"
+                     style="width:65px;flex-shrink:0;" min="1" value="1" required>
+              <button type="button" class="btn btn-outline-danger btn-sm px-2" onclick="removeItem(this)" disabled>
+                <i class="bi bi-trash"></i>
+              </button>
+            </div>
+          </div>
+          <button type="button" class="btn btn-outline-secondary btn-sm mt-1" onclick="addItem()">
+            <i class="bi bi-plus-circle me-1"></i>Add Item
+          </button>
+        </div>
+        <button type="submit" class="btn btn-primary btn-sm w-100 mt-2">
+          <i class="bi bi-send me-1"></i>Submit Request
+        </button>
+      </form>
+    </div>
+  </div>
+
+  <div class="col-md-7">
+    <div class="card">
+      <div class="px-3 pt-3 pb-2 border-bottom">
+        <span class="fw-semibold small">My Requests</span>
+      </div>
+      <div class="table-responsive">
+        <table class="table table-hover mb-0" style="font-size:.85rem;">
+          <thead>
+            <tr style="background:var(--bg-secondary);color:var(--text-muted);font-size:.75rem;text-transform:uppercase;">
+              <th>Category</th>
+              <th>Item</th>
+              <th>Qty</th>
+              <th>Date Needed</th>
+              <th>Status</th>
+              <th>Filed At</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for r in history %}
+            <tr>
+              <td><span class="badge bg-secondary">{{ r.category }}</span></td>
+              <td>{{ r.item_name }}</td>
+              <td>{{ r.quantity }}</td>
+              <td>{{ r.date_needed.strftime('%b %d, %Y') if r.date_needed else '—' }}</td>
+              <td>
+                {% if r.status == 'Awaiting Confirmation' %}
+                  <span class="badge" style="background:#b45309;color:#fff;">Awaiting Confirmation</span>
+                {% elif r.status == 'Served' %}
+                  <span class="badge" style="background:#065f46;color:#fff;">Served ✓</span>
+                {% elif r.status == 'Released' %}
+                  <span class="badge bg-success">Released</span>
+                {% elif r.status == 'Rejected' %}
+                  <span class="badge bg-danger">Rejected</span>
+                {% elif r.status == 'Pending Final Approval' %}
+                  <span class="badge bg-primary">Pending Final Approval</span>
+                {% elif r.status == 'Recommended' %}
+                  <span class="badge bg-info text-dark">Recommended</span>
+                {% else %}
+                  <span class="badge bg-warning text-dark">{{ r.status }}</span>
+                {% endif %}
+              </td>
+              <td class="text-muted">{{ r.created_at.strftime('%b %d, %Y %H:%M') }}</td>
+              <td>
+                {% if r.status == 'Awaiting Confirmation' %}
+                <a href="{{ url_for('material_confirm_receipt', token=r.confirmation_token) }}"
+                   class="btn btn-sm py-0 px-2"
+                   style="background:#065f46;color:#fff;font-size:.75rem;">
+                  <i class="bi bi-check-circle"></i> Confirm Receipt
+                </a>
+                {% elif r.status not in ('Pending Final Approval', 'Released', 'Rejected', 'Served') and r.request_group_id %}
+                <a href="{{ url_for('material_edit', group_id=r.request_group_id) }}"
+                   class="btn btn-outline-secondary btn-sm py-0 px-2"
+                   style="font-size:.75rem;">
+                  <i class="bi bi-pencil"></i> Edit
+                </a>
+                {% endif %}
+              </td>
+            </tr>
+            {% else %}
+            <tr><td colspan="7" class="text-center text-muted py-4">No requests filed yet.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+var categories = {{ categories | tojson }};
+var EMPLOYEE_ID = '{{ employee_id }}';
+
+function itemChanged(itemSelect) {
+  var row = itemSelect.closest('.item-row');
+  var info = row.querySelector('.payment-info');
+  var qtyInput = row.querySelector('input[name="quantity[]"]');
+  var iname = itemSelect.value;
+  info.innerHTML = '';
+  var opt = itemSelect.options[itemSelect.selectedIndex];
+  if (opt && opt.dataset.subUnit) {
+    var subPer = parseInt(opt.dataset.subUnitPer) || 1;
+    qtyInput.min = 100;
+    qtyInput.step = 100;
+    qtyInput.value = 100;
+    qtyInput.title = 'Quantity in ' + opt.dataset.subUnit + ' (multiples of 100)';
+    info.innerHTML = '<small class="text-muted">Quantity in <b>' + opt.dataset.subUnit + '</b> (min 100)</small>';
+  } else {
+    qtyInput.min = 1;
+    qtyInput.step = 1;
+    qtyInput.value = 1;
+    qtyInput.title = '';
+  }
+  var otherInput = row.querySelector('.other-item-input');
+  if (iname === '__other__') {
+    if (!otherInput) {
+      var inp = document.createElement('input');
+      inp.type = 'text';
+      inp.className = 'form-control form-control-sm other-item-input mt-1';
+      inp.placeholder = 'Describe the item needed...';
+      inp.required = true;
+      row.querySelector('.payment-info').appendChild(inp);
+    }
+    return;
+  } else {
+    if (otherInput) otherInput.remove();
+  }
+  if (!iname || !EMPLOYEE_ID) return;
+  fetch('/api/check-special-item?item_name=' + encodeURIComponent(iname) + '&employee_id=' + encodeURIComponent(EMPLOYEE_ID))
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+      if (!d.is_special) return;
+      if (d.payment_required) {
+        info.innerHTML = '<span class="badge bg-warning text-dark mt-1">💰 Pays PHP ' + d.amount_due.toFixed(2) + ' — ' + d.payment_reason + '</span>';
+      } else {
+        info.innerHTML = '<span class="badge bg-success mt-1">✅ Free (tenure: ' + d.tenure_years + ' yrs)</span>';
+      }
+    });
+}
+function categoryChanged(catSelect) {
+  var row = catSelect.closest('.item-row');
+  var itemSelect = row.querySelector('.item-select');
+  var info = row.querySelector('.payment-info');
+  var cat = catSelect.value;
+  itemSelect.innerHTML = '<option value="">Loading...</option>';
+  itemSelect.disabled = true;
+  if (info) info.innerHTML = '';
+  if (!cat) {
+    itemSelect.innerHTML = '<option value="">Select category first</option>';
+    return;
+  }
+  var url = cat === 'Special Items' ? '/api/special-items' : '/api/inventory-items?category=' + encodeURIComponent(cat);
+  fetch(url)
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      if (!data || data.length === 0) {
+        itemSelect.innerHTML = '<option value="">No items available</option>';
+        return;
+      }
+      itemSelect.innerHTML = '<option value="">Select item</option>';
+      data.forEach(function(item) {
+        var opt = document.createElement('option');
+        opt.value = item.item_name;
+        if (cat === 'Special Items') {
+          opt.textContent = item.item_name + ' (PHP ' + item.price.toFixed(2) + ')';
+        } else if (item.sub_unit && item.sub_unit_per_unit) {
+          var totalSub = item.current_stock * item.sub_unit_per_unit;
+          opt.textContent = item.item_name + ' (' + item.current_stock + ' ' + item.unit + ' / ' + totalSub + ' ' + item.sub_unit + ' in stock)';
+        } else {
+          opt.textContent = item.item_name + ' (' + item.current_stock + ' ' + item.unit + ' in stock)';
+        }
+        opt.dataset.subUnit = item.sub_unit || '';
+        opt.dataset.subUnitPer = item.sub_unit_per_unit || '';
+        itemSelect.appendChild(opt);
+      });
+      var otherOpt = document.createElement('option');
+      otherOpt.value = '__other__';
+      otherOpt.textContent = 'Others - Please Specify';
+      itemSelect.appendChild(otherOpt);
+      itemSelect.disabled = false;
+    });
+}
+
+// On submit, replace __other__ with hidden input
+document.addEventListener('DOMContentLoaded', function() {
+  var form = document.querySelector('form[method="POST"]');
+  if (form) form.addEventListener('submit', function(e) {
+    document.querySelectorAll('.item-select').forEach(function(sel) {
+      if (sel.value === '__other__') {
+        var inp = sel.closest('.item-row').querySelector('.other-item-input');
+        var typed = inp ? inp.value.trim() : '';
+        if (!typed) { e.preventDefault(); alert('Please describe the item you need.'); return; }
+        // Disable select (won't submit) and add hidden input with typed value
+        sel.name = '_item_skip[]';
+        var hidden = document.createElement('input');
+        hidden.type = 'hidden';
+        hidden.name = 'item_name[]';
+        hidden.value = typed;
+        sel.insertAdjacentElement('afterend', hidden);
+      }
+    });
+  });
+});
+
+function addItem() {
+  var container = document.getElementById('itemsContainer');
+  var row = document.createElement('div');
+  row.className = 'item-row d-flex gap-2 mb-2 align-items-center';
+  var catOptions = categories.map(function(c) {
+    return '<option value="' + c + '">' + c + '</option>';
+  }).join('');
+  row.innerHTML =
+    '<select name="category[]" class="form-select form-select-sm cat-select" style="width:140px;flex-shrink:0;" required onchange="categoryChanged(this)"><option value="">Category</option>' + catOptions + '</select>' +
+    '<select name="item_name[]" class="form-select form-select-sm item-select" required disabled onchange="itemChanged(this)"><option value="">Select category first</option></select>' +
+    '<div class="payment-info"></div>' +
+    '<input type="number" name="quantity[]" class="form-control form-control-sm" style="width:65px;flex-shrink:0;" min="1" value="1" required>' +
+    '<button type="button" class="btn btn-outline-danger btn-sm px-2" onclick="removeItem(this)"><i class="bi bi-trash"></i></button>';
+  container.appendChild(row);
+  updateRemoveButtons();
+}
+function removeItem(btn) {
+  btn.closest('.item-row').remove();
+  updateRemoveButtons();
+}
+function updateRemoveButtons() {
+  var rows = document.querySelectorAll('.item-row');
+  rows.forEach(function(row, i) {
+    var btn = row.querySelector('button[onclick]');
+    if (btn) btn.disabled = rows.length === 1;
+  });
+}
+</script>
+{% endblock %}

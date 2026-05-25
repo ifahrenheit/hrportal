@@ -1,0 +1,824 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}COHERE{% endblock %} | Cohere</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg:        #f0f2f8;
+      --surface:   #ffffff;
+      --sidebar:   #0f2744;
+      --sidebar-hover: rgba(255,255,255,.1);
+      --sidebar-active: rgba(255,255,255,.18);
+      --text:      #1a2440;
+      --text-muted:#6b7a99;
+      --border:    #e2e8f4;
+      --accent:    #1e5fd4;
+      --accent2:   #f59e0b;
+      --danger:    #ef4444;
+      --success:   #10b981;
+      --info:      #3b82f6;
+      --warning:   #f59e0b;
+      --card-shadow: 0 2px 12px rgba(30,64,175,.07);
+      --topbar-bg: #ffffff;
+      --input-bg:  #f8faff;
+    }
+    [data-theme="dark"] {
+      --bg:        #0d1b2e;
+      --surface:   #152238;
+      --sidebar:   #091525;
+      --sidebar-hover: rgba(255,255,255,.07);
+      --sidebar-active: rgba(255,255,255,.13);
+      --text:      #e2e8f4;
+      --text-muted:#7a90b8;
+      --border:    #1e3354;
+      --accent:    #3b82f6;
+      --accent2:   #f59e0b;
+      --card-shadow: 0 2px 16px rgba(0,0,0,.3);
+      --topbar-bg: #152238;
+      --input-bg:  #0d1b2e;
+    }
+    * { transition: background-color .2s, color .2s, border-color .2s; }
+    body { font-family: 'DM Sans', sans-serif; background: var(--bg); color: var(--text); margin: 0; }
+    h1,h2,h3,h4,h5,h6,.fw-bold,.fw-semibold { font-family: 'Outfit', sans-serif; }
+    .sidebar {
+        height: 100vh;
+        background: var(--sidebar); color: #fff;
+        width: 240px; position: fixed; top: 0; left: 0;
+        display: flex; flex-direction: column;
+        box-shadow: 4px 0 20px rgba(0,0,0,.15); z-index: 100;
+        transition: width .25s ease;
+        
+      }
+
+    .sidebar-nav {
+    flex: 1;
+
+}
+
+        /* Add this — overrides the global scrollbar just for the sidebar nav */
+    .sidebar-nav::-webkit-scrollbar { width: 4px; }
+    .sidebar-nav::-webkit-scrollbar-track { background: transparent; }
+    .sidebar-nav::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.25); border-radius: 3px; }
+    .sidebar-nav::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.45); }
+
+    .sidebar.collapsed { width: 60px; }
+    .sidebar.collapsed .brand-text,
+    .sidebar.collapsed .nav-label,
+    .sidebar.collapsed .nav-section,
+    .sidebar.collapsed .logout-text { display: none; }
+    .sidebar.collapsed .brand { justify-content: center; padding: 1.25rem .5rem; }
+    .sidebar.collapsed .nav-link { justify-content: center; padding: .55rem 0; margin: 1px 8px; }
+    .sidebar.collapsed .nav-link i { width: auto; }
+    .sidebar.collapsed .sidebar-footer { padding: .75rem .5rem; }
+    .sidebar-toggle {
+      position: absolute; top: 50%; right: -13px;
+      transform: translateY(-50%);
+      width: 26px; height: 26px; border-radius: 50%;
+      background: var(--accent); border: 2px solid var(--surface);
+      color: #fff; cursor: pointer; display: flex; align-items: center;
+      justify-content: center; font-size: .7rem; z-index: 101;
+      box-shadow: 0 2px 8px rgba(0,0,0,.2);
+    }
+    .sidebar-toggle:hover { background: #1a4fc4; }
+    .sidebar .brand {
+      font-family: 'Outfit', sans-serif; font-size: 1rem; font-weight: 700;
+      padding: 1.25rem 1.5rem; border-bottom: 1px solid rgba(255,255,255,.08);
+      display: flex; align-items: center; gap: .6rem; letter-spacing: .01em;
+    }
+    .sidebar .brand .brand-icon {
+      width: 32px; height: 32px; background: var(--accent); border-radius: 8px;
+      display: flex; align-items: center; justify-content: center; font-size: .9rem;
+      flex-shrink: 0;
+    }
+    .sidebar .nav-section {
+      font-size: .65rem; text-transform: uppercase; letter-spacing: .1em;
+      padding: 1rem 1.5rem .3rem; opacity: .4; font-weight: 600;
+    }
+    .sidebar .nav-link {
+      color: rgba(255,255,255,.7); padding: .55rem 1.25rem; border-radius: 8px;
+      margin: 1px 10px; font-size: .88rem; display: flex; align-items: center; gap: .6rem;
+    }
+    .sidebar .nav-link:hover { background: var(--sidebar-hover); color: #fff; }
+    .sidebar .nav-link.active { background: var(--sidebar-active); color: #fff; font-weight: 500; }
+    .sidebar .nav-link i { font-size: 1rem; width: 18px; text-align: center; flex-shrink: 0; }
+    .sidebar-footer { margin-top: auto; padding: 1rem; border-top: 1px solid rgba(255,255,255,.08); }
+    .main-content { margin-left: 240px; padding: 1.75rem 2rem; min-height: 100vh; transition: margin-left .25s ease; }
+    .main-content.expanded { margin-left: 60px; }
+    .sidebar-overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,.5); z-index: 99; }
+    .mobile-topbar { display: none; background: var(--sidebar); padding: .75rem 1rem; position: fixed; top: 0; left: 0; right: 0; z-index: 102; align-items: center; gap: .75rem; }
+    .mobile-topbar .brand-text { color: #fff; font-family: Outfit, sans-serif; font-weight: 700; font-size: .95rem; }
+    .hamburger { background: none; border: none; color: #fff; font-size: 1.4rem; cursor: pointer; padding: .5rem; line-height: 1; touch-action: manipulation; -webkit-tap-highlight-color: transparent; min-width: 44px; min-height: 44px; display: flex; align-items: center; justify-content: center; }
+    @media (max-width: 768px) {
+      .sidebar { left: -240px; transition: left .25s ease; z-index: 100; pointer-events: none; }
+      .sidebar.mobile-open { left: 0; pointer-events: all; }
+      .sidebar-toggle { display: none; }
+      .sidebar-overlay.active { display: block; }
+      .mobile-topbar { display: flex; }
+      .main-content { margin-left: 0 !important; padding: 5rem 1rem 1.5rem; }
+      .topbar { border-radius: 8px; padding: .6rem 1rem; margin-bottom: 1.25rem; }
+      .table-responsive { font-size: .8rem; }
+      .btn-sm { font-size: .75rem; }
+      .card { border-radius: 10px; }
+    }
+    .topbar {
+      background: var(--topbar-bg); border-radius: 12px;
+      padding: .75rem 1.25rem; margin-bottom: 1.75rem;
+      display: flex; justify-content: space-between; align-items: center;
+      box-shadow: var(--card-shadow); border: 1px solid var(--border);
+    }
+    .topbar .page-title { font-family: 'Outfit', sans-serif; font-weight: 600; font-size: 1.05rem; color: var(--text); }
+    .topbar .user-pill {
+      display: flex; align-items: center; gap: .5rem;
+      background: var(--bg); border-radius: 20px; padding: .35rem .85rem;
+      font-size: .85rem; color: var(--text-muted); border: 1px solid var(--border);
+    }
+    .theme-toggle {
+      width: 36px; height: 36px; border-radius: 8px; border: 1px solid var(--border);
+      background: var(--bg); color: var(--text-muted); cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 1rem; transition: all .2s;
+    }
+    .theme-toggle:hover { background: var(--accent); color: #fff; border-color: var(--accent); }
+    .card { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; box-shadow: var(--card-shadow); }
+    .balance-card { border-left: 3px solid var(--accent); }
+    .progress { background: var(--border); }
+    .progress-bar { background: var(--accent); }
+    .table { color: var(--text); }
+    .table thead th { background: var(--bg); color: var(--text-muted); font-size: .78rem; text-transform: uppercase; letter-spacing: .06em; border-color: var(--border); font-weight: 600; }
+    .table td { border-color: var(--border); vertical-align: middle; font-size: .88rem; }
+    .table-hover tbody tr:hover { background: var(--bg); }
+    .badge-off  { background: #fef3c7; color: #92400e; border: 1px solid #fde68a; font-size: .75rem; }
+    .badge-work { background: #d1fae5; color: #065f46; border: 1px solid #a7f3d0; font-size: .75rem; }
+    [data-theme="dark"] .table td, [data-theme="dark"] .table th { background: transparent; color: var(--text); border-color: var(--border); }
+    [data-theme="dark"] .card { background: var(--card-bg, #112240); color: var(--text); border-color: var(--border); }
+    [data-theme="dark"] .text-muted { color: #8899aa !important; }
+    [data-theme="dark"] .table { --bs-table-bg: transparent; --bs-table-hover-bg: rgba(255,255,255,.04); }
+    [data-theme="dark"] .badge-off  { background: #422006; color: #fbbf24; border-color: #78350f; }
+    [data-theme="dark"] .badge-work { background: #022c22; color: #34d399; border-color: #065f46; }
+    .alert { border-radius: 10px; border: 1px solid; font-size: .88rem; }
+    .alert-info    { background: #eff6ff; border-color: #bfdbfe; color: #1e40af; }
+    .alert-success { background: #f0fdf4; border-color: #bbf7d0; color: #15803d; }
+    .alert-warning { background: #fffbeb; border-color: #fde68a; color: #92400e; }
+    .alert-danger  { background: #fef2f2; border-color: #fecaca; color: #991b1b; }
+    [data-theme="dark"] .alert-info    { background: #1e3a5f; border-color: #1e4ed8; color: #93c5fd; }
+    [data-theme="dark"] .alert-success { background: #052e16; border-color: #166534; color: #86efac; }
+    [data-theme="dark"] .alert-warning { background: #422006; border-color: #b45309; color: #fcd34d; }
+    [data-theme="dark"] .alert-danger  { background: #450a0a; border-color: #991b1b; color: #fca5a5; }
+    .btn-primary { background: var(--accent); border-color: var(--accent); font-family: 'Outfit', sans-serif; font-weight: 500; }
+    .btn-primary:hover { background: #1a4fc4; border-color: #1a4fc4; }
+    .form-control, .form-select { background: var(--input-bg); border-color: var(--border); color: var(--text); border-radius: 8px; }
+    .form-control:focus, .form-select:focus { background: var(--input-bg); color: var(--text); border-color: var(--accent); box-shadow: 0 0 0 3px rgba(30,95,212,.12); }
+    .nav-section-toggle {
+      display: flex; align-items: center; justify-content: space-between;
+      font-size: .65rem; text-transform: uppercase; letter-spacing: .1em;
+      padding: 1rem 1.5rem .3rem; opacity: .6; font-weight: 600;
+      cursor: pointer; user-select: none;
+    }
+    .nav-section-toggle:hover { opacity: 1; }
+    .section-arrow { font-size: .65rem; transition: transform .2s; }
+    .nav-section-body { overflow: hidden; transition: max-height .3s ease; max-height: 500px; }
+    .nav-section-body.collapsed { max-height: 0; }
+    .sidebar.collapsed .nav-section-toggle { padding: .5rem 0; justify-content: center; }
+    .sidebar.collapsed .nav-section-toggle span,
+    .sidebar.collapsed .section-arrow { display: none; }
+    .sidebar.collapsed .nav-section-body { max-height: 500px !important; }
+    .sidebar hr { border-color: rgba(255,255,255,.08); margin: .25rem 1rem; }
+    ::-webkit-scrollbar { width: 6px; }
+    .emp-id-copy { cursor: pointer; transition: color .15s; }
+    .emp-id-copy:hover { color: var(--accent) !important; }
+    .emp-id-copy.copied { color: var(--success) !important; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+  </style>
+</head>
+<body>
+{% if session.get('user') %}
+<div class="sidebar-overlay" id="sidebarOverlay" onclick="closeSidebar()"></div>
+<div class="mobile-topbar">
+  <button class="hamburger" id="mobileHamburger"><i class="bi bi-list"></i></button>
+  <span class="brand-text">Cohere HR</span>
+</div>
+<div class="sidebar" id="sidebar">
+  <button class="sidebar-toggle" id="sidebarToggle" onclick="toggleSidebar()" title="Toggle sidebar">
+    <i class="bi bi-chevron-left" id="toggleIcon"></i>
+  </button>
+
+  <div class="brand">
+    <div class="brand-icon"><i class="bi bi-calendar2-check"></i></div>
+    <span class="brand-text">Cohere</span>
+  </div>
+
+  <nav class="nav flex-column mt-2 sidebar-nav">
+
+    {# ── MAIN ─────────────────────────────────────────────── #}
+    <div class="nav-section-toggle nav-label" onclick="toggleSection('main')" id="main-header">
+      <span>Main</span>
+      <i class="bi bi-chevron-down section-arrow" id="main-arrow"></i>
+    </div>
+    <div class="nav-section-body" id="main-body">
+      <a class="nav-link {% if request.endpoint == 'dashboard' %}active{% endif %}" href="{{ url_for('dashboard') }}">
+        <i class="bi bi-speedometer2"></i> <span class="nav-label">Dashboard</span>
+      </a>
+      <a class="nav-link {% if request.endpoint == 'history' %}active{% endif %}" href="{{ url_for('history') }}">
+        <i class="bi bi-clock-history"></i> <span class="nav-label">My History</span>
+      </a>
+      <a class="nav-link {% if request.endpoint == 'break_log.break_log' %}active{% endif %}"
+        href="{{ url_for('break_log.break_log') }}">
+        <i class="bi bi-stopwatch"></i> <span class="nav-label">Break Log</span>
+      </a>
+
+    </div>
+
+    {# ── MY REQUESTS ───────────────────────────────────── #}
+    <div class="nav-section-toggle nav-label"
+         onclick="toggleSection('filerequests')"
+         id="filerequests-header">
+      <span>My Requests</span>
+      <i class="bi bi-chevron-down section-arrow" id="filerequests-arrow"></i>
+    </div>
+    <div class="nav-section-body" id="filerequests-body">
+      <a class="nav-link {% if request.endpoint == 'file_requests_hub' %}active{% endif %}"
+         href="{{ url_for('file_requests_hub') }}">
+        <i class="bi bi-grid-3x2-gap"></i>
+        <span class="nav-label">All Requests</span>
+      </a>
+      <a class="nav-link {% if request.endpoint == 'file_leave' %}active{% endif %}" href="{{ url_for('file_leave') }}">
+        <i class="bi bi-calendar-plus"></i> <span class="nav-label">File Leave</span>
+      </a>
+      <a class="nav-link {% if request.endpoint == 'file_fts' %}active{% endif %}"
+         href="{{ url_for('file_fts') }}">
+        <i class="bi bi-clock"></i>
+        <span class="nav-label">Failure to Swipe</span>
+      </a>
+      <a class="nav-link {% if request.endpoint in ['file_ot', 'file_rdw'] %}active{% endif %}"
+         href="{{ url_for('file_ot') }}">
+        <i class="bi bi-hourglass-bottom"></i>
+        <span class="nav-label">OT / Rest Day Work</span>
+      </a>
+      <a class="nav-link {% if request.endpoint == 'file_cws' %}active{% endif %}"
+         href="{{ url_for('file_cws') }}">
+        <i class="bi bi-arrow-left-right"></i>
+        <span class="nav-label">Change Work Schedule</span>
+      </a>
+      <a class="nav-link {% if request.endpoint == 'file_material' %}active{% endif %}"
+         href="{{ url_for('file_material') }}">
+        <i class="bi bi-box-seam"></i>
+        <span class="nav-label">Material Request</span>
+      </a>
+      <a class="nav-link {% if request.endpoint == 'facilities_request' %}active{% endif %}"
+         href="{{ url_for('facilities_request') }}">
+        <i class="bi bi-tools"></i>
+        <span class="nav-label">Facilities &amp; Repair</span>
+      </a>
+      <a class="nav-link {% if request.endpoint == 'magic_cws_form' %}active{% endif %}"
+         href="{{ url_for('magic_cws_form') }}">
+        <i class="bi bi-lightning-charge-fill" style="color:#a78bfa"></i>
+        <span class="nav-label">Magic CWS</span>
+      </a>
+      <a class="nav-link {% if request.endpoint in ['tickets_index', 'ticket_detail', 'ticket_add_comment'] %}active{% endif %}"
+         href="{{ url_for('tickets_index') }}">
+        <i class="bi bi-headset"></i>
+        <span class="nav-label">My Tickets</span>
+      </a>
+    </div>
+
+    {# ── MY TEAM (Supervisors) ────────────────────────────── #}
+    {% if session.get('is_supervisor') or session.get('is_admin') or session.get('permissions', {}).get('can_material_requests') %}
+    <div class="nav-section-toggle nav-label" onclick="toggleSection('supervisor')" id="supervisor-header">
+      <span>My Team</span>
+      <i class="bi bi-chevron-down section-arrow" id="supervisor-arrow"></i>
+    </div>
+    <div class="nav-section-body" id="supervisor-body">
+      {% if session.get('is_supervisor') or session.get('is_admin') %}
+      <a class="nav-link {% if request.endpoint == 'supervisor_active_leaves' %}active{% endif %}" href="{{ url_for('supervisor_active_leaves') }}">
+        <i class="bi bi-calendar-check"></i> <span class="nav-label">All Team Leaves</span>
+      </a>
+      <a class="nav-link {% if request.endpoint == 'supervisor_pending' %}active{% endif %}" href="{{ url_for('supervisor_pending') }}">
+        <i class="bi bi-hourglass-split"></i>
+        <span class="nav-label">Leave Approvals</span>
+        <span id="pendingBadge" style="display:none;margin-left:auto;background:#ef4444;color:#fff;font-size:.65rem;font-weight:700;padding:.15rem .45rem;border-radius:999px;min-width:18px;text-align:center;"></span>
+      </a>
+      <a class="nav-link {% if request.endpoint == 'file_requests_approvals' %}active{% endif %}"
+         href="{{ url_for('file_requests_approvals') }}">
+        <i class="bi bi-check2-square"></i>
+        <span class="nav-label">OT / CWS / FTS / RDW</span>
+        <span id="fileRequestsBadge"
+              style="display:none;margin-left:auto;background:#ef4444;color:#fff;
+                     font-size:.65rem;font-weight:700;padding:.15rem .45rem;
+                     border-radius:999px;min-width:18px;text-align:center;"></span>
+      </a>
+      {% endif %}
+      <a class="nav-link {% if request.endpoint == 'material_som_approvals' %}active{% endif %}"
+         href="{{ url_for('material_som_approvals') }}">
+        <i class="bi bi-box-seam"></i>
+        <span class="nav-label">Material Approvals</span>
+        <span id="materialBadge"
+              style="display:none;margin-left:auto;background:#ef4444;color:#fff;
+                     font-size:.65rem;font-weight:700;padding:.15rem .45rem;
+                     border-radius:999px;min-width:18px;text-align:center;"></span>
+      </a>
+      {% if session.get('is_supervisor') or session.get('is_admin') %}
+      <a class="nav-link {% if request.endpoint == 'supervisor_team_calendar' %}active{% endif %}" href="{{ url_for('supervisor_team_calendar') }}">
+        <i class="bi bi-calendar3"></i> <span class="nav-label">Team Calendar</span>
+      </a>
+      <a class="nav-link {% if request.endpoint == 'break_log.supervisor_break_logs' %}active{% endif %}"
+        href="{{ url_for('break_log.supervisor_break_logs') }}">
+        <i class="bi bi-clipboard2-pulse"></i> <span class="nav-label">Break Logs</span>
+      </a>
+      {% endif %}
+    </div>
+    {% endif %}
+
+    {# ── ADMIN SECTIONS ───────────────────────────────────── #}
+      {# Incident Reports #}
+      {% if ir_can_file() or ir_can_view() %}
+      <div class="nav-section-toggle nav-label" onclick="toggleSection('incident-reports')" id="incident-reports-header">
+        <span>Incident Reports</span>
+        <i class="bi bi-chevron-down section-arrow" id="incident-reports-arrow"></i>
+      </div>
+      <div class="nav-section-body" id="incident-reports-body">
+        {% if ir_can_file() %}
+        <a class="nav-link {% if request.endpoint and 'incident_reports' in (request.endpoint or '') %}active{% endif %}"
+           href="{{ url_for('incident_reports.new_report') }}">
+          <i class="bi bi-file-earmark-plus"></i>
+          <span class="nav-label">File Incident Report</span>
+        </a>
+        {% endif %}
+        {% if ir_can_view() %}
+        <a class="nav-link {% if request.endpoint == 'incident_reports.dashboard' %}active{% endif %}"
+           href="{{ url_for('incident_reports.dashboard') }}">
+          <i class="bi bi-clipboard2-pulse"></i>
+          <span class="nav-label">Incident Dashboard</span>
+        </a>
+        {% endif %}
+      </div>
+      {% endif %}
+    {% if session.get('is_admin') or session.get('is_sub_admin') %}
+
+      {# People & Requests #}
+      {% if session.get('is_admin')
+            or session.get('permissions', {}).get('can_all_leaves')
+            or session.get('permissions', {}).get('can_all_requests')
+            or session.get('permissions', {}).get('can_file_for_emp') %}
+      <div class="nav-section-toggle nav-label" onclick="toggleSection('people')" id="people-header">
+        <span>People &amp; Requests</span>
+        <i class="bi bi-chevron-down section-arrow" id="people-arrow"></i>
+      </div>
+      <div class="nav-section-body" id="people-body">
+        {% if session.get('is_admin') or session.get('permissions', {}).get('can_all_leaves') %}
+        <a class="nav-link {% if request.endpoint == 'admin_all_leaves' %}active{% endif %}" href="{{ url_for('admin_all_leaves') }}">
+          <i class="bi bi-calendar2-week"></i> <span class="nav-label">All Leaves</span>
+        </a>
+        {% endif %}
+        {% if session.get('is_admin') or session.get('permissions', {}).get('can_all_requests') %}
+        <a class="nav-link {% if request.endpoint == 'file_requests_hub' %}active{% endif %}" href="{{ url_for('file_requests_hub') }}">
+          <i class="bi bi-inbox"></i> <span class="nav-label">All Requests</span>
+        </a>
+        {% endif %}
+        {% if session.get('is_admin') or session.get('permissions', {}).get('can_file_for_emp') %}
+        <a class="nav-link {% if request.endpoint == 'admin_file_leave' %}active{% endif %}" href="{{ url_for('admin_file_leave') }}">
+          <i class="bi bi-person-plus"></i> <span class="nav-label">File for Employee</span>
+        </a>
+        {% endif %}
+        {% if session.get("is_admin") or session.get("is_sub_admin") %}
+        <a class="nav-link {% if request.endpoint in ['pim_index', 'pim_profile'] %}active{% endif %}" href="{{ url_for('pim_index') }}">
+          <i class="bi bi-people"></i> <span class="nav-label">Employee Database</span>
+        </a>
+        {% endif %}
+      </div>
+      {% endif %}
+
+      {# Operations (Materials + Facilities) #}
+      {% if session.get('is_admin')
+            or session.get('permissions', {}).get('can_material_requests')
+            or session.get('permissions', {}).get('can_final_approval')
+            or session.get('permissions', {}).get('can_view_approved_items')
+            or session.get('permissions', {}).get('can_facilities_review')
+            or session.get('permissions', {}).get('can_facilities_final') %}
+      <div class="nav-section-toggle nav-label" onclick="toggleSection('operations')" id="operations-header">
+        <span>Operations</span>
+        <i class="bi bi-chevron-down section-arrow" id="operations-arrow"></i>
+      </div>
+      <div class="nav-section-body" id="operations-body">
+        {% if session.get('is_admin') or session.get('permissions', {}).get('can_material_requests') or session.get('permissions', {}).get('can_inventory') %}
+        <a class="nav-link {% if request.endpoint == 'admin_inventory' %}active{% endif %}" href="{{ url_for('admin_inventory') }}">
+          <i class="bi bi-boxes"></i>
+          <span class="nav-label">Inventory</span>
+        </a>
+        {% endif %}
+        {% if session.get('is_admin') or session.get('permissions', {}).get('can_material_requests') %}
+        <a class="nav-link {% if request.endpoint == 'material_admin_review' %}active{% endif %}" href="{{ url_for('material_admin_review') }}">
+          <i class="bi bi-clipboard-check"></i>
+          <span class="nav-label">Material Review</span>
+          <span id="materialAdminBadge" style="display:none;margin-left:auto;background:#ef4444;color:#fff;font-size:.65rem;font-weight:700;padding:.15rem .45rem;border-radius:999px;min-width:18px;text-align:center;"></span>
+        </a>
+        {% endif %}
+        {% if session.get('user', {}).get('email', '')|lower == (config.get('MATERIAL_FINAL_EMAIL','') or '')|lower or session.get('is_admin') or session.get('permissions', {}).get('can_final_approval') %}
+        <a class="nav-link {% if request.endpoint == 'material_final_approval' %}active{% endif %}"
+           href="{{ url_for('material_final_approval') }}">
+          <i class="bi bi-patch-check"></i>
+          <span class="nav-label">Material Final Approval</span>
+          <span id="materialFinalBadge"
+                style="display:none;margin-left:auto;background:#ef4444;color:#fff;
+                       font-size:.65rem;font-weight:700;padding:.15rem .45rem;
+                       border-radius:999px;min-width:18px;text-align:center;"></span>
+        </a>
+        {% endif %}
+        {% if session.get('is_admin') or session.get('permissions', {}).get('can_view_approved_items') %}
+        <a class="nav-link {% if request.endpoint == 'material_purchaser_view' %}active{% endif %}"
+           href="{{ url_for('material_purchaser_view') }}">
+          <i class="bi bi-bag-check"></i>
+          <span class="nav-label">Purchaser View</span>
+        </a>
+        {% endif %}
+        {% if session.get('is_admin') or session.get('permissions', {}).get('can_facilities_review') %}
+        <a class="nav-link {% if request.endpoint == 'facilities_review' %}active{% endif %}"
+           href="{{ url_for('facilities_review') }}">
+          <i class="bi bi-tools"></i>
+          <span class="nav-label">Facilities Review</span>
+        </a>
+        {% endif %}
+        {% if session.get('is_admin') or session.get('permissions', {}).get('can_facilities_final') %}
+        <a class="nav-link {% if request.endpoint == 'facilities_final' %}active{% endif %}"
+           href="{{ url_for('facilities_final') }}">
+          <i class="bi bi-wrench-adjustable-circle"></i>
+          <span class="nav-label">Facilities Final Approval</span>
+        </a>
+        {% endif %}
+      </div>
+      {% endif %}
+      {# Support Tickets #}
+      {% if session.get('is_admin') or session.get('permissions', {}).get('can_it_tickets') or session.get('permissions', {}).get('can_hr_tickets') %}
+      <div class="nav-section-toggle nav-label" onclick="toggleSection('support')" id="support-header">
+        <span>Support</span>
+        <i class="bi bi-chevron-down section-arrow" id="support-arrow"></i>
+      </div>
+      <div class="nav-section-body" id="support-body">
+        <a class="nav-link {% if request.endpoint == 'admin_tickets' %}active{% endif %}"
+           href="{{ url_for('admin_tickets') }}">
+          <i class="bi bi-headset"></i>
+          <span class="nav-label">Ticket Queue</span>
+        </a>
+      </div>
+      {% endif %}
+      {# Analytics #}
+      {% if session.get('is_admin') or session.get('permissions', {}).get('can_reports') or session.get('permissions', {}).get('can_schedules') or session.get('permissions', {}).get('can_view_tickets') or session.get('permissions', {}).get('can_absences') %}
+      <div class="nav-section-toggle nav-label" onclick="toggleSection('analytics')" id="analytics-header">
+        <span>Analytics</span>
+        <i class="bi bi-chevron-down section-arrow" id="analytics-arrow"></i>
+      </div>
+      <div class="nav-section-body" id="analytics-body">
+        {% if session.get('is_admin') or session.get('permissions', {}).get('can_reports') %}
+        <a class="nav-link {% if request.endpoint == 'admin_analytics' %}active{% endif %}" href="{{ url_for('admin_analytics') }}">
+          <i class="bi bi-graph-up-arrow"></i> <span class="nav-label">Analytics</span>
+        </a>
+        {% if session.get('is_admin') or session.get('permissions', {}).get('can_onboarding') or session.get('permissions', {}).get('can_reports') %}
+        <a class="nav-link {% if request.endpoint == 'admin_onboarding_report' %}active{% endif %}"
+           href="{{ url_for('admin_onboarding_report') }}">
+          <i class="bi bi-person-lines-fill me-2"></i><span class="nav-label">Onboarding / Offboarding</span>
+        </a>
+        {% endif %}
+        <a class="nav-link {% if request.endpoint == 'admin_reports' %}active{% endif %}" href="{{ url_for('admin_reports') }}">
+          <i class="bi bi-bar-chart-line"></i> <span class="nav-label">Reports</span>
+        </a>
+        <a class="nav-link {% if request.endpoint == 'admin_night_diff' %}active{% endif %}" href="{{ url_for('admin_night_diff') }}">
+          <i class="bi bi-moon-stars"></i> <span class="nav-label">Night Differential</span>
+        </a>
+        {% if session.get('is_admin') or session.get('permissions', {}).get('can_absences') %}
+        <a class="nav-link {% if request.endpoint == 'admin_absences' %}active{% endif %}"
+           href="{{ url_for('admin_absences') }}">
+          <i class="bi bi-person-x"></i>
+          <span class="nav-label">Absences</span>
+        </a>
+        {% endif %}
+        {% endif %}
+        {% if session.get('is_admin') or session.get('permissions', {}).get('can_schedules') %}
+        <a class="nav-link {% if request.endpoint == 'admin_schedules' %}active{% endif %}" href="{{ url_for('admin_schedules') }}">
+          <i class="bi bi-table"></i> <span class="nav-label">Schedules</span>
+        </a>
+        {% endif %}
+        {% if session.get('is_admin') or session.get('permissions', {}).get('can_view_tickets') %}
+        <a class="nav-link {% if request.endpoint == 'admin_ot_tickets' %}active{% endif %}" href="{{ url_for('admin_ot_tickets') }}">
+          <i class="bi bi-ticket-perforated"></i> <span class="nav-label">OT/RDW Tickets</span>
+        </a>
+        {% endif %}
+      </div>
+      {% endif %}
+
+      {# Administration (HR Portal + Configuration) #}
+      {% if session.get('is_admin')
+            or session.get('permissions', {}).get('can_onboarding')
+            or session.get('permissions', {}).get('can_settings')
+            or session.get('permissions', {}).get('can_work_mode')
+            or session.get('permissions', {}).get('can_entitlements') %}
+      <div class="nav-section-toggle nav-label" onclick="toggleSection('administration')" id="administration-header">
+        <span>Administration</span>
+        <i class="bi bi-chevron-down section-arrow" id="administration-arrow"></i>
+      </div>
+      <div class="nav-section-body" id="administration-body">
+        {% if session.get('is_admin') or session.get('permissions', {}).get('can_onboarding') %}
+        <a class="nav-link {% if request.endpoint == 'hrportal_onboarding' %}active{% endif %}"
+           href="{{ url_for('hrportal_onboarding') }}">
+          <i class="bi bi-person-plus-fill"></i>
+          <span class="nav-label">Onboarding</span>
+        </a>
+        <a class="nav-link {% if request.endpoint == 'hrportal_offboarding' %}active{% endif %}"
+           href="{{ url_for('hrportal_offboarding') }}">
+          <i class="bi bi-person-dash-fill"></i>
+          <span class="nav-label">Offboarding</span>
+        </a>
+        {% endif %}
+        {% if session.get('is_admin') or session.get('permissions', {}).get('can_settings') %}
+        <a class="nav-link {% if request.endpoint == 'admin_settings' %}active{% endif %}" href="{{ url_for('admin_settings') }}">
+          <i class="bi bi-gear"></i> <span class="nav-label">Settings</span>
+        </a>
+        <a class="nav-link {% if request.endpoint == 'admin_holidays' %}active{% endif %}" href="{{ url_for('admin_holidays') }}">
+          <i class="bi bi-calendar2-x"></i> <span class="nav-label">Holidays</span>
+        </a>
+        {% endif %}
+        {% if session.get('is_admin') or session.get('permissions', {}).get('can_work_mode') %}
+        <a class="nav-link {% if request.endpoint == 'admin_emp_settings' %}active{% endif %}" href="{{ url_for('admin_emp_settings') }}">
+          <i class="bi bi-people-fill"></i> <span class="nav-label">Work Mode per Employee</span>
+        </a>
+        {% endif %}
+        {% if session.get('is_admin') or session.get('permissions', {}).get('can_entitlements') %}
+        <a class="nav-link {% if request.endpoint == 'admin_leave_types' %}active{% endif %}" href="{{ url_for('admin_leave_types') }}">
+          <i class="bi bi-tag"></i> <span class="nav-label">Leave Types</span>
+        </a>
+        <a class="nav-link {% if request.endpoint == 'admin_entitlements' %}active{% endif %}" href="{{ url_for('admin_entitlements') }}">
+          <i class="bi bi-credit-card"></i> <span class="nav-label">Entitlements</span>
+        </a>
+        {% endif %}
+        {% if session.get('is_admin') %}
+        <a class="nav-link {% if request.endpoint == 'admin_quick_links' %}active{% endif %}" href="{{ url_for('admin_quick_links') }}">
+          <i class="bi bi-grid-1x2"></i> <span class="nav-label">Quick Links</span>
+        </a>
+        <a class="nav-link {% if request.endpoint == 'admin_supervisors' %}active{% endif %}" href="{{ url_for('admin_supervisors') }}">
+          <i class="bi bi-person-lines-fill"></i> <span class="nav-label">Supervisor Assignments</span>
+        </a>
+        <a class="nav-link {% if request.endpoint == 'admin_sub_admins' %}active{% endif %}" href="{{ url_for('admin_sub_admins') }}">
+          <i class="bi bi-shield-check"></i> <span class="nav-label">Sub-Admins</span>
+        </a>
+        <a class="nav-link {% if request.endpoint == 'magic_cws_balance_admin' %}active{% endif %}" href="{{ url_for('magic_cws_balance_admin') }}">
+          <i class="bi bi-lightning-charge-fill" style="color:#a78bfa"></i> <span class="nav-label">Magic CWS Balance</span>
+        </a>
+        {% endif %}
+      </div>
+      {% endif %}
+
+    {% endif %}
+
+  </nav>
+
+  {% if session.get('original_admin') %}
+  <div style="background:#f59e0b;color:#000;padding:.5rem 1rem;font-size:.82rem;text-align:center;">
+    <i class="bi bi-person-fill-gear me-1"></i>
+    Viewing as <strong>{{ session['user']['name'] }}</strong>
+    <a href="{{ url_for('login_as_back') }}" class="ms-2 fw-bold" style="color:#000;text-decoration:underline;">
+      Switch Back
+    </a>
+  </div>
+  {% endif %}
+  <div class="sidebar-footer">
+    <a class="nav-link" href="{{ url_for('logout') }}" style="margin:0;">
+      <i class="bi bi-box-arrow-left"></i> <span class="nav-label logout-text">Logout</span>
+    </a>
+  </div>
+</div>
+{% endif %}
+
+<div class="{% if session.get('user') %}main-content{% else %}container py-5{% endif %}" id="mainContent">
+  {% if session.get('user') %}
+  <div class="topbar">
+    <span class="page-title">{% block page_title %}{% endblock %}</span>
+    <div class="d-flex align-items-center gap-2">
+      <button class="theme-toggle" onclick="toggleTheme()" title="Toggle dark/light mode">
+        <i class="bi bi-moon-stars-fill" id="theme-icon"></i>
+      </button>
+      <div class="user-pill">
+        <i class="bi bi-person-circle"></i>
+        {{ session['user']['name'] }}
+        {% if session['user'].get('employee_id') %}
+        <span style="color:var(--text-muted);font-size:.78rem;border-left:1px solid var(--border);padding-left:.5rem;margin-left:.25rem;">{{ session['user']['employee_id'] }}</span>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+  {% endif %}
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% for cat, msg in messages %}
+      <div class="alert alert-{{ cat }} alert-dismissible fade show" role="alert">
+        {{ msg }}<button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+      </div>
+    {% endfor %}
+  {% endwith %}
+  {% block content %}{% endblock %}
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+
+<script>
+/* ===============================
+   COPY TO CLIPBOARD
+================================ */
+function copyEmpId(el, empId) {
+  navigator.clipboard.writeText(empId).then(() => {
+    el.classList.add('copied');
+    const orig = el.textContent;
+    el.textContent = '✓ Copied';
+    setTimeout(() => {
+      el.classList.remove('copied');
+      el.textContent = orig;
+    }, 1500);
+  });
+}
+
+/* ===============================
+   THEME
+================================ */
+function applyTheme(theme) {
+  document.documentElement.setAttribute('data-theme', theme);
+  const icon = document.getElementById('theme-icon');
+  if (icon) {
+    icon.className = theme === 'dark'
+      ? 'bi bi-sun-fill'
+      : 'bi bi-moon-stars-fill';
+  }
+}
+
+function toggleTheme() {
+  const current = document.documentElement.getAttribute('data-theme');
+  const next = current === 'dark' ? 'light' : 'dark';
+  sessionStorage.setItem('theme', next);
+  applyTheme(next);
+}
+
+// Load saved theme
+applyTheme(sessionStorage.getItem('theme') || 'light');
+
+
+/* ===============================
+   SIDEBAR (DESKTOP + MOBILE)
+================================ */
+function closeSidebar() {
+  document.getElementById('sidebar')?.classList.remove('mobile-open');
+  document.getElementById('sidebarOverlay')?.classList.remove('active');
+}
+
+function toggleSidebar() {
+  const sidebar = document.getElementById('sidebar');
+  const overlay = document.getElementById('sidebarOverlay');
+
+  // MOBILE
+  if (window.innerWidth <= 768) {
+    sidebar?.classList.toggle('mobile-open');
+    overlay?.classList.toggle('active');
+    return;
+  }
+
+  // DESKTOP COLLAPSE
+  const main = document.getElementById('mainContent');
+  const icon = document.getElementById('toggleIcon');
+
+  const collapsed = sidebar.classList.toggle('collapsed');
+  main?.classList.toggle('expanded', collapsed);
+
+  if (icon) {
+    icon.className = collapsed
+      ? 'bi bi-chevron-right'
+      : 'bi bi-chevron-left';
+  }
+
+  localStorage.setItem('sidebarCollapsed', collapsed);
+}
+
+
+/* ===============================
+   SECTION TOGGLE
+================================ */
+function toggleSection(section) {
+  const body  = document.getElementById(section + '-body');
+  const arrow = document.getElementById(section + '-arrow');
+
+  if (!body) return;
+
+  const collapsed = body.classList.toggle('collapsed');
+
+  if (arrow) {
+    arrow.style.transform = collapsed
+      ? 'rotate(-90deg)'
+      : 'rotate(0deg)';
+  }
+
+  localStorage.setItem('section-' + section, collapsed ? '1' : '0');
+}
+
+
+/* ===============================
+   INIT AFTER LOAD
+================================ */
+document.addEventListener('DOMContentLoaded', function () {
+
+  /* Restore sidebar state */
+  if (localStorage.getItem('sidebarCollapsed') === 'true') {
+    const sidebar = document.getElementById('sidebar');
+    const main    = document.getElementById('mainContent');
+    const icon    = document.getElementById('toggleIcon');
+
+    sidebar?.classList.add('collapsed');
+    main?.classList.add('expanded');
+
+    if (icon) icon.className = 'bi bi-chevron-right';
+  }
+
+  /* Restore sections */
+  ['main','supervisor','people','analytics','operations','administration','filerequests','support'].forEach(section => {
+    const body  = document.getElementById(section + '-body');
+    const arrow = document.getElementById(section + '-arrow');
+
+    if (!body) return;
+
+    const hasActive = body.querySelector('.nav-link.active');
+    const stored = localStorage.getItem('section-' + section);
+
+    if (hasActive || stored === '0' || stored === null) {
+      body.classList.remove('collapsed');
+      if (arrow) arrow.style.transform = 'rotate(0deg)';
+    } else {
+      body.classList.add('collapsed');
+      if (arrow) arrow.style.transform = 'rotate(-90deg)';
+    }
+  });
+
+  /* ===============================
+     MOBILE HAMBURGER (FIXED)
+  ================================= */
+  const mobileBtn = document.getElementById('mobileHamburger');
+
+  if (mobileBtn) {
+    mobileBtn.addEventListener('click', function (e) {
+      e.preventDefault();
+      e.stopPropagation();
+
+      document.getElementById('sidebar')?.classList.toggle('mobile-open');
+      document.getElementById('sidebarOverlay')?.classList.toggle('active');
+    });
+  }
+
+});
+
+
+/* ===============================
+   BADGES (UNCHANGED LOGIC)
+================================ */
+{% if session.get('is_supervisor') or session.get('is_admin') or session.get('is_sub_admin') %}
+function refreshPendingBadge() {
+  fetch('/api/pending-count')
+    .then(r => r.json())
+    .then(data => {
+      const badge = document.getElementById('pendingBadge');
+      if (!badge) return;
+
+      if (data.count > 0) {
+        badge.textContent = data.count;
+        badge.style.display = 'inline-block';
+      } else {
+        badge.style.display = 'none';
+      }
+    }).catch(()=>{});
+}
+
+function refreshFileRequestsBadge() {
+  fetch('/api/file-requests-pending-count').then(r=>r.json()).then(d=>{
+    const b=document.getElementById('fileRequestsBadge');
+    if(b){b.textContent=d.count;b.style.display=d.count>0?'inline-block':'none';}
+  }).catch(()=>{});
+  fetch('/api/material-requests-pending-count').then(r=>r.json()).then(d=>{
+    const b=document.getElementById('materialBadge');
+    if(b){b.textContent=d.count;b.style.display=d.count>0?'inline-block':'none';}
+  }).catch(()=>{});
+  fetch('/api/material-admin-pending-count').then(r=>r.json()).then(d=>{
+    const b=document.getElementById('materialAdminBadge');
+    if(b){b.textContent=d.count;b.style.display=d.count>0?'inline-block':'none';}
+  }).catch(()=>{});
+  fetch('/api/material-final-pending-count').then(r=>r.json()).then(d=>{
+    const b=document.getElementById('materialFinalBadge');
+    if(b){b.textContent=d.count;b.style.display=d.count>0?'inline-block':'none';}
+  }).catch(()=>{});
+}
+
+refreshPendingBadge();
+setInterval(refreshPendingBadge, 60000);
+
+refreshFileRequestsBadge();
+setInterval(refreshFileRequestsBadge, 60000);
+{% endif %}
+</script>
+{% block scripts %}{% endblock %}
+<!-- ========== AI CHAT BUBBLE ========== -->

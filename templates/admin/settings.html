@@ -1,0 +1,120 @@
+{% extends 'base.html' %}
+{% block title %}Settings{% endblock %}
+{% block page_title %}System Settings{% endblock %}
+{% block content %}
+<div class="row">
+  <div class="col-md-6">
+    <div class="card p-4">
+      <h6 class="fw-semibold mb-1">Work Week Mode</h6>
+      <p class="text-muted small mb-4">Switch between 4-day and 5-day work week. This affects how leave hours are calculated for all employees.</p>
+
+      <form method="POST">
+        <div class="mb-3">
+          <div class="d-flex gap-3">
+            <div class="card p-3 flex-fill" style="cursor:pointer;border:2px solid {% if work_mode == '4day' %}var(--accent){% else %}var(--border){% endif %};"
+                 onclick="document.getElementById('mode4day').checked=true;this.closest('form').submit();">
+              <div class="d-flex align-items-center gap-2 mb-2">
+                <input type="radio" name="work_mode" id="mode4day" value="4day" {% if work_mode == '4day' %}checked{% endif %} style="display:none;">
+                <div style="width:14px;height:14px;border-radius:50%;background:{% if work_mode == '4day' %}var(--accent){% else %}var(--border){% endif %};"></div>
+                <span class="fw-semibold">4-Day Work Week</span>
+              </div>
+              <div class="small text-muted">10 hrs per working day. Off-days based on schedule. Leave deducts 1.25 days in OrangeHRM.</div>
+              {% if work_mode == '4day' %}
+              <span class="badge bg-success mt-2" style="width:fit-content;">Currently Active</span>
+              {% endif %}
+            </div>
+
+            <div class="card p-3 flex-fill" style="cursor:pointer;border:2px solid {% if work_mode == '5day' %}var(--accent){% else %}var(--border){% endif %};"
+                 onclick="document.getElementById('mode5day').checked=true;this.closest('form').submit();">
+              <div class="d-flex align-items-center gap-2 mb-2">
+                <input type="radio" name="work_mode" id="mode5day" value="5day" {% if work_mode == '5day' %}checked{% endif %} style="display:none;">
+                <div style="width:14px;height:14px;border-radius:50%;background:{% if work_mode == '5day' %}var(--accent){% else %}var(--border){% endif %};"></div>
+                <span class="fw-semibold">5-Day Work Week</span>
+              </div>
+              <div class="small text-muted">8 hrs per working day. Weekends skipped. Leave deducts 1.0 day in OrangeHRM.</div>
+              {% if work_mode == '5day' %}
+              <span class="badge bg-success mt-2" style="width:fit-content;">Currently Active</span>
+              {% endif %}
+            </div>
+          </div>
+        </div>
+      </form>
+
+      <div class="alert alert-warning mt-3 mb-0">
+        <i class="bi bi-exclamation-triangle-fill me-2"></i>
+        <strong>Note:</strong> Switching modes affects all future leave filings immediately. Existing approved leaves are not recalculated.
+      </div>
+    </div>
+
+    <h6 class="fw-semibold mt-4 mb-1">Entitlement Source</h6>
+    <p class="text-muted small mb-3">Switch where leave balances and entitlements are read from.</p>
+    <form method="POST" action="{{ url_for('toggle_entitlement_source') }}">
+      <div class="d-flex gap-3">
+        <div class="card p-3 flex-fill" style="cursor:pointer;border:2px solid {% if entitlement_source == 'orangehrm' %}var(--accent){% else %}var(--border){% endif %};"
+             onclick="document.getElementById('srcOhrm').checked=true;this.closest('form').submit();">
+          <input type="radio" name="source" id="srcOhrm" value="orangehrm" {% if entitlement_source == 'orangehrm' %}checked{% endif %} style="display:none;">
+          <div class="d-flex align-items-center gap-2 mb-2">
+            <div style="width:14px;height:14px;border-radius:50%;background:{% if entitlement_source == 'orangehrm' %}var(--accent){% else %}var(--border){% endif %};"></div>
+            <span class="fw-semibold">OrangeHRM</span>
+          </div>
+          <div class="small text-muted">Reads entitlements from OrangeHRM tables. Managed in OrangeHRM admin.</div>
+          {% if entitlement_source == 'orangehrm' %}
+          <span class="badge bg-success mt-2" style="width:fit-content;">Currently Active</span>
+          {% endif %}
+        </div>
+
+        <div class="card p-3 flex-fill" style="cursor:pointer;border:2px solid {% if entitlement_source == 'own' %}var(--accent){% else %}var(--border){% endif %};"
+             onclick="document.getElementById('srcOwn').checked=true;this.closest('form').submit();">
+          <input type="radio" name="source" id="srcOwn" value="own" {% if entitlement_source == 'own' %}checked{% endif %} style="display:none;">
+          <div class="d-flex align-items-center gap-2 mb-2">
+            <div style="width:14px;height:14px;border-radius:50%;background:{% if entitlement_source == 'own' %}var(--accent){% else %}var(--border){% endif %};"></div>
+            <span class="fw-semibold">Leave4Day (Own DB)</span>
+          </div>
+          <div class="small text-muted">Reads from Leave4Day entitlements. Fully managed here. OrangeHRM independent.</div>
+          {% if entitlement_source == 'own' %}
+          <span class="badge bg-success mt-2" style="width:fit-content;">Currently Active</span>
+          {% endif %}
+        </div>
+      </div>
+    </form>
+
+    <div class="alert alert-danger mt-3 mb-0">
+      <i class="bi bi-exclamation-triangle-fill me-2"></i>
+      <strong>Warning:</strong> Only switch to Own DB when Leave4Day entitlements are fully set up. Switching with empty entitlements will show zero balances for all employees.
+    </div>
+  </div>
+  </div>
+    <div class="card p-4 mt-4">
+      <h6 class="fw-semibold mb-1">Quick Links</h6>
+      <p class="text-muted small mb-3">Manage quick links from the <a href="{{ url_for('admin_quick_links') }}">Quick Links Manager</a>.</p>
+    </div>
+  </div>
+</div>
+
+
+{% block scripts %}
+<script>
+// Override onclick on work mode cards
+document.querySelectorAll('[onclick*="mode4day"], [onclick*="mode5day"]').forEach(el => {
+  const original = el.getAttribute('onclick');
+  el.removeAttribute('onclick');
+  el.addEventListener('click', function(e) {
+    if (confirm('This will affect all employees without individual settings. Continue?')) {
+      eval(original);
+    }
+  });
+});
+
+// Override onclick on entitlement source cards
+document.querySelectorAll('[onclick*="srcOhrm"], [onclick*="srcOwn"]').forEach(el => {
+  const original = el.getAttribute('onclick');
+  el.removeAttribute('onclick');
+  el.addEventListener('click', function(e) {
+    if (confirm('⚠️ Switching entitlement source will change balances for ALL employees immediately. Are you sure?')) {
+      eval(original);
+    }
+  });
+});
+</script>
+{% endblock %}
+{% endblock %}

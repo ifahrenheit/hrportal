@@ -1,0 +1,536 @@
+{% extends 'base.html' %}
+{% block title %}All File Requests{% endblock %}
+{% block page_title %}All File Requests{% endblock %}
+{% block content %}
+
+{# ── Filter Form ─────────────────────────────────────────── #}
+<div class="card mb-3">
+  <div class="card-body pb-2">
+    <form method="GET" action="{{ url_for('file_requests_hub') }}">
+      <div class="row g-2 align-items-end">
+
+        <div class="col-6 col-md-2">
+          <label class="form-label small mb-1">Date From</label>
+          <input type="date" name="date_from" class="form-control form-control-sm" value="{{ date_from }}">
+        </div>
+
+        <div class="col-6 col-md-2">
+          <label class="form-label small mb-1">Date To</label>
+          <input type="date" name="date_to" class="form-control form-control-sm" value="{{ date_to }}">
+        </div>
+
+        <div class="col-6 col-md-2">
+          <label class="form-label small mb-1">Status</label>
+          <select name="status" class="form-select form-select-sm" onchange="this.form.submit()">
+            <option value="">All Statuses</option>
+            {% for s in ['pending','approved','rejected','cancelled','deleted'] %}
+            <option value="{{ s }}" {% if status == s %}selected{% endif %}>{{ s|capitalize }}</option>
+            {% endfor %}
+          </select>
+        </div>
+
+        <div class="col-6 col-md-2">
+          <label class="form-label small mb-1">Type</label>
+          <select name="req_type" class="form-select form-select-sm" onchange="this.form.submit()">
+            <option value="">All Types</option>
+            {% for t in ['FTS','OT','CWS','RDW'] %}
+            <option value="{{ t }}" {% if req_type == t %}selected{% endif %}>{{ t }}</option>
+            {% endfor %}
+          </select>
+        </div>
+
+        {% if is_admin or is_supervisor or can_file_requests %}
+        <div class="col-6 col-md-2">
+          <label class="form-label small mb-1">Team Lead</label>
+          <select id="tlSelect" name="tl" class="form-select form-select-sm" onchange="this.form.submit()">
+            <option value="">All TLs</option>
+            {% for tl in tl_list %}
+            <option value="{{ tl }}" {% if tl_filter == tl %}selected{% endif %}>{{ tl }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        {% if is_admin %}
+        <div class="col-6 col-md-2">
+          <label class="form-label small mb-1">Approver</label>
+          <select id="approverSelect" name="approver" class="form-select form-select-sm">
+            <option value="">All Approvers</option>
+            {% for ap in approver_list %}
+            <option value="{{ ap }}" {% if approver_filter == ap %}selected{% endif %}>{{ ap }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        {% endif %}
+
+        <div class="col-6 col-md-2">
+          <label class="form-label small mb-1">Employee</label>
+          <div class="position-relative">
+            <input type="text" id="frEmpSearchInput" class="form-control form-control-sm"
+                   placeholder="Name or ID…" value="{{ emp_display or emp_search }}" autocomplete="off">
+            <input type="hidden" name="emp_search" id="frEmpSearchValue" value="{{ emp_search }}">
+            <div id="frEmpDropdown" class="position-absolute bg-white border rounded shadow-sm w-100" style="z-index:999;display:none;max-height:200px;overflow-y:auto;"></div>
+          </div>
+        </div>
+        {% endif %}
+
+        <div class="col-6 col-md-2" id="subTypeDiv" style="display:none;">
+          <label class="form-label small mb-1">Sub Type</label>
+          <select name="sub_type" id="subTypeSelect" class="form-select form-select-sm" onchange="this.form.submit()">
+            <option value="">All</option>
+            <optgroup label="Regular OT" id="grpOT">
+              <option value="PRE" {% if sub_type == 'PRE' %}selected{% endif %}>PRE</option>
+              <option value="POST" {% if sub_type == 'POST' %}selected{% endif %}>POST</option>
+              <option value="DAILY_OT" {% if sub_type == 'DAILY_OT' %}selected{% endif %}>Daily OT</option>
+              <option value="OVERHEAD_OT" {% if sub_type == 'OVERHEAD_OT' %}selected{% endif %}>Overhead OT</option>
+              <option value="TEAM_MEETING" {% if sub_type == 'TEAM_MEETING' %}selected{% endif %}>Team Meeting</option>
+              <option value="QA_REFRESHER" {% if sub_type == 'QA_REFRESHER' %}selected{% endif %}>QA Refresher</option>
+              <option value="OT260" {% if sub_type == 'OT260' %}selected{% endif %}>OT260</option>
+            </optgroup>
+            <optgroup label="Rest Day Work" id="grpRDW">
+              <option value="REGULAR" {% if sub_type == 'REGULAR' %}selected{% endif %}>Regular Work</option>
+              <option value="OVERHEAD_OT" {% if sub_type == 'OVERHEAD_OT' %}selected{% endif %}>Overhead</option>
+              <option value="DAILY_OT" {% if sub_type == 'DAILY_OT' %}selected{% endif %}>Daily OT</option>
+              <option value="OT260" {% if sub_type == 'OT260' %}selected{% endif %}>OT260</option>
+              <option value="TEAM_MEETING" {% if sub_type == 'TEAM_MEETING' %}selected{% endif %}>Team Meeting</option>
+            </optgroup>
+          </select>
+        </div>
+
+        <div class="col-12 d-flex gap-2">
+          <button type="submit" class="btn btn-primary btn-sm">
+            <i class="bi bi-search me-1"></i>Apply
+          </button>
+          <a href="{{ url_for('file_requests_hub') }}" class="btn btn-outline-secondary btn-sm">
+            <i class="bi bi-x-circle me-1"></i>Clear
+          </a>
+          <span class="ms-auto text-muted small align-self-center">
+            {{ records|length }} record{{ 's' if records|length != 1 }}
+          </span>
+          <button class="btn btn-outline-secondary btn-sm" onclick="copyTable()" title="Copy table to clipboard">
+            <i class="bi bi-clipboard me-1"></i>Copy Table
+          </button>
+        </div>
+
+      </div>
+    </form>
+  </div>
+</div>
+
+{# ── Results Table ───────────────────────────────────────── #}
+{% if is_admin or is_supervisor %}
+<div class="d-flex gap-2 mb-2 align-items-center" id="hubBulkBar">
+  <button type="button" class="btn btn-outline-secondary btn-sm" id="hubBulkToggle" onclick="hubToggleBulk()">
+    <i class="bi bi-check2-square me-1"></i>Bulk Select
+  </button>
+  <div id="hubBulkActions" style="display:none;" class="d-flex gap-2 align-items-center">
+    <div class="form-check mb-0">
+      <input class="form-check-input" type="checkbox" id="hubSelectAll" onchange="hubToggleAll(this)">
+      <label class="form-check-label small" for="hubSelectAll">All</label>
+    </div>
+    <button type="button" class="btn btn-success btn-sm" onclick="hubBulkSubmit('approve')">
+      <i class="bi bi-check-lg me-1"></i>Approve Selected
+    </button>
+    <button type="button" class="btn btn-danger btn-sm" onclick="hubBulkSubmit('reject')">
+      <i class="bi bi-x-lg me-1"></i>Reject Selected
+    </button>
+    <button type="button" class="btn btn-outline-danger btn-sm" onclick="hubBulkDelete()">
+      <i class="bi bi-trash me-1"></i>Delete Selected
+    </button>
+    <span class="text-muted small" id="hubSelectedCount">0 selected</span>
+  </div>
+</div>
+{% endif %}
+<div class="card">
+  <div class="table-responsive">
+    <table class="table table-hover mb-0" id="requestsTable">
+      <thead class="table-light">
+        <tr>
+          <th>Type</th>
+          {% if is_admin or is_supervisor or can_file_requests %}<th>Employee</th><th>ID</th><th>TL</th>{% endif %}
+          <th>Date</th>
+          <th>Details</th>
+          <th>Status</th>
+          <th>Filed At</th>
+          <th>Approved At</th>
+          <th>Approver</th>
+          {% if is_admin or is_supervisor %}<th>Actions</th>{% endif %}
+        </tr>
+      </thead>
+      <tbody>
+        {% set ns = namespace(current_tl=None) %}
+        {% for r in records %}
+
+          {% if is_admin or is_supervisor or can_file_requests %}
+            {% set row_tl = r.TL or '—' %}
+            {% if row_tl != ns.current_tl %}
+              {% set ns.current_tl = row_tl %}
+              <tr class="table-secondary">
+                <td colspan="{% if is_admin %}12{% elif is_supervisor %}11{% else %}7{% endif %}" class="py-1 ps-3">
+                  <i class="bi bi-people-fill me-1 text-primary"></i>
+                  <strong>{{ row_tl }}</strong>
+                  {% if r.group_name %}<span class="text-muted small ms-2">· {{ r.group_name }}</span>{% endif %}
+                </td>
+              </tr>
+            {% endif %}
+          {% endif %}
+
+          <tr data-del-id="{{ r.id }}">
+            <td>
+              {% if r.req_type == 'FTS' %}
+                <span class="badge bg-info text-dark">FTS</span>
+              {% elif r.req_type == 'OT' %}
+                <span class="badge bg-primary">OT</span>
+                {% set ot_sub = r.details.split(' ')[0] if r.details else '' %}
+                {% if ot_sub %}<span class="badge bg-primary opacity-75" style="font-size:.65rem;">{{ ot_sub }}</span>{% endif %}
+              {% elif r.req_type == 'CWS' %}
+                <span class="badge" style="background:#6f42c1">CWS</span>
+              {% elif r.req_type == 'RDW' %}
+                <span class="badge bg-warning text-dark">RDW</span>
+                {% if r.details %}<span class="badge bg-warning text-dark opacity-75" style="font-size:.65rem;">{{ r.details.split(' ')[0] }}</span>{% endif %}
+              {% endif %}
+            </td>
+
+            {% if is_admin or is_supervisor or can_file_requests %}
+            <td>{{ r.employee_name or '—' }}</td>
+            <td class="text-muted small">{{ r.emp_id or '—' }}</td>
+            <td class="small">{{ r.TL or '—' }}</td>
+            {% endif %}
+
+            <td>
+              {% if r.req_date %}
+                {{ r.req_date.strftime('%b %d, %Y') }}
+                <span class="text-muted small">({{ r.req_date.strftime('%a') }})</span>
+              {% else %}—{% endif %}
+            </td>
+
+            <td class="small">{{ r.details or '—' }}
+              {% if r.req_type in ('OT','RDW') and r.hours %}
+              <span class="badge bg-primary ms-1">{{ r.hours }}h</span>
+              {% endif %}
+            </td>
+
+            <td>
+              {% if r.status == 'approved' %}
+                <span class="badge bg-success">Approved</span>
+              {% elif r.status == 'rejected' %}
+                <span class="badge bg-danger">Rejected</span>
+              {% elif r.status == 'pending' %}
+                <span class="badge bg-warning text-dark">Pending</span>
+              {% elif r.status == 'cancelled' %}
+                <span class="badge bg-secondary">Cancelled</span>
+              {% elif r.status == 'Deleted' or r.status == 'deleted' %}
+                <span class="badge bg-dark">Deleted</span>
+              {% else %}
+                <span class="badge bg-secondary">{{ r.status }}</span>
+              {% endif %}
+            </td>
+
+            <td class="text-muted small">
+              {% if r.created_at %}{{ r.created_at.strftime('%b %d, %Y %H:%M') }}{% else %}—{% endif %}
+            </td>
+
+            <td class="text-muted small">
+              {% if r.approved_at %}{{ r.approved_at.strftime('%b %d, %Y %H:%M') }}{% else %}—{% endif %}
+            </td>
+
+            <td class="text-muted small">{{ r.approver_name or '—' }}</td>
+            {% if is_admin or is_supervisor %}
+            <td class="text-nowrap">
+              {% if r.status in ('Pending', 'pending') %}
+              <div class="d-flex gap-1 align-items-center">
+                <input type="checkbox" class="form-check-input hub-checkbox me-1"
+                       data-type="{{ r.req_type|lower }}" data-id="{{ r.id }}" data-emp="{{ r.emp_id }}"
+                       style="display:none;" onchange="hubUpdateCount()">
+                <button type="button" class="btn btn-success btn-sm py-0 px-2"
+                        onclick="hubAction('approve','{{ r.req_type|lower }}','{{ r.id }}','{{ r.emp_id }}')"
+                        title="Approve"><i class="bi bi-check-lg"></i></button>
+                <button type="button" class="btn btn-danger btn-sm py-0 px-2"
+                        onclick="hubAction('reject','{{ r.req_type|lower }}','{{ r.id }}','{{ r.emp_id }}')"
+                        title="Reject"><i class="bi bi-x-lg"></i></button>
+                {% if is_admin or is_supervisor %}
+                <button type="button" class="btn btn-outline-danger btn-sm py-0 px-1"
+                        onclick="confirmDelete('{{ r.req_type|lower }}','{{ r.id }}','{{ r.employee_name or '' }}')"
+                        title="Delete"><i class="bi bi-trash"></i></button>
+                {% endif %}
+              </div>
+              {% elif (is_admin or is_supervisor) and r.status not in ('Deleted','deleted') %}
+              <div class="d-flex gap-1 align-items-center">
+                <input type="checkbox" class="form-check-input hub-checkbox me-1"
+                       data-type="{{ r.req_type|lower }}" data-id="{{ r.id }}" data-emp="{{ r.emp_id }}"
+                       style="display:none;" onchange="hubUpdateCount()">
+                <button type="button" class="btn btn-outline-danger btn-sm py-0 px-1"
+                        onclick="confirmDelete('{{ r.req_type|lower }}','{{ r.id }}','{{ r.employee_name or '' }}')"
+                        title="Delete"><i class="bi bi-trash"></i></button>
+              </div>
+              {% endif %}
+            </td>
+            {% endif %}
+          </tr>
+
+        {% else %}
+        <tr>
+          <td colspan="10" class="text-center text-muted py-4">No records found.</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+{% if is_admin %}
+<div class="modal fade" id="deleteModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header border-0">
+        <h5 class="modal-title text-danger"><i class="bi bi-trash me-2"></i>Delete Request</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <p class="mb-2">Delete this <strong id="delTypeBadge"></strong> request for <strong id="delEmpName"></strong>?</p>
+        <p class="text-muted small mb-3">Portal record will be soft-deleted. Leave requests will also be removed from OrangeHRM.</p>
+        <label class="form-label small">Reason <span class="text-muted">(optional)</span></label>
+        <textarea id="delReason" class="form-control form-control-sm" rows="2" placeholder="e.g. Wrong date filed by agent"></textarea>
+      </div>
+      <div class="modal-footer border-0">
+        <button class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
+        <button class="btn btn-danger btn-sm" id="delConfirmBtn" onclick="submitDelete()">
+          <i class="bi bi-trash me-1"></i>Delete
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+// Show/hide subtype based on req_type
+function toggleSubType() {
+  var reqType = document.querySelector('select[name="req_type"]').value;
+  var div     = document.getElementById('subTypeDiv');
+  var grpOT   = document.getElementById('grpOT');
+  var grpRDW  = document.getElementById('grpRDW');
+  if (!div) return;
+  if (reqType === 'OT') {
+    div.style.display = 'block';
+    if (grpOT)  grpOT.style.display  = '';
+    if (grpRDW) grpRDW.style.display = 'none';
+  } else if (reqType === 'RDW') {
+    div.style.display = 'block';
+    if (grpOT)  grpOT.style.display  = 'none';
+    if (grpRDW) grpRDW.style.display = '';
+  } else {
+    div.style.display = 'none';
+  }
+}
+document.addEventListener('DOMContentLoaded', function() {
+  toggleSubType();
+  var sel = document.querySelector('select[name="req_type"]');
+  if (sel) sel.addEventListener('change', function() {
+    // Reset subtype when type changes
+    var subSel = document.getElementById('subTypeSelect');
+    if (subSel) subSel.value = '';
+    toggleSubType();
+  });
+});
+
+var frEmpTimeout;
+document.addEventListener("DOMContentLoaded", function() {
+  var input    = document.getElementById("frEmpSearchInput");
+  var dropdown = document.getElementById("frEmpDropdown");
+  var hidden   = document.getElementById("frEmpSearchValue");
+  if (!input) return;
+  input.addEventListener("input", function() {
+    var q = this.value.trim();
+    hidden.value = q;
+    clearTimeout(frEmpTimeout);
+    if (q.length < 2) { dropdown.style.display = "none"; return; }
+    frEmpTimeout = setTimeout(function() {
+      fetch("/api/employee-search?q=" + encodeURIComponent(q))
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+          dropdown.innerHTML = "";
+          if (!data.length) { dropdown.style.display = "none"; return; }
+          data.forEach(function(emp) {
+            var item = document.createElement("div");
+            item.className = "px-3 py-2 small";
+            item.style.cursor = "pointer";
+            item.textContent = emp.name + " (" + emp.id + ")";
+            item.onmouseenter = function() { this.style.background = "#f0f4ff"; };
+            item.onmouseleave = function() { this.style.background = ""; };
+            item.onclick = function() {
+              input.value = emp.name;
+              hidden.value = emp.id;
+              dropdown.style.display = "none";
+              input.form.submit();
+            };
+            dropdown.appendChild(item);
+          });
+          dropdown.style.display = "block";
+        });
+    }, 300);
+  });
+  document.addEventListener("click", function(e) {
+    if (!input.contains(e.target) && !dropdown.contains(e.target)) {
+      dropdown.style.display = "none";
+    }
+  });
+});
+
+function hubToggleBulk() {
+  var on = document.getElementById('hubBulkActions').style.display === 'none';
+  document.getElementById('hubBulkActions').style.display = on ? 'flex' : 'none';
+  document.getElementById('hubBulkToggle').classList.toggle('btn-primary', on);
+  document.getElementById('hubBulkToggle').classList.toggle('btn-outline-secondary', !on);
+  document.querySelectorAll('.hub-checkbox').forEach(function(c) {
+    c.style.display = on ? 'inline-block' : 'none';
+    c.checked = false;
+  });
+  hubUpdateCount();
+}
+function hubToggleAll(cb) {
+  document.querySelectorAll('.hub-checkbox').forEach(function(c) {
+    if (c.style.display !== 'none') c.checked = cb.checked;
+  });
+  hubUpdateCount();
+}
+function hubUpdateCount() {
+  var n = document.querySelectorAll('.hub-checkbox:checked').length;
+  var el = document.getElementById('hubSelectedCount');
+  if (el) el.textContent = n + ' selected';
+}
+function hubBulkDelete() {
+  var checked = Array.from(document.querySelectorAll('.hub-checkbox:checked'));
+  if (checked.length === 0) { alert('No records selected.'); return; }
+  var reason = prompt('Delete reason for ' + checked.length + ' selected record(s):\n(Leave blank if none)');
+  if (reason === null) return; // cancelled
+  var btn = document.getElementById('hubBulkBar').querySelector('.btn-outline-danger');
+  if (btn) { btn.disabled = true; btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Deleting...'; }
+  var promises = checked.map(function(c) {
+    var fd = new FormData();
+    fd.append('type', c.dataset.type);
+    fd.append('request_id', c.dataset.id);
+    fd.append('reason', reason);
+    return fetch('/admin/delete-request', { method: 'POST', body: fd }).then(function(r) { return r.json(); });
+  });
+  Promise.all(promises).then(function(results) {
+    var failed = results.filter(function(r) { return !r.success; });
+    if (failed.length > 0) {
+      alert(failed.length + ' record(s) failed to delete: ' + failed.map(function(r) { return r.message; }).join(', '));
+    }
+    const filterForm = document.querySelector('form[method="GET"]');
+    if (filterForm) {
+      const params = new URLSearchParams(new FormData(filterForm));
+      window.location.href = window.location.pathname + '?' + params.toString();
+    } else {
+      window.location.reload();
+    }
+  });
+}
+function hubAction(action, reqType, reqId, empId) {
+  var form = document.createElement('form');
+  form.method = 'POST';
+  form.action = '/file-requests/approvals/action';
+  [['action', action], ['req_type', reqType], ['req_id', reqId], ['emp_id', empId],
+   ['next', '/file-requests' + window.location.search]].forEach(function(p) {
+    var i = document.createElement('input');
+    i.type = 'hidden'; i.name = p[0]; i.value = p[1];
+    form.appendChild(i);
+  });
+  document.body.appendChild(form);
+  form.submit();
+}
+function hubBulkSubmit(action) {
+  var checked = document.querySelectorAll('.hub-checkbox:checked');
+  if (!checked.length) { alert('No requests selected.'); return; }
+  var form = document.createElement('form');
+  form.method = 'POST';
+  form.action = '/file-requests/approvals/bulk-action';
+  var a = document.createElement('input');
+  a.type = 'hidden'; a.name = 'action'; a.value = action;
+  form.appendChild(a);
+  var nxt = document.createElement('input');
+  nxt.type = 'hidden'; nxt.name = 'next';
+  nxt.value = '/file-requests' + window.location.search;
+  form.appendChild(nxt);
+  checked.forEach(function(cb) {
+    var h = document.createElement('input');
+    h.type = 'hidden'; h.name = 'selected_reqs';
+    h.value = cb.dataset.type + '|' + cb.dataset.id + '|' + cb.dataset.emp;
+    form.appendChild(h);
+  });
+  document.body.appendChild(form);
+  form.submit();
+}
+
+function confirmDelete(type, id, empName) {
+  document.getElementById('delTypeBadge').textContent = type.toUpperCase();
+  document.getElementById('delEmpName').textContent   = empName || 'this employee';
+  document.getElementById('delReason').value          = '';
+  document.getElementById('delConfirmBtn').dataset.type = type;
+  document.getElementById('delConfirmBtn').dataset.id   = id;
+  new bootstrap.Modal(document.getElementById('deleteModal')).show();
+}
+
+function submitDelete() {
+  const btn    = document.getElementById('delConfirmBtn');
+  const type   = btn.dataset.type;
+  const id     = btn.dataset.id;
+  const reason = document.getElementById('delReason').value.trim();
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Deleting...';
+  const fd = new FormData();
+  fd.append('type', type);
+  fd.append('request_id', id);
+  fd.append('reason', reason);
+  fetch('/admin/delete-request', { method: 'POST', body: fd })
+    .then(r => r.json())
+    .then(data => {
+      if (data.success) {
+        bootstrap.Modal.getInstance(document.getElementById('deleteModal')).hide();
+        const row = document.querySelector('[data-del-id="' + id + '"]')?.closest('tr');
+        if (row) row.remove();
+      } else {
+        alert('Error: ' + (data.message || 'Unknown error'));
+        btn.disabled = false;
+        btn.innerHTML = '<i class="bi bi-trash me-1"></i>Delete';
+      }
+    })
+    .catch(() => {
+      alert('Network error. Please try again.');
+      btn.disabled = false;
+      btn.innerHTML = '<i class="bi bi-trash me-1"></i>Delete';
+    });
+}
+
+function copyTable() {
+  const table = document.getElementById('requestsTable');
+  if (!table) return;
+  let text = '';
+  for (const row of table.rows) {
+    const cells = Array.from(row.cells).map(c => c.innerText.trim().replace(/\n+/g,' '));
+    text += cells.join('\t') + '\n';
+  }
+  navigator.clipboard.writeText(text).then(() => {
+    const btn = document.querySelector('[onclick="copyTable()"]');
+    const orig = btn.innerHTML;
+    btn.innerHTML = '<i class="bi bi-check-lg me-1"></i>Copied!';
+    btn.classList.add('btn-success');
+    btn.classList.remove('btn-outline-secondary');
+    setTimeout(() => {
+      btn.innerHTML = orig;
+      btn.classList.remove('btn-success');
+      btn.classList.add('btn-outline-secondary');
+    }, 2000);
+  });
+}
+
+document.getElementById('approverSelect').addEventListener('change', function() {
+    const url = new URL(window.location.href);
+    url.searchParams.set('approver', this.value);
+    url.searchParams.delete('tl');
+    window.location.href = url.toString();
+});
+</script>
+{% endblock %}

@@ -1,0 +1,135 @@
+{% extends 'base.html' %}
+{% block title %}Supervisor Assignments{% endblock %}
+{% block page_title %}Supervisor Assignments{% endblock %}
+
+{% block content %}
+<style>
+  .emp-row { border:1px solid var(--border); border-radius:10px; background:var(--surface); padding:1rem 1.25rem; margin-bottom:.6rem; display:flex; align-items:center; gap:1rem; flex-wrap:wrap; }
+  .emp-row.has-override { border-color:var(--accent); }
+  .sup-badge { font-size:.75rem; padding:.2rem .6rem; border-radius:20px; }
+  .sup-ohrm  { background:#f0f9ff; color:#0369a1; border:1px solid #bae6fd; }
+  .sup-override { background:#f0fdf4; color:#166534; border:1px solid #bbf7d0; }
+  .sup-none  { background:#fef9c3; color:#854d0e; border:1px solid #fef08a; }
+</style>
+
+<div class="alert alert-info mb-4">
+  <i class="bi bi-info-circle me-2"></i>
+  Override OrangeHRM supervisor assignments per employee. If no override is set, OrangeHRM's <code>hs_hr_emp_reportto</code> is used as fallback.
+</div>
+
+<div class="d-flex gap-2 mb-3 flex-wrap">
+  <input type="text" id="empSearch" class="form-control form-control-sm"
+         placeholder="Search employee..." style="max-width:260px;" oninput="filterRows()">
+  <select id="groupFilter" class="form-select form-select-sm" style="width:auto;" onchange="filterRows()">
+    <option value="">All Groups</option>
+    {% for g in groups %}<option value="{{ g }}" {% if group_filter==g %}selected{% endif %}>{{ g }}</option>{% endfor %}
+  </select>
+  <select id="overrideFilter" class="form-select form-select-sm" style="width:auto;" onchange="filterRows()">
+    <option value="">All</option>
+    <option value="override">Has Override</option>
+    <option value="ohrm">OrangeHRM Only</option>
+    <option value="none">No Supervisor</option>
+  </select>
+</div>
+
+<!-- BATCH ASSIGN / REMOVE FORM -->
+<form method="POST" id="batchForm">
+  <div class="mb-3 d-flex gap-2 align-items-center flex-wrap">
+    <!-- Batch Assign Supervisor -->
+    <input type="hidden" name="action" value="assign_batch" id="batchAction">
+    <select name="supervisor_email" class="form-select form-select-sm" style="width:200px;" id="batchSupervisorSelect">
+      <option value="">— Select Supervisor for Batch —</option>
+      {% for sup in all_employees %}
+        <option value="{{ sup.email }}">{{ sup.emp_firstname }}</option>
+      {% endfor %}
+    </select>
+    <button type="button" class="btn btn-sm btn-primary" onclick="submitBatchAssign()">Assign to Selected</button>
+
+    <!-- Batch Remove Override -->
+    <button type="button" class="btn btn-sm btn-outline-secondary" onclick="submitBatchRemove()">Remove Override from Selected</button>
+
+    <!-- Select All -->
+    <label class="mb-0 ms-2"><input type="checkbox" id="selectAll"> Select All</label>
+  </div>
+
+  <div id="empList">
+    {% for e in employees %}
+    {% set has_override = e.override_sup_emp is not none %}
+    {% set has_ohrm     = e.ohrm_sup_emp is not none %}
+    <div class="emp-row {% if has_override %}has-override{% endif %}"
+         data-name="{{ e.emp_lastname }} {{ e.emp_firstname }}"
+         data-group="{{ e.group_name or '' }}"
+         data-state="{{ 'override' if has_override else ('ohrm' if has_ohrm else 'none') }}">
+      
+      <div style="min-width:220px;">
+        <div class="fw-semibold">{{ e.emp_lastname }}, {{ e.emp_firstname }}</div>
+        <div class="text-muted small">{{ e.employee_id }} {% if e.group_name %}&bull; {{ e.group_name }}{% endif %}</div>
+      </div>
+
+      <div class="flex-fill">
+        <div class="small text-muted mb-1">Current Supervisor:</div>
+        {% if has_override %}
+          <span class="sup-badge sup-override">
+            <i class="bi bi-check-circle me-1"></i>{{ e.override_sup_name }} <span class="opacity-50">(Override)</span>
+          </span>
+        {% elif has_ohrm %}
+          <span class="sup-badge sup-ohrm">
+            <i class="bi bi-database me-1"></i>{{ e.ohrm_sup_name }} <span class="opacity-50">(OrangeHRM)</span>
+          </span>
+        {% else %}
+          <span class="sup-badge sup-none">
+            <i class="bi bi-exclamation-circle me-1"></i>No supervisor assigned
+          </span>
+        {% endif %}
+      </div>
+
+      <!-- Checkbox for batch operations -->
+      <div class="d-flex align-items-center">
+        <input type="checkbox" name="employee_ids" value="{{ e.employee_id }}">
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+</form>
+
+<script>
+function filterRows() {
+  const q       = document.getElementById('empSearch').value.toLowerCase();
+  const group   = document.getElementById('groupFilter').value.toLowerCase();
+  const state   = document.getElementById('overrideFilter').value;
+  document.querySelectorAll('#empList .emp-row').forEach(row => {
+    const name  = row.dataset.name.toLowerCase();
+    const grp   = row.dataset.group.toLowerCase();
+    const st    = row.dataset.state;
+    const ok = (!q || name.includes(q)) &&
+               (!group || grp === group) &&
+               (!state || st === state);
+    row.style.display = ok ? '' : 'none';
+  });
+}
+
+// SELECT ALL CHECKBOX
+document.getElementById('selectAll').addEventListener('change', function() {
+  const checkboxes = document.querySelectorAll('input[name="employee_ids"]');
+  checkboxes.forEach(cb => cb.checked = this.checked);
+});
+
+// Submit batch assign
+function submitBatchAssign() {
+  const select = document.getElementById('batchSupervisorSelect');
+  if (!select.value) {
+    alert('Please select a supervisor for batch assignment.');
+    return;
+  }
+  document.getElementById('batchAction').value = 'assign_batch';
+  document.getElementById('batchForm').submit();
+}
+
+// Submit batch remove override
+function submitBatchRemove() {
+  if (!confirm('Remove override for selected employees? They will fall back to OrangeHRM.')) return;
+  document.getElementById('batchAction').value = 'remove_batch';
+  document.getElementById('batchForm').submit();
+}
+</script>
+{% endblock %}

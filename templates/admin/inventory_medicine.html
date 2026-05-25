@@ -1,0 +1,55 @@
+{% extends 'base.html' %}
+{% block title %}Medicine Inventory{% endblock %}
+{% block page_title %}Medicine Inventory{% endblock %}
+{% block content %}
+
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <a href="{{ url_for('admin_inventory') }}" class="btn btn-outline-secondary btn-sm">
+    <i class="bi bi-arrow-left me-1"></i>Back to Inventory
+  </a>
+  <a href="{{ url_for('admin_inventory') }}" class="btn btn-primary btn-sm">
+    <i class="bi bi-plus-lg me-1"></i>Add Medicine Item
+  </a>
+</div>
+
+<div class="card">
+  <div class="table-responsive">
+    <table class="table table-hover mb-0" style="font-size:.88rem;">
+      <thead class="table-light">
+        <tr>
+          <th>Item Name</th>
+          <th class="text-center">Stock</th>
+          <th class="text-center">Min Alert</th>
+          <th class="text-center">Max Stock</th>
+          <th>Unit</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for item in medicine_items %}
+        {% if item.current_stock == 0 %}
+        <tr class="table-danger">
+        {% elif item.current_stock <= item.min_stock_alert %}
+        <tr class="table-warning">
+        {% else %}
+        <tr>
+        {% endif %}
+          <td class="fw-semibold">{{ item.item_name }}</td>
+          <td class="text-center">
+            {% if item.current_stock == 0 %}
+            <span class="badge bg-danger">{{ item.current_stock }} {{ item.unit }}</span>
+            {% else %}
+            <span class="badge bg-success">{{ item.current_stock }} {{ item.unit }}</span>
+            {% endif %}
+          </td>
+          <td class="text-center small">{{ item.min_stock_alert }}</td>
+          <td class="text-center small">{{ item.max_stock or '—' }}</td>
+          <td class="small">{{ item.unit }}</td>
+        </tr>
+        {% else %}
+        <tr><td colspan="5" class="text-center text-muted py-4">No medicine items yet. <a href="{{ url_for('admin_inventory') }}">Add items</a> with category <strong>Medicine</strong>.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

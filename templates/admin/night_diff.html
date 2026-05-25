@@ -1,0 +1,235 @@
+{% extends 'base.html' %}
+{% block title %}Night Differential{% endblock %}
+{% block page_title %}Night Differential Report{% endblock %}
+{% block content %}
+
+<!-- Filters -->
+<div class="card mb-4">
+  <div class="card-body pb-2">
+    <form method="GET" class="row g-2 align-items-end">
+      <div class="col-6 col-md-2">
+        <label class="form-label small mb-1">Date From</label>
+        <input type="date" name="date_from" class="form-control form-control-sm" value="{{ date_from }}">
+      </div>
+      <div class="col-6 col-md-2">
+        <label class="form-label small mb-1">Date To</label>
+        <input type="date" name="date_to" class="form-control form-control-sm" value="{{ date_to }}">
+      </div>
+      <div class="col-6 col-md-2">
+        <label class="form-label small mb-1">Team Lead</label>
+        <select name="tl" class="form-select form-select-sm">
+          <option value="">All TLs</option>
+          {% for tl in tl_list %}
+          <option value="{{ tl }}" {% if tl == tl_filter %}selected{% endif %}>{{ tl }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-6 col-md-3">
+        <label class="form-label small mb-1">Employee</label>
+        <input type="text" name="emp_search" class="form-control form-control-sm"
+               placeholder="Name or ID..." value="{{ emp_search }}">
+      </div>
+      <div class="col-6 col-md-1">
+        <button class="btn btn-primary btn-sm w-100 mt-3">
+          <i class="bi bi-search"></i>
+        </button>
+      </div>
+      {% if tl_filter or emp_search %}
+      <div class="col-6 col-md-1">
+        <a href="{{ url_for('admin_night_diff') }}" class="btn btn-outline-secondary btn-sm w-100 mt-3">Clear</a>
+      </div>
+      {% endif %}
+      <div class="col-12 d-flex gap-2 justify-content-between align-items-center mt-1">
+        <div class="text-muted small d-flex align-items-center gap-1 flex-wrap">
+          <strong>Payroll shortcuts:</strong>
+          <a href="?date_from={{ cycle_a_from }}&date_to={{ cycle_a_to }}"
+             class="btn {% if date_from == cycle_a_from and date_to == cycle_a_to %}btn-primary{% else %}btn-outline-secondary{% endif %} btn-sm py-0 ms-1">
+            8th–22nd ({{ cycle_a_from[5:] }} to {{ cycle_a_to[5:] }})
+          </a>
+          <a href="?date_from={{ cycle_b_from }}&date_to={{ cycle_b_to }}"
+             class="btn {% if date_from == cycle_b_from and date_to == cycle_b_to %}btn-primary{% else %}btn-outline-secondary{% endif %} btn-sm py-0 ms-1">
+            23rd–7th ({{ cycle_b_from[5:] }} to {{ cycle_b_to[5:] }})
+          </a>
+        </div>
+        <button type="button" class="btn btn-outline-secondary btn-sm" onclick="copyNDTable('ndTable')">
+          <i class="bi bi-clipboard me-1"></i>Copy Table
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div class="alert alert-info d-flex gap-2 align-items-start mb-4 small">
+  <i class="bi bi-info-circle-fill mt-1"></i>
+  Night differential covers hours worked between <strong>10:00 PM – 6:00 AM</strong>.
+  Shifts ending at <strong>1AM, 2AM, or 3AM</strong> are in a separate tab.
+</div>
+
+<!-- Tabs -->
+<ul class="nav nav-tabs mb-3">
+  <li class="nav-item">
+    <a class="nav-link active" data-bs-toggle="tab" href="#tab-regular">
+      Regular Night Diff <span class="badge bg-primary ms-1">{{ results|length }}</span>
+    </a>
+  </li>
+  <li class="nav-item">
+    <a class="nav-link" data-bs-toggle="tab" href="#tab-special">
+      1AM/2AM/3AM Shifts <span class="badge bg-warning text-dark ms-1">{{ results_special|length }}</span>
+    </a>
+  </li>
+</ul>
+
+<div class="tab-content">
+
+  <!-- Regular Tab -->
+  <div class="tab-pane fade show active" id="tab-regular">
+    <div class="card">
+      <div class="table-responsive">
+        <table class="table table-hover table-sm mb-0" id="ndTable">
+          <thead class="table-dark">
+            <tr>
+              <th>Employee ID</th>
+              <th>Name</th>
+              <th>TL</th>
+              <th>Group</th>
+              <th>Date</th>
+              <th>Shift</th>
+              <th class="text-center">ND Hours</th>
+              <th class="text-center">ND Minutes</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% set ns = namespace(last_emp='') %}
+            {% for e in results %}
+              {% for d in e.days %}
+              <tr {% if ns.last_emp != e.employee_id %}style="border-top:2px solid var(--border);"{% endif %}>
+                {% if ns.last_emp != e.employee_id %}
+                {% set ns.last_emp = e.employee_id %}
+                <td class="small fw-semibold">{{ e.employee_id }}</td>
+                <td class="small fw-semibold">{{ e.name }}</td>
+                <td class="small text-muted">{{ e.tl }}</td>
+                <td class="small text-muted">{{ e.group_name }}</td>
+                {% else %}
+                <td colspan="4"></td>
+                {% endif %}
+                <td class="small">{{ d.date }}</td>
+                <td class="small">{{ d.shift }}</td>
+                <td class="text-center small fw-semibold">{{ d.nd_hours }}</td>
+                <td class="text-center small text-muted">{{ (d.nd_hours * 60)|int }}</td>
+              </tr>
+              {% endfor %}
+              <!-- Subtotal row -->
+              {% if e.days %}
+              <tr style="background:var(--bg);">
+                <td colspan="6" class="text-end small text-muted pe-2">{{ e.name }} Total</td>
+                <td class="text-center small fw-bold">{{ "%.2f"|format(e.total_nd_hours) }}</td>
+                <td class="text-center small fw-bold">{{ (e.total_nd_hours * 60)|int }}</td>
+              </tr>
+              {% endif %}
+            {% else %}
+            <tr><td colspan="8" class="text-center text-muted py-4">No data found.</td></tr>
+            {% endfor %}
+          </tbody>
+          {% if results %}
+          <tfoot class="table-dark fw-semibold">
+            <tr>
+              <td colspan="6" class="text-end">Grand Total</td>
+              <td class="text-center">{{ "%.2f"|format(results | sum(attribute='total_nd_hours')) }} hrs</td>
+              <td class="text-center">{{ ((results | sum(attribute='total_nd_hours')) * 60)|int }} mins</td>
+            </tr>
+          </tfoot>
+          {% endif %}
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- Special Tab -->
+  <div class="tab-pane fade" id="tab-special">
+    <div class="alert alert-warning small mb-3">
+      <i class="bi bi-exclamation-triangle-fill me-1"></i>
+      Shifts ending at <strong>1AM, 2AM, or 3AM</strong> — verify applicable rate with HR/Payroll.
+    </div>
+    <div class="card">
+      <div class="table-responsive">
+        <table class="table table-hover table-sm mb-0" id="ndTableSpecial">
+          <thead class="table-dark">
+            <tr>
+              <th>Employee ID</th>
+              <th>Name</th>
+              <th>TL</th>
+              <th>Group</th>
+              <th>Date</th>
+              <th>Shift</th>
+              <th class="text-center">ND Hours</th>
+              <th class="text-center">ND Minutes</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% set ns2 = namespace(last_emp='') %}
+            {% for e in results_special %}
+              {% for d in e.days %}
+              <tr {% if ns2.last_emp != e.employee_id %}style="border-top:2px solid var(--border);"{% endif %}>
+                {% if ns2.last_emp != e.employee_id %}
+                {% set ns2.last_emp = e.employee_id %}
+                <td class="small fw-semibold">{{ e.employee_id }}</td>
+                <td class="small fw-semibold">{{ e.name }}</td>
+                <td class="small text-muted">{{ e.tl }}</td>
+                <td class="small text-muted">{{ e.group_name }}</td>
+                {% else %}
+                <td colspan="4"></td>
+                {% endif %}
+                <td class="small">{{ d.date }}</td>
+                <td class="small">{{ d.shift }}</td>
+                <td class="text-center small fw-semibold">{{ d.nd_hours }}</td>
+                <td class="text-center small text-muted">{{ (d.nd_hours * 60)|int }}</td>
+              </tr>
+              {% endfor %}
+              {% if e.days %}
+              <tr style="background:var(--bg);">
+                <td colspan="6" class="text-end small text-muted pe-2">{{ e.name }} Total</td>
+                <td class="text-center small fw-bold">{{ "%.2f"|format(e.total_nd_hours) }}</td>
+                <td class="text-center small fw-bold">{{ (e.total_nd_hours * 60)|int }}</td>
+              </tr>
+              {% endif %}
+            {% else %}
+            <tr><td colspan="8" class="text-center text-muted py-4">No data found.</td></tr>
+            {% endfor %}
+          </tbody>
+          {% if results_special %}
+          <tfoot class="table-dark fw-semibold">
+            <tr>
+              <td colspan="6" class="text-end">Grand Total</td>
+              <td class="text-center">{{ "%.2f"|format(results_special | sum(attribute='total_nd_hours')) }} hrs</td>
+              <td class="text-center">{{ ((results_special | sum(attribute='total_nd_hours')) * 60)|int }} mins</td>
+            </tr>
+          </tfoot>
+          {% endif %}
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+{% endblock %}
+{% block scripts %}
+<script>
+function copyNDTable(tableId) {
+  const table = document.getElementById(tableId);
+  if (!table) return;
+  let text = '';
+  for (const row of table.rows) {
+    const cells = Array.from(row.cells).map(c => c.innerText.trim().replace(/\n+/g,' '));
+    text += cells.join('\t') + '\n';
+  }
+  navigator.clipboard.writeText(text).then(() => {
+    const btn = document.querySelector('[onclick*="copyNDTable"]');
+    const orig = btn.innerHTML;
+    btn.innerHTML = '<i class="bi bi-check-lg me-1"></i>Copied!';
+    btn.classList.add('btn-success');
+    btn.classList.remove('btn-outline-secondary');
+    setTimeout(() => { btn.innerHTML = orig; btn.classList.remove('btn-success'); btn.classList.add('btn-outline-secondary'); }, 2000);
+  });
+}
+</script>
+{% endblock %}

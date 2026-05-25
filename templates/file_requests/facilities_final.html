@@ -1,0 +1,104 @@
+{% extends 'base.html' %}
+{% block title %}Facilities Requests — Final Approval{% endblock %}
+{% block page_title %}Facilities Requests — Final Approval{% endblock %}
+{% block content %}
+
+<div class="card">
+  <div class="table-responsive">
+    <table class="table table-hover mb-0" style="font-size:.85rem;">
+      <thead>
+        <tr style="background:var(--bg-secondary);color:var(--text-muted);font-size:.75rem;text-transform:uppercase;">
+          <th>Employee</th>
+          <th>Department/Location</th>
+          <th>Issue Description</th>
+          <th>Priority</th>
+          <th>Reviewer Remarks</th>
+          <th>Reviewed By</th>
+          <th>Status</th>
+          <th>Action</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in requests %}
+        <tr>
+          <td><strong>{{ r.employee_name }}</strong><br>
+              <span class="text-muted small">{{ r.employee_id }}</span></td>
+          <td class="small">{{ r.department_location }}</td>
+          <td class="small" style="max-width:180px;">{{ r.issue_description }}</td>
+          <td>
+            {% if r.priority == 'Urgent' %}
+              <span class="badge bg-danger">Urgent</span>
+            {% elif r.priority == 'Not Urgent' %}
+              <span class="badge bg-secondary">Not Urgent</span>
+            {% else %}—{% endif %}
+          </td>
+          <td class="small" style="max-width:200px;">
+            {{ r.reviewer_remarks or '—' }}
+            {% if r.items_json %}
+              {% set items = r.items_json | tojson | safe %}
+              <details class="mt-1">
+                <summary class="text-primary small" style="cursor:pointer;list-style:none;">
+                  <i class="bi bi-box-seam me-1"></i>View Items
+                </summary>
+                <table class="table table-sm table-bordered mt-1 mb-0" style="font-size:.75rem;">
+                  <thead style="background:var(--bg-secondary);">
+                    <tr><th>Item</th><th>Qty</th><th>Remarks</th></tr>
+                  </thead>
+                  <tbody>
+                    {% for item in r.items_json | fromjson %}
+                    <tr>
+                      <td>{{ item.description }}</td>
+                      <td>{{ item.quantity }}</td>
+                      <td>{{ item.remarks }}</td>
+                    </tr>
+                    {% endfor %}
+                  </tbody>
+                </table>
+              </details>
+            {% endif %}
+          </td>
+          <td class="small">{{ r.reviewer_name or '—' }}</td>
+          <td>
+            {% if r.status == 'Pending Final Approval' %}
+              <span class="badge bg-primary">Pending Final Approval</span>
+            {% elif r.status == 'Approved' %}
+              <span class="badge bg-success">Approved</span>
+            {% elif r.status == 'Rejected' %}
+              <span class="badge bg-danger">Rejected</span>
+            {% else %}
+              <span class="badge bg-secondary">{{ r.status }}</span>
+            {% endif %}
+          </td>
+          <td style="min-width:180px;">
+            {% if r.status == 'Pending Final Approval' %}
+            <div class="d-flex gap-1">
+              <form method="POST" action="{{ url_for('facilities_final_action') }}" style="display:contents;">
+                <input type="hidden" name="req_id" value="{{ r.id }}">
+                <input type="hidden" name="action" value="approve">
+                <button type="submit" class="btn btn-sm btn-success flex-fill">
+                  <i class="bi bi-check-lg me-1"></i>Approve
+                </button>
+              </form>
+              <form method="POST" action="{{ url_for('facilities_final_action') }}" style="display:contents;">
+                <input type="hidden" name="req_id" value="{{ r.id }}">
+                <input type="hidden" name="action" value="reject">
+                <button type="submit" class="btn btn-sm btn-danger"
+                        onclick="return confirm('Reject this request?')">
+                  <i class="bi bi-x-lg"></i>
+                </button>
+              </form>
+            </div>
+            {% else %}
+              <span class="text-muted small">{{ r.final_approver_name or '—' }}</span>
+            {% endif %}
+          </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="8" class="text-center text-muted py-4">No requests found.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+{% endblock %}

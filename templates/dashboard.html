@@ -1,0 +1,388 @@
+{% extends 'base.html' %}
+{% block title %}Dashboard{% endblock %}
+{% block page_title %}Dashboard{% endblock %}
+{% block content %}
+
+<style>
+  .schedule-banner { border-radius: 10px; padding: .7rem 1rem; font-size: .87rem; display: flex; align-items: center; gap: .6rem; margin-bottom: 1.5rem; border: 1px solid; }
+  .balance-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px,1fr)); gap: 1rem; margin-bottom: 1.5rem; }
+  .balance-card { padding: 1.25rem; position: relative; overflow: hidden; }
+  .balance-card::after { content: ''; position: absolute; right: -10px; top: -10px; width: 70px; height: 70px; border-radius: 50%; background: var(--accent); opacity: .06; }
+  .balance-card .b-label { font-size: .75rem; text-transform: uppercase; letter-spacing: .08em; color: var(--text-muted); margin-bottom: .4rem; font-weight: 600; }
+  .balance-card .b-num { font-family: 'Outfit', sans-serif; font-size: 2rem; font-weight: 700; color: var(--text); line-height: 1; }
+  .balance-card .b-sub { font-size: .8rem; color: var(--text-muted); margin-top: .2rem; }
+  .progress { height: 4px; margin-top: .6rem; border-radius: 2px; }
+  .dash-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; }
+  @media (max-width: 1100px) { .dash-grid { grid-template-columns: 1fr; } }
+  .cal-wrap { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; box-shadow: var(--card-shadow); overflow: hidden; }
+  .cal-header { display: flex; align-items: center; justify-content: space-between; padding: 1rem 1.25rem; border-bottom: 1px solid var(--border); }
+  .cal-title { font-family: 'Outfit', sans-serif; font-weight: 600; font-size: 1rem; color: var(--text); }
+  .cal-nav { width: 30px; height: 30px; border-radius: 7px; border: 1px solid var(--border); background: var(--bg); color: var(--text-muted); cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: .85rem; }
+  .cal-nav:hover { background: var(--accent); color: #fff; border-color: var(--accent); }
+  .cal-grid { display: grid; grid-template-columns: repeat(7,1fr); }
+  .cal-dow { text-align: center; font-size: .7rem; font-weight: 600; text-transform: uppercase; letter-spacing: .07em; color: var(--text-muted); padding: .6rem 0; background: var(--bg); border-bottom: 1px solid var(--border); }
+  .cal-day { min-height: 68px; padding: .4rem .45rem; border-right: 1px solid var(--border); border-bottom: 1px solid var(--border); position: relative; font-size: .78rem; }
+  .cal-day:nth-child(7n) { border-right: none; }
+  .cal-day.empty { background: var(--bg); opacity: .4; }
+  .cal-day.rest { background: rgba(0,0,0,.03); }
+  [data-theme="dark"] .cal-day.rest { background: rgba(255,255,255,.04); }
+  .cal-day.today { outline: 2px solid var(--accent); outline-offset: -2px; border-radius: 2px; }
+  .cal-day .day-num { font-family: 'Outfit', sans-serif; font-weight: 600; font-size: .82rem; color: var(--text); }
+  .cal-day.rest .day-num { color: var(--text-muted); }
+  .cal-day .day-shift { font-size: .68rem; color: var(--text-muted); margin-top: .15rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .cal-day .day-badge { display: inline-block; font-size: .62rem; padding: .1rem .35rem; border-radius: 4px; margin-top: .25rem; font-weight: 600; white-space: nowrap; }
+  .badge-rest  { background: #e2e8f4; color: #6b7a99; }
+  .badge-leave-pending   { background: #fef3c7; color: #92400e; }
+  .badge-leave-approved  { background: #d1fae5; color: #065f46; }
+  .badge-leave-scheduled { background: #dbeafe; color: #1e40af; }
+  .badge-leave-rejected  { background: #fee2e2; color: #991b1b; }
+  [data-theme="dark"] .badge-rest     { background: #0f2744; color: #7a90b8; }
+  [data-theme="dark"] .badge-leave-pending   { background: #422006; color: #fcd34d; }
+  [data-theme="dark"] .badge-leave-approved  { background: #022c22; color: #34d399; }
+  [data-theme="dark"] .badge-leave-scheduled { background: #1e3a5f; color: #93c5fd; }
+  [data-theme="dark"] .badge-leave-rejected  { background: #450a0a; color: #fca5a5; }
+  .cal-legend { display: flex; gap: 1rem; padding: .75rem 1.25rem; border-top: 1px solid var(--border); flex-wrap: wrap; }
+  .legend-item { display: flex; align-items: center; gap: .5rem; font-size: .78rem; color: var(--text); font-weight: 500; }
+  .legend-dot { width: 18px; height: 18px; border-radius: 5px; flex-shrink: 0; }
+  .section-title { font-family: 'Outfit', sans-serif; font-size: .75rem; font-weight: 600; text-transform: uppercase; letter-spacing: .09em; color: var(--text-muted); margin-bottom: .85rem; }
+  .filing-row { display: flex; align-items: center; gap: .75rem; padding: .7rem 0; border-bottom: 1px solid var(--border); }
+  .filing-row:last-child { border-bottom: none; }
+  .filing-date { font-family: 'Outfit', sans-serif; font-weight: 600; font-size: .88rem; color: var(--text); min-width: 80px; }
+  .filing-day  { font-size: .75rem; color: var(--text-muted); }
+  .filing-type { flex: 1; font-size: .85rem; color: var(--text); }
+  .fab { display: inline-flex; align-items: center; gap: .5rem; background: var(--accent); color: #fff; border: none; border-radius: 10px; padding: .6rem 1.2rem; font-family: 'Outfit', sans-serif; font-weight: 500; font-size: .9rem; cursor: pointer; text-decoration: none; margin-bottom: 1.5rem; }
+  .fab:hover { background: #1a4fc4; color: #fff; }
+
+  /* Shift Colors — Light Mode */
+  .cal-day.shift-morning   { background: #f0fdf4; }
+  .cal-day.shift-afternoon { background: #fffbeb; }
+  .cal-day.shift-evening   { background: #faf5ff; }
+  .cal-day.shift-night     { background: #eff6ff; }
+  .cal-day.shift-morning   .day-shift { color: #15803d; font-weight: 600; }
+  .cal-day.shift-afternoon .day-shift { color: #92400e; font-weight: 600; }
+  .cal-day.shift-evening   .day-shift { color: #7e22ce; font-weight: 600; }
+  .cal-day.shift-night     .day-shift { color: #1e40af; font-weight: 600; }
+
+  /* Shift Colors — Dark Mode */
+  [data-theme="dark"] .cal-day.shift-morning   { background: #052e16; }
+  [data-theme="dark"] .cal-day.shift-afternoon { background: #422006; }
+  [data-theme="dark"] .cal-day.shift-evening   { background: #3b0764; }
+  [data-theme="dark"] .cal-day.shift-night     { background: #1e3a5f; }
+  [data-theme="dark"] .cal-day.shift-morning   .day-shift { color: #34d399; }
+  [data-theme="dark"] .cal-day.shift-afternoon .day-shift { color: #fcd34d; }
+  [data-theme="dark"] .cal-day.shift-evening   .day-shift { color: #c084fc; }
+  [data-theme="dark"] .cal-day.shift-night     .day-shift { color: #93c5fd; }
+
+  .cal-day.leave-approved  { background: #d1fae5; }
+  .cal-day.leave-scheduled { background: #dbeafe; }
+  .cal-day.leave-pending   { background: #fef3c7; }
+  @media (max-width: 768px) {
+    .quick-links-col { width: 100% !important; }
+  }
+  [data-theme="dark"] .cal-day.leave-approved  { background: #022c22; }
+  [data-theme="dark"] .cal-day.leave-scheduled { background: #1e3a5f; }
+  [data-theme="dark"] .cal-day.leave-pending   { background: #422006; }
+</style>
+
+{% if off_day %}
+<div class="schedule-banner" style="background:#eff6ff;border-color:#bfdbfe;color:#1e40af;">
+  <i class="bi bi-info-circle-fill"></i>
+  Your off-day this week is <strong>{{ off_day }}</strong> — leave filed on that day won't deduct credits.
+</div>
+{% elif schedule_exists %}
+<div class="schedule-banner" style="background:#f0fdf4;border-color:#bbf7d0;color:#15803d;">
+  <i class="bi bi-check-circle-fill"></i>
+  Schedule loaded — no off-day this week. All working days deduct 10 hrs.
+</div>
+{% else %}
+<div class="schedule-banner" style="background:#fffbeb;border-color:#fde68a;color:#92400e;">
+  <i class="bi bi-exclamation-triangle-fill"></i>
+  No schedule found for this week. Contact your manager or admin.
+</div>
+{% endif %}
+
+<div style="display:flex;gap:1.5rem;align-items:flex-start;flex-wrap:wrap;">
+<div style="flex:1;min-width:0;">
+<div class="section-title">Leave Balances</div>
+
+<!-- OrangeHRM Balances -->
+<div style="font-size:.72rem;font-weight:600;text-transform:uppercase;letter-spacing:.08em;color:var(--text-muted);margin-bottom:.5rem;">
+  <i class="bi bi-building me-1"></i>OrangeHRM
+</div>
+<div class="balance-grid">
+  {% for b in balances %}
+  <div class="card balance-card">
+    <div class="b-label">{{ b.leave_type_name }}</div>
+    <div class="b-num">{{ "%.1f"|format(b.remaining_hours) }} <span style="font-size:1rem;font-weight:400;color:var(--text-muted);">hrs</span></div>
+    <div class="b-sub">{{ "%.2f"|format(b.remaining_days) }} days remaining</div>
+    <div class="progress mt-2">
+      {% set pct = (b.remaining_hours / b.total_hours * 100) if b.total_hours > 0 else 0 %}
+      <div class="progress-bar" style="width:{{ pct }}%"></div>
+    </div>
+    <div style="font-size:.72rem;color:var(--text-muted);margin-top:.3rem;">of {{ "%.1f"|format(b.total_hours) }} total hrs</div>
+  </div>
+  {% else %}
+  <p style="color:var(--text-muted);">No OrangeHRM entitlements found.</p>
+  {% endfor %}
+</div>
+
+<!-- Portal DB Balances -->
+{% if portal_balances %}
+<div style="font-size:.72rem;font-weight:600;text-transform:uppercase;letter-spacing:.08em;color:var(--text-muted);margin-top:1rem;margin-bottom:.5rem;">
+  <i class="bi bi-database me-1"></i>Portal DB
+</div>
+<div class="balance-grid">
+  {% for b in portal_balances %}
+  <div class="card balance-card" style="border-left:3px solid var(--accent);">
+    <div class="b-label">{{ b.leave_type_name }}</div>
+    <div class="b-num">{{ "%.1f"|format(b.remaining_hours) }} <span style="font-size:1rem;font-weight:400;color:var(--text-muted);">hrs</span></div>
+    <div class="b-sub">{{ "%.2f"|format(b.remaining_days) }} days remaining</div>
+    <div class="progress mt-2">
+      {% set pct = (b.remaining_hours / b.total_hours * 100) if b.total_hours > 0 else 0 %}
+      <div class="progress-bar" style="width:{{ pct }}%"></div>
+    </div>
+    <div style="font-size:.72rem;color:var(--text-muted);margin-top:.3rem;">of {{ "%.1f"|format(b.total_hours) }} total hrs</div>
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+<!-- end balance-grid -->
+</div><!-- end left col -->
+{% if quick_links_visible and quick_links %}
+<div style="width:260px;flex-shrink:0;" class="quick-links-col">
+<div class="section-title">Quick Links</div>
+<div style="display:flex;flex-direction:column;gap:.75rem;">
+  {% for link in quick_links %}
+  <a href="{{ link.url }}" target="_blank"
+     style="display:flex;align-items:center;gap:.75rem;padding:.75rem 1rem;background:var(--surface);border:1px solid var(--border);border-radius:12px;text-decoration:none;color:var(--text);transition:box-shadow .2s;"
+     onmouseover="this.style.boxShadow='0 4px 16px rgba(0,0,0,.12)'" onmouseout="this.style.boxShadow=''">
+    <div style="width:38px;height:38px;border-radius:10px;background:linear-gradient(135deg,{{ link.color_from }},{{ link.color_to }});display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+      <i class="bi {{ link.icon }}" style="color:#fff;font-size:1rem;"></i>
+    </div>
+    <div>
+      <div style="font-weight:600;font-size:.88rem;">{{ link.title }}</div>
+      <div style="font-size:.75rem;color:var(--text-muted);">{{ link.url | replace('https://','') | replace('http://','') | truncate(30, True, '') }}</div>
+    </div>
+    <i class="bi bi-box-arrow-up-right ms-auto" style="color:var(--text-muted);font-size:.75rem;"></i>
+  </a>
+  {% endfor %}
+</div>
+</div>
+{% endif %}
+</div><!-- end outer flex -->
+<a href="{{ url_for('file_leave') }}" class="fab" style="margin-top:1.5rem;"><i class="bi bi-calendar-plus"></i> File Leave</a>
+
+<div class="dash-grid">
+  <!-- Calendar -->
+  <div>
+    <div class="section-title">My Schedule</div>
+    <div class="cal-wrap">
+      <div class="cal-header">
+        <button class="cal-nav" onclick="changeMonth(-1)"><i class="bi bi-chevron-left"></i></button>
+        <span class="cal-title" id="cal-title">Loading...</span>
+        <button class="cal-nav" onclick="changeMonth(1)"><i class="bi bi-chevron-right"></i></button>
+      </div>
+      <div class="cal-grid">
+        <div class="cal-dow">Sun</div><div class="cal-dow">Mon</div><div class="cal-dow">Tue</div>
+        <div class="cal-dow">Wed</div><div class="cal-dow">Thu</div><div class="cal-dow">Fri</div>
+        <div class="cal-dow">Sat</div>
+      </div>
+      <div class="cal-grid" id="cal-body">
+        <div style="grid-column:1/-1;text-align:center;padding:2rem;color:var(--text-muted);font-size:.85rem;">
+          <i class="bi bi-arrow-clockwise"></i> Loading schedule...
+        </div>
+      </div>
+      <div class="cal-legend">
+        <div class="legend-item"><div class="legend-dot" style="background:#d1fae5;border:1px solid #a7f3d0;"></div> Work Day</div>
+        <div class="legend-item"><div class="legend-dot" style="background:var(--bg);border:1px solid var(--border);"></div> Rest Day</div>
+        <div class="legend-item"><div class="legend-dot" style="background:#dbeafe;border:1px solid #bfdbfe;"></div> Scheduled Leave</div>
+        <div class="legend-item"><div class="legend-dot" style="background:#d1fae5;border:1px solid #a7f3d0;"></div> Approved Leave</div>
+        <div class="legend-item"><div class="legend-dot" style="background:#fef3c7;border:1px solid #fde68a;"></div> Pending Leave</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Time Records (DTR) -->
+  <div>
+    <div class="section-title">Time Records <span style="font-size:.75rem;font-weight:400;color:var(--text-muted);">· Last 1 year</span></div>
+    <div class="card" style="overflow:hidden;">
+      <div class="px-3 pt-3 pb-2 border-bottom">
+        <form method="GET" class="d-flex gap-2 align-items-end flex-wrap mb-0">
+          <div>
+            <label class="form-label small mb-1">From</label>
+            <input type="date" name="dtr_from" class="form-control form-control-sm" value="{{ dtr_from }}">
+          </div>
+          <div>
+            <label class="form-label small mb-1">To</label>
+            <input type="date" name="dtr_to" class="form-control form-control-sm" value="{{ dtr_to }}">
+          </div>
+          <button type="submit" class="btn btn-primary btn-sm">Apply</button>
+          {% if dtr_from or dtr_to %}
+          <a href="{{ url_for('dashboard') }}" class="btn btn-outline-secondary btn-sm">Clear</a>
+          {% endif %}
+        </form>
+      </div>
+      {% if dtr_records %}
+      <div class="table-responsive">
+        <table class="table mb-0" style="font-size:.85rem;color:var(--text);background:var(--card-bg);">
+          <thead>
+            <tr style="background:var(--bg-secondary);color:var(--text-muted);font-size:.75rem;text-transform:uppercase;letter-spacing:.04em;">
+              <th>Date</th>
+              <th>Day</th>
+              <th>Time</th>
+              <th>Type</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for r in dtr_records %}
+            <tr>
+              <td>{{ r.day.strftime('%b %d, %Y') }}</td>
+              <td class="text-muted">{{ r.day.strftime('%A') }}</td>
+              <td>
+                {% if r.time %}
+                  {% set secs = r.time.seconds %}
+                  {% set h = secs // 3600 %}
+                  {% set m = (secs % 3600) // 60 %}
+                  {% set ampm = 'AM' if h < 12 else 'PM' %}
+                  {% set h12 = h % 12 if h % 12 != 0 else 12 %}
+                  {{ '%02d:%02d %s' | format(h12, m, ampm) }}
+                {% else %}—{% endif %}
+              </td>
+              <td>
+                {% if r.type == 'in' %}
+                  <span class="badge bg-success">IN</span>
+                {% else %}
+                  <span class="badge bg-secondary">OUT</span>
+                {% endif %}
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% if dtr_pages > 1 %}
+      <div class="d-flex justify-content-between align-items-center px-3 py-2 border-top" style="font-size:.8rem;">
+        <span class="text-muted">Page {{ dtr_page }} of {{ dtr_pages }}</span>
+        <div class="d-flex gap-1">
+          {% if dtr_page > 1 %}
+          <a href="?dtr_page={{ dtr_page - 1 }}" class="btn btn-sm btn-outline-secondary">‹ Prev</a>
+          {% endif %}
+          {% if dtr_page < dtr_pages %}
+          <a href="?dtr_page={{ dtr_page + 1 }}" class="btn btn-sm btn-outline-secondary">Next ›</a>
+          {% endif %}
+        </div>
+      </div>
+      {% endif %}
+      {% else %}
+      <div style="text-align:center;padding:2rem;color:var(--text-muted);font-size:.85rem;">
+        <i class="bi bi-clock" style="font-size:1.5rem;display:block;margin-bottom:.5rem;"></i>
+        No time records found.
+      </div>
+      {% endif %}
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  const TODAY = new Date();
+  let calYear  = TODAY.getFullYear();
+  let calMonth = TODAY.getMonth() + 1;
+  const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+
+  function changeMonth(dir) {
+    calMonth += dir;
+    if (calMonth > 12) { calMonth = 1; calYear++; }
+    if (calMonth < 1)  { calMonth = 12; calYear--; }
+    loadCalendar();
+  }
+
+  async function loadCalendar() {
+    document.getElementById('cal-title').textContent = `${MONTHS[calMonth-1]} ${calYear}`;
+    document.getElementById('cal-body').innerHTML = `<div style="grid-column:1/-1;text-align:center;padding:2rem;color:var(--text-muted);font-size:.85rem;"><i class="bi bi-arrow-clockwise"></i> Loading...</div>`;
+    const res  = await fetch(`/api/my-calendar?year=${calYear}&month=${calMonth}`);
+    const data = await res.json();
+    renderCalendar(data);
+  }
+
+  function getShiftColor(shift) {
+    if (!shift) return null;
+    // Extract start hour
+    const match = shift.match(/^(\d+)(am|pm)/i);
+    if (!match) return null;
+    let hour = parseInt(match[1]);
+    const period = match[2].toLowerCase();
+    if (period === 'pm' && hour !== 12) hour += 12;
+    if (period === 'am' && hour === 12) hour = 0;
+
+    if (hour >= 5 && hour < 12)  return 'shift-morning';   // Morning
+    if (hour >= 12 && hour < 17) return 'shift-afternoon'; // Afternoon
+    if (hour >= 17 && hour < 21) return 'shift-evening';   // Evening
+    return 'shift-night';                                   // Night
+  }
+
+  function renderCalendar(data) {
+    const first = new Date(calYear, calMonth-1, 1).getDay();
+    const days  = new Date(calYear, calMonth, 0).getDate();
+    const schedMap = {};
+    (data.schedule || []).forEach(s => { schedMap[s.date] = s; });
+    const leaveMap = {};
+    (data.leaves || []).forEach(l => {
+      if (!leaveMap[l.date]) leaveMap[l.date] = [];
+      leaveMap[l.date].push(l);
+    });
+
+    let html = '';
+    for (let i = 0; i < first; i++) html += `<div class="cal-day empty"></div>`;
+
+    for (let d = 1; d <= days; d++) {
+      const ds     = `${calYear}-${String(calMonth).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+      const sched  = schedMap[ds];
+      const leaves = leaveMap[ds] || [];
+      const isToday = (calYear === TODAY.getFullYear() && calMonth === TODAY.getMonth()+1 && d === TODAY.getDate());
+
+      let cls = 'cal-day';
+      if (isToday) cls += ' today';
+
+      // Color by leave status first, then shift
+      const hasLeave = leaves.length > 0;
+      if (!hasLeave) {
+        if (sched) {
+          if (sched.is_rest_day) {
+            cls += ' rest';
+          } else {
+            const shiftClass = getShiftColor(sched.shift) || '';
+            if (shiftClass) cls += ' ' + shiftClass;
+          }
+        }
+      } else {
+        // Color by highest priority leave status
+        const statuses = leaves.map(l => l.status);
+        if (statuses.includes('approved'))  cls += ' leave-approved';
+        else if (statuses.includes('scheduled')) cls += ' leave-scheduled';
+        else if (statuses.includes('pending'))   cls += ' leave-pending';
+      }
+
+      let inner = `<div class="day-num">${d}</div>`;
+      if (sched) {
+        if (sched.is_rest_day) {
+          inner += `<span class="day-badge badge-rest">Rest Day</span>`;
+        } else if (sched.shift) {
+          inner += `<div class="day-shift">${sched.shift}</div>`;
+        }
+      }
+      leaves.forEach(l => {
+        const badgeCls = `badge-leave-${l.status}`;
+        const label = l.status.charAt(0).toUpperCase() + l.status.slice(1);
+        inner += `<span class="day-badge ${badgeCls}">${label}</span>`;
+      });
+
+      html += `<div class="${cls}">${inner}</div>`;
+    }
+    document.getElementById('cal-body').innerHTML = html;
+  }
+
+  loadCalendar();
+</script>
+{% endblock %}

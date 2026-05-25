@@ -1,0 +1,732 @@
+{% extends 'base.html' %}
+{% block title %}Inventory{% endblock %}
+{% block page_title %}Inventory Management{% endblock %}
+{% block content %}
+
+<ul class="nav nav-tabs mb-4" id="invTabs">
+  <li class="nav-item"><a class="nav-link active" data-bs-toggle="tab" href="#tab-items"><i class="bi bi-box-seam me-1"></i>Items</a></li>
+  <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tab-transactions"><i class="bi bi-clock-history me-1"></i>Transactions</a></li>
+  <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tab-upload"><i class="bi bi-upload me-1"></i>Upload</a></li>
+  <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tab-special"><i class="bi bi-star me-1"></i>Special Items</a></li>
+  <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tab-medicine"><i class="bi bi-capsule me-1"></i>Medicine</a></li>
+</ul>
+
+<div class="tab-content">
+
+  <!-- ITEMS TAB -->
+  <div class="tab-pane fade show active" id="tab-items">
+    <div class="row g-3 mb-3">
+      <div class="col-md-8">
+        <div class="card p-3">
+          <form method="GET" class="d-flex gap-2 align-items-center flex-wrap">
+            <input type="text" name="search" class="form-control form-control-sm" placeholder="Search items..." value="{{ search }}" style="width:220px;">
+            <select name="category" class="form-select form-select-sm" style="width:auto;">
+              <option value="">All Categories</option>
+              {% for cat in categories %}
+              <option value="{{ cat }}" {% if cat == category %}selected{% endif %}>{{ cat }}</option>
+              {% endfor %}
+            </select>
+            <button class="btn btn-sm btn-primary">Filter</button>
+            {% if search or category %}<a href="{{ url_for('admin_inventory') }}" class="btn btn-sm btn-outline-secondary">Clear</a>{% endif %}
+            <span class="text-muted small ms-2">{{ items|length }} items</span>
+          </form>
+        </div>
+      </div>
+      <div class="col-md-4 text-end">
+        <a href="{{ url_for('inventory_pdf') }}" class="btn btn-outline-danger me-2">
+          <i class="bi bi-file-earmark-pdf me-1"></i>Export PDF
+        </a>
+        <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addItemModal">
+          <i class="bi bi-plus-lg me-1"></i>Add Item
+        </button>
+      </div>
+    </div>
+
+    <!-- Low stock alert -->
+
+
+    <div class="card">
+      <div class="table-responsive">
+        <table class="table table-hover mb-0">
+          <thead class="table-light">
+            <tr>
+              <th onclick="sortTable(0)" style="cursor:pointer;user-select:none;">
+                Category <span id="sort-arrow-0">⇅</span>
+              </th>
+              <th onclick="sortTable(1)" style="cursor:pointer;user-select:none;">
+                Item Name <span id="sort-arrow-1">⇅</span>
+              </th>
+              <th>Description</th>
+              <th class="text-center">Stock</th><th class="text-center">Min Alert</th>
+              <th>Unit</th><th>Supplier</th><th>Location</th><th>Cost</th><th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for item in items %}
+            {% if item.current_stock == 0 %}
+            <tr class="table-danger">
+            {% elif item.current_stock <= item.min_stock_alert %}
+            <tr class="table-warning">
+            {% else %}
+            <tr>
+            {% endif %}
+              <td><span class="badge bg-secondary">{{ item.category }}</span></td>
+              <td class="fw-semibold">{{ item.item_name }}</td>
+              <td class="small text-muted">{{ item.description or '—' }}</td>
+              <td class="text-center">
+                {% if item.current_stock <= item.min_stock_alert %}
+                <span class="badge bg-danger">{{ item.current_stock }} {{ item.unit }}</span>
+                {% else %}
+                <span class="badge bg-success">{{ item.current_stock }} {{ item.unit }}</span>
+                {% endif %}
+                {% if item.sub_unit and item.sub_unit_per_unit %}
+                <br><small class="text-muted">{{ (item.current_stock / item.sub_unit_per_unit)|round(1) }} {{ item.sub_unit }}</small>
+                {% endif %}
+              </td>
+              <td class="text-center small">{{ item.min_stock_alert }}</td>
+              <td class="small">{{ item.unit }}</td>
+              <td class="small">{{ item.supplier or '—' }}</td>
+              <td class="small">{{ item.location or '—' }}</td>
+              <td class="small">{{ '₱%.2f'|format(item.unit_cost) if item.unit_cost else '—' }}</td>
+              <td>
+                <div class="d-flex gap-1">
+                  <button class="btn btn-sm btn-outline-primary py-0 px-2"
+                          onclick="openAdjust({{ item.id }}, '{{ item.item_name|e }}', {{ item.current_stock }})">
+                    <i class="bi bi-arrows-collapse"></i>
+                  </button>
+                  <button class="btn btn-sm btn-outline-secondary py-0 px-2"
+                          onclick="openEdit({{ item.id }})">
+                    <i class="bi bi-pencil"></i>
+                  </button>
+                  <form method="POST" onsubmit="return confirm('Deactivate this item?');">
+                    <input type="hidden" name="action" value="deactivate">
+                    <input type="hidden" name="item_id" value="{{ item.id }}">
+                    <button class="btn btn-sm btn-outline-danger py-0 px-2"><i class="bi bi-trash"></i></button>
+                  </form>
+                </div>
+              </td>
+            </tr>
+            {% else %}
+            <tr><td colspan="10" class="text-center text-muted py-4">No items found.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- TRANSACTIONS TAB -->
+  <div class="tab-pane fade" id="tab-transactions">
+    <div class="card">
+      <div class="table-responsive">
+        <table class="table table-hover mb-0">
+          <thead class="table-light">
+            <tr><th>Item</th><th>Type</th><th>Qty</th><th>Reference</th><th>Notes</th><th>By</th><th>At</th></tr>
+          </thead>
+          <tbody>
+            {% for t in transactions %}
+            <tr>
+              <td class="fw-semibold small">{{ t.item_name }}</td>
+              <td>
+                {% if t.transaction_type == 'in' %}<span class="badge bg-success">IN</span>
+                {% elif t.transaction_type == 'out' %}<span class="badge bg-danger">OUT</span>
+                {% else %}<span class="badge bg-warning text-dark">ADJUST</span>{% endif %}
+              </td>
+              <td class="small">{{ t.quantity }}</td>
+              <td class="small text-muted">{{ t.reference_type or '—' }}{% if t.reference_id %} #{{ t.reference_id }}{% endif %}</td>
+              <td class="small text-muted">{{ t.notes or '—' }}</td>
+              <td class="small">{{ t.performed_by }}</td>
+              <td class="small text-muted">{{ t.performed_at.strftime('%b %d, %Y %H:%M') }}</td>
+            </tr>
+            {% else %}
+            <tr><td colspan="7" class="text-center text-muted py-4">No transactions yet.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- UPLOAD TAB -->
+  <div class="tab-pane fade" id="tab-upload">
+    <div class="row g-4">
+      <div class="col-md-6">
+        <div class="card p-4">
+          <h6 class="fw-semibold mb-3"><i class="bi bi-file-earmark-excel me-1 text-success"></i>Upload Excel File</h6>
+          <p class="small text-muted mb-3">Upload an .xlsx file with columns in this order:</p>
+          <div class="table-responsive mb-3">
+            <table class="table table-sm table-bordered small mb-0">
+              <thead class="table-light">
+                <tr><th>Col A</th><th>Col B</th><th>Col C</th><th>Col D</th><th>Col E</th></tr>
+              </thead>
+              <tbody>
+                <tr><td>Category</td><td>Item Name</td><td>Description</td><td>Unit</td><td>Stock</td></tr>
+              </tbody>
+              <thead class="table-light">
+                <tr><th>Col F</th><th>Col G</th><th>Col H</th><th>Col I</th><th>Col J</th></tr>
+              </thead>
+              <tbody>
+                <tr><td>Min Alert</td><td>Reorder Qty</td><td>Supplier</td><td>Unit Cost</td><td>Location</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <form method="POST" enctype="multipart/form-data">
+            <input type="hidden" name="action" value="upload_excel">
+            <input type="file" name="excel_file" class="form-control mb-3" accept=".xlsx" required>
+            <button type="submit" class="btn btn-success w-100">
+              <i class="bi bi-upload me-1"></i>Upload & Import
+            </button>
+          </form>
+          <div class="mt-3">
+            <a href="{{ url_for('admin_inventory') }}?export_template=1" class="btn btn-outline-secondary btn-sm w-100">
+              <i class="bi bi-download me-1"></i>Download Template
+            </a>
+          </div>
+        </div>
+      </div>
+      <div class="col-md-6">
+        <div class="card p-4">
+          <h6 class="fw-semibold mb-3"><i class="bi bi-google me-1 text-primary"></i>Google Sheets Sync</h6>
+          <p class="small text-muted">Coming soon — sync inventory directly from a Google Sheet.</p>
+          <div class="alert alert-info small">
+            <i class="bi bi-info-circle me-1"></i>
+            This will work similarly to the employee sync. Paste your Google Sheet ID and columns will be mapped automatically.
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="tab-pane fade" id="tab-medicine">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+      <span class="text-muted small">Medicine inventory — released directly by admin after SOM recommendation</span>
+      <button class="btn btn-primary btn-sm" data-bs-toggle="modal" data-bs-target="#addItemModal"
+              onclick="document.querySelector('#addItemModal select[name=category]').value='Medicine'">
+        <i class="bi bi-plus-lg me-1"></i>Add Medicine Item
+      </button>
+    <p style="color:red;font-size:18px;">MEDICINE TAB IS RENDERING</p>
+    {% set med_items = medicine_items|default([]) %}
+    {% if med_items %}
+    <div class="card">
+      <div class="table-responsive">
+        <table class="table table-hover mb-0" style="font-size:.88rem;">
+          <thead class="table-light">
+            <tr>
+              <th>Item Name</th>
+              <th class="text-center">Stock</th>
+              <th class="text-center">Min Alert</th>
+              <th class="text-center">Max Stock</th>
+              <th>Unit</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for item in med_items %}
+            {% if item.current_stock == 0 %}
+            <tr class="table-danger">
+            {% elif item.current_stock <= item.min_stock_alert %}
+            <tr class="table-warning">
+            {% else %}
+            <tr>
+            {% endif %}
+              <td class="fw-semibold">{{ item.item_name }}</td>
+              <td class="text-center">
+                {% if item.current_stock == 0 %}
+                <span class="badge bg-danger">{{ item.current_stock }} {{ item.unit }}</span>
+                {% else %}
+                <span class="badge bg-success">{{ item.current_stock }} {{ item.unit }}</span>
+                {% endif %}
+              </td>
+              <td class="text-center small">{{ item.min_stock_alert }}</td>
+              <td class="text-center small">{{ item.max_stock or "—" }}</td>
+              <td class="small">{{ item.unit }}</td>
+              <td>
+                <button class="btn btn-sm btn-outline-primary py-0 px-2"
+                        onclick="openAdjust({{ item.id }}, '{{ item.item_name|e }}', {{ item.current_stock }})">
+                  <i class="bi bi-arrows-collapse"></i>
+                </button>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+    {% else %}
+    <div class="alert alert-info">No medicine items yet. Add items with category <strong>Medicine</strong>.</div>
+    {% endif %}
+</div>
+    {% set med_items = medicine_items|default([]) %}
+    {% if med_items %}
+    <div class="card">
+      <div class="table-responsive">
+        <table class="table table-hover mb-0" style="font-size:.88rem;">
+          <thead class="table-light">
+            <tr>
+              <th>Item Name</th>
+              <th class="text-center">Stock</th>
+              <th class="text-center">Min Alert</th>
+              <th class="text-center">Max Stock</th>
+              <th>Unit</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for item in med_items %}
+            {% if item.current_stock == 0 %}
+            <tr class="table-danger">
+            {% elif item.current_stock <= item.min_stock_alert %}
+            <tr class="table-warning">
+            {% else %}
+            <tr>
+            {% endif %}
+              <td class="fw-semibold">{{ item.item_name }}</td>
+              <td class="text-center">
+                {% if item.current_stock == 0 %}
+                <span class="badge bg-danger">{{ item.current_stock }} {{ item.unit }}</span>
+                {% else %}
+                <span class="badge bg-success">{{ item.current_stock }} {{ item.unit }}</span>
+                {% endif %}
+              </td>
+              <td class="text-center small">{{ item.min_stock_alert }}</td>
+              <td class="text-center small">{{ item.max_stock or "—" }}</td>
+              <td class="small">{{ item.unit }}</td>
+              <td>
+                <button class="btn btn-sm btn-outline-primary py-0 px-2"
+                        onclick="openAdjust({{ item.id }}, '{{ item.item_name|e }}', {{ item.current_stock }})">
+                  <i class="bi bi-arrows-collapse"></i>
+                </button>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+    {% else %}
+    <div class="alert alert-info">No medicine items yet. Add items with category <strong>Medicine</strong>.</div>
+    {% endif %}
+</div>
+</div>
+
+  <!-- SPECIAL ITEMS TAB -->
+  <div class="tab-pane fade" id="tab-special">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+      <span class="text-muted small">Items eligible for free request (2yr+ tenure, once per 2 years)</span>
+      <button class="btn btn-primary btn-sm" data-bs-toggle="modal" data-bs-target="#addSpecialModal">
+        <i class="bi bi-plus-lg me-1"></i>Add Special Item
+      </button>
+    </div>
+    <div class="card">
+      <div class="table-responsive">
+        <table class="table table-hover mb-0" style="font-size:.88rem;">
+          <thead class="table-light">
+            <tr>
+              <th>Item Name</th>
+              <th class="text-center">Price (PHP)</th>
+              <th>Description</th>
+              <th class="text-center">In Inventory</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for s in special_items_list %}
+            <tr>
+              <td class="fw-semibold">{{ s.name }}</td>
+              <td class="text-center">{{ '%.2f'|format(s.price) }}</td>
+              <td class="text-muted small">{{ s.description or '—' }}</td>
+              <td class="text-center">
+                {% if s.current_stock is not none %}
+                  <span class="badge bg-success">{{ s.current_stock }} {{ s.unit }}</span>
+                {% else %}
+                  <span class="text-muted small">Not tracked</span>
+                {% endif %}
+              </td>
+              <td>
+                <div class="d-flex gap-1">
+                  <button class="btn btn-sm btn-outline-secondary py-0 px-2"
+                          onclick="openEditSpecial({{ s.id }}, '{{ s.name|e }}', {{ s.price }}, '{{ s.description|e if s.description else '' }}')">
+                    <i class="bi bi-pencil"></i>
+                  </button>
+                  <form method="POST" onsubmit="return confirm('Remove this special item?');">
+                    <input type="hidden" name="action" value="delete_special">
+                    <input type="hidden" name="special_id" value="{{ s.id }}">
+                    <button class="btn btn-sm btn-outline-danger py-0 px-2"><i class="bi bi-trash"></i></button>
+                  </form>
+                </div>
+              </td>
+            </tr>
+            {% else %}
+            <tr><td colspan="5" class="text-center text-muted py-4">No special items defined.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<!-- Add Item Modal -->
+<div class="modal fade" id="addItemModal" tabindex="-1">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content" style="background:var(--surface);color:var(--text);">
+      <div class="modal-header" style="border-color:var(--border);">
+        <h6 class="modal-title fw-bold">Add Inventory Item</h6>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <form method="POST">
+        <input type="hidden" name="action" value="add">
+        <div class="modal-body">
+          <div class="row g-3">
+            <div class="col-md-6">
+              <label class="form-label small fw-semibold">Category</label>
+              <select name="category" class="form-select" required>
+                {% for cat in categories %}<option value="{{ cat }}">{{ cat }}</option>{% endfor %}
+              </select>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label small fw-semibold">Item Name</label>
+              <input type="text" name="item_name" class="form-control" required>
+            </div>
+            <div class="col-12">
+              <label class="form-label small fw-semibold">Description</label>
+              <textarea name="description" class="form-control" rows="2"></textarea>
+            </div>
+            <div class="col-md-3">
+              <label class="form-label small fw-semibold">Unit</label>
+              <input type="text" name="unit" class="form-control" value="pcs">
+            </div>
+            <div class="col-md-3">
+              <label class="form-label small fw-semibold">Current Stock</label>
+              <input type="number" name="current_stock" class="form-control" value="0" min="0">
+            </div>
+            <div class="col-md-3">
+              <label class="form-label small fw-semibold">Min Stock Alert</label>
+              <input type="number" name="min_stock_alert" class="form-control" value="5" min="0">
+            </div>
+            <div class="col-md-3">
+              <label class="form-label small fw-semibold">Reorder Qty</label>
+              <input type="number" name="reorder_quantity" class="form-control" value="0" min="0">
+            </div>
+            <div class="col-md-6">
+              <label class="form-label small fw-semibold">Supplier</label>
+              <input type="text" name="supplier" class="form-control">
+            </div>
+            <div class="col-md-3">
+              <label class="form-label small fw-semibold">Unit Cost (₱)</label>
+              <input type="number" name="unit_cost" class="form-control" step="0.01" min="0">
+            </div>
+            <div class="col-md-3">
+              <label class="form-label small fw-semibold">Location</label>
+              <input type="text" name="location" class="form-control">
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer" style="border-color:var(--border);">
+          <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+          <button type="submit" class="btn btn-primary">Save Item</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<!-- Adjust Stock Modal -->
+<div class="modal fade" id="adjustModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content" style="background:var(--surface);color:var(--text);">
+      <div class="modal-header" style="border-color:var(--border);">
+        <h6 class="modal-title fw-bold">Adjust Stock — <span id="adjustItemName"></span></h6>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <form method="POST">
+        <input type="hidden" name="action" value="adjust">
+        <input type="hidden" name="item_id" id="adjustItemId">
+        <div class="modal-body">
+          <div class="mb-3">
+            <label class="form-label small fw-semibold">Current Stock</label>
+            <div class="fw-bold fs-4" id="adjustCurrentStock"></div>
+          </div>
+          <div class="mb-3">
+            <label class="form-label small fw-semibold">Type</label>
+            <select name="adj_type" class="form-select">
+              <option value="in">Stock In (+)</option>
+              <option value="out">Stock Out (-)</option>
+              <option value="adjustment">Adjustment</option>
+            </select>
+          </div>
+          <div class="mb-3">
+            <label class="form-label small fw-semibold">Quantity</label>
+            <input type="number" name="quantity" class="form-control" min="1" value="1" required>
+          </div>
+          <div class="mb-3">
+            <label class="form-label small fw-semibold">Notes</label>
+            <textarea name="notes" class="form-control" rows="2"></textarea>
+          </div>
+        </div>
+        <div class="modal-footer" style="border-color:var(--border);">
+          <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+          <button type="submit" class="btn btn-primary">Apply</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<!-- Edit Item Modal -->
+<div class="modal fade" id="editModal" tabindex="-1">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content" style="background:var(--surface);color:var(--text);">
+      <div class="modal-header" style="border-color:var(--border);">
+        <h6 class="modal-title fw-bold">Edit Item</h6>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <form method="POST">
+        <input type="hidden" name="action" value="edit">
+        <input type="hidden" name="item_id" id="editItemId">
+        <div class="modal-body">
+          <div class="row g-3">
+            <div class="col-md-6">
+              <label class="form-label small fw-semibold">Category</label>
+              <select name="category" id="editCategory" class="form-select" required>
+                {% for cat in categories %}<option value="{{ cat }}">{{ cat }}</option>{% endfor %}
+              </select>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label small fw-semibold">Item Name</label>
+              <input type="text" name="item_name" id="editItemName" class="form-control" required>
+            </div>
+            <div class="col-12">
+              <label class="form-label small fw-semibold">Description</label>
+              <textarea name="description" id="editDescription" class="form-control" rows="2"></textarea>
+            </div>
+            <div class="col-md-3">
+              <label class="form-label small fw-semibold">Unit</label>
+              <input type="text" name="unit" id="editUnit" class="form-control">
+            </div>
+            <div class="col-md-3">
+              <label class="form-label small fw-semibold">Min Stock Alert</label>
+              <input type="number" name="min_stock_alert" id="editMinStock" class="form-control" min="0">
+            </div>
+            <div class="col-md-3">
+              <label class="form-label small fw-semibold">Max Stock</label>
+              <input type="number" name="max_stock" id="editMaxStock" class="form-control" min="0">
+            </div>
+            <div class="col-md-3">
+              <label class="form-label small fw-semibold">Reorder Qty</label>
+              <input type="number" name="reorder_quantity" id="editReorder" class="form-control" min="0">
+            </div>
+            <div class="col-md-3">
+              <label class="form-label small fw-semibold">Unit Cost (₱)</label>
+              <input type="number" name="unit_cost" id="editCost" class="form-control" step="0.01" min="0">
+            </div>
+            <div class="col-md-6">
+              <label class="form-label small fw-semibold">Supplier</label>
+              <input type="text" name="supplier" id="editSupplier" class="form-control">
+            </div>
+            <div class="col-md-6">
+              <label class="form-label small fw-semibold">Location</label>
+              <input type="text" name="location" id="editLocation" class="form-control">
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer" style="border-color:var(--border);">
+          <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+          <button type="submit" class="btn btn-primary">Save Changes</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<!-- Add Special Item Modal -->
+<div class="modal fade" id="addSpecialModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content" style="background:var(--surface);color:var(--text);">
+      <div class="modal-header" style="border-color:var(--border);">
+        <h6 class="modal-title fw-bold">Add Special Item</h6>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <form method="POST">
+        <input type="hidden" name="action" value="add_special">
+        <div class="modal-body">
+          <div class="mb-3">
+            <label class="form-label small fw-semibold">Item Name</label>
+            <input type="text" name="special_name" class="form-control" required>
+          </div>
+          <div class="mb-3">
+            <label class="form-label small fw-semibold">Price (PHP)</label>
+            <input type="number" name="special_price" class="form-control" step="0.01" min="0" required>
+          </div>
+          <div class="mb-3">
+            <label class="form-label small fw-semibold">Description</label>
+            <input type="text" name="special_description" class="form-control">
+          </div>
+        </div>
+        <div class="modal-footer" style="border-color:var(--border);">
+          <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+          <button type="submit" class="btn btn-primary">Save</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<!-- Edit Special Item Modal -->
+<div class="modal fade" id="editSpecialModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content" style="background:var(--surface);color:var(--text);">
+      <div class="modal-header" style="border-color:var(--border);">
+        <h6 class="modal-title fw-bold">Edit Special Item</h6>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <form method="POST">
+        <input type="hidden" name="action" value="edit_special">
+        <input type="hidden" name="special_id" id="editSpecialId">
+        <div class="modal-body">
+          <div class="mb-3">
+            <label class="form-label small fw-semibold">Item Name</label>
+            <input type="text" name="special_name" id="editSpecialName" class="form-control" required>
+          </div>
+          <div class="mb-3">
+            <label class="form-label small fw-semibold">Price (PHP)</label>
+            <input type="number" name="special_price" id="editSpecialPrice" class="form-control" step="0.01" min="0" required>
+          </div>
+          <div class="mb-3">
+            <label class="form-label small fw-semibold">Description</label>
+            <input type="text" name="special_description" id="editSpecialDesc" class="form-control">
+          </div>
+        </div>
+        <div class="modal-footer" style="border-color:var(--border);">
+          <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+          <button type="submit" class="btn btn-primary">Save Changes</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- MEDICINE TAB -->
+    <p class="text-danger">DEBUG: medicine tab loaded. Items: {{ medicine_items|length }}</p>
+  {% set med_items = medicine_items|default([]) %}
+    {% if med_items %}
+    <div class="card">
+      <div class="table-responsive">
+        <table class="table table-hover mb-0" style="font-size:.88rem;">
+          <thead class="table-light">
+            <tr>
+              <th>Item Name</th>
+              <th class="text-center">Stock</th>
+              <th class="text-center">Min Alert</th>
+              <th>Unit</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for item in med_items %}
+            {% if item.current_stock == 0 %}
+            <tr class="table-danger">
+            {% elif item.current_stock <= item.min_stock_alert %}
+            <tr class="table-warning">
+            {% else %}
+            <tr>
+            {% endif %}
+              <td class="fw-semibold">{{ item.item_name }}</td>
+              <td class="text-center">
+                {% if item.current_stock == 0 %}
+                <span class="badge bg-danger">{{ item.current_stock }} {{ item.unit }}</span>
+                {% else %}
+                <span class="badge bg-success">{{ item.current_stock }} {{ item.unit }}</span>
+                {% endif %}
+              </td>
+              <td class="text-center small">{{ item.min_stock_alert }}</td>
+              <td class="small">{{ item.unit }}</td>
+              <td>
+                <div class="d-flex gap-1">
+                  <button class="btn btn-sm btn-outline-primary py-0 px-2"
+                          onclick="openAdjust({{ item.id }}, '{{ item.item_name|e }}', {{ item.current_stock }})">
+                    <i class="bi bi-arrows-collapse"></i>
+                  </button>
+                  <button class="btn btn-sm btn-outline-secondary py-0 px-2 edit-btn"
+                          data-item="{{ item | tojson | e }}">
+                    <i class="bi bi-pencil"></i>
+                  </button>
+                </div>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+    {% else %}
+    <div class="alert alert-info">No medicine items yet. Add items with category <strong>Medicine</strong> to get started.</div>
+    {% endif %}
+  </div>
+
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+const ITEMS = {};
+{% for item in items %}
+ITEMS[{{ item.id }}] = {{ item | tojson }};
+{% endfor %}
+</script>
+<script>
+function openAdjust(id, name, stock) {
+  document.getElementById('adjustItemId').value = id;
+  document.getElementById('adjustItemName').textContent = name;
+  document.getElementById('adjustCurrentStock').textContent = stock;
+  new bootstrap.Modal(document.getElementById('adjustModal')).show();
+}
+document.addEventListener('click', function(e) {
+  const btn = e.target.closest('.edit-btn');
+  if (!btn) return;
+  const item = JSON.parse(btn.dataset.item);
+  openEdit(item);
+});
+function openEdit(id) {
+  const item = ITEMS[id];
+  document.getElementById('editItemId').value = item.id;
+  document.getElementById('editItemName').value = item.item_name;
+  document.getElementById('editCategory').value = item.category;
+  document.getElementById('editDescription').value = item.description || '';
+  document.getElementById('editUnit').value = item.unit || 'pcs';
+  document.getElementById('editMinStock').value = item.min_stock_alert;
+  document.getElementById('editMaxStock').value = item.max_stock || 0;
+  document.getElementById('editReorder').value = item.reorder_quantity;
+  document.getElementById('editCost').value = item.unit_cost || '';
+  document.getElementById('editSupplier').value = item.supplier || '';
+  document.getElementById('editLocation').value = item.location || '';
+  new bootstrap.Modal(document.getElementById('editModal')).show();
+}
+</script>
+<script>
+let sortDir = [1, 1];
+function sortTable(col) {
+  const tbody = document.querySelector('.table tbody');
+  const rows = Array.from(tbody.querySelectorAll('tr'));
+  const dir = sortDir[col];
+  rows.sort((a, b) => {
+    const aText = (a.cells[col] ? a.cells[col].innerText : '').trim().toLowerCase();
+    const bText = (b.cells[col] ? b.cells[col].innerText : '').trim().toLowerCase();
+    return aText.localeCompare(bText) * dir;
+  });
+  rows.forEach(r => tbody.appendChild(r));
+  document.getElementById('sort-arrow-0').textContent = '⇅';
+  document.getElementById('sort-arrow-1').textContent = '⇅';
+  document.getElementById('sort-arrow-' + col).textContent = dir === 1 ? '↑' : '↓';
+  sortDir[col] = dir * -1;
+}
+</script>
+<script>
+function openEditSpecial(id, name, price, desc) {
+  document.getElementById('editSpecialId').value = id;
+  document.getElementById('editSpecialName').value = name;
+  document.getElementById('editSpecialPrice').value = price;
+  document.getElementById('editSpecialDesc').value = desc;
+  new bootstrap.Modal(document.getElementById('editSpecialModal')).show();
+}
+</script>
+{% endblock %}

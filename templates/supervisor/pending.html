@@ -1,0 +1,250 @@
+{% extends 'base.html' %}
+{% block page_title %}Pending Leave Approvals{% endblock %}
+{% block content %}
+<div class="card mb-3">
+  <div class="card-body pb-2">
+    <form method="GET" class="row g-2 align-items-end">
+      <div class="col-6 col-md-3">
+        <label class="form-label small mb-1">Search Employee</label>
+        <input type="text" name="emp_search" class="form-control form-control-sm"
+               placeholder="Name or ID..." value="{{ emp_search }}"
+               oninput="clearTimeout(window._st);window._st=setTimeout(()=>this.closest('form').submit(),400);">
+      </div>
+      <div class="col-6 col-md-2">
+        <label class="form-label small mb-1">From</label>
+        <input type="date" name="date_from" class="form-control form-control-sm" value="{{ date_from }}">
+      </div>
+      <div class="col-6 col-md-2">
+        <label class="form-label small mb-1">To</label>
+        <input type="date" name="date_to" class="form-control form-control-sm" value="{{ date_to }}">
+      </div>
+      <div class="col-6 col-md-2">
+        <label class="form-label small mb-1">TL</label>
+        <select name="tl" class="form-select form-select-sm">
+          <option value="">All TLs</option>
+          {% for tl in tl_list %}
+          <option value="{{ tl }}" {% if tl == tl_filter %}selected{% endif %}>{{ tl }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-6 col-md-2">
+        <label class="form-label small mb-1">Leave Type</label>
+        <select name="leave_type" class="form-select form-select-sm">
+          <option value="">All Types</option>
+          {% for lt in leave_types %}
+          <option value="{{ lt.id }}" {% if leave_type_filter|string == lt.id|string %}selected{% endif %}>{{ lt.name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-12 col-md-3 d-flex gap-2">
+        <button type="submit" class="btn btn-primary btn-sm"><i class="bi bi-search me-1"></i>Filter</button>
+        <a href="{{ url_for('supervisor_pending') }}" class="btn btn-outline-secondary btn-sm">Clear</a>
+        <span class="ms-auto text-muted small align-self-center">{{ pending|length }} request{{ 's' if pending|length != 1 }}</span>
+      </div>
+    </form>
+  </div>
+</div>
+
+{% if not pending %}
+<div class="alert alert-success"><i class="bi bi-check-circle me-2"></i>No pending leave requests.</div>
+{% else %}
+<form method="POST" action="{{ url_for('supervisor_bulk_action') }}" id="bulkForm">
+<div class="d-flex gap-2 mb-3 align-items-center">
+  <button type="button" class="btn btn-outline-secondary btn-sm" id="bulkToggle" onclick="toggleBulkMode()">
+    <i class="bi bi-check2-square me-1"></i>Bulk Select
+  </button>
+  <div id="bulkActions" style="display:none;" class="d-flex gap-2 align-items-center">
+    <div class="form-check mb-0">
+      <input class="form-check-input" type="checkbox" id="selectAll" onchange="toggleAll(this)">
+      <label class="form-check-label small" for="selectAll">Select All</label>
+    </div>
+    <button type="button" onclick="submitBulk('approve')" class="btn btn-success btn-sm">
+      <i class="bi bi-check-lg me-1"></i>Approve Selected
+    </button>
+    <button type="button" onclick="submitBulk('reject')" class="btn btn-danger btn-sm">
+      <i class="bi bi-x-lg me-1"></i>Reject Selected
+    </button>
+    <span class="text-muted small" id="selectedCount">0 selected</span>
+  </div>
+</div>
+{% for r in pending %}
+<div class="card mb-3">
+  <div class="card-body">
+    <div class="d-flex justify-content-between align-items-start">
+      <div class="d-flex align-items-start gap-2">
+        <input type="checkbox" name="selected_leaves"
+               value="{{ r.employee_id }}|{{ r.leave_type_id }}|{{ r.filed_at }}|{{ r.leave_request_id }}"
+               class="form-check-input mt-1 leave-checkbox" onchange="updateCount()"
+               style="display:none;">
+        <div>
+          <div class="d-flex align-items-center gap-2">
+            <h6 class="fw-bold mb-0">{{ r.emp_firstname }} {{ r.emp_lastname }}</h6>
+            <span class="text-muted small emp-id-copy" onclick="copyEmpId(this, '{{ r.employee_id }}')" title="Click to copy">{{ r.employee_id }}</span>
+          </div>
+        <span class="badge bg-warning text-dark me-2">{{ r.leave_type_name }}</span>
+        <span class="text-muted small">Filed: {{ r.filed_at.strftime('%b %d, %Y %H:%M') }}</span>
+      </div>
+      </div><!-- end name+checkbox wrapper -->
+      <div class="text-end">
+        <div class="fs-5 fw-bold">{{ r.hours_deducted }} hrs</div>
+        <div class="text-muted small">{{ r.days_deducted }} days deducted</div>
+      </div>
+    </div>
+    <div class="mt-2 mb-3">
+  <span class="text-muted small">Dates: </span>
+  {% set date_list = r.dates.split(',') %}
+  {% set id_list = r.record_ids.split(',') %}
+  {% for d in date_list %}
+    <span class="badge bg-light text-dark border me-1">
+      {{ d }}
+      {% if r.shift_half %}
+        ({{ '1st Half of the Shift Leave' if r.shift_half == '1st Half' else '2nd Half of the Shift Leave' }})
+      {% endif %}
+    </span>
+  {% endfor %}
+  {% if date_list|length > 1 %}
+  <div class="mt-2">
+    <button type="button" class="btn btn-xs btn-outline-secondary btn-sm py-0 px-2"
+            onclick="toggleDates('dates_{{ r.id }}')">
+      <i class="bi bi-list-ul me-1"></i>Manage Individual Dates
+    </button>
+    <div id="dates_{{ r.id }}" style="display:none;" class="mt-2">
+      <table class="table table-sm table-bordered mb-0">
+        <thead class="table-light"><tr><th>Date</th><th>Hours</th><th>Action</th></tr></thead>
+        <tbody>
+        {% for i in range(date_list|length) %}
+        <tr>
+          <td class="small">{{ date_list[i] }}</td>
+          <td class="small">{{ (r.hours_deducted / date_list|length)|round(1) }} hrs</td>
+          <td>
+            <form method="POST" action="{{ url_for('cancel_leave', leave_id=id_list[i]) }}"
+                  onsubmit="return confirm('Cancel leave on {{ date_list[i] }}?');">
+              <button type="submit" class="btn btn-xs btn-outline-danger btn-sm py-0 px-2">Cancel</button>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  {% endif %}
+</div>
+    {% if r.notes %}
+    <div class="text-muted small mb-3"><i class="bi bi-chat-left-text me-1"></i>{{ r.notes }}</div>
+    {% endif %}
+    <div class="d-flex gap-2">
+      <button type="button" class="btn btn-success btn-sm"
+              onclick="submitSingle('approve','{{ r.employee_id }}','{{ r.leave_type_id }}','{{ r.filed_at }}','{{ r.leave_request_id }}')">
+        <i class="bi bi-check-lg me-1"></i>Approve
+      </button>
+      <button type="button" class="btn btn-danger btn-sm"
+              onclick="submitSingleReject('{{ r.employee_id }}','{{ r.leave_type_id }}','{{ r.filed_at }}','{{ r.leave_request_id }}')">
+        <i class="bi bi-x-lg me-1"></i>Reject
+      </button>
+    </div>
+  </div>
+</div>
+{% endfor %}
+{% endif %}
+{% endblock %}
+{% block scripts %}
+<script>
+// If no query params, redirect with default date range so filters persist after approve
+if (!window.location.search) {
+  var today = new Date();
+  var y = today.getFullYear();
+  var from = y + '-01-01';
+  var to   = y + '-12-31';
+  window.location.replace('/supervisor/pending?date_from=' + from + '&date_to=' + to);
+}
+</script>
+<script>
+function toggleDates(id) {
+  var el = document.getElementById(id);
+  el.style.display = el.style.display === 'none' ? 'block' : 'none';
+}
+function submitSingle(action, empId, leaveTypeId, filedAt, leaveRequestId) {
+  var form = document.createElement('form');
+  form.method = 'POST';
+  form.action = '{{ url_for("supervisor_action") }}';
+  [['action', action], ['target_emp', empId], ['leave_type_id', leaveTypeId],
+   ['filed_at', filedAt], ['leave_request_id', leaveRequestId],
+   ['next', '/supervisor/pending' + window.location.search]].forEach(function(p) {
+    var i = document.createElement('input');
+    i.type = 'hidden'; i.name = p[0]; i.value = p[1];
+    form.appendChild(i);
+  });
+  document.body.appendChild(form);
+  form.submit();
+}
+function submitSingleReject(empId, leaveTypeId, filedAt, leaveRequestId) {
+  var reason = prompt('Reason for rejection (optional):');
+  if (reason === null) return;
+  var form = document.createElement('form');
+  form.method = 'POST';
+  form.action = '{{ url_for("supervisor_action") }}';
+  [['action', 'reject'], ['target_emp', empId], ['leave_type_id', leaveTypeId],
+   ['filed_at', filedAt], ['leave_request_id', leaveRequestId],
+   ['reject_reason', reason],
+   ['next', '/supervisor/pending' + window.location.search]].forEach(function(p) {
+    var i = document.createElement('input');
+    i.type = 'hidden'; i.name = p[0]; i.value = p[1];
+    form.appendChild(i);
+  });
+  document.body.appendChild(form);
+  form.submit();
+}
+function submitBulk(action) {
+  var checkboxes = document.querySelectorAll('.leave-checkbox:checked');
+  if (checkboxes.length === 0) { alert('No leaves selected.'); return; }
+  var form = document.getElementById('bulkForm');
+  // Remove old hidden inputs
+  form.querySelectorAll('input[name="action"], input[name="selected_leaves"]').forEach(function(el) { el.remove(); });
+  // Add action
+  var inp = document.createElement('input');
+  inp.type = 'hidden'; inp.name = 'action'; inp.value = action;
+  form.appendChild(inp);
+  // Add selected values
+  checkboxes.forEach(function(cb) {
+    var hidden = document.createElement('input');
+    hidden.type = 'hidden';
+    hidden.name = 'selected_leaves';
+    hidden.value = cb.value;
+    form.appendChild(hidden);
+  });
+  var nxt = document.createElement('input');
+  nxt.type = 'hidden'; nxt.name = 'next';
+  nxt.value = '/supervisor/pending' + window.location.search;
+  form.appendChild(nxt);
+  form.submit();
+}
+function toggleBulkMode() {
+  var on = document.getElementById('bulkActions').style.display === 'none';
+  document.getElementById('bulkActions').style.display = on ? 'flex' : 'none';
+  document.getElementById('bulkToggle').classList.toggle('btn-primary', on);
+  document.querySelectorAll('.leave-checkbox').forEach(function(c) {
+    c.style.display = on ? 'block' : 'none';
+    c.checked = false;
+  });
+  document.getElementById('selectedCount').textContent = '0 selected';
+  if (document.getElementById('selectAll')) document.getElementById('selectAll').checked = false;
+}
+function toggleAll(cb) {
+  var bulkOn = document.getElementById('bulkActions').style.display !== 'none';
+  if (!bulkOn) return;
+  document.querySelectorAll('.leave-checkbox').forEach(function(c) { c.checked = cb.checked; });
+  updateCount();
+}
+function updateCount() {
+  var n = document.querySelectorAll('.leave-checkbox:checked').length;
+  document.getElementById('selectedCount').textContent = n + ' selected';
+}
+function confirmReject(form) {
+  const reason = prompt('Reason for rejection (optional):');
+  if (reason === null) return false;
+  form.querySelector('.reject-reason').value = reason;
+  return true;
+}
+</script>
+{% endblock %}

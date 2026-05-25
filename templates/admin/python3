@@ -1,0 +1,122 @@
+#!/usr/bin/env python3
+"""
+Patch: Add can_absences permission to sub-admin system
+(ALTER TABLE must be run manually first)
+"""
+
+import sys, shutil
+
+APP_PATH      = '/var/www/html/leavesystem/app.py'
+SUBADMIN_TPL  = '/var/www/html/leavesystem/templates/admin/sub_admins.html'
+BASE_TPL      = '/var/www/html/leavesystem/templates/base.html'
+
+# ── app.py ────────────────────────────────────────────────────────────────
+shutil.copy(APP_PATH, APP_PATH + '.bak_absences_perm')
+with open(APP_PATH, 'r') as f:
+    code = f.read()
+
+OLD_PERMS = "                'can_reports':      bool(row['can_reports']),"
+NEW_PERMS = """                'can_reports':      bool(row['can_reports']),
+                'can_absences':     bool(row.get('can_absences', 0)),"""
+
+if OLD_PERMS in code:
+    code = code.replace(OLD_PERMS, NEW_PERMS)
+    print("✓ get_sub_admin_permissions updated")
+else:
+    print("✗ Could not find can_reports in get_sub_admin_permissions"); sys.exit(1)
+
+OLD_FORM = "                    'can_reports':      1 if request.form.get('can_reports') else 0,"
+NEW_FORM = """                    'can_reports':      1 if request.form.get('can_reports') else 0,
+                    'can_absences':     1 if request.form.get('can_absences') else 0,"""
+
+if OLD_FORM in code:
+    code = code.replace(OLD_FORM, NEW_FORM)
+    print("✓ Form reading updated")
+else:
+    print("✗ Could not find can_reports form reading"); sys.exit(1)
+
+OLD_INSERT_COLS = "                             can_schedules, can_reports, can_work_mode, can_settings,"
+NEW_INSERT_COLS = "                             can_schedules, can_reports, can_work_mode, can_settings, can_absences,"
+
+if OLD_INSERT_COLS in code:
+    code = code.replace(OLD_INSERT_COLS, NEW_INSERT_COLS, 1)
+    print("✓ INSERT columns updated")
+else:
+    print("✗ Could not find INSERT columns"); sys.exit(1)
+
+OLD_INSERT_VALS = "                            can_schedules=%s, can_reports=%s, can_work_mode=%s,"
+NEW_INSERT_VALS = "                            can_schedules=%s, can_reports=%s, can_work_mode=%s, can_absences=%s,"
+
+if OLD_INSERT_VALS in code:
+    code = code.replace(OLD_INSERT_VALS, NEW_INSERT_VALS, 1)
+    print("✓ INSERT/UPDATE SET updated")
+else:
+    print("✗ Could not find INSERT/UPDATE SET line"); sys.exit(1)
+
+OLD_GUARD = "    if not session.get('is_admin') and not session.get('is_sub_admin'):\n        return redirect(url_for('dashboard'))\n\n    from datetime import date, timedelta\n\n    target_str = request.args.get('date')"
+NEW_GUARD = "    if not session.get('is_admin') and not session.get('permissions', {}).get('can_absences'):\n        return redirect(url_for('dashboard'))\n\n    from datetime import date, timedelta\n\n    target_str = request.args.get('date')"
+
+if OLD_GUARD in code:
+    code = code.replace(OLD_GUARD, NEW_GUARD)
+    print("✓ admin_absences route guard updated")
+else:
+    print("✗ Could not find admin_absences route guard"); sys.exit(1)
+
+with open(APP_PATH, 'w') as f:
+    f.write(code)
+print("✓ app.py saved")
+
+# ── sub_admins.html ───────────────────────────────────────────────────────
+shutil.copy(SUBADMIN_TPL, SUBADMIN_TPL + '.bak_absences')
+with open(SUBADMIN_TPL, 'r') as f:
+    tpl = f.read()
+
+OLD_TPL = "  ('can_view_approved_items','bi-bag-check','Purchaser View (Materials)'),"
+NEW_TPL = """  ('can_view_approved_items','bi-bag-check','Purchaser View (Materials)'),
+  ('can_absences','bi-person-x','Absence Report'),"""
+
+if OLD_TPL in tpl:
+    tpl = tpl.replace(OLD_TPL, NEW_TPL)
+    with open(SUBADMIN_TPL, 'w') as f:
+        f.write(tpl)
+    print("✓ sub_admins.html updated")
+else:
+    print("✗ Could not find permissions list in sub_admins.html"); sys.exit(1)
+
+# ── base.html ─────────────────────────────────────────────────────────────
+shutil.copy(BASE_TPL, BASE_TPL + '.bak_absences')
+with open(BASE_TPL, 'r') as f:
+    base = f.read()
+
+OLD_ANALYTICS_GUARD = "      {% if session.get('is_admin') or session.get('permissions', {}).get('can_reports') or session.get('permissions', {}).get('can_schedules') or session.get('permissions', {}).get('can_view_tickets') %}"
+NEW_ANALYTICS_GUARD = "      {% if session.get('is_admin') or session.get('permissions', {}).get('can_reports') or session.get('permissions', {}).get('can_schedules') or session.get('permissions', {}).get('can_view_tickets') or session.get('permissions', {}).get('can_absences') %}"
+
+if OLD_ANALYTICS_GUARD in base:
+    base = base.replace(OLD_ANALYTICS_GUARD, NEW_ANALYTICS_GUARD)
+    print("✓ Analytics section guard updated")
+else:
+    print("✗ Could not find Analytics section guard in base.html"); sys.exit(1)
+
+OLD_ABSENCE_LINK = """        <a class="nav-link {% if request.endpoint == 'admin_absences' %}active{% endif %}"
+           href="{{ url_for('admin_absences') }}">
+          <i class="bi bi-person-x"></i>
+          <span class="nav-label">Absences</span>
+        </a>"""
+
+NEW_ABSENCE_LINK = """        {% if session.get('is_admin') or session.get('permissions', {}).get('can_absences') %}
+        <a class="nav-link {% if request.endpoint == 'admin_absences' %}active{% endif %}"
+           href="{{ url_for('admin_absences') }}">
+          <i class="bi bi-person-x"></i>
+          <span class="nav-label">Absences</span>
+        </a>
+        {% endif %}"""
+
+if OLD_ABSENCE_LINK in base:
+    base = base.replace(OLD_ABSENCE_LINK, NEW_ABSENCE_LINK)
+    with open(BASE_TPL, 'w') as f:
+        f.write(base)
+    print("✓ Absences sidebar link wrapped with permission check")
+else:
+    print("✗ Could not find Absences link in base.html"); sys.exit(1)
+
+print("\n✅ All done! Run: systemctl restart leavesystem")

@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+{% block title %}Network Restricted{% endblock %}
+{% block page_title %}Network Access Restricted{% endblock %}
+{% block content %}
+<div class="card text-center p-5" style="max-width:500px;margin:3rem auto;">
+  <h3 class="text-danger mb-3">🚫 Network Access Restricted</h3>
+  <p class="text-muted">The Break Log System is only accessible from the office network.</p>
+  <div class="alert alert-warning mt-3">Your IP: <strong>{{ ip }}</strong></div>
+  <p class="text-muted small">If you believe this is an error, contact IT Support with your IP above.</p>
+  <a href="{{ url_for('dashboard') }}" class="btn btn-primary mt-2">← Back to Dashboard</a>
+</div>
+{% endblock %}

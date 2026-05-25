@@ -1,0 +1,340 @@
+{% extends "base.html" %}
+{% block title %}File Request Approvals{% endblock %}
+{% block page_title %}Pending File Request Approvals{% endblock %}
+{% block content %}
+
+{% set all_records = [] %}
+{% for r in fts_list %}{% set _ = all_records.append({'type':'FTS','r':r,'tl':r.tl or '—'}) %}{% endfor %}
+{% for r in ot_list %}{% set _ = all_records.append({'type':'OT','r':r,'tl':r.tl or '—'}) %}{% endfor %}
+{% for r in cws_list %}{% set _ = all_records.append({'type':'CWS','r':r,'tl':r.tl or '—'}) %}{% endfor %}
+{% for r in rdw_list %}{% set _ = all_records.append({'type':'RDW','r':r,'tl':r.tl or '—'}) %}{% endfor %}
+{% set total = fts_list|length + ot_list|length + cws_list|length + rdw_list|length %}
+
+<style>
+.fr-card { border-left: 3px solid var(--border); transition: box-shadow .15s; }
+.fr-card:hover { box-shadow: 0 4px 16px rgba(30,64,175,.1); }
+.fr-card.type-fts  { border-left-color: #0dcaf0; }
+.fr-card.type-ot   { border-left-color: #0d6efd; }
+.fr-card.type-cws  { border-left-color: #6f42c1; }
+.fr-card.type-rdw  { border-left-color: #ffc107; }
+.fr-meta { font-size: .78rem; color: var(--text-muted); }
+.fr-tl-header { background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: .4rem .85rem; margin-bottom: .6rem; margin-top: 1rem; display: flex; align-items: center; gap: .5rem; }
+.fr-tl-header:first-of-type { margin-top: 0; }
+</style>
+
+{# ── Filter ── #}
+<div class="card mb-3">
+  <div class="card-body pb-2">
+    <form method="GET" class="row g-2 align-items-end">
+      <div class="col-6 col-md-3">
+        <label class="form-label small mb-1">Search Employee</label>
+        <input type="text" name="emp_search" class="form-control form-control-sm"
+               placeholder="Name or ID..." value="{{ emp_search }}"
+               oninput="clearTimeout(window._st);window._st=setTimeout(()=>this.closest('form').submit(),400);">
+      </div>
+      <div class="col-6 col-md-2">
+        <label class="form-label small mb-1">From</label>
+        <input type="date" name="date_from" class="form-control form-control-sm" value="{{ date_from }}">
+      </div>
+      <div class="col-6 col-md-2">
+        <label class="form-label small mb-1">To</label>
+        <input type="date" name="date_to" class="form-control form-control-sm" value="{{ date_to }}">
+      </div>
+      <div class="col-6 col-md-2">
+        <label class="form-label small mb-1">TL</label>
+        <select name="tl" class="form-select form-select-sm">
+          <option value="">All TLs</option>
+          {% for tl in tl_list %}
+          <option value="{{ tl }}" {% if tl == tl_filter %}selected{% endif %}>{{ tl }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-6 col-md-1">
+        <label class="form-label small mb-1">Type</label>
+        <select name="req_type" class="form-select form-select-sm" onchange="this.form.submit()">
+          <option value="">All</option>
+          <option value="FTS" {% if type_filter == 'FTS' %}selected{% endif %}>FTS</option>
+          <option value="OT"  {% if type_filter == 'OT'  %}selected{% endif %}>OT</option>
+          <option value="CWS" {% if type_filter == 'CWS' %}selected{% endif %}>CWS</option>
+          <option value="RDW" {% if type_filter == 'RDW' %}selected{% endif %}>RDW</option>
+        </select>
+      </div>
+      <div class="col-12 col-md-2 d-flex gap-2">
+        <button type="submit" class="btn btn-primary btn-sm"><i class="bi bi-search me-1"></i>Filter</button>
+        <a href="{{ url_for('file_requests_approvals') }}" class="btn btn-outline-secondary btn-sm">Clear</a>
+        <span class="text-muted small align-self-center ms-auto">{{ total }} request{{ 's' if total != 1 }}</span>
+      </div>
+    </form>
+  </div>
+</div>
+
+{% if total == 0 %}
+<div class="alert alert-success"><i class="bi bi-check-circle me-2"></i>No pending file requests.</div>
+{% endif %}
+
+{# ── Bulk Actions ── #}
+{% if total > 0 %}
+<form method="POST" action="{{ url_for('file_requests_bulk_action') }}" id="frBulkForm">
+<div class="d-flex gap-2 mb-3 align-items-center">
+  <button type="button" class="btn btn-outline-secondary btn-sm" id="frBulkToggle" onclick="frToggleBulkMode()">
+    <i class="bi bi-check2-square me-1"></i>Bulk Select
+  </button>
+  <div id="frBulkActions" style="display:none;" class="d-flex gap-2 align-items-center flex-wrap">
+    <div class="form-check mb-0">
+      <input class="form-check-input" type="checkbox" id="frSelectAll" onchange="frToggleAll(this)">
+      <label class="form-check-label small" for="frSelectAll">Select All</label>
+    </div>
+    <button type="button" onclick="frSubmitBulk('approve')" class="btn btn-success btn-sm">
+      <i class="bi bi-check-lg me-1"></i>Approve Selected
+    </button>
+    <button type="button" onclick="frSubmitBulk('reject')" class="btn btn-danger btn-sm">
+      <i class="bi bi-x-lg me-1"></i>Reject Selected
+    </button>
+    <span class="text-muted small" id="frSelectedCount">0 selected</span>
+  </div>
+</div>
+
+{# ── Cards grouped by TL (combined & sorted) ── #}
+{% set ns = namespace(current_tl=None) %}
+{% for item in combined %}
+  {% set r = item.r %}
+  {% set rtype = item.req_type %}
+  {% set rtl = item.tl %}
+  {% if rtl != ns.current_tl %}
+    {% set ns.current_tl = rtl %}
+    <div class="fr-tl-header">
+      <i class="bi bi-people-fill text-primary"></i>
+      <strong>{{ rtl }}</strong>
+    </div>
+  {% endif %}
+
+  {% if rtype == 'FTS' %}
+  <div class="card mb-2 fr-card type-fts" data-type="fts" data-name="{{ r.employee_name|lower }}" data-id="{{ (r.employee_id or r.employeeID or '')|lower }}">
+    <div class="card-body py-2 px-3">
+      <div class="d-flex align-items-start gap-2">
+        <input type="checkbox" name="selected_reqs" class="form-check-input mt-1 fr-checkbox" style="display:none;"
+               value="fts|{{ r.id }}|{{ r.employeeID }}" onchange="frUpdateCount()">
+        <div class="flex-grow-1">
+          <div class="d-flex justify-content-between align-items-start flex-wrap gap-1">
+            <div>
+              <span class="fw-bold">{{ r.employee_name }}</span>
+              <span class="text-muted small ms-2 emp-id-copy" onclick="copyEmpId(this,'{{ r.employee_id or r.employeeID }}')" title="Click to copy">{{ r.employee_id or r.employeeID }}</span>
+              <span class="badge bg-info text-dark ms-1">FTS</span>
+              <span class="badge {{ 'bg-success' if r.fts_type == 'IN' else 'bg-danger' }} ms-1">{{ r.fts_type }}</span>
+            </div>
+            <div class="text-end fr-meta">
+              <div class="fw-bold text-body">{{ r.fts_date }}</div>
+              <div>{{ r.fts_time }}</div>
+            </div>
+          </div>
+          <div class="fr-meta mt-1"><i class="bi bi-clock me-1"></i>Filed: {{ r.created_at }}</div>
+        </div>
+      </div>
+      <div class="d-flex gap-2 mt-2">
+        <button type="button" class="btn btn-success btn-sm py-0 px-2" onclick="submitFR('approve','fts','{{ r.id }}','{{ r.employeeID }}')"><i class="bi bi-check-lg me-1"></i>Approve</button>
+        <button type="button" class="btn btn-danger btn-sm py-0 px-2" onclick="submitFR('reject','fts','{{ r.id }}','{{ r.employeeID }}')"><i class="bi bi-x-lg me-1"></i>Reject</button>
+      </div>
+    </div>
+  </div>
+
+  {% elif rtype == 'OT' %}
+  <div class="card mb-2 fr-card type-ot" data-type="ot" data-name="{{ r.employee_name|lower }}" data-id="{{ r.employee_id|lower }}">
+    <div class="card-body py-2 px-3">
+      <div class="d-flex align-items-start gap-2">
+        <input type="checkbox" name="selected_reqs" class="form-check-input mt-1 fr-checkbox" style="display:none;"
+               value="ot|{{ r.id }}|{{ r.employee_id }}" onchange="frUpdateCount()">
+        <div class="flex-grow-1">
+          <div class="d-flex justify-content-between align-items-start flex-wrap gap-1">
+            <div>
+              <span class="fw-bold">{{ r.employee_name }}</span>
+              <span class="text-muted small ms-2 emp-id-copy" onclick="copyEmpId(this,'{{ r.employee_id }}')" title="Click to copy">{{ r.employee_id }}</span>
+              <span class="badge bg-primary ms-1">OT</span>
+              <span class="badge bg-warning text-dark ms-1">{{ r.ot_type }}</span>
+              <span class="badge bg-primary ms-1">{{ r.ot_hours }}h</span>
+              {% if r.ticket_count > 0 %}
+              <span class="badge bg-secondary ms-1" style="cursor:pointer;" onclick="showTickets({{ r.id }},'{{ r.employee_name }}')">{{ r.ticket_count }} ticket(s) 🔍</span>
+              {% endif %}
+            </div>
+            <div class="text-end fr-meta">
+              <div class="fw-bold text-body">{{ r.ot_date }}</div>
+              <div>{{ r.start_time }} → {{ r.end_time }}</div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="d-flex gap-2 mt-2">
+        <button type="button" class="btn btn-success btn-sm py-0 px-2" onclick="submitFR('approve','ot','{{ r.id }}','{{ r.employee_id }}')"><i class="bi bi-check-lg me-1"></i>Approve</button>
+        <button type="button" class="btn btn-danger btn-sm py-0 px-2" onclick="submitFR('reject','ot','{{ r.id }}','{{ r.employee_id }}')"><i class="bi bi-x-lg me-1"></i>Reject</button>
+      </div>
+    </div>
+  </div>
+
+  {% elif rtype == 'CWS' %}
+  <div class="card mb-2 fr-card type-cws" data-type="cws" data-name="{{ r.employee_name|lower }}" data-id="{{ r.employee_id|lower }}">
+    <div class="card-body py-2 px-3">
+      <div class="d-flex align-items-start gap-2">
+        <input type="checkbox" name="selected_reqs" class="form-check-input mt-1 fr-checkbox" style="display:none;"
+               value="cws|{{ r.id }}|{{ r.employee_id }}" onchange="frUpdateCount()">
+        <div class="flex-grow-1">
+          <div class="d-flex justify-content-between align-items-start flex-wrap gap-1">
+            <div>
+              <span class="fw-bold">{{ r.employee_name }}</span>
+              <span class="text-muted small ms-2 emp-id-copy" onclick="copyEmpId(this,'{{ r.employee_id }}')" title="Click to copy">{{ r.employee_id }}</span>
+              <span class="badge ms-1" style="background:#6f42c1">CWS</span>
+            </div>
+            <div class="text-end fr-meta">
+              <div class="text-muted">{{ r.original_date }} {{ r.original_time }}</div>
+              <div class="fw-bold text-body">→ {{ r.new_date }} {{ r.new_time }}</div>
+            </div>
+          </div>
+          <div class="fr-meta mt-1"><i class="bi bi-clock me-1"></i>Filed: {{ r.created_at }}</div>
+          {% if r.reason %}<div class="fr-meta mt-1"><i class="bi bi-chat-left-text me-1"></i>{{ r.reason }}</div>{% endif %}
+        </div>
+      </div>
+      <div class="d-flex gap-2 mt-2">
+        <button type="button" class="btn btn-success btn-sm py-0 px-2" onclick="submitFR('approve','cws','{{ r.id }}','{{ r.employee_id }}')"><i class="bi bi-check-lg me-1"></i>Approve</button>
+        <button type="button" class="btn btn-danger btn-sm py-0 px-2" onclick="submitFR('reject','cws','{{ r.id }}','{{ r.employee_id }}')"><i class="bi bi-x-lg me-1"></i>Reject</button>
+      </div>
+    </div>
+  </div>
+
+  {% elif rtype == 'RDW' %}
+  <div class="card mb-2 fr-card type-rdw" data-type="rdw" data-name="{{ r.employee_name|lower }}" data-id="{{ r.employee_id|lower }}">
+    <div class="card-body py-2 px-3">
+      <div class="d-flex align-items-start gap-2">
+        <input type="checkbox" name="selected_reqs" class="form-check-input mt-1 fr-checkbox" style="display:none;"
+               value="rdw|{{ r.id }}|{{ r.employee_id }}" onchange="frUpdateCount()">
+        <div class="flex-grow-1">
+          <div class="d-flex justify-content-between align-items-start flex-wrap gap-1">
+            <div>
+              <span class="fw-bold">{{ r.employee_name }}</span>
+              <span class="text-muted small ms-2 emp-id-copy" onclick="copyEmpId(this,'{{ r.employee_id }}')" title="Click to copy">{{ r.employee_id }}</span>
+              <span class="badge bg-warning text-dark ms-1">RDW</span>
+              <span class="badge bg-info text-dark ms-1">{{ r.work_category }}</span>
+              {% if r.rd_hours %}<span class="badge bg-primary ms-1">{{ r.rd_hours }}h</span>{% endif %}
+              {% if r.work_category == 'REGULAR' and r.ticket_count > 0 %}
+              <span class="badge bg-secondary ms-1" style="cursor:pointer;" onclick="showRdTickets({{ r.id }},'{{ r.employee_name }}')">{{ r.ticket_count }} ticket(s) 🔍</span>
+              {% endif %}
+            </div>
+            <div class="text-end fr-meta">
+              <div class="fw-bold text-body">{{ r.rd_date }}</div>
+              <div>{{ r.start_time }} → {{ r.end_time }}</div>
+            </div>
+          </div>
+          <div class="fr-meta mt-1"><i class="bi bi-clock me-1"></i>Filed: {{ r.created_at }}</div>
+        </div>
+      </div>
+      <div class="d-flex gap-2 mt-2">
+        <button type="button" class="btn btn-success btn-sm py-0 px-2" onclick="submitFR('approve','rdw','{{ r.id }}','{{ r.employee_id }}')"><i class="bi bi-check-lg me-1"></i>Approve</button>
+        <button type="button" class="btn btn-danger btn-sm py-0 px-2" onclick="submitFR('reject','rdw','{{ r.id }}','{{ r.employee_id }}')"><i class="bi bi-x-lg me-1"></i>Reject</button>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+{% endfor %}
+
+</form>
+{% endif %}
+
+<!-- Ticket Modal -->
+<div class="modal fade" id="ticketModal" tabindex="-1">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h6 class="modal-title fw-bold" id="ticketModalTitle">Tickets</h6>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body p-0">
+        <div id="ticketModalBody" class="p-3"></div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">Close</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+function showTickets(otRequestId, employeeName) {
+  document.getElementById('ticketModalTitle').textContent = 'Tickets — ' + employeeName;
+  document.getElementById('ticketModalBody').innerHTML = '<div class="text-center py-3"><div class="spinner-border spinner-border-sm text-primary"></div><span class="ms-2 text-muted">Loading...</span></div>';
+  new bootstrap.Modal(document.getElementById('ticketModal')).show();
+  fetch('/api/ot-tickets/' + otRequestId).then(r=>r.json()).then(tickets=>{
+    if (!tickets.length) { document.getElementById('ticketModalBody').innerHTML='<p class="text-muted p-3 mb-0">No tickets found.</p>'; return; }
+    const counts={};
+    tickets.forEach(t=>{ counts[t.ticket_number]=(counts[t.ticket_number]||0)+1; });
+    const rows=tickets.map((t,i)=>{
+      const ld=counts[t.ticket_number]>1, gd=t.duplicate_global;
+      const rc=ld?'table-danger':gd?'table-warning':'';
+      const tag=ld?'<span class="badge bg-danger ms-1" style="font-size:.65rem;">DUPLICATE</span>':gd?'<span class="badge bg-warning text-dark ms-1" style="font-size:.65rem;">USED BY OTHER</span>':'';
+      return `<tr class="${rc}"><td class="text-muted small">${i+1}</td><td class="font-monospace fw-bold"><a href="https://getyourguidesupport.zendesk.com/agent/tickets/${t.ticket_number}" target="_blank">${t.ticket_number}</a>${tag}</td><td><span class="badge bg-secondary" style="font-size:.7rem;">${t.status}</span></td><td class="text-muted small">${t.created_at}</td></tr>`;
+    }).join('');
+    document.getElementById('ticketModalBody').innerHTML=`<table class="table table-sm table-hover align-middle mb-0"><thead class="table-light"><tr><th>#</th><th>Ticket</th><th>Status</th><th>Submitted At</th></tr></thead><tbody>${rows}</tbody></table><div class="px-3 py-2 text-muted small border-top">${tickets.length} ticket(s)</div>`;
+  }).catch(()=>{ document.getElementById('ticketModalBody').innerHTML='<p class="text-danger p-3 mb-0">Failed to load.</p>'; });
+}
+
+function showRdTickets(rdRequestId, employeeName) {
+  document.getElementById('ticketModalTitle').textContent = 'Tickets — ' + employeeName;
+  document.getElementById('ticketModalBody').innerHTML = '<div class="text-center py-3"><div class="spinner-border spinner-border-sm text-primary"></div><span class="ms-2 text-muted">Loading...</span></div>';
+  new bootstrap.Modal(document.getElementById('ticketModal')).show();
+  fetch('/api/rd-tickets/' + rdRequestId).then(r=>r.json()).then(tickets=>{
+    if (!tickets.length) { document.getElementById('ticketModalBody').innerHTML='<p class="text-muted p-3 mb-0">No tickets found.</p>'; return; }
+    const counts={};
+    tickets.forEach(t=>{ counts[t.ticket_number]=(counts[t.ticket_number]||0)+1; });
+    const rows=tickets.map((t,i)=>{
+      const ld=counts[t.ticket_number]>1, gd=t.duplicate_global;
+      const rc=ld?'table-danger':gd?'table-warning':'';
+      const tag=ld?'<span class="badge bg-danger ms-1" style="font-size:.65rem;">DUPLICATE</span>':gd?'<span class="badge bg-warning text-dark ms-1" style="font-size:.65rem;">USED BY OTHER</span>':'';
+      return `<tr class="${rc}"><td class="text-muted small">${i+1}</td><td class="font-monospace fw-bold"><a href="https://getyourguidesupport.zendesk.com/agent/tickets/${t.ticket_number}" target="_blank">${t.ticket_number}</a>${tag}</td><td><span class="badge bg-secondary" style="font-size:.7rem;">${t.status}</span></td><td class="text-muted small">${t.created_at}</td></tr>`;
+    }).join('');
+    document.getElementById('ticketModalBody').innerHTML=`<table class="table table-sm mb-0"><thead><tr><th>#</th><th>Ticket</th><th>Status</th><th>Created</th></tr></thead><tbody>${rows}</tbody></table>`;
+  }).catch(()=>{ document.getElementById('ticketModalBody').innerHTML='<p class="text-danger p-3 mb-0">Failed to load.</p>'; });
+}
+
+function frToggleBulkMode() {
+  var on = document.getElementById('frBulkActions').style.display === 'none';
+  document.getElementById('frBulkActions').style.display = on ? 'flex' : 'none';
+  document.getElementById('frBulkToggle').classList.toggle('btn-outline-secondary', !on);
+  document.getElementById('frBulkToggle').classList.toggle('btn-primary', on);
+  document.querySelectorAll('.fr-checkbox').forEach(function(c) { c.style.display = on ? 'block' : 'none'; c.checked = false; });
+  document.getElementById('frSelectedCount').textContent = '0 selected';
+  var sa = document.getElementById('frSelectAll');
+  if (sa) sa.checked = false;
+}
+function frSubmitBulk(action) {
+  var checked = document.querySelectorAll('.fr-checkbox:checked');
+  if (checked.length === 0) { alert('No requests selected.'); return; }
+  var form = document.getElementById('frBulkForm');
+  form.querySelectorAll('input[name="action"], input[name="selected_reqs"][type="hidden"], input[name="next"]').forEach(function(el) { el.remove(); });
+  var inp = document.createElement('input'); inp.type='hidden'; inp.name='action'; inp.value=action; form.appendChild(inp);
+  var nxt = document.createElement('input'); nxt.type='hidden'; nxt.name='next'; nxt.value='/file-requests/approvals'+window.location.search; form.appendChild(nxt);
+  checked.forEach(function(cb) { var h=document.createElement('input'); h.type='hidden'; h.name='selected_reqs'; h.value=cb.value; form.appendChild(h); });
+  form.submit();
+}
+function frToggleAll(cb) {
+  var bulkOn = document.getElementById('frBulkActions').style.display !== 'none';
+  if (bulkOn === false) return;
+  document.querySelectorAll('.fr-checkbox').forEach(function(c) { c.checked = cb.checked; });
+  frUpdateCount();
+}
+function frUpdateCount() {
+  var n = document.querySelectorAll('.fr-checkbox:checked').length;
+  var el = document.getElementById('frSelectedCount');
+  if (el) el.textContent = n + ' selected';
+}
+function submitFR(action, reqType, reqId, empId) {
+  var form = document.createElement('form');
+  form.method = 'POST';
+  form.action = '/file-requests/approvals/action';
+  var next = '/file-requests/approvals' + window.location.search;
+  [['action',action],['req_type',reqType],['req_id',reqId],['emp_id',empId],['next',next]].forEach(function(p) {
+    var i=document.createElement('input'); i.type='hidden'; i.name=p[0]; i.value=p[1]; form.appendChild(i);
+  });
+  document.body.appendChild(form);
+  form.submit();
+}
+</script>
+{% endblock %}

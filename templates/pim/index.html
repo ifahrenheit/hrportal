@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+{% block title %}Employee Database{% endblock %}
+{% block content %}
+<div class="container-fluid px-4 py-3">
+  <div class="d-flex align-items-center justify-content-between mb-3">
+    <div>
+      <h4 class="mb-0 fw-bold">Employee Database</h4>
+      <small class="text-muted">Synced from Google Sheets &mdash; read-only</small>
+    </div>
+    <span class="badge bg-secondary fs-6">{{ employees|length }} record(s)</span>
+  </div>
+
+  <form method="get" class="row g-2 mb-3">
+    <div class="col-md-5">
+      <div class="input-group">
+        <span class="input-group-text"><i class="bi bi-search"></i></span>
+        <input type="text" name="search" class="form-control"
+               placeholder="Search name, email, employee ID..."
+               value="{{ search }}">
+      </div>
+    </div>
+    <div class="col-md-3">
+      <select name="status" class="form-select">
+        <option value="" {% if status_filter == '' %}selected{% endif %}>Active / Training / Pending</option>
+        <option value="all" {% if status_filter == 'all' %}selected{% endif %}>All Statuses</option>
+        {% for s in statuses %}
+        <option value="{{ s }}" {% if status_filter == s %}selected{% endif %}>{{ s }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="col-auto">
+      <button type="submit" class="btn btn-primary">Filter</button>
+      <a href="{{ url_for('pim_index') }}" class="btn btn-outline-secondary">Reset</a>
+    </div>
+  </form>
+
+  <div class="card shadow-sm">
+    <div class="table-responsive">
+      <table class="table table-hover table-sm align-middle mb-0">
+        <thead class="table-dark">
+          <tr>
+            <th>Employee ID</th>
+            <th>Name</th>
+            <th>Email</th>
+            <th>Status</th>
+            <th>Team Lead</th>
+            <th>Group</th>
+            <th>Account</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for emp in employees %}
+          <tr style="cursor:pointer;" onclick="window.location='{{ url_for('pim_profile', employee_id=emp.employee_id) }}'">
+            <td><code>{{ emp.employee_id }}</code></td>
+            <td>{{ emp.schedule_name or '—' }}</td>
+            <td>{{ emp.email or '—' }}</td>
+            <td>
+              {% set sc = {'Active': 'success', 'Training': 'info', 'Pending': 'warning', 'Separated': 'secondary'} %}
+              <span class="badge bg-{{ sc.get(emp.status, 'secondary') }} {% if emp.status == 'Pending' %}text-dark{% endif %}">
+                {{ emp.status or '—' }}
+              </span>
+            </td>
+            <td>{{ emp.tl or '—' }}</td>
+            <td>{{ emp.group_name or '—' }}</td>
+            <td>{{ emp.account or '—' }}</td>
+          </tr>
+          {% else %}
+          <tr><td colspan="8" class="text-center text-muted py-4">No employees found.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endblock %}

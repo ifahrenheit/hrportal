@@ -1,0 +1,82 @@
+{% extends 'base.html' %}
+{% block title %}Edit Material Request{% endblock %}
+{% block page_title %}Edit Material Request{% endblock %}
+{% block content %}
+<div class="row justify-content-center">
+  <div class="col-md-7">
+    <div class="card p-4">
+      <h6 class="fw-semibold mb-1">Edit Request</h6>
+      <div class="text-muted small mb-3">
+        Filed by <strong>{{ items[0].employee_name }}</strong> —
+        Status: <span class="badge bg-warning text-dark">{{ items[0].status }}</span>
+      </div>
+      <form method="POST">
+        <div class="mb-3">
+          <label class="form-label small fw-semibold">Items</label>
+          {% for item in items %}
+          <input type="hidden" name="item_id[]" value="{{ item.id }}">
+          <div class="d-flex gap-2 mb-2 align-items-center">
+            <span class="badge bg-secondary" style="flex-shrink:0;">{{ item.category }}</span>
+            <input type="text" name="item_name[]" class="form-control form-control-sm"
+                   value="{{ item.item_name }}" required>
+            <input type="number" name="quantity[]" class="form-control form-control-sm"
+                   style="width:70px;flex-shrink:0;" min="1" value="{{ item.quantity }}" required>
+            <input type="number" name="unit_cost[]" class="form-control form-control-sm"
+                   style="width:90px;flex-shrink:0;" step="0.01" min="0.01"
+                   placeholder="Unit ₱" value="{{ item.purchase_unit_cost or '' }}"
+                   oninput="calcTotal(this)">
+            <input type="number" name="purchase_total[]" class="form-control form-control-sm"
+                   style="width:90px;flex-shrink:0;" step="0.01"
+                   placeholder="Total ₱" value="{{ item.purchase_total or '' }}" readonly
+                   style="background:var(--bg);">
+          </div>
+          {% endfor %}
+        </div>
+        <div class="mb-3">
+          <label class="form-label small fw-semibold">Reason / Justification</label>
+          <textarea name="reason" class="form-control" rows="2">{{ items[0].reason or '' }}</textarea>
+        </div>
+        <div class="mb-3">
+          <label class="form-label small fw-semibold">Date Needed</label>
+          <input type="date" name="date_needed" class="form-control"
+                 value="{{ items[0].date_needed.strftime('%Y-%m-%d') if items[0].date_needed else '' }}">
+        </div>
+        <div class="d-flex gap-2">
+          <button type="submit" class="btn btn-primary">
+            <i class="bi bi-save me-1"></i>Save Changes
+          </button>
+          <a href="{{ url_for('file_material') }}" class="btn btn-outline-secondary">Cancel</a>
+        </div>
+      </form>
+      {% if logs %}
+      <hr>
+      <div class="mt-3">
+        <div class="small fw-semibold mb-2 text-muted text-uppercase" style="letter-spacing:.06em;">Edit History</div>
+        {% for log in logs %}
+        <div class="d-flex gap-2 mb-2 align-items-start">
+          <div style="width:8px;height:8px;border-radius:50%;background:var(--accent);margin-top:.35rem;flex-shrink:0;"></div>
+          <div class="small">
+            <span class="fw-semibold">{{ log.performed_by }}</span>
+            <span class="text-muted ms-1">{{ log.created_at.strftime('%b %d, %Y %H:%M') }}</span>
+            <div class="text-muted" style="font-size:.78rem;">{{ log.details }}</div>
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+      {% endif %}
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function calcTotal(unitInput) {
+  const row = unitInput.closest('.d-flex');
+  const qty = parseFloat(row.querySelector('input[name="quantity[]"]').value) || 0;
+  const unit = parseFloat(unitInput.value) || 0;
+  const totalInput = row.querySelector('input[name="purchase_total[]"]');
+  if (totalInput) totalInput.value = (qty * unit).toFixed(2);
+}
+</script>
+{% endblock %}

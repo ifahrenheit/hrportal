@@ -1,0 +1,91 @@
+{% extends "base.html" %}
+{% block title %}File CWS{% endblock %}
+{% block page_title %}Change Work Schedule{% endblock %}
+{% block content %}
+
+<div class="mb-3">
+  <a href="{{ url_for('file_requests_hub') }}" class="btn btn-sm btn-outline-secondary">← Back to File Requests</a>
+</div>
+
+{% if message %}
+<div class="alert alert-{{ msg_type }} alert-dismissible fade show" role="alert">
+  {{ message }}
+  <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+</div>
+{% endif %}
+
+<div class="card mb-4">
+  <div class="card-body p-4">
+    <h6 class="fw-bold mb-3">Submit CWS Request</h6>
+    <form method="POST">
+      <div class="row g-3">
+        <div class="col-md-6">
+          <label class="form-label">Original Date <span class="text-danger">*</span></label>
+          <input type="date" name="original_date" class="form-control" required>
+        </div>
+        <div class="col-md-6">
+          <label class="form-label">Original Time / Shift <span class="text-danger">*</span></label>
+          <input type="text" name="original_time" class="form-control"
+                 placeholder="e.g. 8:00 AM – 5:00 PM" required>
+        </div>
+        <div class="col-md-6">
+          <label class="form-label">New Date <span class="text-danger">*</span></label>
+          <input type="date" name="new_date" class="form-control" required>
+        </div>
+        <div class="col-md-6">
+          <label class="form-label">New Time / Shift <span class="text-danger">*</span></label>
+          <input type="text" name="new_time" class="form-control"
+                 placeholder="e.g. 9:00 AM – 6:00 PM" required>
+        </div>
+        <div class="col-12">
+          <label class="form-label">Reason <span class="text-danger">*</span></label>
+          <textarea name="reason" class="form-control" rows="3"
+                    placeholder="Provide a reason for the schedule change" required></textarea>
+        </div>
+      </div>
+      <button type="submit" class="btn btn-primary mt-3 px-4">Submit Request</button>
+    </form>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-body p-4">
+    <h6 class="fw-bold mb-3">Your CWS History</h6>
+    {% if history %}
+    <div class="table-responsive">
+      <table class="table table-hover align-middle mb-0">
+        <thead>
+          <tr>
+            <th>Orig. Date</th><th>Orig. Time</th>
+            <th>New Date</th><th>New Time</th>
+            <th>Status</th><th>Approver</th><th>Submitted</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for r in history %}
+          <tr>
+            <td>{{ r.original_date }}</td>
+            <td>{{ r.original_time }}</td>
+            <td>{{ r.new_date }}</td>
+            <td>{{ r.new_time }}</td>
+            <td>
+              <span class="badge
+                {% if r.status == 'Pending' %}bg-warning text-dark
+                {% elif r.status == 'Approved' %}bg-success
+                {% else %}bg-danger{% endif %}">
+                {{ r.status }}
+              </span>
+            </td>
+            <td>{{ r.approver_name or '—' }}</td>
+            <td>{{ r.created_at }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <p class="text-muted mb-0">No CWS requests yet.</p>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

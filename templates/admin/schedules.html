@@ -1,0 +1,181 @@
+{% extends 'base.html' %}
+{% block title %}Schedules{% endblock %}
+{% block page_title %}Employee Schedules{% endblock %}
+{% block content %}
+
+{# ── Filters ─────────────────────────────────────────────── #}
+<div class="card mb-3">
+  <div class="card-body pb-2">
+    <form method="GET" class="row g-2 align-items-end">
+      <div class="col-6 col-md-2">
+        <label class="form-label small mb-1">Month</label>
+        <select name="month" class="form-select form-select-sm" onchange="this.form.submit()">
+          {% for m in months %}
+          <option value="{{ m }}" {% if m == month_filter %}selected{% endif %}>{{ m }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-6 col-md-2">
+        <label class="form-label small mb-1">Group</label>
+        <select name="group" class="form-select form-select-sm" onchange="this.form.submit()">
+          <option value="">All Groups</option>
+          {% for g in groups %}
+          <option value="{{ g }}" {% if g == group_filter %}selected{% endif %}>{{ g }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-6 col-md-2">
+        <label class="form-label small mb-1">Shift</label>
+        <select name="shift" class="form-select form-select-sm" onchange="this.form.submit()">
+          <option value="">All Shifts</option>
+          {% for s in shifts %}
+          <option value="{{ s }}" {% if s == shift_filter %}selected{% endif %}>{{ s }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-6 col-md-3">
+        <label class="form-label small mb-1">Employee</label>
+        <input type="text" name="emp_search" class="form-control form-control-sm"
+               placeholder="Name or ID..." value="{{ emp_search }}">
+      </div>
+      <div class="col-12 col-md-3 d-flex gap-2">
+        <button type="submit" class="btn btn-primary btn-sm">
+          <i class="bi bi-search me-1"></i>Apply
+        </button>
+        <a href="{{ url_for('admin_schedules') }}" class="btn btn-outline-secondary btn-sm">
+          <i class="bi bi-x-circle me-1"></i>Clear
+        </a>
+        <span class="ms-auto text-muted small align-self-center">
+          {{ employees|length }} employee{{ 's' if employees|length != 1 }}
+        </span>
+      </div>
+    </form>
+  </div>
+</div>
+
+{# ── Legend ──────────────────────────────────────────────── #}
+<div class="d-flex gap-2 mb-3 flex-wrap align-items-center" style="font-size:.75rem;">
+  <span class="text-muted me-1">Shifts:</span>
+  <span style="background:#1a1a1a;color:#fff;padding:.15rem .45rem;border-radius:4px;font-size:.7rem;">Rest Day</span>
+  <span style="background:#e8f5e9;color:#2e7d32;padding:.15rem .45rem;border-radius:4px;font-size:.7rem;">6am-3pm</span>
+  <span style="background:#f1f8e9;color:#558b2f;padding:.15rem .45rem;border-radius:4px;font-size:.7rem;">7am-4pm</span>
+  <span style="background:#e0f2f1;color:#00695c;padding:.15rem .45rem;border-radius:4px;font-size:.7rem;">8am-5pm</span>
+  <span style="background:#e8eaf6;color:#283593;padding:.15rem .45rem;border-radius:4px;font-size:.7rem;">9am-6pm</span>
+  <span style="background:#fff8e1;color:#f57f17;padding:.15rem .45rem;border-radius:4px;font-size:.7rem;">11am-8pm</span>
+  <span style="background:#fff3e0;color:#e65100;padding:.15rem .45rem;border-radius:4px;font-size:.7rem;">12nn-9pm</span>
+  <span style="background:#fce4ec;color:#880e4f;padding:.15rem .45rem;border-radius:4px;font-size:.7rem;">4pm-1am</span>
+  <span style="background:#f3e5f5;color:#6a1b9a;padding:.15rem .45rem;border-radius:4px;font-size:.7rem;">Night shifts</span>
+</div>
+
+{# ── Schedule Table ──────────────────────────────────────── #}
+{% if employees %}
+<div class="card">
+  <div id="topScroll" style="overflow-x:auto;overflow-y:hidden;height:14px;background:var(--border);border-radius:4px;margin-bottom:4px;" onscroll="document.getElementById('tableScroll').scrollLeft=this.scrollLeft;">
+    <div id="topScrollInner" style="height:1px;"></div>
+  </div>
+  <div class="table-responsive" id="tableScroll" onscroll="document.getElementById('topScroll').scrollLeft=this.scrollLeft;" style="max-height:calc(100vh - 220px);overflow:auto;">
+    <table class="table table-bordered mb-0" style="font-size:.72rem;min-width:900px;border-collapse:collapse;">
+      <thead>
+        <tr style="background:var(--surface);color:var(--text-muted);text-transform:uppercase;font-size:.7rem;position:sticky;top:0;z-index:3;">
+          <th style="min-width:140px;position:sticky;left:0;background:var(--surface);z-index:1;">Employee</th>
+          <th style="min-width:80px;">Group</th>
+          <th style="min-width:80px;">TL</th>
+          {% for h in date_headers %}
+          <th class="text-center" style="min-width:52px;padding:.25rem .2rem;">
+            <div>{{ h.day }}</div>
+            <div style="font-size:.65rem;opacity:.7;">{{ h.weekday }}</div>
+          </th>
+          {% endfor %}
+        </tr>
+      </thead>
+      <tbody>
+        {% set ns = namespace(current_group=None) %}
+        {% for e in employees %}
+          {% if e.group_name != ns.current_group %}
+            {% set ns.current_group = e.group_name %}
+            <tr class="table-secondary">
+              <td colspan="{{ all_dates|length + 3 }}" class="py-1 ps-3">
+                <i class="bi bi-people-fill me-1 text-primary"></i>
+                <strong>{{ e.group_name }}</strong>
+              </td>
+            </tr>
+          {% endif %}
+          <tr>
+            <td style="position:sticky;left:0;background:var(--surface);z-index:1;padding:.2rem .4rem;white-space:nowrap;max-width:130px;overflow:hidden;">
+              <div class="fw-semibold" style="font-size:.73rem;line-height:1.2;overflow:hidden;text-overflow:ellipsis;">{{ e.name }}</div>
+              <div class="text-muted" style="font-size:.62rem;">{{ e.employee_id }}</div>
+            </td>
+            <td class="text-muted" style="font-size:.7rem;padding:.2rem .3rem;white-space:nowrap;">{{ e.group_name }}</td>
+            <td class="text-muted" style="font-size:.7rem;padding:.2rem .3rem;white-space:nowrap;">{{ e.tl }}</td>
+            {% for h in date_headers %}{% set d = h.date %}
+              {% set day = e.days.get(d) %}
+              {% if day %}
+                {% if day.is_rest %}
+                <td class="text-center sched-cell" style="background:#1a1a1a;color:#fff;font-size:.65rem;padding:.15rem .1rem;white-space:nowrap;">RD</td>
+                {% else %}
+                  {% set s = day.shift or '' %}
+                  {% if '6am' in s %}<td class="text-center sched-cell" style="background:#e8f5e9;color:#2e7d32;font-size:.65rem;padding:.15rem .1rem;white-space:nowrap;">{{ s }}</td>
+                  {% elif '7am' in s and '4pm' in s %}<td class="text-center sched-cell" style="background:#f1f8e9;color:#558b2f;font-size:.65rem;padding:.15rem .1rem;white-space:nowrap;">{{ s }}</td>
+                  {% elif '8am' in s %}<td class="text-center sched-cell" style="background:#e0f2f1;color:#00695c;font-size:.65rem;padding:.15rem .1rem;white-space:nowrap;">{{ s }}</td>
+                  {% elif '9am' in s and '6pm' in s %}<td class="text-center sched-cell" style="background:#e8eaf6;color:#283593;font-size:.65rem;padding:.15rem .1rem;white-space:nowrap;">{{ s }}</td>
+                  {% elif '10am' in s %}<td class="text-center sched-cell" style="background:#e3f2fd;color:#1565c0;font-size:.65rem;padding:.15rem .1rem;white-space:nowrap;">{{ s }}</td>
+                  {% elif '11am' in s %}<td class="text-center sched-cell" style="background:#fff8e1;color:#f57f17;font-size:.65rem;padding:.15rem .1rem;white-space:nowrap;">{{ s }}</td>
+                  {% elif '12nn' in s or '12pm' in s %}<td class="text-center sched-cell" style="background:#fff3e0;color:#e65100;font-size:.65rem;padding:.15rem .1rem;white-space:nowrap;">{{ s }}</td>
+                  {% elif '1pm' in s %}<td class="text-center sched-cell" style="background:#fbe9e7;color:#bf360c;font-size:.65rem;padding:.15rem .1rem;white-space:nowrap;">{{ s }}</td>
+                  {% elif '2pm' in s %}<td class="text-center sched-cell" style="background:#fce4ec;color:#880e4f;font-size:.65rem;padding:.15rem .1rem;white-space:nowrap;">{{ s }}</td>
+                  {% elif '3pm' in s %}<td class="text-center sched-cell" style="background:#f8bbd0;color:#880e4f;font-size:.65rem;padding:.15rem .1rem;white-space:nowrap;">{{ s }}</td>
+                  {% elif '4pm' in s %}<td class="text-center sched-cell" style="background:#f3e5f5;color:#6a1b9a;font-size:.65rem;padding:.15rem .1rem;white-space:nowrap;">{{ s }}</td>
+                  {% elif '5pm' in s %}<td class="text-center sched-cell" style="background:#ede7f6;color:#4527a0;font-size:.65rem;padding:.15rem .1rem;white-space:nowrap;">{{ s }}</td>
+                  {% elif '6pm' in s %}<td class="text-center sched-cell" style="background:#e8eaf6;color:#1a237e;font-size:.65rem;padding:.15rem .1rem;white-space:nowrap;">{{ s }}</td>
+                  {% elif '7pm' in s %}<td class="text-center sched-cell" style="background:#e0e7ff;color:#1e1b4b;font-size:.65rem;padding:.15rem .1rem;white-space:nowrap;">{{ s }}</td>
+                  {% elif '8pm' in s %}<td class="text-center sched-cell" style="background:#ddd6fe;color:#312e81;font-size:.65rem;padding:.15rem .1rem;white-space:nowrap;">{{ s }}</td>
+                  {% elif '9pm' in s %}<td class="text-center sched-cell" style="background:#c7d2fe;color:#312e81;font-size:.65rem;padding:.15rem .1rem;white-space:nowrap;">{{ s }}</td>
+                  {% elif '10pm' in s %}<td class="text-center sched-cell" style="background:#a5b4fc;color:#1e1b4b;font-size:.65rem;padding:.15rem .1rem;white-space:nowrap;">{{ s }}</td>
+                  {% elif '11pm' in s %}<td class="text-center sched-cell" style="background:#818cf8;color:#fff;font-size:.65rem;padding:.15rem .1rem;white-space:nowrap;">{{ s }}</td>
+                  {% elif '1am' in s or '2am' in s or '3am' in s or '4am' in s or '5am' in s %}<td class="text-center sched-cell" style="background:#4f46e5;color:#fff;font-size:.65rem;padding:.15rem .1rem;white-space:nowrap;">{{ s }}</td>
+                  {% else %}<td class="text-center sched-cell" style="background:#e0f2f1;color:#00695c;font-size:.65rem;padding:.15rem .1rem;white-space:nowrap;">{{ s }}</td>
+                  {% endif %}
+                {% endif %}
+              {% else %}
+                <td class="text-center text-muted sched-cell" style="font-size:.65rem;padding:.15rem .1rem;">—</td>
+              {% endif %}
+            {% endfor %}
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% else %}
+<div class="card p-4 text-center text-muted">
+  <i class="bi bi-calendar-x" style="font-size:2rem;display:block;margin-bottom:.5rem;"></i>
+  No schedules found for {{ month_filter }}.
+</div>
+{% endif %}
+
+{% endblock %}
+
+{% block scripts %}
+<style>
+.sched-cell { padding: .18rem .12rem !important; line-height: 1.1; }
+#tableScroll table td, #tableScroll table th { vertical-align: middle; }
+#tableScroll tbody tr { height: 36px; }
+#topScroll::-webkit-scrollbar,
+#tableScroll::-webkit-scrollbar { height: 10px; }
+#topScroll::-webkit-scrollbar-track,
+#tableScroll::-webkit-scrollbar-track { background: var(--border); border-radius: 4px; }
+#topScroll::-webkit-scrollbar-thumb,
+#tableScroll::-webkit-scrollbar-thumb { background: var(--text-muted); border-radius: 4px; }
+#topScroll::-webkit-scrollbar-thumb:hover,
+#tableScroll::-webkit-scrollbar-thumb:hover { background: var(--text); }
+</style>
+<script>
+document.addEventListener("DOMContentLoaded", function() {
+  var table = document.querySelector("#tableScroll table");
+  var inner = document.getElementById("topScrollInner");
+  if (table && inner) {
+    inner.style.width = table.offsetWidth + "px";
+  }
+});
+</script>
+{% endblock %}

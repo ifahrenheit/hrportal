@@ -1,0 +1,170 @@
+{% extends "base.html" %}
+{% block title %}Magic CWS{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-3" style="max-width:720px">
+
+  <!-- Balance card -->
+  <div class="card mb-3 border-0 shadow-sm">
+    <div class="card-body d-flex align-items-center gap-3 py-3">
+      <div class="rounded-circle d-flex align-items-center justify-content-center"
+           style="width:54px;height:54px;background:#6f42c120">
+        <i class="bi bi-lightning-charge-fill fs-4" style="color:#6f42c1"></i>
+      </div>
+      <div>
+        <div class="text-muted small">Magic CWS Balance</div>
+        <div class="fw-bold fs-4">{{ balance }} hrs</div>
+        <div class="text-muted small">{{ work_mode|upper }} schedule
+          · max {{ '10' if work_mode == '4day' else '8' }} hrs deduction per request</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Filing form -->
+  <div class="card border-0 shadow-sm mb-4">
+    <div class="card-header bg-white fw-bold border-bottom">
+      <i class="bi bi-lightning-charge me-2" style="color:#6f42c1"></i>File Magic CWS
+    </div>
+    <div class="card-body">
+      <form method="POST">
+
+        <div class="row g-3 mb-3">
+          <div class="col-6">
+            <label class="form-label small fw-bold">Original Date</label>
+            <input type="date" id="origDate" name="original_date" class="form-control" required onchange="calcDiff()">
+          </div>
+          <div class="col-6">
+            <label class="form-label small fw-bold">Original Shift</label>
+            <select name="original_shift" id="origShift" class="form-select" required onchange="calcDiff()">
+              <option value="">— select —</option>
+              {% for label, start, end in shifts %}
+              <option value="{{ label }}" data-start="{{ start }}">{{ label }} ({{ start }}–{{ end }})</option>
+              {% endfor %}
+            </select>
+          </div>
+        </div>
+
+        <div class="row g-3 mb-3">
+          <div class="col-6">
+            <label class="form-label small fw-bold">New Date</label>
+            <input type="date" id="newDate" name="new_date" class="form-control" required onchange="calcDiff()">
+          </div>
+          <div class="col-6">
+            <label class="form-label small fw-bold">New Shift</label>
+            <select name="new_shift" id="newShift" class="form-select" required onchange="calcDiff()">
+              <option value="">— select —</option>
+              {% for label, start, end in shifts %}
+              <option value="{{ label }}" data-start="{{ start }}">{{ label }} ({{ start }}–{{ end }})</option>
+              {% endfor %}
+            </select>
+          </div>
+        </div>
+
+        <!-- Live calculation -->
+        <div id="calcBox" class="alert py-2 mb-3" style="display:none;background:#f3eeff;border:1px solid #c9b3f5">
+          <div class="d-flex gap-4 flex-wrap small">
+            <div><span class="text-muted">Shift difference:</span>
+                 <strong id="diffHrs">—</strong> hrs</div>
+            <div><span class="text-muted">Deduction:</span>
+                 <strong id="deductHrs" style="color:#6f42c1">—</strong> hrs</div>
+            <div><span class="text-muted">Balance after:</span>
+                 <strong id="balAfter">—</strong> hrs</div>
+          </div>
+        </div>
+
+        <div class="mb-3">
+          <label class="form-label small fw-bold">Reason <span class="text-muted fw-normal">(optional)</span></label>
+          <textarea name="reason" class="form-control" rows="2"
+                    placeholder="e.g. medical appointment, personal errand…"></textarea>
+        </div>
+
+        <div class="d-flex gap-2">
+          <button type="submit" id="submitBtn" class="btn btn-sm px-3"
+                style="background:#6f42c1;color:#fff">
+        <i class="bi bi-send me-1"></i>Submit Request
+        </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- My requests table -->
+  {% if my_requests %}
+  <div class="card border-0 shadow-sm">
+    <div class="card-header bg-white fw-bold border-bottom small">My Magic CWS Requests</div>
+    <div class="table-responsive">
+      <table class="table table-sm table-hover mb-0 small">
+        <thead class="table-light">
+          <tr>
+            <th>Original</th><th>New</th>
+            <th class="text-center">Diff</th><th class="text-center">Deduct</th>
+            <th class="text-center">Status</th><th>Filed</th>
+          </tr>
+        </thead>
+        <tbody>
+        {% for r in my_requests %}
+        <tr>
+          <td>{{ r[1] }}<br><span class="text-muted">{{ r[2] }}</span></td>
+          <td>{{ r[3] }}<br><span class="text-muted">{{ r[4] }}</span></td>
+          <td class="text-center">{{ r[5] }} h</td>
+          <td class="text-center" style="color:#6f42c1;font-weight:600">{{ r[6] }} h</td>
+          <td class="text-center">
+            {% if r[8] == 'Pending' %}
+              <span class="badge bg-warning text-dark">Pending</span>
+            {% elif r[8] == 'Approved' %}
+              <span class="badge bg-success">Approved</span>
+            {% elif r[8] == 'Rejected' %}
+              <span class="badge bg-danger">Rejected</span>
+            {% endif %}
+          </td>
+          <td class="text-muted">{{ r[9].strftime('%b %d') if r[9] else '—' }}</td>
+        </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  {% endif %}
+
+</div>
+
+<script>
+const BALANCE    = {{ balance }};
+const MAX_DEDUCT = {{ 10 if work_mode == '4day' else 8 }};
+
+function calcDiff() {
+  const origDate = document.getElementById("origDate").value;
+  const newDate  = document.getElementById("newDate").value;
+  const origSel  = document.getElementById("origShift");
+  const newSel   = document.getElementById("newShift");
+  const origOpt  = origSel.options[origSel.selectedIndex];
+  const newOpt   = newSel.options[newSel.selectedIndex];
+
+  if (!origDate || !newDate || !origOpt.dataset.start || !newOpt.dataset.start) return;
+
+  const origDT = new Date(origDate + "T" + origOpt.dataset.start + ":00");
+  const newDT  = new Date(newDate  + "T" + newOpt.dataset.start  + ":00");
+
+  const diffMs  = Math.abs(newDT - origDT);
+  const diffHrs = Math.round(diffMs / 3600000 * 100) / 100;
+  const deduction = Math.min(diffHrs, MAX_DEDUCT);
+  const after     = Math.round((BALANCE - deduction) * 100) / 100;
+
+  document.getElementById("diffHrs").textContent   = diffHrs;
+  document.getElementById("deductHrs").textContent = deduction;
+  document.getElementById("balAfter").textContent  = after;
+  document.getElementById("balAfter").style.color  = after < 0 ? "#dc3545" : "#198754";
+  document.getElementById("calcBox").style.display = "";
+
+  const btn  = document.getElementById("submitBtn");
+  const warn = document.getElementById("balWarn");
+  if (after < 0) {
+    btn.style.display = "none";
+    warn.style.display = "";
+  } else {
+    btn.style.display = "";
+    warn.style.display = "none";
+  }
+}
+</script>
+{% endblock %}

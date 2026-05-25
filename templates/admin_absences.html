@@ -1,0 +1,262 @@
+{% extends "base.html" %}
+{% block title %}Absence Report{% endblock %}
+{% block page_title %}Absence Report{% endblock %}
+
+{% block content %}
+
+{# Filters #}
+<div class="d-flex align-items-center gap-3 mb-3 flex-wrap">
+  <form method="get" class="d-flex align-items-center gap-2 flex-wrap">
+    <label class="fw-semibold mb-0" style="font-size:.9rem;white-space:nowrap;">From</label>
+    <input type="date" name="date_from" value="{{ date_from }}"
+           class="form-control form-control-sm" style="width:150px;">
+    <label class="fw-semibold mb-0" style="font-size:.9rem;white-space:nowrap;">To</label>
+    <input type="date" name="date_to" value="{{ date_to }}"
+           class="form-control form-control-sm" style="width:150px;">
+    <button class="btn btn-primary btn-sm" type="submit">
+      <i class="bi bi-search me-1"></i>Check
+    </button>
+  </form>
+  {% if records %}
+  <button class="btn btn-outline-secondary btn-sm ms-auto" id="copyTableBtn" onclick="copyTable()">
+    <i class="bi bi-clipboard me-1"></i>Copy Table
+  </button>
+  {% endif %}
+</div>
+
+{# Summary pills #}
+{% if records %}
+<div class="d-flex gap-2 mb-3 flex-wrap">
+  <span class="badge rounded-pill px-3 py-2"
+        style="background:#fef2f2;color:#991b1b;border:1px solid #fecaca;font-size:.8rem;">
+    <i class="bi bi-x-circle me-1"></i>Absent: <strong>{{ summary.absent }}</strong>
+  </span>
+  <span class="badge rounded-pill px-3 py-2"
+        style="background:#fff7ed;color:#9a3412;border:1px solid #fed7aa;font-size:.8rem;">
+    <i class="bi bi-box-arrow-in-right me-1"></i>FTS IN: <strong>{{ summary.fts_in }}</strong>
+  </span>
+  <span class="badge rounded-pill px-3 py-2"
+        style="background:#faf5ff;color:#6b21a8;border:1px solid #e9d5ff;font-size:.8rem;">
+    <i class="bi bi-box-arrow-right me-1"></i>FTS OUT: <strong>{{ summary.fts_out }}</strong>
+  </span>
+  <span class="text-muted ms-2" style="font-size:.83rem;align-self:center;">
+    {% if date_from == date_to %}{{ date_from }}{% else %}{{ date_from }} &rarr; {{ date_to }}{% endif %}
+    &mdash; {{ records|length }} record(s)
+  </span>
+</div>
+{% endif %}
+
+{% if not records %}
+<div class="card p-4 text-center">
+  <i class="bi bi-check-circle text-success" style="font-size:2.5rem;"></i>
+  <div class="mt-2 fw-semibold">No issues found for the selected date range</div>
+  <div class="text-muted" style="font-size:.85rem;">All scheduled employees are accounted for.</div>
+</div>
+{% else %}
+
+{% set ns = namespace(current_group='') %}
+{% for row in records %}
+  {% set remark_key = row.employee_id ~ '|' ~ row.absent_date %}
+  {% if row.group_name != ns.current_group %}
+    {% if ns.current_group != '' %}</tbody></table></div></div>{% endif %}
+    {% set ns.current_group = row.group_name %}
+    <div class="card mb-3">
+      <div class="card-header d-flex align-items-center gap-2 py-2"
+           style="background:var(--bg);border-bottom:1px solid var(--border);">
+        <i class="bi bi-people-fill" style="color:var(--accent);"></i>
+        <span class="fw-semibold" style="font-size:.92rem;">{{ row.group_name or 'No Group' }}</span>
+        <span class="badge rounded-pill ms-1"
+              style="background:var(--accent);color:#fff;font-size:.72rem;">
+          {{ records | selectattr('group_name','eq',row.group_name) | list | length }}
+        </span>
+      </div>
+      <div class="table-responsive">
+        <table class="table table-hover mb-0 absence-table">
+          <thead>
+            <tr>
+              <th class="sortable" data-col="0" style="cursor:pointer;user-select:none;">
+                Employee <span class="sort-icon">&#8597;</span>
+              </th>
+              <th class="sortable" data-col="1" style="cursor:pointer;user-select:none;">
+                Employee ID <span class="sort-icon">&#8597;</span>
+              </th>
+              <th class="sortable" data-col="2" style="cursor:pointer;user-select:none;">
+                Absent Date <span class="sort-icon">&#8597;</span>
+              </th>
+              <th>Team Lead</th>
+              <th>Shift</th>
+              <th>Time In</th>
+              <th>Time Out</th>
+              <th>Status</th>
+              <th>Remarks</th>
+            </tr>
+          </thead>
+          <tbody>
+  {% endif %}
+
+  {% set emp_leaves = leave_map.get(remark_key, []) %}
+  {% set emp_cws    = cws_map.get(remark_key, []) %}
+
+  <tr>
+    <td class="fw-semibold">{{ row.schedule_name }}</td>
+    <td>
+      <span class="text-muted" style="font-size:.8rem;cursor:pointer;"
+            onclick="copyEmpId(this, '{{ row.employee_id }}')">{{ row.employee_id }}</span>
+    </td>
+    <td style="font-size:.85rem;white-space:nowrap;">{{ row.absent_date }}</td>
+    <td style="font-size:.85rem;">{{ row.tl or '&mdash;' }}</td>
+    <td>
+      <span class="badge rounded-pill"
+            style="background:#fef3c7;color:#92400e;border:1px solid #fde68a;font-size:.75rem;">
+        <i class="bi bi-clock me-1"></i>{{ row.shift_time }}
+      </span>
+    </td>
+    <td style="font-size:.83rem;white-space:nowrap;">
+      {% if row.time_in %}
+        <span class="text-success fw-semibold">{{ row.time_in }}</span>
+      {% else %}
+        <span class="text-muted">&mdash;</span>
+      {% endif %}
+    </td>
+    <td style="font-size:.83rem;white-space:nowrap;">
+      {% if row.time_out %}
+        <span class="text-primary fw-semibold">{{ row.time_out }}</span>
+      {% else %}
+        <span class="text-muted">&mdash;</span>
+      {% endif %}
+    </td>
+    <td>
+      {% if row.attendance_status == 'Absent' %}
+        <span class="badge rounded-pill"
+              style="background:#fef2f2;color:#991b1b;border:1px solid #fecaca;font-size:.75rem;">
+          <i class="bi bi-x-circle me-1"></i>Absent
+        </span>
+      {% elif row.attendance_status == 'FTS IN' %}
+        <span class="badge rounded-pill"
+              style="background:#fff7ed;color:#9a3412;border:1px solid #fed7aa;font-size:.75rem;">
+          <i class="bi bi-box-arrow-in-right me-1"></i>FTS IN
+        </span>
+      {% elif row.attendance_status == 'FTS OUT' %}
+        <span class="badge rounded-pill"
+              style="background:#faf5ff;color:#6b21a8;border:1px solid #e9d5ff;font-size:.75rem;">
+          <i class="bi bi-box-arrow-right me-1"></i>FTS OUT
+        </span>
+      {% endif %}
+    </td>
+    <td>
+      <div class="d-flex flex-wrap gap-1 align-items-center">
+        {% for lv in emp_leaves %}
+          <span class="badge rounded-pill"
+                style="background:#eff6ff;color:#1d4ed8;border:1px solid #bfdbfe;font-size:.72rem;">
+            <i class="bi bi-calendar-check me-1"></i>On Leave
+            {% if lv.leave_type_name %}&mdash; {{ lv.leave_type_name }}{% endif %}
+            <span style="opacity:.7;">({{ lv.status | title }})</span>
+          </span>
+        {% endfor %}
+        {% for cw in emp_cws %}
+          <span class="badge rounded-pill"
+                style="background:#f0fdf4;color:#15803d;border:1px solid #bbf7d0;font-size:.72rem;">
+            <i class="bi bi-arrow-left-right me-1"></i>CWS
+            {% if cw.new_date %}&rarr; {{ cw.new_date }}{% endif %}
+            {% if cw.new_time %}{{ cw.new_time }}{% endif %}
+            <span style="opacity:.7;">({{ cw.status }})</span>
+          </span>
+        {% endfor %}
+        {% if not emp_leaves and not emp_cws %}
+          <span class="text-muted" style="font-size:.8rem;">&mdash;</span>
+        {% endif %}
+      </div>
+    </td>
+  </tr>
+{% endfor %}
+</tbody></table></div></div>
+
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+// ── Column sort ──
+(function() {
+  // Track sort state per table (by index among .absence-table)
+  const state = {};
+
+  document.addEventListener('click', function(e) {
+    const th = e.target.closest('th.sortable');
+    if (!th) return;
+
+    const table   = th.closest('table');
+    const tables  = [...document.querySelectorAll('.absence-table')];
+    const tIdx    = tables.indexOf(table);
+    const colIdx  = parseInt(th.dataset.col);
+    const key     = tIdx + '-' + colIdx;
+
+    // Toggle direction
+    const dir = (state[key] === 'asc') ? 'desc' : 'asc';
+    state[key] = dir;
+
+    // Reset all sort icons in this table
+    th.closest('tr').querySelectorAll('.sort-icon').forEach(ic => ic.innerHTML = '&#8597;');
+    th.querySelector('.sort-icon').innerHTML = dir === 'asc' ? '&#8593;' : '&#8595;';
+
+    // Sort rows
+    const tbody = table.querySelector('tbody');
+    const rows  = [...tbody.querySelectorAll('tr')];
+
+    rows.sort((a, b) => {
+      const aText = (a.querySelectorAll('td')[colIdx]?.textContent || '').trim();
+      const bText = (b.querySelectorAll('td')[colIdx]?.textContent || '').trim();
+
+      // Date column (col 2) — sort as date
+      if (colIdx === 2) {
+        const aD = new Date(aText), bD = new Date(bText);
+        if (!isNaN(aD) && !isNaN(bD)) {
+          return dir === 'asc' ? aD - bD : bD - aD;
+        }
+      }
+      // String sort
+      return dir === 'asc'
+        ? aText.localeCompare(bText)
+        : bText.localeCompare(aText);
+    });
+
+    rows.forEach(r => tbody.appendChild(r));
+  });
+})();
+
+function copyTable() {
+  const headers = ['Employee','Employee ID','Absent Date','Group','Team Lead','Shift','Time In','Time Out','Status','Remarks'];
+  const rows    = [headers.join('\t')];
+  document.querySelectorAll('.absence-table').forEach(table => {
+    const cardHeader = table.closest('.card').querySelector('.card-header .fw-semibold');
+    const group = cardHeader ? cardHeader.textContent.trim() : '';
+    table.querySelectorAll('tbody tr').forEach(tr => {
+      const cells = tr.querySelectorAll('td');
+      if (cells.length < 9) return;
+      const remarks = [...cells[8].querySelectorAll('.badge')]
+                        .map(b => b.textContent.replace(/\s+/g,' ').trim())
+                        .join('; ') || '-';
+      rows.push([
+        cells[0].textContent.trim(),
+        cells[1].textContent.trim(),
+        cells[2].textContent.trim(),
+        group,
+        cells[3].textContent.trim(),
+        cells[4].textContent.trim(),
+        cells[5].textContent.trim(),
+        cells[6].textContent.trim(),
+        cells[7].textContent.trim(),
+        remarks
+      ].join('\t'));
+    });
+  });
+  navigator.clipboard.writeText(rows.join('\n')).then(() => {
+    const btn = document.getElementById('copyTableBtn');
+    const orig = btn.innerHTML;
+    btn.innerHTML = '<i class="bi bi-check2 me-1"></i>Copied!';
+    btn.classList.replace('btn-outline-secondary','btn-success');
+    setTimeout(() => { btn.innerHTML = orig; btn.classList.replace('btn-success','btn-outline-secondary'); }, 2000);
+  }).catch(() => alert('Copy failed — please select the table manually.'));
+}
+</script>
+{% endblock %}

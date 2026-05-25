@@ -1,0 +1,129 @@
+{% extends 'base.html' %}
+{% block title %}Team Calendar{% endblock %}
+{% block page_title %}Team Leave Calendar{% endblock %}
+{% block content %}
+
+{# ── Nav + Filters ───────────────────────────────────────── #}
+<div class="d-flex align-items-center gap-3 mb-4 flex-wrap">
+  <a href="{{ url_for('supervisor_team_calendar', year=prev_year, month=prev_month, tl=tl_filter) }}"
+     class="btn btn-outline-secondary btn-sm"><i class="bi bi-chevron-left"></i></a>
+  <h5 class="mb-0 fw-semibold">{{ month_name }}</h5>
+  <a href="{{ url_for('supervisor_team_calendar', year=next_year, month=next_month, tl=tl_filter) }}"
+     class="btn btn-outline-secondary btn-sm"><i class="bi bi-chevron-right"></i></a>
+  <a href="{{ url_for('supervisor_team_calendar') }}" class="btn btn-outline-secondary btn-sm ms-2">Today</a>
+
+  <form method="GET" class="d-flex gap-2 ms-auto align-items-center">
+    <input type="hidden" name="year" value="{{ year }}">
+    <input type="hidden" name="month" value="{{ month }}">
+    <select name="tl" class="form-select form-select-sm" style="width:auto;" onchange="this.form.submit()">
+      <option value="">All TLs</option>
+      {% for tl in tl_list %}
+      <option value="{{ tl }}" {% if tl == tl_filter %}selected{% endif %}>{{ tl }}</option>
+      {% endfor %}
+    </select>
+  </form>
+</div>
+
+{# ── Legend ──────────────────────────────────────────────── #}
+<div class="d-flex gap-3 mb-3 flex-wrap" style="font-size:.8rem;">
+  <div class="d-flex align-items-center gap-1">
+    <div style="width:12px;height:12px;background:#d1fae5;border-radius:3px;border:1px solid #a7f3d0;"></div>
+    <span>Approved</span>
+  </div>
+  <div class="d-flex align-items-center gap-1">
+    <div style="width:12px;height:12px;background:#dbeafe;border-radius:3px;border:1px solid #bfdbfe;"></div>
+    <span>Scheduled</span>
+  </div>
+  <div class="d-flex align-items-center gap-1">
+    <div style="width:12px;height:12px;background:#fef3c7;border-radius:3px;border:1px solid #fde68a;"></div>
+    <span>Pending</span>
+  </div>
+</div>
+
+{# ── Calendar Grid ───────────────────────────────────────── #}
+<div class="card">
+  <div class="table-responsive">
+    <table class="table table-bordered mb-0" style="min-width:900px;font-size:.82rem;">
+      <thead>
+        <tr style="background:var(--bg-secondary);">
+          {% set dow = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'] %}
+          {% for d in dow %}
+          <th class="text-center py-2" style="width:14.28%;">{{ d }}</th>
+          {% endfor %}
+        </tr>
+      </thead>
+      <tbody>
+        {% set first_weekday = dates[0].weekday() %}
+        {% set ns = namespace(col=0, row_open=false) %}
+
+        {# Opening empty cells #}
+        {% if first_weekday > 0 %}
+        <tr>
+        {% set ns.row_open = true %}
+        {% for i in range(first_weekday) %}
+        <td style="background:var(--bg);opacity:.3;min-height:80px;"></td>
+        {% set ns.col = ns.col + 1 %}
+        {% endfor %}
+        {% endif %}
+
+        {% for d in dates %}
+          {% if ns.col == 0 and not ns.row_open %}
+          <tr>
+          {% set ns.row_open = true %}
+          {% endif %}
+
+          {% set is_today = (d == today) %}
+          {% set day_leaves = cal_data.get(d, []) %}
+          <td style="vertical-align:top;min-height:80px;padding:.4rem;
+                     {% if is_today %}outline:2px solid var(--accent);outline-offset:-2px;{% endif %}
+                     {% if d.weekday() >= 5 %}background:var(--bg);opacity:.7;{% endif %}">
+            <div class="fw-semibold mb-1" style="font-size:.78rem;color:{% if is_today %}var(--accent){% else %}var(--text){% endif %};">
+              {{ d.day }}
+            </div>
+            {% for lv in day_leaves %}
+            <div class="mb-1 px-1 py-0" style="border-radius:4px;font-size:.7rem;
+                 background:{% if lv.status == 'approved' %}#d1fae5{% elif lv.status == 'scheduled' %}#dbeafe{% else %}#fef3c7{% endif %};
+                 color:{% if lv.status == 'approved' %}#065f46{% elif lv.status == 'scheduled' %}#1e40af{% else %}#92400e{% endif %};">
+              <span title="{{ lv.leave_type }} — {{ lv.tl }}">{{ lv.name }}</span>
+            </div>
+            {% endfor %}
+          </td>
+
+          {% set ns.col = ns.col + 1 %}
+          {% if ns.col == 7 %}
+          </tr>
+          {% set ns.col = 0 %}
+          {% set ns.row_open = false %}
+          {% endif %}
+        {% endfor %}
+
+        {# Closing empty cells #}
+        {% if ns.col > 0 %}
+          {% for i in range(7 - ns.col) %}
+          <td style="background:var(--bg);opacity:.3;"></td>
+          {% endfor %}
+        </tr>
+        {% endif %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+{# ── Day Detail (if any leaves today) ───────────────────── #}
+{% if cal_data.get(today) %}
+<div class="card mt-3">
+  <div class="card-body">
+    <h6 class="fw-semibold mb-3">On Leave Today ({{ cal_data.get(today)|length }})</h6>
+    <div class="d-flex flex-wrap gap-2">
+      {% for lv in cal_data.get(today) %}
+      <span class="badge px-3 py-2" style="font-size:.82rem;
+            background:{% if lv.status == 'approved' %}#d1fae5;color:#065f46{% elif lv.status == 'scheduled' %}#dbeafe;color:#1e40af{% else %}#fef3c7;color:#92400e{% endif %};">
+        {{ lv.name }} — {{ lv.leave_type }}
+      </span>
+      {% endfor %}
+    </div>
+  </div>
+</div>
+{% endif %}
+
+{% endblock %}

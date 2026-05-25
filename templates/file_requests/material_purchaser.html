@@ -1,0 +1,93 @@
+{% extends 'base.html' %}
+{% block title %}Material Requests — Purchaser View{% endblock %}
+{% block page_title %}Material Requests — Purchaser View{% endblock %}
+{% block content %}
+
+<div class="d-flex gap-2 mb-3 flex-wrap">
+  {% for label, val in [('All', 'all'), ('Pending Final Approval', 'Pending Final Approval'), ('Approved', 'Approved'), ('Released', 'Released'), ('Awaiting Confirmation', 'Awaiting Confirmation'), ('Served', 'Served')] %}
+  <a href="{{ url_for('material_purchaser_view', status=val) }}"
+     class="btn btn-sm {% if status_filter == val %}btn-primary{% else %}btn-outline-secondary{% endif %}">
+    {{ label }}
+  </a>
+  {% endfor %}
+</div>
+
+<div class="card">
+  <div class="table-responsive">
+    <table class="table table-hover mb-0" style="font-size:.85rem;">
+      <thead>
+        <tr style="background:var(--bg-secondary);color:var(--text-muted);font-size:.75rem;text-transform:uppercase;">
+          <th>Employee</th>
+          <th>Category</th>
+          <th>Item</th>
+          <th>Qty</th>
+          <th>Date Needed</th>
+          <th>Admin Remarks</th>
+          <th>Unit Cost</th>
+          <th>Total</th>
+          <th>Filed At</th>
+          <th>Status</th>
+          <th>PDF</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in requests %}
+        <tr>
+          <td><strong>{{ r.employee_name }}</strong><br>
+              <span class="text-muted small">{{ r.employee_id }}</span></td>
+          <td><span class="badge bg-secondary">{{ r.category }}</span></td>
+          <td>{{ r.item_name }}</td>
+          <td>{{ r.quantity }}</td>
+          <td class="text-muted small">{{ r.date_needed.strftime('%b %d, %Y') if r.date_needed else '—' }}</td>
+          <td>
+            {% if r.admin_remarks %}
+            <span class="badge {% if r.admin_remarks == 'On Stock' %}bg-success{% else %}bg-warning text-dark{% endif %}">
+              {{ r.admin_remarks }}
+            </span>
+            {% else %}—{% endif %}
+          </td>
+          <td class="small">{{ 'PHP {:,.2f}'.format(r.purchase_unit_cost) if r.purchase_unit_cost else '—' }}</td>
+          <td class="small">{{ 'PHP {:,.2f}'.format(r.purchase_total) if r.purchase_total else '—' }}</td>
+          <td class="text-muted small">{{ r.created_at.strftime('%b %d, %Y') }}</td>
+          <td>
+            {% if r.status == 'Pending' %}
+              <span class="badge bg-warning text-dark">Pending</span>
+            {% elif r.status == 'Recommended' %}
+              <span class="badge bg-info text-dark">Recommended</span>
+            {% elif r.status == 'Pending Final Approval' %}
+              <span class="badge bg-primary">Pending Final Approval</span>
+            {% elif r.status == 'Approved' %}
+              <span class="badge bg-success">Approved</span>
+            {% elif r.status == 'Awaiting Confirmation' %}
+              <span class="badge" style="background:#b45309;color:#fff;">Awaiting Confirmation</span>
+            {% elif r.status == 'Served' %}
+              <span class="badge" style="background:#065f46;color:#fff;">Served ✓</span>
+            {% elif r.status == 'Released' %}
+              <span class="badge" style="background:#065f46;color:#fff;">Released</span>
+            {% elif r.status == 'Rejected' %}
+              <span class="badge bg-danger">Rejected</span>
+            {% else %}
+              <span class="badge bg-secondary">{{ r.status }}</span>
+            {% endif %}
+          </td>
+          <td>
+            {% if r.status in ('Pending Final Approval', 'Approved', 'Released') %}
+            <a href="{{ url_for('material_request_pdf', req_id=r.id) }}"
+               class="btn btn-sm btn-outline-secondary"
+               title="Download MRF PDF" target="_blank">
+              <i class="bi bi-file-earmark-pdf text-danger"></i>
+            </a>
+            {% else %}
+            <span class="text-muted small">—</span>
+            {% endif %}
+          </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="11" class="text-center text-muted py-4">No requests found.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+{% endblock %}

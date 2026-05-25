@@ -1,0 +1,259 @@
+{% extends 'base.html' %}
+{% block title %}Onboarding & Offboarding Report{% endblock %}
+{% block page_title %}Onboarding & Offboarding Report{% endblock %}
+{% block content %}
+
+{# ── Period filter ── #}
+<div class="d-flex align-items-center gap-2 mb-4 flex-wrap">
+  {% for p, label in [('weekly','Weekly'),('monthly','Monthly'),('quarterly','Quarterly'),('yearly','Yearly')] %}
+  <a href="?period={{ p }}"
+     class="btn btn-sm {{ 'btn-primary' if period == p else 'btn-outline-secondary' }}">
+    {{ label }}
+  </a>
+  {% endfor %}
+  <span class="text-muted small ms-2">Showing: <strong>{{ period_label }}</strong></span>
+</div>
+
+{# ── KPI Cards ── #}
+<div class="row g-3 mb-4">
+  <div class="col-6 col-md-3">
+    <div class="card h-100 border-0 shadow-sm">
+      <div class="card-body">
+        <div class="text-muted small mb-1">Onboarded (Period)</div>
+        <div class="fw-bold fs-3 text-primary">{{ onboarded_period }}</div>
+        <div class="text-muted small">{{ onboarding_completed_period }} completed</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card h-100 border-0 shadow-sm">
+      <div class="card-body">
+        <div class="text-muted small mb-1">Active Onboarding</div>
+        <div class="fw-bold fs-3 text-warning">{{ onboarding_active }}</div>
+        <div class="text-muted small">Pending / In Progress</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card h-100 border-0 shadow-sm">
+      <div class="card-body">
+        <div class="text-muted small mb-1">Avg Turnaround</div>
+        <div class="fw-bold fs-3 text-info">{{ avg_turnaround }}<span class="fs-6 fw-normal text-muted"> days</span></div>
+        <div class="text-muted small">Start → Completion</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card h-100 border-0 shadow-sm">
+      <div class="card-body">
+        <div class="text-muted small mb-1">Offboarding Compliance</div>
+        <div class="fw-bold fs-3 {{ 'text-success' if compliance_pct == 100 else 'text-danger' }}">{{ compliance_pct }}%</div>
+        <div class="text-muted small">{{ fully_compliant }} of {{ offboarded_period }} fully cleared</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+{# ── Trend Chart ── #}
+<div class="card mb-4 border-0 shadow-sm">
+  <div class="card-body">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+      <h6 class="mb-0 fw-semibold">Monthly Volume (Last 12 Months)</h6>
+    </div>
+    <canvas id="trendChart" height="80"></canvas>
+  </div>
+</div>
+
+{# ── Tabs ── #}
+<ul class="nav nav-tabs mb-3" id="reportTabs">
+  <li class="nav-item">
+    <a class="nav-link active" data-bs-toggle="tab" href="#onboardingTab">
+      <i class="bi bi-person-check me-1"></i>Onboarding
+      <span class="badge bg-primary ms-1">{{ onboarding_list|length }}</span>
+    </a>
+  </li>
+  <li class="nav-item">
+    <a class="nav-link" data-bs-toggle="tab" href="#offboardingTab">
+      <i class="bi bi-person-dash me-1"></i>Offboarding
+      <span class="badge bg-secondary ms-1">{{ offboarding_list|length }}</span>
+    </a>
+  </li>
+</ul>
+
+<div class="tab-content">
+
+  {# ── Onboarding Tab ── #}
+  <div class="tab-pane fade show active" id="onboardingTab">
+    <div class="card border-0 shadow-sm">
+      <div class="card-body p-0">
+        <div class="d-flex justify-content-between align-items-center p-3 border-bottom">
+          <input type="text" id="obSearch" class="form-control form-control-sm" placeholder="Search name or ID..." style="max-width:260px" oninput="filterTable('obSearch','onboardingTable')">
+          <a href="?period={{ period }}&export=onboarding" class="btn btn-sm btn-outline-success">
+            <i class="bi bi-download me-1"></i>Export CSV
+          </a>
+        </div>
+        <div class="table-responsive">
+          <table class="table table-sm table-hover align-middle mb-0" id="onboardingTable">
+            <thead class="table-light">
+              <tr>
+                <th>Employee ID</th>
+                <th>Name</th>
+                <th>Group</th>
+                <th>TL</th>
+                <th>Status</th>
+                <th>Start Date</th>
+                <th>Expected</th>
+                <th>Completed</th>
+                <th>Days</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for r in onboarding_list %}
+              <tr>
+                <td class="text-muted small">{{ r.employee_id }}</td>
+                <td class="fw-semibold">{{ r.schedule_name or '—' }}</td>
+                <td class="small">{{ r.group_name or '—' }}</td>
+                <td class="small">{{ r.tl or '—' }}</td>
+                <td>
+                  {% if r.onboarding_status == 'Completed' %}
+                    <span class="badge bg-success">Completed</span>
+                  {% elif r.onboarding_status == 'In Progress' %}
+                    <span class="badge bg-warning text-dark">In Progress</span>
+                  {% else %}
+                    <span class="badge bg-secondary">Pending</span>
+                  {% endif %}
+                </td>
+                <td class="small">{{ r.start_date.strftime('%b %d, %Y') if r.start_date else '—' }}</td>
+                <td class="small">
+                  {% if r.expected_completion_date %}
+                    {% if r.onboarding_status != 'Completed' and r.expected_completion_date < today %}
+                      <span class="text-danger">{{ r.expected_completion_date.strftime('%b %d, %Y') }}</span>
+                    {% else %}
+                      {{ r.expected_completion_date.strftime('%b %d, %Y') }}
+                    {% endif %}
+                  {% else %}—{% endif %}
+                </td>
+                <td class="small">{{ r.completed_date.strftime('%b %d, %Y') if r.completed_date else '—' }}</td>
+                <td class="small">
+                  <span class="badge {{ 'bg-success' if r.onboarding_status == 'Completed' else 'bg-light text-dark border' }}">
+                    {{ r.elapsed_days }}d
+                  </span>
+                </td>
+              </tr>
+              {% else %}
+              <tr><td colspan="9" class="text-center text-muted py-4">No onboarding records found.</td></tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  {# ── Offboarding Tab ── #}
+  <div class="tab-pane fade" id="offboardingTab">
+    <div class="card border-0 shadow-sm">
+      <div class="card-body p-0">
+        <div class="d-flex justify-content-between align-items-center p-3 border-bottom">
+          <input type="text" id="ofbSearch" class="form-control form-control-sm" placeholder="Search name or ID..." style="max-width:260px" oninput="filterTable('ofbSearch','offboardingTable')">
+          <a href="?period={{ period }}&export=offboarding" class="btn btn-sm btn-outline-success">
+            <i class="bi bi-download me-1"></i>Export CSV
+          </a>
+        </div>
+        <div class="table-responsive">
+          <table class="table table-sm table-hover align-middle mb-0" id="offboardingTable">
+            <thead class="table-light">
+              <tr>
+                <th>Employee ID</th>
+                <th>Name</th>
+                <th>Group</th>
+                <th>Exit Date</th>
+                <th>Reason</th>
+                <th class="text-center">AD</th>
+                <th class="text-center">Keycloak</th>
+                <th class="text-center">Email</th>
+                <th class="text-center">Dashboard</th>
+                <th class="text-center">Biometric</th>
+                <th class="text-center">Compliance</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for r in offboarding_list %}
+              <tr>
+                <td class="text-muted small">{{ r.employee_id }}</td>
+                <td class="fw-semibold">{{ r.schedule_name or '—' }}</td>
+                <td class="small">{{ r.group_name or '—' }}</td>
+                <td class="small">{{ r.exit_date.strftime('%b %d, %Y') if r.exit_date else '—' }}</td>
+                <td class="small text-muted">{{ r.reason or '—' }}</td>
+                {% for flag in ['ad_disabled','keycloak_disabled','email_suspended','dashboard_disabled','biometric_deleted'] %}
+                <td class="text-center">
+                  {% if r[flag] %}
+                    <i class="bi bi-check-circle-fill text-success"></i>
+                  {% else %}
+                    <i class="bi bi-x-circle-fill text-danger"></i>
+                  {% endif %}
+                </td>
+                {% endfor %}
+                <td class="text-center">
+                  {% if r.flags_done == 5 %}
+                    <span class="badge bg-success">Full</span>
+                  {% elif r.flags_done >= 3 %}
+                    <span class="badge bg-warning text-dark">{{ r.flags_done }}/5</span>
+                  {% else %}
+                    <span class="badge bg-danger">{{ r.flags_done }}/5</span>
+                  {% endif %}
+                </td>
+              </tr>
+              {% else %}
+              <tr><td colspan="11" class="text-center text-muted py-4">No offboarding records found.</td></tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+{% endblock %}
+{% block scripts %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+const raw = {{ monthly_data | safe }};
+const labels = raw.map(d => d.month);
+
+new Chart(document.getElementById('trendChart'), {
+  type: 'bar',
+  data: {
+    labels,
+    datasets: [
+      {
+        label: 'Onboarded',
+        data: raw.map(d => d.onboarded),
+        backgroundColor: 'rgba(59,130,246,0.7)',
+        borderRadius: 4,
+      },
+      {
+        label: 'Offboarded',
+        data: raw.map(d => d.offboarded),
+        backgroundColor: 'rgba(239,68,68,0.7)',
+        borderRadius: 4,
+      }
+    ]
+  },
+  options: {
+    responsive: true,
+    plugins: { legend: { position: 'top' } },
+    scales: { y: { beginAtZero: true, ticks: { stepSize: 1 } } }
+  }
+});
+
+function filterTable(inputId, tableId) {
+  const q = document.getElementById(inputId).value.toLowerCase();
+  document.querySelectorAll(`#${tableId} tbody tr`).forEach(row => {
+    row.style.display = row.textContent.toLowerCase().includes(q) ? '' : 'none';
+  });
+}
+</script>
+{% endblock %}
