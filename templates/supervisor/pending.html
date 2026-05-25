@@ -68,7 +68,7 @@
   </div>
 </div>
 {% for r in pending %}
-<div class="card mb-3">
+<div class="card mb-3" data-leave-req-id="{{ r.leave_request_id }}" style="transition:opacity .25s,transform .25s;">
   <div class="card-body">
     <div class="d-flex justify-content-between align-items-start">
       <div class="d-flex align-items-start gap-2">
@@ -164,60 +164,86 @@ function toggleDates(id) {
   var el = document.getElementById(id);
   el.style.display = el.style.display === 'none' ? 'block' : 'none';
 }
+function showLeaveToast(msg, type) {
+  var ex = document.getElementById('leaveToast');
+  if (ex) ex.remove();
+  var d = document.createElement('div');
+  d.id = 'leaveToast';
+  d.className = 'alert alert-' + (type||'success') + ' shadow';
+  d.style.cssText = 'position:fixed;top:1.1rem;right:1.2rem;z-index:9999;min-width:260px;';
+  d.textContent = msg;
+  document.body.appendChild(d);
+  setTimeout(function() { if (d.parentNode) d.remove(); }, 3000);
+}
+function removeLeaveCard(leaveReqId) {
+  var card = document.querySelector('[data-leave-req-id="' + leaveReqId + '"]');
+  if (!card) return;
+  card.style.opacity = '0';
+  card.style.transform = 'translateX(40px)';
+  setTimeout(function() { card.remove(); }, 270);
+}
 function submitSingle(action, empId, leaveTypeId, filedAt, leaveRequestId) {
-  var form = document.createElement('form');
-  form.method = 'POST';
-  form.action = '{{ url_for("supervisor_action") }}';
-  [['action', action], ['target_emp', empId], ['leave_type_id', leaveTypeId],
-   ['filed_at', filedAt], ['leave_request_id', leaveRequestId],
-   ['next', '/supervisor/pending' + window.location.search]].forEach(function(p) {
-    var i = document.createElement('input');
-    i.type = 'hidden'; i.name = p[0]; i.value = p[1];
-    form.appendChild(i);
-  });
-  document.body.appendChild(form);
-  form.submit();
+  fetch('/api/leave/action', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({action: action, target_emp: empId, leave_type_id: leaveTypeId,
+                          filed_at: filedAt, leave_request_id: leaveRequestId})
+  })
+  .then(function(r) { return r.json(); })
+  .then(function(data) {
+    if (data.success) {
+      removeLeaveCard(leaveRequestId);
+      showLeaveToast(data.message, 'success');
+    } else {
+      showLeaveToast(data.message || 'Error occurred', 'danger');
+    }
+  })
+  .catch(function() { showLeaveToast('Network error', 'danger'); });
 }
 function submitSingleReject(empId, leaveTypeId, filedAt, leaveRequestId) {
   var reason = prompt('Reason for rejection (optional):');
   if (reason === null) return;
-  var form = document.createElement('form');
-  form.method = 'POST';
-  form.action = '{{ url_for("supervisor_action") }}';
-  [['action', 'reject'], ['target_emp', empId], ['leave_type_id', leaveTypeId],
-   ['filed_at', filedAt], ['leave_request_id', leaveRequestId],
-   ['reject_reason', reason],
-   ['next', '/supervisor/pending' + window.location.search]].forEach(function(p) {
-    var i = document.createElement('input');
-    i.type = 'hidden'; i.name = p[0]; i.value = p[1];
-    form.appendChild(i);
-  });
-  document.body.appendChild(form);
-  form.submit();
+  fetch('/api/leave/action', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({action: 'reject', target_emp: empId, leave_type_id: leaveTypeId,
+                          filed_at: filedAt, leave_request_id: leaveRequestId, reject_reason: reason})
+  })
+  .then(function(r) { return r.json(); })
+  .then(function(data) {
+    if (data.success) {
+      removeLeaveCard(leaveRequestId);
+      showLeaveToast(data.message, 'success');
+    } else {
+      showLeaveToast(data.message || 'Error occurred', 'danger');
+    }
+  })
+  .catch(function() { showLeaveToast('Network error', 'danger'); });
 }
 function submitBulk(action) {
   var checkboxes = document.querySelectorAll('.leave-checkbox:checked');
-  if (checkboxes.length === 0) { alert('No leaves selected.'); return; }
-  var form = document.getElementById('bulkForm');
-  // Remove old hidden inputs
-  form.querySelectorAll('input[name="action"], input[name="selected_leaves"]').forEach(function(el) { el.remove(); });
-  // Add action
-  var inp = document.createElement('input');
-  inp.type = 'hidden'; inp.name = 'action'; inp.value = action;
-  form.appendChild(inp);
-  // Add selected values
-  checkboxes.forEach(function(cb) {
-    var hidden = document.createElement('input');
-    hidden.type = 'hidden';
-    hidden.name = 'selected_leaves';
-    hidden.value = cb.value;
-    form.appendChild(hidden);
-  });
-  var nxt = document.createElement('input');
-  nxt.type = 'hidden'; nxt.name = 'next';
-  nxt.value = '/supervisor/pending' + window.location.search;
-  form.appendChild(nxt);
-  form.submit();
+  if (!checkboxes.length) { alert('No leaves selected.'); return; }
+  var selected = Array.from(checkboxes).map(function(cb) { return cb.value; });
+  fetch('/api/leave/bulk-action', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({action: action, selected: selected})
+  })
+  .then(function(r) { return r.json(); })
+  .then(function(data) {
+    if (data.success) {
+      Array.from(checkboxes).forEach(function(cb) {
+        var parts = cb.value.split('|');
+        var leaveReqId = parts[3] || '';
+        if (leaveReqId) removeLeaveCard(leaveReqId);
+      });
+      toggleBulkMode();
+      showLeaveToast(data.message, 'success');
+    } else {
+      showLeaveToast(data.message || 'Error occurred', 'danger');
+    }
+  })
+  .catch(function() { showLeaveToast('Network error', 'danger'); });
 }
 function toggleBulkMode() {
   var on = document.getElementById('bulkActions').style.display === 'none';
