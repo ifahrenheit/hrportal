@@ -304,6 +304,7 @@
 {% endblock %}
 
 {% block scripts %}
+<script>window.__HUB_USER__ = {{ session['user']['name'] | tojson }};</script>
 <script>
 // Show/hide subtype based on req_type
 function toggleSubType() {
@@ -428,40 +429,75 @@ function hubBulkDelete() {
     }
   });
 }
+function hubShowToast(msg, type) {
+  var ex = document.getElementById('hubToast');
+  if (ex) ex.remove();
+  var d = document.createElement('div');
+  d.id = 'hubToast';
+  d.className = 'alert alert-' + (type||'success') + ' shadow';
+  d.style.cssText = 'position:fixed;top:1.1rem;right:1.2rem;z-index:9999;min-width:240px;';
+  d.textContent = msg;
+  document.body.appendChild(d);
+  setTimeout(function() { if (d.parentNode) d.remove(); }, 3000);
+}
+function hubUpdateRow(row, action) {
+  var tds = row.querySelectorAll('td');
+  var n = tds.length;
+  var label = action === 'approve' ? 'Approved' : 'Rejected';
+  var cls   = action === 'approve' ? 'bg-success' : 'bg-danger';
+  tds[n-5].innerHTML = '<span class="badge ' + cls + '">' + label + '</span>';
+  var now = new Date();
+  var ds = now.toLocaleString('en-US',{month:'short',day:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit',hour12:false});
+  tds[n-3].textContent = ds;
+  tds[n-2].textContent = window.__HUB_USER__ || '';
+  var actTd = tds[n-1];
+  var ab = actTd.querySelector('.btn-success');
+  var rb = actTd.querySelector('.btn-danger');
+  if (ab) ab.remove();
+  if (rb) rb.remove();
+  var cb = actTd.querySelector('.hub-checkbox');
+  if (cb) { cb.checked = false; cb.style.display = 'none'; }
+}
 function hubAction(action, reqType, reqId, empId) {
-  var form = document.createElement('form');
-  form.method = 'POST';
-  form.action = '/file-requests/approvals/action';
-  [['action', action], ['req_type', reqType], ['req_id', reqId], ['emp_id', empId],
-   ['next', '/file-requests' + window.location.search]].forEach(function(p) {
-    var i = document.createElement('input');
-    i.type = 'hidden'; i.name = p[0]; i.value = p[1];
-    form.appendChild(i);
-  });
-  document.body.appendChild(form);
-  form.submit();
+  fetch('/api/approvals/action', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({action: action, req_type: reqType, req_id: String(reqId), emp_id: String(empId||'')})
+  })
+  .then(function(r) { return r.json(); })
+  .then(function(data) {
+    if (data.success) {
+      var cb = document.querySelector('.hub-checkbox[data-type="' + reqType + '"][data-id="' + reqId + '"]');
+      if (cb) hubUpdateRow(cb.closest('tr'), action);
+      hubShowToast(data.message, 'success');
+    } else {
+      hubShowToast(data.message || 'Error occurred', 'danger');
+    }
+  })
+  .catch(function() { hubShowToast('Network error', 'danger'); });
 }
 function hubBulkSubmit(action) {
   var checked = document.querySelectorAll('.hub-checkbox:checked');
   if (!checked.length) { alert('No requests selected.'); return; }
-  var form = document.createElement('form');
-  form.method = 'POST';
-  form.action = '/file-requests/approvals/bulk-action';
-  var a = document.createElement('input');
-  a.type = 'hidden'; a.name = 'action'; a.value = action;
-  form.appendChild(a);
-  var nxt = document.createElement('input');
-  nxt.type = 'hidden'; nxt.name = 'next';
-  nxt.value = '/file-requests' + window.location.search;
-  form.appendChild(nxt);
-  checked.forEach(function(cb) {
-    var h = document.createElement('input');
-    h.type = 'hidden'; h.name = 'selected_reqs';
-    h.value = cb.dataset.type + '|' + cb.dataset.id + '|' + cb.dataset.emp;
-    form.appendChild(h);
+  var selected = Array.from(checked).map(function(cb) {
+    return cb.dataset.type + '|' + cb.dataset.id + '|' + cb.dataset.emp;
   });
-  document.body.appendChild(form);
-  form.submit();
+  fetch('/api/approvals/bulk-action', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({action: action, selected: selected})
+  })
+  .then(function(r) { return r.json(); })
+  .then(function(data) {
+    if (data.success) {
+      Array.from(checked).forEach(function(cb) { hubUpdateRow(cb.closest('tr'), action); });
+      hubShowToast(data.message, 'success');
+      hubToggleBulk();
+    } else {
+      hubShowToast(data.message || 'Error occurred', 'danger');
+    }
+  })
+  .catch(function() { hubShowToast('Network error', 'danger'); });
 }
 
 function confirmDelete(type, id, empName) {
