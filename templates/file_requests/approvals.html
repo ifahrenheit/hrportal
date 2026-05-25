@@ -3,15 +3,23 @@
 {% block page_title %}Pending File Request Approvals{% endblock %}
 {% block content %}
 
-{% set all_records = [] %}
-{% for r in fts_list %}{% set _ = all_records.append({'type':'FTS','r':r,'tl':r.tl or '—'}) %}{% endfor %}
-{% for r in ot_list %}{% set _ = all_records.append({'type':'OT','r':r,'tl':r.tl or '—'}) %}{% endfor %}
-{% for r in cws_list %}{% set _ = all_records.append({'type':'CWS','r':r,'tl':r.tl or '—'}) %}{% endfor %}
-{% for r in rdw_list %}{% set _ = all_records.append({'type':'RDW','r':r,'tl':r.tl or '—'}) %}{% endfor %}
-{% set total = fts_list|length + ot_list|length + cws_list|length + rdw_list|length %}
+{# ── Pass data to React ── #}
+<script>
+window.__APPROVALS__ = {
+  combined: {{ combined_safe | safe }},
+  tl_list:  {{ tl_list  | tojson }},
+  filters: {
+    tl:         {{ tl_filter   | tojson }},
+    req_type:   {{ type_filter | tojson }},
+    date_from:  {{ date_from   | tojson }},
+    date_to:    {{ date_to     | tojson }},
+    emp_search: {{ emp_search  | tojson }}
+  }
+};
+</script>
 
 <style>
-.fr-card { border-left: 3px solid var(--border); transition: box-shadow .15s; }
+.fr-card { border-left: 3px solid var(--border); transition: box-shadow .15s, opacity .25s, transform .25s; }
 .fr-card:hover { box-shadow: 0 4px 16px rgba(30,64,175,.1); }
 .fr-card.type-fts  { border-left-color: #0dcaf0; }
 .fr-card.type-ot   { border-left-color: #0d6efd; }
@@ -19,10 +27,12 @@
 .fr-card.type-rdw  { border-left-color: #ffc107; }
 .fr-meta { font-size: .78rem; color: var(--text-muted); }
 .fr-tl-header { background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: .4rem .85rem; margin-bottom: .6rem; margin-top: 1rem; display: flex; align-items: center; gap: .5rem; }
-.fr-tl-header:first-of-type { margin-top: 0; }
+.fr-card.fr-removing { opacity: 0; transform: translateX(40px); pointer-events: none; }
+.fr-toast { position: fixed; top: 1.1rem; right: 1.2rem; z-index: 9999; min-width: 240px; animation: frFadeIn .2s; }
+@keyframes frFadeIn { from { opacity:0; transform: translateY(-8px); } to { opacity:1; transform: translateY(0); } }
 </style>
 
-{# ── Filter ── #}
+{# ── Filter bar (Jinja GET form — full reload on filter change) ── #}
 <div class="card mb-3">
   <div class="card-body pb-2">
     <form method="GET" class="row g-2 align-items-end">
@@ -30,7 +40,7 @@
         <label class="form-label small mb-1">Search Employee</label>
         <input type="text" name="emp_search" class="form-control form-control-sm"
                placeholder="Name or ID..." value="{{ emp_search }}"
-               oninput="clearTimeout(window._st);window._st=setTimeout(()=>this.closest('form').submit(),400);">
+               oninput="clearTimeout(window._st);window._st=setTimeout(()=>this.closest('form').submit(),450);">
       </div>
       <div class="col-6 col-md-2">
         <label class="form-label small mb-1">From</label>
@@ -42,7 +52,7 @@
       </div>
       <div class="col-6 col-md-2">
         <label class="form-label small mb-1">TL</label>
-        <select name="tl" class="form-select form-select-sm">
+        <select name="tl" class="form-select form-select-sm" onchange="this.form.submit()">
           <option value="">All TLs</option>
           {% for tl in tl_list %}
           <option value="{{ tl }}" {% if tl == tl_filter %}selected{% endif %}>{{ tl }}</option>
@@ -62,181 +72,15 @@
       <div class="col-12 col-md-2 d-flex gap-2">
         <button type="submit" class="btn btn-primary btn-sm"><i class="bi bi-search me-1"></i>Filter</button>
         <a href="{{ url_for('file_requests_approvals') }}" class="btn btn-outline-secondary btn-sm">Clear</a>
-        <span class="text-muted small align-self-center ms-auto">{{ total }} request{{ 's' if total != 1 }}</span>
       </div>
     </form>
   </div>
 </div>
 
-{% if total == 0 %}
-<div class="alert alert-success"><i class="bi bi-check-circle me-2"></i>No pending file requests.</div>
-{% endif %}
+{# ── React root ── #}
+<div id="approvals-root"></div>
 
-{# ── Bulk Actions ── #}
-{% if total > 0 %}
-<form method="POST" action="{{ url_for('file_requests_bulk_action') }}" id="frBulkForm">
-<div class="d-flex gap-2 mb-3 align-items-center">
-  <button type="button" class="btn btn-outline-secondary btn-sm" id="frBulkToggle" onclick="frToggleBulkMode()">
-    <i class="bi bi-check2-square me-1"></i>Bulk Select
-  </button>
-  <div id="frBulkActions" style="display:none;" class="d-flex gap-2 align-items-center flex-wrap">
-    <div class="form-check mb-0">
-      <input class="form-check-input" type="checkbox" id="frSelectAll" onchange="frToggleAll(this)">
-      <label class="form-check-label small" for="frSelectAll">Select All</label>
-    </div>
-    <button type="button" onclick="frSubmitBulk('approve')" class="btn btn-success btn-sm">
-      <i class="bi bi-check-lg me-1"></i>Approve Selected
-    </button>
-    <button type="button" onclick="frSubmitBulk('reject')" class="btn btn-danger btn-sm">
-      <i class="bi bi-x-lg me-1"></i>Reject Selected
-    </button>
-    <span class="text-muted small" id="frSelectedCount">0 selected</span>
-  </div>
-</div>
-
-{# ── Cards grouped by TL (combined & sorted) ── #}
-{% set ns = namespace(current_tl=None) %}
-{% for item in combined %}
-  {% set r = item.r %}
-  {% set rtype = item.req_type %}
-  {% set rtl = item.tl %}
-  {% if rtl != ns.current_tl %}
-    {% set ns.current_tl = rtl %}
-    <div class="fr-tl-header">
-      <i class="bi bi-people-fill text-primary"></i>
-      <strong>{{ rtl }}</strong>
-    </div>
-  {% endif %}
-
-  {% if rtype == 'FTS' %}
-  <div class="card mb-2 fr-card type-fts" data-type="fts" data-name="{{ r.employee_name|lower }}" data-id="{{ (r.employee_id or r.employeeID or '')|lower }}">
-    <div class="card-body py-2 px-3">
-      <div class="d-flex align-items-start gap-2">
-        <input type="checkbox" name="selected_reqs" class="form-check-input mt-1 fr-checkbox" style="display:none;"
-               value="fts|{{ r.id }}|{{ r.employeeID }}" onchange="frUpdateCount()">
-        <div class="flex-grow-1">
-          <div class="d-flex justify-content-between align-items-start flex-wrap gap-1">
-            <div>
-              <span class="fw-bold">{{ r.employee_name }}</span>
-              <span class="text-muted small ms-2 emp-id-copy" onclick="copyEmpId(this,'{{ r.employee_id or r.employeeID }}')" title="Click to copy">{{ r.employee_id or r.employeeID }}</span>
-              <span class="badge bg-info text-dark ms-1">FTS</span>
-              <span class="badge {{ 'bg-success' if r.fts_type == 'IN' else 'bg-danger' }} ms-1">{{ r.fts_type }}</span>
-            </div>
-            <div class="text-end fr-meta">
-              <div class="fw-bold text-body">{{ r.fts_date }}</div>
-              <div>{{ r.fts_time }}</div>
-            </div>
-          </div>
-          <div class="fr-meta mt-1"><i class="bi bi-clock me-1"></i>Filed: {{ r.created_at }}</div>
-        </div>
-      </div>
-      <div class="d-flex gap-2 mt-2">
-        <button type="button" class="btn btn-success btn-sm py-0 px-2" onclick="submitFR('approve','fts','{{ r.id }}','{{ r.employeeID }}')"><i class="bi bi-check-lg me-1"></i>Approve</button>
-        <button type="button" class="btn btn-danger btn-sm py-0 px-2" onclick="submitFR('reject','fts','{{ r.id }}','{{ r.employeeID }}')"><i class="bi bi-x-lg me-1"></i>Reject</button>
-      </div>
-    </div>
-  </div>
-
-  {% elif rtype == 'OT' %}
-  <div class="card mb-2 fr-card type-ot" data-type="ot" data-name="{{ r.employee_name|lower }}" data-id="{{ r.employee_id|lower }}">
-    <div class="card-body py-2 px-3">
-      <div class="d-flex align-items-start gap-2">
-        <input type="checkbox" name="selected_reqs" class="form-check-input mt-1 fr-checkbox" style="display:none;"
-               value="ot|{{ r.id }}|{{ r.employee_id }}" onchange="frUpdateCount()">
-        <div class="flex-grow-1">
-          <div class="d-flex justify-content-between align-items-start flex-wrap gap-1">
-            <div>
-              <span class="fw-bold">{{ r.employee_name }}</span>
-              <span class="text-muted small ms-2 emp-id-copy" onclick="copyEmpId(this,'{{ r.employee_id }}')" title="Click to copy">{{ r.employee_id }}</span>
-              <span class="badge bg-primary ms-1">OT</span>
-              <span class="badge bg-warning text-dark ms-1">{{ r.ot_type }}</span>
-              <span class="badge bg-primary ms-1">{{ r.ot_hours }}h</span>
-              {% if r.ticket_count > 0 %}
-              <span class="badge bg-secondary ms-1" style="cursor:pointer;" onclick="showTickets({{ r.id }},'{{ r.employee_name }}')">{{ r.ticket_count }} ticket(s) 🔍</span>
-              {% endif %}
-            </div>
-            <div class="text-end fr-meta">
-              <div class="fw-bold text-body">{{ r.ot_date }}</div>
-              <div>{{ r.start_time }} → {{ r.end_time }}</div>
-            </div>
-          </div>
-        </div>
-      </div>
-      <div class="d-flex gap-2 mt-2">
-        <button type="button" class="btn btn-success btn-sm py-0 px-2" onclick="submitFR('approve','ot','{{ r.id }}','{{ r.employee_id }}')"><i class="bi bi-check-lg me-1"></i>Approve</button>
-        <button type="button" class="btn btn-danger btn-sm py-0 px-2" onclick="submitFR('reject','ot','{{ r.id }}','{{ r.employee_id }}')"><i class="bi bi-x-lg me-1"></i>Reject</button>
-      </div>
-    </div>
-  </div>
-
-  {% elif rtype == 'CWS' %}
-  <div class="card mb-2 fr-card type-cws" data-type="cws" data-name="{{ r.employee_name|lower }}" data-id="{{ r.employee_id|lower }}">
-    <div class="card-body py-2 px-3">
-      <div class="d-flex align-items-start gap-2">
-        <input type="checkbox" name="selected_reqs" class="form-check-input mt-1 fr-checkbox" style="display:none;"
-               value="cws|{{ r.id }}|{{ r.employee_id }}" onchange="frUpdateCount()">
-        <div class="flex-grow-1">
-          <div class="d-flex justify-content-between align-items-start flex-wrap gap-1">
-            <div>
-              <span class="fw-bold">{{ r.employee_name }}</span>
-              <span class="text-muted small ms-2 emp-id-copy" onclick="copyEmpId(this,'{{ r.employee_id }}')" title="Click to copy">{{ r.employee_id }}</span>
-              <span class="badge ms-1" style="background:#6f42c1">CWS</span>
-            </div>
-            <div class="text-end fr-meta">
-              <div class="text-muted">{{ r.original_date }} {{ r.original_time }}</div>
-              <div class="fw-bold text-body">→ {{ r.new_date }} {{ r.new_time }}</div>
-            </div>
-          </div>
-          <div class="fr-meta mt-1"><i class="bi bi-clock me-1"></i>Filed: {{ r.created_at }}</div>
-          {% if r.reason %}<div class="fr-meta mt-1"><i class="bi bi-chat-left-text me-1"></i>{{ r.reason }}</div>{% endif %}
-        </div>
-      </div>
-      <div class="d-flex gap-2 mt-2">
-        <button type="button" class="btn btn-success btn-sm py-0 px-2" onclick="submitFR('approve','cws','{{ r.id }}','{{ r.employee_id }}')"><i class="bi bi-check-lg me-1"></i>Approve</button>
-        <button type="button" class="btn btn-danger btn-sm py-0 px-2" onclick="submitFR('reject','cws','{{ r.id }}','{{ r.employee_id }}')"><i class="bi bi-x-lg me-1"></i>Reject</button>
-      </div>
-    </div>
-  </div>
-
-  {% elif rtype == 'RDW' %}
-  <div class="card mb-2 fr-card type-rdw" data-type="rdw" data-name="{{ r.employee_name|lower }}" data-id="{{ r.employee_id|lower }}">
-    <div class="card-body py-2 px-3">
-      <div class="d-flex align-items-start gap-2">
-        <input type="checkbox" name="selected_reqs" class="form-check-input mt-1 fr-checkbox" style="display:none;"
-               value="rdw|{{ r.id }}|{{ r.employee_id }}" onchange="frUpdateCount()">
-        <div class="flex-grow-1">
-          <div class="d-flex justify-content-between align-items-start flex-wrap gap-1">
-            <div>
-              <span class="fw-bold">{{ r.employee_name }}</span>
-              <span class="text-muted small ms-2 emp-id-copy" onclick="copyEmpId(this,'{{ r.employee_id }}')" title="Click to copy">{{ r.employee_id }}</span>
-              <span class="badge bg-warning text-dark ms-1">RDW</span>
-              <span class="badge bg-info text-dark ms-1">{{ r.work_category }}</span>
-              {% if r.rd_hours %}<span class="badge bg-primary ms-1">{{ r.rd_hours }}h</span>{% endif %}
-              {% if r.work_category == 'REGULAR' and r.ticket_count > 0 %}
-              <span class="badge bg-secondary ms-1" style="cursor:pointer;" onclick="showRdTickets({{ r.id }},'{{ r.employee_name }}')">{{ r.ticket_count }} ticket(s) 🔍</span>
-              {% endif %}
-            </div>
-            <div class="text-end fr-meta">
-              <div class="fw-bold text-body">{{ r.rd_date }}</div>
-              <div>{{ r.start_time }} → {{ r.end_time }}</div>
-            </div>
-          </div>
-          <div class="fr-meta mt-1"><i class="bi bi-clock me-1"></i>Filed: {{ r.created_at }}</div>
-        </div>
-      </div>
-      <div class="d-flex gap-2 mt-2">
-        <button type="button" class="btn btn-success btn-sm py-0 px-2" onclick="submitFR('approve','rdw','{{ r.id }}','{{ r.employee_id }}')"><i class="bi bi-check-lg me-1"></i>Approve</button>
-        <button type="button" class="btn btn-danger btn-sm py-0 px-2" onclick="submitFR('reject','rdw','{{ r.id }}','{{ r.employee_id }}')"><i class="bi bi-x-lg me-1"></i>Reject</button>
-      </div>
-    </div>
-  </div>
-  {% endif %}
-{% endfor %}
-
-</form>
-{% endif %}
-
-<!-- Ticket Modal -->
+{# ── Ticket Modal (vanilla JS, outside React) ── #}
 <div class="modal fade" id="ticketModal" tabindex="-1">
   <div class="modal-dialog modal-dialog-centered">
     <div class="modal-content">
@@ -257,7 +101,18 @@
 {% endblock %}
 
 {% block scripts %}
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
+
 <script>
+/* ── Vanilla JS helpers (ticket modal + copy) ── */
+function copyEmpId(el, id) {
+  navigator.clipboard.writeText(id).then(() => {
+    el.style.color = 'green';
+    setTimeout(() => el.style.color = '', 1200);
+  });
+}
 function showTickets(otRequestId, employeeName) {
   document.getElementById('ticketModalTitle').textContent = 'Tickets — ' + employeeName;
   document.getElementById('ticketModalBody').innerHTML = '<div class="text-center py-3"><div class="spinner-border spinner-border-sm text-primary"></div><span class="ms-2 text-muted">Loading...</span></div>';
@@ -275,7 +130,6 @@ function showTickets(otRequestId, employeeName) {
     document.getElementById('ticketModalBody').innerHTML=`<table class="table table-sm table-hover align-middle mb-0"><thead class="table-light"><tr><th>#</th><th>Ticket</th><th>Status</th><th>Submitted At</th></tr></thead><tbody>${rows}</tbody></table><div class="px-3 py-2 text-muted small border-top">${tickets.length} ticket(s)</div>`;
   }).catch(()=>{ document.getElementById('ticketModalBody').innerHTML='<p class="text-danger p-3 mb-0">Failed to load.</p>'; });
 }
-
 function showRdTickets(rdRequestId, employeeName) {
   document.getElementById('ticketModalTitle').textContent = 'Tickets — ' + employeeName;
   document.getElementById('ticketModalBody').innerHTML = '<div class="text-center py-3"><div class="spinner-border spinner-border-sm text-primary"></div><span class="ms-2 text-muted">Loading...</span></div>';
@@ -293,48 +147,309 @@ function showRdTickets(rdRequestId, employeeName) {
     document.getElementById('ticketModalBody').innerHTML=`<table class="table table-sm mb-0"><thead><tr><th>#</th><th>Ticket</th><th>Status</th><th>Created</th></tr></thead><tbody>${rows}</tbody></table>`;
   }).catch(()=>{ document.getElementById('ticketModalBody').innerHTML='<p class="text-danger p-3 mb-0">Failed to load.</p>'; });
 }
-
-function frToggleBulkMode() {
-  var on = document.getElementById('frBulkActions').style.display === 'none';
-  document.getElementById('frBulkActions').style.display = on ? 'flex' : 'none';
-  document.getElementById('frBulkToggle').classList.toggle('btn-outline-secondary', !on);
-  document.getElementById('frBulkToggle').classList.toggle('btn-primary', on);
-  document.querySelectorAll('.fr-checkbox').forEach(function(c) { c.style.display = on ? 'block' : 'none'; c.checked = false; });
-  document.getElementById('frSelectedCount').textContent = '0 selected';
-  var sa = document.getElementById('frSelectAll');
-  if (sa) sa.checked = false;
-}
-function frSubmitBulk(action) {
-  var checked = document.querySelectorAll('.fr-checkbox:checked');
-  if (checked.length === 0) { alert('No requests selected.'); return; }
-  var form = document.getElementById('frBulkForm');
-  form.querySelectorAll('input[name="action"], input[name="selected_reqs"][type="hidden"], input[name="next"]').forEach(function(el) { el.remove(); });
-  var inp = document.createElement('input'); inp.type='hidden'; inp.name='action'; inp.value=action; form.appendChild(inp);
-  var nxt = document.createElement('input'); nxt.type='hidden'; nxt.name='next'; nxt.value='/file-requests/approvals'+window.location.search; form.appendChild(nxt);
-  checked.forEach(function(cb) { var h=document.createElement('input'); h.type='hidden'; h.name='selected_reqs'; h.value=cb.value; form.appendChild(h); });
-  form.submit();
-}
-function frToggleAll(cb) {
-  var bulkOn = document.getElementById('frBulkActions').style.display !== 'none';
-  if (bulkOn === false) return;
-  document.querySelectorAll('.fr-checkbox').forEach(function(c) { c.checked = cb.checked; });
-  frUpdateCount();
-}
-function frUpdateCount() {
-  var n = document.querySelectorAll('.fr-checkbox:checked').length;
-  var el = document.getElementById('frSelectedCount');
-  if (el) el.textContent = n + ' selected';
-}
-function submitFR(action, reqType, reqId, empId) {
-  var form = document.createElement('form');
-  form.method = 'POST';
-  form.action = '/file-requests/approvals/action';
-  var next = '/file-requests/approvals' + window.location.search;
-  [['action',action],['req_type',reqType],['req_id',reqId],['emp_id',empId],['next',next]].forEach(function(p) {
-    var i=document.createElement('input'); i.type='hidden'; i.name=p[0]; i.value=p[1]; form.appendChild(i);
-  });
-  document.body.appendChild(form);
-  form.submit();
-}
 </script>
+
+{% raw %}
+<script type="text/babel">
+const { useState, useMemo, useCallback } = React;
+
+/* ── Badge colours ── */
+const TYPE_COLORS = { FTS:'#0dcaf0', OT:'#0d6efd', CWS:'#6f42c1', RDW:'#ffc107' };
+const TYPE_TEXT   = { FTS:'dark',    OT:'white',    CWS:'white',    RDW:'dark'    };
+
+/* ── Single request card ── */
+function RequestCard({ item, bulkMode, selected, onToggle, onAction, loading, removing }) {
+  const { req_type: rtype, r } = item;
+  const empId  = r.employee_id || r.employeeID || '';
+  const key    = `${rtype}|${r.id}|${empId}`;
+  const actKey = `${rtype}-${r.id}`;
+  const isRemoving = removing.has(actKey);
+  const isLoading  = loading.has(actKey);
+
+  return (
+    <div className={`card mb-2 fr-card type-${rtype.toLowerCase()} ${isRemoving ? 'fr-removing' : ''}`}>
+      <div className="card-body py-2 px-3">
+        <div className="d-flex align-items-start gap-2">
+          {bulkMode && (
+            <input type="checkbox" className="form-check-input mt-1"
+                   checked={selected.has(key)}
+                   onChange={() => onToggle(key)} />
+          )}
+          <div className="flex-grow-1">
+            <div className="d-flex justify-content-between align-items-start flex-wrap gap-1">
+              <div>
+                <span className="fw-bold">{r.employee_name}</span>
+                <span className="text-muted small ms-2"
+                      style={{cursor:'pointer'}}
+                      onClick={() => copyEmpId(event.target, empId)}
+                      title="Click to copy">{empId}</span>
+                <span className="badge ms-1"
+                      style={{background: TYPE_COLORS[rtype], color: TYPE_TEXT[rtype]==='dark'?'#000':'#fff'}}>
+                  {rtype}
+                </span>
+
+                {/* Type-specific badges */}
+                {rtype === 'FTS' && (
+                  <span className={`badge ms-1 ${r.fts_type==='IN'?'bg-success':'bg-danger'}`}>{r.fts_type}</span>
+                )}
+                {rtype === 'OT' && (<>
+                  <span className="badge bg-warning text-dark ms-1">{r.ot_type}</span>
+                  <span className="badge bg-primary ms-1">{r.ot_hours}h</span>
+                  {r.ticket_count > 0 && (
+                    <span className="badge bg-secondary ms-1" style={{cursor:'pointer'}}
+                          onClick={() => showTickets(r.id, r.employee_name)}>
+                      {r.ticket_count} ticket(s) 🔍
+                    </span>
+                  )}
+                </>)}
+                {rtype === 'RDW' && (<>
+                  <span className="badge bg-info text-dark ms-1">{r.work_category}</span>
+                  {r.rd_hours && <span className="badge bg-primary ms-1">{r.rd_hours}h</span>}
+                  {r.work_category === 'REGULAR' && r.ticket_count > 0 && (
+                    <span className="badge bg-secondary ms-1" style={{cursor:'pointer'}}
+                          onClick={() => showRdTickets(r.id, r.employee_name)}>
+                      {r.ticket_count} ticket(s) 🔍
+                    </span>
+                  )}
+                </>)}
+              </div>
+
+              {/* Date/time (right side) */}
+              <div className="text-end fr-meta">
+                {rtype === 'FTS' && (<>
+                  <div className="fw-bold text-body">{r.fts_date}</div>
+                  <div>{r.fts_time}</div>
+                </>)}
+                {rtype === 'OT' && (<>
+                  <div className="fw-bold text-body">{r.ot_date}</div>
+                  <div>{r.start_time} → {r.end_time}</div>
+                </>)}
+                {rtype === 'CWS' && (<>
+                  <div className="text-muted">{r.original_date} {r.original_time}</div>
+                  <div className="fw-bold text-body">→ {r.new_date} {r.new_time}</div>
+                </>)}
+                {rtype === 'RDW' && (<>
+                  <div className="fw-bold text-body">{r.rd_date}</div>
+                  <div>{r.start_time} → {r.end_time}</div>
+                </>)}
+              </div>
+            </div>
+
+            {/* Sub-meta */}
+            {(rtype === 'FTS' || rtype === 'CWS') && (
+              <div className="fr-meta mt-1">
+                <i className="bi bi-clock me-1"></i>Filed: {r.created_at}
+              </div>
+            )}
+            {rtype === 'CWS' && r.reason && (
+              <div className="fr-meta mt-1">
+                <i className="bi bi-chat-left-text me-1"></i>{r.reason}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Action buttons */}
+        <div className="d-flex gap-2 mt-2">
+          <button className="btn btn-success btn-sm py-0 px-2"
+                  disabled={isLoading}
+                  onClick={() => onAction('approve', rtype.toLowerCase(), r.id, empId)}>
+            {isLoading ? <span className="spinner-border spinner-border-sm me-1"></span>
+                       : <i className="bi bi-check-lg me-1"></i>}
+            Approve
+          </button>
+          <button className="btn btn-danger btn-sm py-0 px-2"
+                  disabled={isLoading}
+                  onClick={() => onAction('reject', rtype.toLowerCase(), r.id, empId)}>
+            {isLoading ? <span className="spinner-border spinner-border-sm me-1"></span>
+                       : <i className="bi bi-x-lg me-1"></i>}
+            Reject
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ── Main app ── */
+function ApprovalsApp() {
+  const { combined: initial } = window.__APPROVALS__;
+  const [records,  setRecords]  = useState(initial);
+  const [removing, setRemoving] = useState(new Set());
+  const [loading,  setLoading]  = useState(new Set());
+  const [bulkMode, setBulkMode] = useState(false);
+  const [selected, setSelected] = useState(new Set());
+  const [toast,    setToast]    = useState(null);
+
+  /* Toast */
+  const showToast = (msg, type='success') => {
+    setToast({ msg, type });
+    setTimeout(() => setToast(null), 3000);
+  };
+
+  /* Animate card out then remove from state */
+  const removeCards = useCallback((pairs) => {
+    // pairs = [{rtype, id}]
+    const keys = pairs.map(p => `${p.rtype}-${p.id}`);
+    setRemoving(prev => new Set([...prev, ...keys]));
+    setTimeout(() => {
+      setRecords(prev => prev.filter(item =>
+        !pairs.some(p => item.req_type === p.rtype.toUpperCase() && String(item.r.id) === String(p.id))
+      ));
+      setRemoving(prev => { const n = new Set(prev); keys.forEach(k => n.delete(k)); return n; });
+    }, 280);
+  }, []);
+
+  /* Single action */
+  const handleAction = useCallback(async (action, reqType, reqId, empId) => {
+    const actKey = `${reqType.toUpperCase()}-${reqId}`;
+    if (loading.has(actKey)) return;
+    setLoading(l => new Set([...l, actKey]));
+    try {
+      const res  = await fetch('/api/approvals/action', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action, req_type: reqType, req_id: String(reqId), emp_id: String(empId || '') })
+      });
+      const data = await res.json();
+      if (data.success) {
+        removeCards([{ rtype: reqType.toUpperCase(), id: reqId }]);
+        showToast(data.message);
+      } else {
+        showToast(data.message || 'Error', 'danger');
+      }
+    } catch {
+      showToast('Network error', 'danger');
+    } finally {
+      setLoading(l => { const n = new Set(l); n.delete(actKey); return n; });
+    }
+  }, [loading, removeCards]);
+
+  /* Bulk action */
+  const handleBulk = async (action) => {
+    if (!selected.size) { showToast('No requests selected', 'warning'); return; }
+    const arr = [...selected];
+    try {
+      const res  = await fetch('/api/approvals/bulk-action', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action, selected: arr })
+      });
+      const data = await res.json();
+      if (data.success) {
+        const pairs = arr.map(s => { const parts = s.split('|'); return { rtype: parts[0].toUpperCase(), id: parts[1] }; });
+        removeCards(pairs);
+        setSelected(new Set());
+        showToast(data.message);
+      } else {
+        showToast(data.message || 'Error', 'danger');
+      }
+    } catch {
+      showToast('Network error', 'danger');
+    }
+  };
+
+  /* Toggle select */
+  const toggleSelect = (key) => {
+    setSelected(prev => {
+      const n = new Set(prev);
+      n.has(key) ? n.delete(key) : n.add(key);
+      return n;
+    });
+  };
+  const toggleAll = () => {
+    if (selected.size === records.length) {
+      setSelected(new Set());
+    } else {
+      setSelected(new Set(records.map(item => {
+        const empId = item.r.employee_id || item.r.employeeID || '';
+        return `${item.req_type}|${item.r.id}|${empId}`;
+      })));
+    }
+  };
+
+  /* Group by TL */
+  const grouped = useMemo(() => {
+    const g = {};
+    records.forEach(item => {
+      const tl = item.tl || '—';
+      if (!g[tl]) g[tl] = [];
+      g[tl].push(item);
+    });
+    return g;
+  }, [records]);
+
+  const tlKeys = Object.keys(grouped).sort();
+  const total  = records.length;
+
+  return (
+    <>
+      {/* Toast */}
+      {toast && (
+        <div className={`alert alert-${toast.type} fr-toast shadow`}>
+          {toast.type === 'success' && <i className="bi bi-check-circle me-2"></i>}
+          {toast.type === 'danger'  && <i className="bi bi-x-circle me-2"></i>}
+          {toast.type === 'warning' && <i className="bi bi-exclamation-triangle me-2"></i>}
+          {toast.msg}
+        </div>
+      )}
+
+      {/* Count + bulk bar */}
+      <div className="d-flex gap-2 mb-3 align-items-center flex-wrap">
+        <span className="text-muted small me-2">{total} request{total !== 1 ? 's' : ''}</span>
+        {total > 0 && (
+          <button className={`btn btn-sm ${bulkMode ? 'btn-primary' : 'btn-outline-secondary'}`}
+                  onClick={() => { setBulkMode(m => !m); setSelected(new Set()); }}>
+            <i className="bi bi-check2-square me-1"></i>Bulk Select
+          </button>
+        )}
+        {bulkMode && (<>
+          <button className="btn btn-sm btn-outline-secondary" onClick={toggleAll}>
+            {selected.size === records.length ? 'Deselect All' : 'Select All'}
+          </button>
+          <button className="btn btn-sm btn-success" onClick={() => handleBulk('approve')}>
+            <i className="bi bi-check-lg me-1"></i>Approve Selected
+          </button>
+          <button className="btn btn-sm btn-danger" onClick={() => handleBulk('reject')}>
+            <i className="bi bi-x-lg me-1"></i>Reject Selected
+          </button>
+          <span className="text-muted small">{selected.size} selected</span>
+        </>)}
+      </div>
+
+      {total === 0 && (
+        <div className="alert alert-success">
+          <i className="bi bi-check-circle me-2"></i>No pending file requests.
+        </div>
+      )}
+
+      {/* Cards grouped by TL */}
+      {tlKeys.map((tl, ti) => (
+        <div key={tl}>
+          <div className={`fr-tl-header${ti === 0 ? ' mt-0' : ''}`}>
+            <i className="bi bi-people-fill text-primary"></i>
+            <strong>{tl}</strong>
+            <span className="badge bg-secondary ms-auto">{grouped[tl].length}</span>
+          </div>
+          {grouped[tl].map(item => (
+            <RequestCard
+              key={`${item.req_type}-${item.r.id}`}
+              item={item}
+              bulkMode={bulkMode}
+              selected={selected}
+              onToggle={toggleSelect}
+              onAction={handleAction}
+              loading={loading}
+              removing={removing}
+            />
+          ))}
+        </div>
+      ))}
+    </>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('approvals-root')).render(<ApprovalsApp />);
+</script>
+{% endraw %}
 {% endblock %}
