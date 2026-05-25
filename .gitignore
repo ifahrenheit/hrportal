@@ -5,3 +5,12 @@ __pycache__/
 .env
 instance/
 *.log
+
+# User uploaded files
+static/incident_uploads/
+static/uploads/
+
+# RAG vector database
+rag/vectordb/
+
+# Requirement typo fix handled separately

@@ -8212,7 +8212,7 @@ def admin_absences():
         'fts_out': sum(1 for r in records if r['attendance_status'] == 'FTS OUT'),
     }
 
-    return render_template('admin_absences.html',
+    return render_template('admin/absences.html',
                            records=records,
                            date_from=str(date_from),
                            date_to=str(date_to),
