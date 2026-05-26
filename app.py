@@ -29,7 +29,8 @@ app.register_blueprint(ir_bp, url_prefix='/incident-reports')
 
 IR_SGA      = os.getenv('IR_SGA', '').split(',')
 IR_RTA      = os.getenv('IR_RTA', '').split(',')
-IR_OVERHEAD = os.getenv('IR_OVERHEAD', '').split(',')
+IR_OVERHEAD   = os.getenv('IR_OVERHEAD', '').split(',')
+IR_ALL_ACCESS = [e.strip() for e in os.getenv('IR_ALL_ACCESS', '').split(',') if e.strip()]
 
 def _ir_is_overhead(email):
     """Check if user belongs to an overhead group (TL, QA, etc.) via DB."""
@@ -63,7 +64,7 @@ def ir_can_file():
 def ir_can_view():
     if 'user' not in session: return False
     e = session['user'].get('email', '')
-    return bool(session.get('is_admin') or e in IR_SGA or e in IR_RTA or _ir_is_overhead(e))
+    return bool(session.get('is_admin') or e in IR_ALL_ACCESS or e in IR_SGA or e in IR_RTA or _ir_is_overhead(e))
 
 
 
@@ -199,7 +200,7 @@ def admin_required(f):
     def decorated(*args, **kwargs):
         if 'user' not in session:
             return redirect(url_for('login'))
-        if not session.get('is_admin'):
+        if not session.get('is_admin') and not session.get('permissions', {}).get('can_attrition_report'):
             flash('Admin access required.', 'danger')
             return redirect(url_for('dashboard'))
         return f(*args, **kwargs)
@@ -343,6 +344,7 @@ def get_sub_admin_permissions(emp_number):
                 'can_view_approved_items': bool(row.get('can_view_approved_items', 0)),
                 'can_onboarding': bool(row.get('can_onboarding', 0)),
                 'can_inventory': bool(row.get('can_inventory', 0)),
+                'can_attrition_report': bool(row.get('can_attrition_report', 0)),
             }
     finally:
         db.close()
@@ -593,9 +595,26 @@ def get_supervisor_central_employees(supervisor_email):
                     emp_numbers.append(e)
                     seen.add(e)
 
+
+
+            # Step 2c: gsheet_employees.approver (new employees not in reportto)
+            c.execute(
+                """SELECT h.emp_number
+                   FROM central_db.gsheet_employees g
+                   JOIN hs_hr_employee h ON h.employee_id = g.employee_id COLLATE utf8mb4_unicode_ci
+                   WHERE g.approver = %s
+                   AND h.emp_number NOT IN (
+                       SELECT emp_number FROM leave4day_supervisor_assignments
+                   )""",
+                (sup_email,)
+            )
+            for r in c.fetchall():
+                if r['emp_number'] not in seen:
+                    emp_numbers.append(r['emp_number'])
+                    seen.add(r['emp_number'])
+
             if not emp_numbers:
                 return []
-
 
             # Step 3: map emp_numbers -> employee_id directly (no email dependency)
             placeholders = ','.join(['%s'] * len(emp_numbers))
@@ -1750,6 +1769,7 @@ def admin_sub_admins():
                     'can_view_approved_items': 1 if request.form.get('can_view_approved_items') else 0,
                     'can_onboarding': 1 if request.form.get('can_onboarding') else 0,
                     'can_inventory': 1 if request.form.get('can_inventory') else 0,
+                    'can_attrition_report': 1 if request.form.get('can_attrition_report') else 0,
                 }
                 with db.cursor() as c:
                     c.execute("""
@@ -1757,26 +1777,26 @@ def admin_sub_admins():
                             (emp_number, can_all_leaves, can_all_requests, can_approve, can_file_for_emp,
                              can_schedules, can_reports, can_work_mode, can_settings, can_absences,
                              can_entitlements, can_file_requests, can_material_requests,
-                             can_final_approval, can_view_tickets, can_facilities_review, can_facilities_final, can_view_approved_items, can_onboarding, can_inventory, assigned_by)
-                        VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                             can_final_approval, can_view_tickets, can_facilities_review, can_facilities_final, can_view_approved_items, can_onboarding, can_inventory, can_attrition_report, assigned_by)
+                        VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
                         ON DUPLICATE KEY UPDATE
                             can_all_leaves=%s, can_all_requests=%s, can_approve=%s, can_file_for_emp=%s,
                             can_schedules=%s, can_reports=%s, can_work_mode=%s, can_absences=%s,
                             can_settings=%s, can_entitlements=%s, can_file_requests=%s,
                             can_material_requests=%s, can_final_approval=%s,
-                            can_view_tickets=%s, can_facilities_review=%s, can_facilities_final=%s, can_view_approved_items=%s, can_onboarding=%s, can_inventory=%s, assigned_by=%s
+                            can_view_tickets=%s, can_facilities_review=%s, can_facilities_final=%s, can_view_approved_items=%s, can_onboarding=%s, can_inventory=%s, can_attrition_report=%s, assigned_by=%s
                     """, (
                         emp_number,
                         perms['can_all_leaves'], perms['can_all_requests'], perms['can_approve'], perms['can_file_for_emp'],
                         perms['can_schedules'], perms['can_reports'], perms['can_work_mode'],
                         perms['can_settings'], perms['can_absences'], perms['can_entitlements'], perms['can_file_requests'],
                         perms['can_material_requests'], perms['can_final_approval'],
-                        perms['can_view_tickets'], perms['can_facilities_review'], perms['can_facilities_final'], perms['can_view_approved_items'], perms['can_onboarding'], perms['can_inventory'], session['user']['emp_number'],
+                        perms['can_view_tickets'], perms['can_facilities_review'], perms['can_facilities_final'], perms['can_view_approved_items'], perms['can_onboarding'], perms['can_inventory'], perms['can_attrition_report'], session['user']['emp_number'],
                         perms['can_all_leaves'], perms['can_all_requests'], perms['can_approve'], perms['can_file_for_emp'],
                         perms['can_schedules'], perms['can_reports'], perms['can_work_mode'],
                         perms['can_settings'], perms['can_absences'], perms['can_entitlements'], perms['can_file_requests'],
                         perms['can_material_requests'], perms['can_final_approval'],
-                        perms['can_view_tickets'], perms['can_facilities_review'], perms['can_facilities_final'], perms['can_view_approved_items'], perms['can_onboarding'], perms['can_inventory'], session['user']['emp_number']
+                        perms['can_view_tickets'], perms['can_facilities_review'], perms['can_facilities_final'], perms['can_view_approved_items'], perms['can_onboarding'], perms['can_inventory'], perms['can_attrition_report'], session['user']['emp_number']
                     ))
                 db.commit()
                 flash('Sub-admin permissions updated!', 'success')
@@ -1807,6 +1827,7 @@ def admin_sub_admins():
                     'can_view_approved_items': 1 if request.form.get('can_view_approved_items') else 0,
                     'can_onboarding': 1 if request.form.get('can_onboarding') else 0,
                     'can_inventory': 1 if request.form.get('can_inventory') else 0,
+                    'can_attrition_report': 1 if request.form.get('can_attrition_report') else 0,
                 }
                 if not group_name:
                     flash('Please select a group.', 'danger')
@@ -1825,21 +1846,21 @@ def admin_sub_admins():
                                     (emp_number, can_all_leaves, can_all_requests, can_approve, can_file_for_emp,
                                      can_schedules, can_reports, can_work_mode, can_settings,
                                      can_entitlements, can_file_requests, can_material_requests,
-                                     can_final_approval, can_view_tickets, can_facilities_review, can_facilities_final, can_view_approved_items, can_onboarding, can_inventory, assigned_by)
-                                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                                     can_final_approval, can_view_tickets, can_facilities_review, can_facilities_final, can_view_approved_items, can_onboarding, can_inventory, can_attrition_report, assigned_by)
+                                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
                                 ON DUPLICATE KEY UPDATE
                                     can_all_leaves=%s, can_all_requests=%s, can_approve=%s, can_file_for_emp=%s,
                                     can_schedules=%s, can_reports=%s, can_work_mode=%s,
                                     can_settings=%s, can_entitlements=%s, can_file_requests=%s,
                                     can_material_requests=%s, can_final_approval=%s,
-                                    can_view_tickets=%s, can_facilities_review=%s, can_facilities_final=%s, can_view_approved_items=%s, can_onboarding=%s, can_inventory=%s, assigned_by=%s
+                                    can_view_tickets=%s, can_facilities_review=%s, can_facilities_final=%s, can_view_approved_items=%s, can_onboarding=%s, can_inventory=%s, can_attrition_report=%s, assigned_by=%s
                             """, (
                                 en,
                                 perms['can_all_leaves'], perms['can_all_requests'], perms['can_approve'], perms['can_file_for_emp'],
                                 perms['can_schedules'], perms['can_reports'], perms['can_work_mode'],
                                 perms['can_settings'], perms['can_entitlements'], perms['can_file_requests'],
                                 perms['can_material_requests'], perms['can_final_approval'],
-                                perms['can_view_tickets'], perms['can_facilities_review'], perms['can_facilities_final'], perms['can_view_approved_items'], perms['can_onboarding'], perms['can_inventory'], session['user']['emp_number'],
+                                perms['can_view_tickets'], perms['can_facilities_review'], perms['can_facilities_final'], perms['can_view_approved_items'], perms['can_onboarding'], perms['can_inventory'], perms['can_attrition_report'], session['user']['emp_number'],
                                 perms['can_all_leaves'], perms['can_all_requests'], perms['can_approve'], perms['can_file_for_emp'],
                                 perms['can_schedules'], perms['can_reports'], perms['can_work_mode'],
                                 perms['can_settings'], perms['can_entitlements'], perms['can_file_requests'],
@@ -1859,7 +1880,7 @@ def admin_sub_admins():
                        g.group_name,
                        sa.can_all_leaves, sa.can_all_requests, sa.can_approve, sa.can_file_for_emp,
                        sa.can_schedules, sa.can_reports, sa.can_work_mode,
-                       sa.can_settings, sa.can_absences, sa.can_entitlements, sa.can_file_requests,
+                       sa.can_settings, sa.can_absences, sa.can_entitlements, sa.can_file_requests, sa.can_attrition_report,
                        sa.can_material_requests, sa.can_final_approval, sa.can_view_tickets, sa.can_facilities_review, sa.can_facilities_final, sa.can_view_approved_items, sa.can_onboarding, sa.can_inventory
                 FROM hs_hr_employee h
                 JOIN ohrm_user u ON u.emp_number = h.emp_number
@@ -3759,7 +3780,7 @@ def supervisor_active_leaves():
             where  = ["r.status != 'cancelled'"]
             params = []
 
-            if not session.get('is_admin'):
+            if not session.get('is_admin') and not session.get('permissions', {}).get('can_attrition_report'):
                 fmt = ','.join(['%s'] * len(subordinates))
                 where.append(f"r.emp_number IN ({fmt})")
                 params.extend(subordinates)
@@ -3821,7 +3842,7 @@ def supervisor_action():
     target_emp = resolve_emp_number(raw_emp, raw_emp)
     target_eid = raw_emp  # keep original employee_id string for DB query
 
-    if not session.get('is_admin'):
+    if not session.get('is_admin') and not session.get('permissions', {}).get('can_attrition_report'):
         # Check authorization by emp_number if available, else skip
         if target_emp and target_emp not in subordinates:
             flash('Unauthorized action.', 'danger')
@@ -7469,31 +7490,34 @@ def admin_delete_request():
     deleted_by = session.get('employee_id') or session['user']['name']
     now        = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
 
-    # Supervisors: validate ownership before allowing delete
-    if not is_admin and is_supervisor:
-        table_map_check = {
-            'fts': ('fts_requests', 'employee_id'),
-            'ot':  ('ot_requests',  'employee_id'),
-            'cws': ('cws_requests', 'employee_id'),
-            'rdw': ('rd_requests',  'employee_id'),
-        }
-        if req_type not in table_map_check:
-            return jsonify({'success': False, 'message': 'Invalid request type'}), 400
-        tbl, emp_col = table_map_check[req_type]
-        _conn = get_central_db()
-        _cur  = _conn.cursor(dictionary=True)
-        _cur.execute(f"SELECT {emp_col} FROM {tbl} WHERE id = %s", (req_id,))
-        _row = _cur.fetchone()
-        _cur.close(); _conn.close()
-        if not _row:
-            return jsonify({'success': False, 'message': 'Record not found'}), 404
-        record_emp_id   = _row[emp_col]
-        sup_email       = session['user']['email']
-        subordinate_ids = get_supervisor_central_employees(sup_email) or []
-        own_emp_id      = get_central_employee_id(sup_email)
-        allowed         = set(subordinate_ids) | ({own_emp_id} if own_emp_id else set())
-        if record_emp_id not in allowed:
-            return jsonify({'success': False, 'message': 'You can only delete requests from your own team'}), 403
+    try:
+        # Supervisors: validate ownership before allowing delete
+        if not is_admin and is_supervisor:
+            table_map_check = {
+                'fts': ('fts_requests', 'employee_id'),
+                'ot':  ('ot_requests',  'employee_id'),
+                'cws': ('cws_requests', 'employee_id'),
+                'rdw': ('rd_requests',  'employee_id'),
+            }
+            if req_type not in table_map_check:
+                return jsonify({'success': False, 'message': 'Invalid request type'}), 400
+            tbl, emp_col = table_map_check[req_type]
+            _conn = get_central_db()
+            _cur  = _conn.cursor(dictionary=True)
+            _cur.execute(f"SELECT {emp_col} FROM {tbl} WHERE id = %s", (req_id,))
+            _row = _cur.fetchone()
+            _cur.close(); _conn.close()
+            if not _row:
+                return jsonify({'success': False, 'message': 'Record not found'}), 404
+            record_emp_id   = _row[emp_col]
+            sup_email       = session['user']['email']
+            subordinate_ids = get_supervisor_central_employees(sup_email) or []
+            own_emp_id      = get_central_employee_id(sup_email)
+            allowed         = set(subordinate_ids) | ({own_emp_id} if own_emp_id else set())
+            if record_emp_id not in allowed:
+                return jsonify({'success': False, 'message': 'You can only delete requests from your own team'}), 403
+    except Exception as _oe:
+        return jsonify({'success': False, 'message': str(_oe)}), 500
 
     if not req_type or not req_id:
         return jsonify({'success': False, 'message': 'Missing parameters'}), 400
@@ -9512,6 +9536,346 @@ def pim_search():
 def debug_session():
     import json
     return f"<pre>{json.dumps(dict(session), indent=2, default=str)}</pre>"
+
+
+
+# ── ATTRITION REPORT ──────────────────────────────────────────────────────────
+
+@app.route('/admin/attrition')
+def admin_attrition():
+    if not session.get('is_admin') and not session.get('permissions', {}).get('can_attrition_report'):
+        return redirect(url_for('login'))
+
+    conn = get_central_db()
+    cursor = conn.cursor(pymysql.cursors.DictCursor)
+
+    # Filter params
+    year   = request.args.get('year', '')
+    month  = request.args.get('month', '')
+    group  = request.args.get('group', '')
+    tl     = request.args.get('tl', '')
+    sep_type = request.args.get('sep_type', '')
+
+    # Build WHERE clause
+    where_clauses = ['exit_date IS NOT NULL']
+    params = []
+
+    if year:
+        where_clauses.append('YEAR(exit_date) = %s')
+        params.append(int(year))
+    if month:
+        where_clauses.append('MONTH(exit_date) = %s')
+        params.append(int(month))
+    if group:
+        where_clauses.append('group_name = %s')
+        params.append(group)
+    if tl:
+        where_clauses.append('tl = %s')
+        params.append(tl)
+    if sep_type:
+        where_clauses.append('separation_type = %s')
+        params.append(sep_type)
+
+    where_sql = ' AND '.join(where_clauses)
+
+    # Main records
+    cursor.execute(f"""
+        SELECT employee_id, employee_name, email, tl, group_name, batch,
+               tenure_type, training_date, operational_date, exit_date,
+               separation_type, remarks, department
+        FROM attrition_data
+        WHERE {where_sql}
+        ORDER BY exit_date DESC
+    """, params)
+    records = cursor.fetchall()
+
+    # Summary stats (unfiltered totals for pills)
+    cursor.execute("""
+        SELECT COUNT(*) as total,
+               SUM(CASE WHEN YEAR(exit_date) = YEAR(CURDATE()) THEN 1 ELSE 0 END) as this_year,
+               SUM(CASE WHEN exit_date >= DATE_SUB(CURDATE(), INTERVAL 30 DAY) THEN 1 ELSE 0 END) as last_30_days
+        FROM attrition_data WHERE exit_date IS NOT NULL
+    """)
+    summary = cursor.fetchone()
+
+    # Separation type breakdown (filtered)
+    cursor.execute(f"""
+        SELECT separation_type, COUNT(*) as cnt
+        FROM attrition_data
+        WHERE {where_sql} AND separation_type IS NOT NULL AND separation_type != ''
+        GROUP BY separation_type ORDER BY cnt DESC
+    """, params)
+    sep_breakdown = cursor.fetchall()
+
+    # Top reasons (filtered)
+    cursor.execute(f"""
+        SELECT remarks, COUNT(*) as cnt
+        FROM attrition_data
+        WHERE {where_sql} AND remarks IS NOT NULL AND remarks != ''
+        GROUP BY remarks ORDER BY cnt DESC LIMIT 10
+    """, params)
+    top_reasons = cursor.fetchall()
+
+    # Monthly trend for current year (always)
+    cursor.execute("""
+        SELECT MONTH(exit_date) as month, COUNT(*) as cnt
+        FROM attrition_data
+        WHERE exit_date IS NOT NULL AND YEAR(exit_date) = YEAR(CURDATE())
+        GROUP BY MONTH(exit_date) ORDER BY month
+    """)
+    monthly_trend = {r['month']: r['cnt'] for r in cursor.fetchall()}
+
+    # Dropdown options
+    cursor.execute("SELECT DISTINCT YEAR(exit_date) as y FROM attrition_data WHERE exit_date IS NOT NULL ORDER BY y DESC")
+    years_list = [r['y'] for r in cursor.fetchall()]
+
+    cursor.execute("SELECT DISTINCT group_name FROM attrition_data WHERE group_name IS NOT NULL AND group_name != '' ORDER BY group_name")
+    groups_list = [r['group_name'] for r in cursor.fetchall()]
+
+    cursor.execute("SELECT DISTINCT tl FROM attrition_data WHERE tl IS NOT NULL AND tl != '' ORDER BY tl")
+    tl_list = [r['tl'] for r in cursor.fetchall()]
+
+    cursor.execute("SELECT DISTINCT separation_type FROM attrition_data WHERE separation_type IS NOT NULL AND separation_type != '' ORDER BY separation_type")
+    sep_types_list = [r['separation_type'] for r in cursor.fetchall()]
+
+    cursor.close()
+    conn.close()
+
+    # Exit Interview Insights
+    ei_year   = request.args.get("ei_year", "")
+    ei_reason = request.args.get("ei_reason", "")
+    ei_where  = ["1=1"]
+    ei_params = []
+    if ei_year:
+        ei_where.append("YEAR(submitted_at) = %s")
+        ei_params.append(int(ei_year))
+    if ei_reason:
+        ei_where.append("reason_for_leaving = %s")
+        ei_params.append(ei_reason)
+    ei_where_sql = " AND ".join(ei_where)
+    conn2 = get_central_db()
+    cur2 = conn2.cursor(pymysql.cursors.DictCursor)
+    RATINGS = ["Poor", "Fair", "Average", "Good", "Very Good"]
+    def rating_pct(col):
+        sql = "SELECT " + col + " as r, COUNT(*) as cnt FROM exit_interview_responses WHERE " + ei_where_sql + " AND " + col + " IS NOT NULL AND " + col + " != '' GROUP BY " + col
+        cur2.execute(sql, ei_params)
+        rows = cur2.fetchall()
+        total = sum(r["cnt"] for r in rows)
+        d = {rating: 0 for rating in RATINGS}
+        for row in rows:
+            key = str(row["r"]).split(",")[0].strip()
+            if key in d: d[key] += row["cnt"]
+        return {k: round(v/total*100) if total else 0 for k,v in d.items()}
+    ei_ratings = {
+        "Company Benefits":      rating_pct("rating_benefits"),
+        "Supervisor Management": rating_pct("rating_supervisor"),
+        "Peer Relationships":    rating_pct("rating_relationship"),
+        "People Development":    rating_pct("rating_people_dev"),
+    }
+    cur2.execute("SELECT deciding_factor FROM exit_interview_responses WHERE " + ei_where_sql + " AND deciding_factor IS NOT NULL AND deciding_factor NOT IN ('N/A','NA','n/a','none','*no answer*','')", ei_params)
+    factor_rows = cur2.fetchall()
+    from collections import Counter
+    skip = {"n/a","na","none","*no answer*",""}
+    factor_counts = Counter()
+    for row in factor_rows:
+        for item in str(row["deciding_factor"]).split(","):
+            item = item.strip()
+            if item.lower() not in skip and len(item) > 2: factor_counts[item] += 1
+    top_factors = [{"factor": k, "cnt": v} for k,v in factor_counts.most_common(8)]
+    cur2.execute("SELECT would_return FROM exit_interview_responses WHERE " + ei_where_sql + " AND would_return IS NOT NULL AND would_return != ''", ei_params)
+    wr_rows = cur2.fetchall()
+    wr_yes   = sum(1 for r in wr_rows if str(r["would_return"]).lower().startswith("yes"))
+    wr_no    = sum(1 for r in wr_rows if str(r["would_return"]).lower().startswith("no"))
+    wr_total = len(wr_rows)
+    cur2.execute("SELECT company_could_prevent FROM exit_interview_responses WHERE " + ei_where_sql + " AND company_could_prevent IS NOT NULL AND company_could_prevent != ''", ei_params)
+    cp_rows = cur2.fetchall()
+    cp_yes  = sum(1 for r in cp_rows if str(r["company_could_prevent"]).lower().startswith("yes"))
+    cp_no   = sum(1 for r in cp_rows if str(r["company_could_prevent"]).lower().startswith("no"))
+    cur2.execute("SELECT likes_most FROM exit_interview_responses WHERE " + ei_where_sql + " AND likes_most IS NOT NULL AND likes_most != ''", ei_params)
+    likes_rows = cur2.fetchall()
+    likes_counts = Counter()
+    for row in likes_rows:
+        for item in str(row["likes_most"]).split(","):
+            item = item.strip()
+            if len(item) > 2: likes_counts[item] += 1
+    top_likes = [{"item": k, "cnt": v} for k,v in likes_counts.most_common(6)]
+    cur2.execute("SELECT COUNT(*) as total FROM exit_interview_responses WHERE " + ei_where_sql, ei_params)
+    ei_total = cur2.fetchone()["total"]
+    cur2.execute("SELECT COUNT(*) as total FROM exit_interview_responses")
+    ei_total_all = cur2.fetchone()["total"]
+    cur2.execute("SELECT reason_for_leaving as reason, COUNT(*) as cnt FROM exit_interview_responses WHERE " + ei_where_sql + " AND reason_for_leaving IS NOT NULL AND reason_for_leaving != '' GROUP BY reason_for_leaving ORDER BY cnt DESC LIMIT 12", ei_params)
+    ei_reasons = cur2.fetchall()
+    cur2.execute("SELECT DISTINCT YEAR(submitted_at) as y FROM exit_interview_responses WHERE submitted_at IS NOT NULL ORDER BY y DESC")
+    ei_years_list = [r["y"] for r in cur2.fetchall()]
+    cur2.execute("SELECT DISTINCT reason_for_leaving FROM exit_interview_responses WHERE reason_for_leaving IS NOT NULL AND reason_for_leaving != '' ORDER BY reason_for_leaving")
+    ei_reasons_list = [r["reason_for_leaving"] for r in cur2.fetchall()]
+    cur2.close()
+    conn2.close()
+
+    return render_template('admin_attrition.html',
+        records=records,
+        summary=summary,
+        sep_breakdown=sep_breakdown,
+        top_reasons=top_reasons,
+        monthly_trend=monthly_trend,
+        years_list=years_list,
+        groups_list=groups_list,
+        tl_list=tl_list,
+        sep_types_list=sep_types_list,
+        filters={'year': year, 'month': month, 'group': group, 'tl': tl, 'sep_type': sep_type},
+        ei_ratings=ei_ratings,
+        ei_ratings_order=['Poor','Fair','Average','Good','Very Good'],
+        top_factors=top_factors,
+        wr_yes=wr_yes, wr_no=wr_no, wr_total=wr_total,
+        cp_yes=cp_yes, cp_no=cp_no,
+        top_likes=top_likes,
+        ei_total=ei_total,
+        ei_total_all=ei_total_all,
+        ei_reasons=ei_reasons,
+        ei_years_list=ei_years_list,
+        ei_reasons_list=ei_reasons_list,
+        ei_filters={'year': ei_year, 'reason': ei_reason}
+    )
+
+
+@app.route('/api/sync-attrition', methods=['POST'])
+def api_sync_attrition():
+    """Called by Google Apps Script to sync attrition data."""
+    token = request.headers.get('X-Sync-Token', '')
+    if token != os.environ.get('SYNC_SECRET', 'cohere-sync-2025'):
+        return jsonify({'error': 'unauthorized'}), 401
+
+    data = request.get_json()
+    if not data or 'records' not in data:
+        return jsonify({'error': 'no records'}), 400
+
+    conn = get_central_db()
+    cursor = conn.cursor()
+
+    upserted = 0
+    errors = []
+    for rec in data['records']:
+        try:
+            cursor.execute("""
+                INSERT INTO attrition_data
+                    (employee_id, employee_name, email, tl, group_name, batch,
+                     tenure_type, training_date, operational_date, exit_date,
+                     separation_type, remarks, department, status)
+                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                ON DUPLICATE KEY UPDATE
+                    employee_name    = VALUES(employee_name),
+                    email            = VALUES(email),
+                    tl               = VALUES(tl),
+                    group_name       = VALUES(group_name),
+                    batch            = VALUES(batch),
+                    tenure_type      = VALUES(tenure_type),
+                    training_date    = VALUES(training_date),
+                    operational_date = VALUES(operational_date),
+                    exit_date        = VALUES(exit_date),
+                    separation_type  = VALUES(separation_type),
+                    remarks          = VALUES(remarks),
+                    department       = VALUES(department),
+                    status           = VALUES(status),
+                    synced_at        = CURRENT_TIMESTAMP
+            """, (
+                rec.get('employee_id'),
+                rec.get('employee_name'),
+                rec.get('email'),
+                rec.get('tl'),
+                rec.get('group_name'),
+                rec.get('batch'),
+                rec.get('tenure_type'),
+                rec.get('training_date') or None,
+                rec.get('operational_date') or None,
+                rec.get('exit_date') or None,
+                rec.get('separation_type'),
+                rec.get('remarks'),
+                rec.get('department'),
+                rec.get('status', 'Separated')
+            ))
+            upserted += 1
+        except Exception as e:
+            errors.append(str(e))
+
+    conn.commit()
+    cursor.close()
+    conn.close()
+
+    return jsonify({'upserted': upserted, 'errors': errors})
+
+# ── END ATTRITION ──────────────────────────────────────────────────────────────
+
+
+
+@app.route('/api/sync-exit-interview', methods=['POST'])
+def api_sync_exit_interview():
+    token = request.headers.get('X-Sync-Token', '')
+    if token != os.environ.get('SYNC_SECRET', 'cohere-sync-2025'):
+        return jsonify({'error': 'unauthorized'}), 401
+
+    data = request.get_json()
+    if not data or 'records' not in data:
+        return jsonify({'error': 'no records'}), 400
+
+    conn = get_central_db()
+    cursor = conn.cursor()
+    upserted = 0
+    errors = []
+
+    for rec in data['records']:
+        try:
+            cursor.execute("""
+                INSERT INTO exit_interview_responses
+                    (submitted_at, full_name, position, supervisor, length_of_service,
+                     effectivity_date, reason_for_leaving, plans, deciding_factor,
+                     likes_most, improve_areas, rating_benefits, rating_supervisor,
+                     rating_relationship, rating_people_dev, would_return,
+                     company_could_prevent, suggestions)
+                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                ON DUPLICATE KEY UPDATE
+                    position              = VALUES(position),
+                    supervisor            = VALUES(supervisor),
+                    reason_for_leaving    = VALUES(reason_for_leaving),
+                    plans                 = VALUES(plans),
+                    deciding_factor       = VALUES(deciding_factor),
+                    likes_most            = VALUES(likes_most),
+                    improve_areas         = VALUES(improve_areas),
+                    rating_benefits       = VALUES(rating_benefits),
+                    rating_supervisor     = VALUES(rating_supervisor),
+                    rating_relationship   = VALUES(rating_relationship),
+                    rating_people_dev     = VALUES(rating_people_dev),
+                    would_return          = VALUES(would_return),
+                    company_could_prevent = VALUES(company_could_prevent),
+                    suggestions           = VALUES(suggestions),
+                    synced_at             = CURRENT_TIMESTAMP
+            """, (
+                rec.get('submitted_at'),
+                rec.get('full_name'),
+                rec.get('position'),
+                rec.get('supervisor'),
+                rec.get('length_of_service'),
+                rec.get('effectivity_date') or None,
+                rec.get('reason_for_leaving'),
+                rec.get('plans'),
+                rec.get('deciding_factor'),
+                rec.get('likes_most'),
+                rec.get('improve_areas'),
+                rec.get('rating_benefits'),
+                rec.get('rating_supervisor'),
+                rec.get('rating_relationship'),
+                rec.get('rating_people_dev'),
+                rec.get('would_return'),
+                rec.get('company_could_prevent'),
+                rec.get('suggestions'),
+            ))
+            upserted += 1
+        except Exception as e:
+            errors.append(str(e)[:200])
+
+    conn.commit()
+    cursor.close()
+    conn.close()
+    return jsonify({'upserted': upserted, 'errors': errors})
 
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0', port=5001)

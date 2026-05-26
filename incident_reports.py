@@ -44,12 +44,13 @@ def login_required(f):
 
 def ir_user():
     """Return a flat dict of current user info from Flask session."""
+    from app import IR_ALL_ACCESS
     email = session['user']['email']
     return {
         'email':       email,
         'employee_id': session['user']['employee_id'],
         'name':        session['user']['name'],
-        'is_admin':    session.get('is_admin', False),
+        'is_admin':    session.get('is_admin', False) or email in IR_ALL_ACCESS,
         'is_supervisor': session.get('is_supervisor', False),
         'is_hr':       email in HR_EMAILS,
         'is_sga':      email in SGA_EMAILS,

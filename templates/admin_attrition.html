@@ -1,0 +1,398 @@
+{% extends "base.html" %}
+{% block title %}Attrition Report{% endblock %}
+{% block content %}
+<div class="container-fluid mt-3">
+
+  <div class="d-flex justify-content-between align-items-center mb-3">
+    <h4 class="mb-0"><i class="fas fa-user-minus text-danger me-2"></i>Attrition Report</h4>
+    <button class="btn btn-sm btn-outline-secondary" onclick="exportCSV()" id="exportBtn">
+      <i class="fas fa-download me-1"></i>Export CSV
+    </button>
+  </div>
+
+  <ul class="nav nav-tabs mb-4" id="attritionTabs">
+    <li class="nav-item">
+      <a class="nav-link {% if not request.args.get('ei_year') and not request.args.get('ei_reason') %}active{% endif %}"
+         id="tab-attrition" data-bs-toggle="tab" href="#pane-attrition">
+        <i class="fas fa-table me-1"></i>Attrition Data
+      </a>
+    </li>
+    <li class="nav-item">
+      <a class="nav-link {% if request.args.get('ei_year') or request.args.get('ei_reason') %}active{% endif %}"
+         id="tab-ei" data-bs-toggle="tab" href="#pane-ei">
+        <i class="fas fa-comments me-1"></i>Exit Interview
+        <span class="badge bg-primary ms-1">{{ ei_total_all }}</span>
+      </a>
+    </li>
+  </ul>
+
+  <div class="tab-content">
+
+    {# ══ TAB 1 — ATTRITION DATA ══ #}
+    <div class="tab-pane fade {% if not request.args.get('ei_year') and not request.args.get('ei_reason') %}show active{% endif %}" id="pane-attrition">
+
+      <div class="row g-3 mb-4">
+        <div class="col-6 col-md-3">
+          <div class="card border-0 shadow-sm text-center py-3">
+            <div class="fs-2 fw-bold text-danger">{{ summary.total }}</div>
+            <div class="text-muted small">Total Separations</div>
+          </div>
+        </div>
+        <div class="col-6 col-md-3">
+          <div class="card border-0 shadow-sm text-center py-3">
+            <div class="fs-2 fw-bold text-warning">{{ summary.this_year }}</div>
+            <div class="text-muted small">This Year</div>
+          </div>
+        </div>
+        <div class="col-6 col-md-3">
+          <div class="card border-0 shadow-sm text-center py-3">
+            <div class="fs-2 fw-bold text-info">{{ summary.last_30_days }}</div>
+            <div class="text-muted small">Last 30 Days</div>
+          </div>
+        </div>
+        <div class="col-6 col-md-3">
+          <div class="card border-0 shadow-sm text-center py-3">
+            <div class="fs-2 fw-bold text-primary">{{ records|length }}</div>
+            <div class="text-muted small">Filtered Results</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="row g-3 mb-4">
+        <div class="col-md-7">
+          <div class="card border-0 shadow-sm p-3 h-100">
+            <div class="fw-semibold mb-2">Monthly Trend (Current Year)</div>
+            <canvas id="monthlyChart" height="110"></canvas>
+          </div>
+        </div>
+        <div class="col-md-5">
+          <div class="card border-0 shadow-sm p-3 h-100">
+            <div class="fw-semibold mb-2">By Separation Type <span class="text-muted small">(filtered)</span></div>
+            {% for s in sep_breakdown[:8] %}
+            <div class="d-flex align-items-center mb-1">
+              <div class="text-truncate me-2 small" style="width:160px" title="{{ s.separation_type }}">{{ s.separation_type }}</div>
+              <div class="flex-grow-1 bg-light rounded" style="height:14px">
+                <div class="bg-danger rounded" style="height:14px;width:{{ [(s.cnt / (sep_breakdown[0].cnt or 1) * 100)|int, 100]|min }}%"></div>
+              </div>
+              <div class="ms-2 small fw-bold">{{ s.cnt }}</div>
+            </div>
+            {% endfor %}
+          </div>
+        </div>
+      </div>
+
+      <div class="card border-0 shadow-sm mb-3 p-3">
+        <form method="get" class="row g-2 align-items-end" id="attritionForm">
+          <div class="col-6 col-md-2">
+            <label class="form-label small mb-1">Year</label>
+            <select name="year" class="form-select form-select-sm">
+              <option value="">All years</option>
+              {% for y in years_list %}<option value="{{ y }}" {% if filters.year == y|string %}selected{% endif %}>{{ y }}</option>{% endfor %}
+            </select>
+          </div>
+          <div class="col-6 col-md-2">
+            <label class="form-label small mb-1">Month</label>
+            <select name="month" class="form-select form-select-sm">
+              <option value="">All months</option>
+              {% for m in range(1,13) %}<option value="{{ m }}" {% if filters.month == m|string %}selected{% endif %}>{{ ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][m-1] }}</option>{% endfor %}
+            </select>
+          </div>
+          <div class="col-6 col-md-2">
+            <label class="form-label small mb-1">Group</label>
+            <select name="group" class="form-select form-select-sm">
+              <option value="">All groups</option>
+              {% for g in groups_list %}<option value="{{ g }}" {% if filters.group == g %}selected{% endif %}>{{ g }}</option>{% endfor %}
+            </select>
+          </div>
+          <div class="col-6 col-md-2">
+            <label class="form-label small mb-1">TL</label>
+            <select name="tl" class="form-select form-select-sm">
+              <option value="">All TLs</option>
+              {% for t in tl_list %}<option value="{{ t }}" {% if filters.tl == t %}selected{% endif %}>{{ t }}</option>{% endfor %}
+            </select>
+          </div>
+          <div class="col-6 col-md-2">
+            <label class="form-label small mb-1">Separation Type</label>
+            <select name="sep_type" class="form-select form-select-sm">
+              <option value="">All types</option>
+              {% for s in sep_types_list %}<option value="{{ s }}" {% if filters.sep_type == s %}selected{% endif %}>{{ s }}</option>{% endfor %}
+            </select>
+          </div>
+          <div class="col-6 col-md-2 d-flex gap-2">
+            <button type="submit" class="btn btn-sm btn-primary w-100">Filter</button>
+            <a href="{{ url_for('admin_attrition') }}" class="btn btn-sm btn-outline-secondary w-100">Reset</a>
+          </div>
+        </form>
+      </div>
+
+      {% if top_reasons %}
+      <div class="mb-3 d-flex flex-wrap gap-2">
+        <span class="text-muted small me-1 align-self-center">Top reasons:</span>
+        {% for r in top_reasons %}<span class="badge bg-secondary-subtle text-dark border small">{{ r.remarks }} <span class="text-danger fw-bold">{{ r.cnt }}</span></span>{% endfor %}
+      </div>
+      {% endif %}
+
+      <div class="card border-0 shadow-sm">
+        <div class="table-responsive">
+          <table class="table table-hover table-sm mb-0 small" id="attritionTable">
+            <thead class="table-dark">
+              <tr>
+                <th style="cursor:pointer" onclick="sortTable(0)">Employee ID &#x2195;</th>
+                <th style="cursor:pointer" onclick="sortTable(1)">Name &#x2195;</th>
+                <th>TL</th><th>Group</th><th>Batch</th><th>Tenure</th>
+                <th style="cursor:pointer" onclick="sortTable(6)">Exit Date &#x2195;</th>
+                <th>Separation Type</th><th>Reason</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for r in records %}
+              <tr>
+                <td>{{ r.employee_id }}</td>
+                <td>{{ r.employee_name }}</td>
+                <td>{{ r.tl or '—' }}</td>
+                <td>{{ r.group_name or '—' }}</td>
+                <td>{{ r.batch or '—' }}</td>
+                <td>
+                  {% if r.tenure_type == 'Tenured' %}<span class="badge bg-success-subtle text-success border">Tenured</span>
+                  {% elif r.tenure_type == 'Non-tenured' %}<span class="badge bg-warning-subtle text-warning border">Non-tenured</span>
+                  {% else %}<span class="text-muted">—</span>{% endif %}
+                </td>
+                <td>{{ r.exit_date.strftime('%b %d, %Y') if r.exit_date else '—' }}</td>
+                <td>
+                  {% if r.separation_type %}
+                    {% if 'Dismissal' in r.separation_type or 'Terminat' in r.separation_type %}<span class="badge bg-danger-subtle text-danger border">{{ r.separation_type }}</span>
+                    {% elif 'Resignation' in r.separation_type %}<span class="badge bg-primary-subtle text-primary border">{{ r.separation_type }}</span>
+                    {% elif 'EOC' in r.separation_type %}<span class="badge bg-secondary-subtle text-secondary border">{{ r.separation_type }}</span>
+                    {% else %}<span class="badge bg-light text-dark border">{{ r.separation_type }}</span>{% endif %}
+                  {% else %}—{% endif %}
+                </td>
+                <td class="text-muted">{{ r.remarks or '—' }}</td>
+              </tr>
+              {% else %}
+              <tr><td colspan="9" class="text-center text-muted py-4">No records found.</td></tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        <div class="px-3 py-2 text-muted small border-top">
+          Showing {{ records|length }} record{% if records|length != 1 %}s{% endif %}
+        </div>
+      </div>
+    </div>
+
+    {# ══ TAB 2 — EXIT INTERVIEW ══ #}
+    <div class="tab-pane fade {% if request.args.get('ei_year') or request.args.get('ei_reason') %}show active{% endif %}" id="pane-ei">
+
+      {% if ei_total_all == 0 %}
+      <div class="text-center text-muted py-5">
+        <i class="fas fa-comments fa-3x mb-3 opacity-25"></i>
+        <p>No exit interview data yet. Run the AppScript sync to populate.</p>
+      </div>
+      {% else %}
+
+      {# Filter bar #}
+      <div class="card border-0 shadow-sm mb-4 p-3">
+        <form method="get" class="row g-2 align-items-end" id="eiForm">
+          <div class="col-6 col-md-3">
+            <label class="form-label small mb-1">Year</label>
+            <select name="ei_year" class="form-select form-select-sm">
+              <option value="">All years</option>
+              {% for y in ei_years_list %}<option value="{{ y }}" {% if ei_filters.year == y|string %}selected{% endif %}>{{ y }}</option>{% endfor %}
+            </select>
+          </div>
+          <div class="col-md-6">
+            <label class="form-label small mb-1">Reason for Leaving</label>
+            <select name="ei_reason" class="form-select form-select-sm">
+              <option value="">All reasons</option>
+              {% for r in ei_reasons_list %}<option value="{{ r }}" {% if ei_filters.reason == r %}selected{% endif %}>{{ r }}</option>{% endfor %}
+            </select>
+          </div>
+          <div class="col-6 col-md-3 d-flex gap-2">
+            <button type="submit" class="btn btn-sm btn-primary w-100">Apply</button>
+            <a href="{{ url_for('admin_attrition') }}#pane-ei" class="btn btn-sm btn-outline-secondary w-100" onclick="resetEI()">Reset</a>
+          </div>
+        </form>
+        {% if ei_filters.year or ei_filters.reason %}
+        <div class="mt-2 d-flex gap-2 flex-wrap">
+          <span class="small text-muted align-self-center">Filtering:</span>
+          {% if ei_filters.year %}<span class="badge bg-primary-subtle text-primary border">Year: {{ ei_filters.year }}</span>{% endif %}
+          {% if ei_filters.reason %}<span class="badge bg-info-subtle text-info border">{{ ei_filters.reason }}</span>{% endif %}
+          <span class="badge bg-secondary-subtle text-dark border">{{ ei_total }} response{% if ei_total != 1 %}s{% endif %} shown</span>
+        </div>
+        {% endif %}
+      </div>
+
+      {# Summary pills #}
+      <div class="row g-3 mb-4">
+        <div class="col-6 col-md-3">
+          <div class="card border-0 shadow-sm text-center py-3">
+            <div class="fs-2 fw-bold text-primary">{{ ei_total }}</div>
+            <div class="text-muted small">Responses</div>
+            {% if ei_filters.year or ei_filters.reason %}<div class="small text-muted">of {{ ei_total_all }} total</div>{% endif %}
+          </div>
+        </div>
+        <div class="col-6 col-md-3">
+          <div class="card border-0 shadow-sm text-center py-3">
+            {% set wr_pct = ((wr_yes / wr_total * 100)|int) if wr_total else 0 %}
+            <div class="fs-2 fw-bold text-success">{{ wr_pct }}%</div>
+            <div class="text-muted small">Would Return</div>
+            <div class="small text-muted">{{ wr_yes }} yes · {{ wr_no }} no</div>
+          </div>
+        </div>
+        <div class="col-6 col-md-3">
+          <div class="card border-0 shadow-sm text-center py-3">
+            {% set cp_pct = ((cp_yes / (cp_yes+cp_no) * 100)|int) if (cp_yes+cp_no) else 0 %}
+            <div class="fs-2 fw-bold text-warning">{{ cp_pct }}%</div>
+            <div class="text-muted small">Preventable Exits</div>
+            <div class="small text-muted">{{ cp_yes }} yes · {{ cp_no }} no</div>
+          </div>
+        </div>
+        <div class="col-6 col-md-3">
+          <div class="card border-0 shadow-sm text-center py-3">
+            <div class="fs-2 fw-bold text-secondary">{{ ei_total - wr_yes - wr_no }}</div>
+            <div class="text-muted small">No Answer</div>
+            <div class="small text-muted">on return question</div>
+          </div>
+        </div>
+      </div>
+
+      {# Ratings + Deciding Factors + Likes #}
+      <div class="row g-3 mb-4">
+        <div class="col-md-5">
+          <div class="card border-0 shadow-sm p-3 h-100">
+            <div class="fw-semibold mb-3">Exit Survey Ratings</div>
+            {% set rc = {'Poor':'danger','Fair':'warning','Average':'secondary','Good':'info','Very Good':'success'} %}
+            {% for category, pcts in ei_ratings.items() %}
+            <div class="mb-3">
+              <div class="small fw-semibold mb-1">{{ category }}</div>
+              <div class="d-flex rounded overflow-hidden" style="height:22px">
+                {% for r in ei_ratings_order %}{% if pcts[r] > 0 %}
+                <div class="bg-{{ rc[r] }} d-flex align-items-center justify-content-center"
+                     style="width:{{ pcts[r] }}%;font-size:10px;color:white"
+                     title="{{ r }}: {{ pcts[r] }}%">
+                  {% if pcts[r] >= 8 %}{{ pcts[r] }}%{% endif %}
+                </div>
+                {% endif %}{% endfor %}
+              </div>
+              <div class="d-flex gap-2 mt-1 flex-wrap">
+                {% for r in ei_ratings_order %}{% if pcts[r] > 0 %}
+                <span class="small text-muted"><span class="badge bg-{{ rc[r] }}" style="font-size:9px">&nbsp;</span> {{ r }} {{ pcts[r] }}%</span>
+                {% endif %}{% endfor %}
+              </div>
+            </div>
+            {% endfor %}
+          </div>
+        </div>
+
+        <div class="col-md-4">
+          <div class="card border-0 shadow-sm p-3 h-100">
+            <div class="fw-semibold mb-3">Why They Left for Other Companies</div>
+            {% if top_factors %}
+            {% set max_f = top_factors[0].cnt %}
+            {% for f in top_factors %}
+            <div class="d-flex align-items-center mb-2">
+              <div class="text-truncate me-2 small" style="width:150px" title="{{ f.factor }}">{{ f.factor }}</div>
+              <div class="flex-grow-1 bg-light rounded" style="height:14px">
+                <div class="bg-warning rounded" style="height:14px;width:{{ [(f.cnt / max_f * 100)|int, 100]|min }}%"></div>
+              </div>
+              <div class="ms-2 small fw-bold">{{ f.cnt }}</div>
+            </div>
+            {% endfor %}
+            {% else %}<p class="text-muted small">No data for this filter.</p>{% endif %}
+          </div>
+        </div>
+
+        <div class="col-md-3">
+          <div class="card border-0 shadow-sm p-3 h-100">
+            <div class="fw-semibold mb-3">What They Liked Most</div>
+            {% if top_likes %}
+            {% set max_l = top_likes[0].cnt %}
+            {% for l in top_likes %}
+            <div class="d-flex align-items-center mb-2">
+              <div class="text-truncate me-2 small" style="width:130px" title="{{ l.item }}">{{ l.item }}</div>
+              <div class="flex-grow-1 bg-light rounded" style="height:14px">
+                <div class="bg-success rounded" style="height:14px;width:{{ [(l.cnt / max_l * 100)|int, 100]|min }}%"></div>
+              </div>
+              <div class="ms-2 small fw-bold">{{ l.cnt }}</div>
+            </div>
+            {% endfor %}
+            {% else %}<p class="text-muted small">No data for this filter.</p>{% endif %}
+          </div>
+        </div>
+      </div>
+
+      {# Reasons breakdown #}
+      <div class="card border-0 shadow-sm p-3">
+        <div class="fw-semibold mb-3">
+          Reasons for Leaving
+          <span class="text-muted small">(from exit interview form{% if ei_filters.year or ei_filters.reason %}, filtered{% endif %})</span>
+        </div>
+        {% if ei_reasons %}
+        <div class="row g-2">
+          {% set max_r = ei_reasons[0].cnt %}
+          {% for r in ei_reasons %}
+          <div class="col-md-6">
+            <div class="d-flex align-items-center">
+              <div class="text-truncate me-2 small" style="width:280px" title="{{ r.reason }}">{{ r.reason }}</div>
+              <div class="flex-grow-1 bg-light rounded" style="height:14px">
+                <div class="bg-danger rounded" style="height:14px;width:{{ [(r.cnt / max_r * 100)|int, 100]|min }}%"></div>
+              </div>
+              <div class="ms-2 small fw-bold">{{ r.cnt }}</div>
+            </div>
+          </div>
+          {% endfor %}
+        </div>
+        {% else %}
+        <p class="text-muted small mb-0">No records match the selected filters.</p>
+        {% endif %}
+      </div>
+
+      {% endif %}
+    </div>
+
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js@3.9.1/dist/chart.min.js"></script>
+<script>
+const monthlyData = {{ monthly_trend | tojson }};
+const labels = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+new Chart(document.getElementById('monthlyChart'), {
+  type: 'bar',
+  data: { labels, datasets: [{ label: 'Separations', data: labels.map((_,i) => monthlyData[i+1]||0), backgroundColor: 'rgba(220,53,69,0.7)', borderRadius: 4 }] },
+  options: { responsive: true, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true, ticks: { stepSize: 1 } } } }
+});
+
+let sortDir = {};
+function sortTable(c) {
+  const tbody = document.querySelector('#attritionTable tbody');
+  const rows = Array.from(tbody.querySelectorAll('tr'));
+  sortDir[c] = !sortDir[c];
+  rows.sort((a,b) => { const at=a.cells[c]?.innerText.trim()||'',bt=b.cells[c]?.innerText.trim()||''; return sortDir[c]?at.localeCompare(bt):bt.localeCompare(at); });
+  rows.forEach(r => tbody.appendChild(r));
+}
+
+function exportCSV() {
+  const rows = document.querySelectorAll('#attritionTable tr');
+  const csv = Array.from(rows).map(r => Array.from(r.querySelectorAll('th,td')).map(c=>'"'+c.innerText.replace(/"/g,'""')+'"').join(',')).join('\n');
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([csv],{type:'text/csv'}));
+  a.download = 'attrition_report.csv'; a.click();
+}
+
+function resetEI() {
+  document.querySelector('[name="ei_year"]').value = '';
+  document.querySelector('[name="ei_reason"]').value = '';
+}
+
+// Show/hide export button per tab
+document.getElementById('tab-ei').addEventListener('click', () => document.getElementById('exportBtn').style.display='none');
+document.getElementById('tab-attrition').addEventListener('click', () => document.getElementById('exportBtn').style.display='');
+
+// Keep correct tab active on page load based on URL params
+const urlParams = new URLSearchParams(window.location.search);
+if (urlParams.get('ei_year') || urlParams.get('ei_reason')) {
+  document.getElementById('exportBtn').style.display = 'none';
+}
+</script>
+{% endblock %}

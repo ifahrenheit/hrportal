@@ -468,7 +468,7 @@
       </div>
       {% endif %}
       {# Analytics #}
-      {% if session.get('is_admin') or session.get('permissions', {}).get('can_reports') or session.get('permissions', {}).get('can_schedules') or session.get('permissions', {}).get('can_view_tickets') or session.get('permissions', {}).get('can_absences') %}
+      {% if session.get('is_admin') or session.get('permissions', {}).get('can_reports') or session.get('permissions', {}).get('can_schedules') or session.get('permissions', {}).get('can_view_tickets') or session.get('permissions', {}).get('can_absences') or session.get('permissions', {}).get('can_attrition_report') %}
       <div class="nav-section-toggle nav-label" onclick="toggleSection('analytics')" id="analytics-header">
         <span>Analytics</span>
         <i class="bi bi-chevron-down section-arrow" id="analytics-arrow"></i>
@@ -487,20 +487,20 @@
         <a class="nav-link {% if request.endpoint == 'admin_reports' %}active{% endif %}" href="{{ url_for('admin_reports') }}">
           <i class="bi bi-bar-chart-line"></i> <span class="nav-label">Reports</span>
         </a>
+        {% endif %}
         <a class="nav-link {% if request.endpoint == 'admin_night_diff' %}active{% endif %}" href="{{ url_for('admin_night_diff') }}">
           <i class="bi bi-moon-stars"></i> <span class="nav-label">Night Differential</span>
         </a>
         {% if session.get('is_admin') or session.get('permissions', {}).get('can_absences') %}
         <a class="nav-link {% if request.endpoint == 'admin_absences' %}active{% endif %}"
            href="{{ url_for('admin_absences') }}">
-          <i class="bi bi-person-x"></i>
-          <span class="nav-label">Absences</span>
+          <i class="bi bi-person-x"></i> <span class="nav-label">Absences</span>
         </a>
         {% endif %}
-        {% endif %}
-        {% if session.get('is_admin') or session.get('permissions', {}).get('can_schedules') %}
-        <a class="nav-link {% if request.endpoint == 'admin_schedules' %}active{% endif %}" href="{{ url_for('admin_schedules') }}">
-          <i class="bi bi-table"></i> <span class="nav-label">Schedules</span>
+        {% if session.get('is_admin') or session.get('permissions', {}).get('can_attrition_report') %}
+        <a class="nav-link {% if request.endpoint == 'admin_attrition' %}active{% endif %}"
+           href="{{ url_for('admin_attrition') }}">
+          <i class="bi bi-person-dash"></i> <span class="nav-label">Attrition Report</span>
         </a>
         {% endif %}
         {% if session.get('is_admin') or session.get('permissions', {}).get('can_view_tickets') %}

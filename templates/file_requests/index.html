@@ -204,7 +204,7 @@
 
             <td class="small">{{ r.details or '—' }}
               {% if r.req_type in ('OT','RDW') and r.hours %}
-              <span class="badge bg-primary ms-1">{{ r.hours }}h</span>
+              <span class="badge ms-1" style="background-color:{% if r.hours|float >= 8 %}#c95c00{% else %}#0d6efd{% endif %};color:#fff;">{{ r.hours }}h</span>
               {% endif %}
             </td>
 

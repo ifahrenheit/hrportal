@@ -194,7 +194,7 @@ function RequestCard({ item, bulkMode, selected, onToggle, onAction, loading, re
                 )}
                 {rtype === 'OT' && (<>
                   <span className="badge bg-warning text-dark ms-1">{r.ot_type}</span>
-                  <span className="badge bg-primary ms-1">{r.ot_hours}h</span>
+                  <span className="badge ms-1" style={{backgroundColor: parseFloat(r.ot_hours) >= 8 ? '#c95c00' : '#0d6efd', color: '#fff'}}>{r.ot_hours}h</span>
                   {r.ticket_count > 0 && (
                     <span className="badge bg-secondary ms-1" style={{cursor:'pointer'}}
                           onClick={() => showTickets(r.id, r.employee_name)}>
@@ -204,7 +204,7 @@ function RequestCard({ item, bulkMode, selected, onToggle, onAction, loading, re
                 </>)}
                 {rtype === 'RDW' && (<>
                   <span className="badge bg-info text-dark ms-1">{r.work_category}</span>
-                  {r.rd_hours && <span className="badge bg-primary ms-1">{r.rd_hours}h</span>}
+                  {r.rd_hours && <span className="badge ms-1" style={{backgroundColor: parseFloat(r.rd_hours) >= 8 ? '#c95c00' : '#0d6efd', color: '#fff'}}>{r.rd_hours}h</span>}
                   {r.work_category === 'REGULAR' && r.ticket_count > 0 && (
                     <span className="badge bg-secondary ms-1" style={{cursor:'pointer'}}
                           onClick={() => showRdTickets(r.id, r.employee_name)}>
