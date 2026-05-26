@@ -276,7 +276,7 @@
   </div>
 </div>
 
-{% if is_admin %}
+{% if is_admin or is_supervisor %}
 <div class="modal fade" id="deleteModal" tabindex="-1">
   <div class="modal-dialog">
     <div class="modal-content">
@@ -525,8 +525,9 @@ function submitDelete() {
     .then(data => {
       if (data.success) {
         bootstrap.Modal.getInstance(document.getElementById('deleteModal')).hide();
-        const row = document.querySelector('[data-del-id="' + id + '"]')?.closest('tr');
-        if (row) row.remove();
+        const cb = document.querySelector('.hub-checkbox[data-id="' + id + '"]');
+        if (cb) cb.closest('tr').remove();
+        hubShowToast('Request deleted successfully.', 'success');
       } else {
         alert('Error: ' + (data.message || 'Unknown error'));
         btn.disabled = false;

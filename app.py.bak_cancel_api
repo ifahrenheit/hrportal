@@ -27,9 +27,9 @@ def nl2br_filter(s):
 from incident_reports import ir_bp
 app.register_blueprint(ir_bp, url_prefix='/incident-reports')
 
-IR_SGA      = os.getenv('IR_SGA', '').split(',')
-IR_RTA      = os.getenv('IR_RTA', '').split(',')
-IR_OVERHEAD = os.getenv('IR_OVERHEAD', '').split(',')
+IR_SGA = ['anamarie.munez@cohere.ph', 'honey.cortes@cohere.ph']
+IR_RTA = ['frances.jackson@cohere.ph', 'june.edano@cohere.ph', 'jesus.berongoy@cohere.ph']
+IR_OVERHEAD = ['Finest', 'RTA', 'QA', 'IT', 'TL', 'L2 TL', 'Trainer', 'BO TL']
 
 def _ir_is_overhead(email):
     """Check if user belongs to an overhead group (TL, QA, etc.) via DB."""
@@ -96,7 +96,7 @@ def get_db_connection():
         host=os.environ.get('MAIN_DB_HOST', 'localhost'),
         port=int(os.environ.get('MAIN_DB_PORT', 3306)),
         user=os.environ.get('MAIN_DB_USER', 'employee_sync'),
-        password=os.environ.get('MAIN_DB_PASSWORD'),
+        password=os.environ.get('MAIN_DB_PASSWORD', '***REMOVED***'),
         database=os.environ.get('MAIN_DB_NAME', 'central_db'),
         charset='utf8mb4',
         cursorclass=pymysql.cursors.DictCursor,
@@ -4250,62 +4250,6 @@ def cancel_leave(leave_id):
 
 
 
-
-@app.route('/api/leave/cancel/<int:leave_id>', methods=['POST'])
-@login_required
-def api_leave_cancel(leave_id):
-    emp_number = session['user']['emp_number']
-    is_admin   = session.get('is_admin', False)
-    db = get_db()
-    try:
-        with db.cursor() as c:
-            c.execute("SELECT * FROM leave4day_requests WHERE id = %s", (leave_id,))
-            leave = c.fetchone()
-            if not leave:
-                return jsonify({'success': False, 'message': 'Leave request not found'}), 404
-            if leave['emp_number'] != emp_number and not is_admin and not session.get('is_supervisor'):
-                return jsonify({'success': False, 'message': 'Permission denied'}), 403
-            allowed_statuses = ['scheduled', 'pending']
-            if is_admin or session.get('is_supervisor'):
-                allowed_statuses += ['approved', 'taken']
-            if leave['status'] not in allowed_statuses:
-                return jsonify({'success': False, 'message': f"Cannot cancel a leave with status: {leave['status']}"}), 400
-            c.execute("""DELETE FROM ohrm_leave
-                WHERE emp_number=%s AND date=%s AND leave_type_id=%s
-            """, (leave['emp_number'], leave['leave_date'], leave['leave_type_id']))
-            if leave.get('leave_request_id'):
-                c.execute("SELECT COUNT(*) as cnt FROM ohrm_leave WHERE leave_request_id=%s",
-                          (leave['leave_request_id'],))
-                row = c.fetchone()
-                if row['cnt'] == 0:
-                    c.execute("DELETE FROM ohrm_leave_request WHERE id=%s", (leave['leave_request_id'],))
-            c.execute("""UPDATE ohrm_leave_entitlement
-                SET days_used = GREATEST(0, days_used - %s)
-                WHERE emp_number=%s AND leave_type_id=%s AND deleted=0
-            """, (leave['days_deducted'], leave['emp_number'], leave['leave_type_id']))
-            c.execute("UPDATE leave4day_requests SET status='cancelled' WHERE id=%s", (leave_id,))
-        db.commit()
-        db_mail = get_db()
-        try:
-            with db_mail.cursor() as c:
-                c.execute("""SELECT u.user_name, e.emp_firstname FROM ohrm_user u
-                    JOIN hs_hr_employee e ON e.emp_number=u.emp_number WHERE u.emp_number=%s
-                """, (leave['emp_number'],))
-                agent = c.fetchone()
-            if agent and agent['user_name'] != session['user']['email']:
-                send_email(agent['user_name'], 'Your Leave has been Cancelled',
-                    f"<p>Hi {agent['emp_firstname']},</p>"
-                    f"<p>Your leave on <b>{leave['leave_date']}</b> has been cancelled by {session['user']['name']}.</p>"
-                    f"<p><a href='https://hrportal.cohere.ph'>View HR Portal</a></p>")
-        finally:
-            db_mail.close()
-    except Exception as e:
-        db.rollback()
-        return jsonify({'success': False, 'message': str(e)}), 500
-    finally:
-        db.close()
-    return jsonify({'success': True, 'message': 'Leave cancelled successfully.'})
-
 @app.route('/admin/file-leave', methods=['GET', 'POST'])
 @permission_required('can_file_for_emp')
 def admin_file_leave():
@@ -7817,7 +7761,7 @@ def hrportal_onboard():
         last_name     = data.get('last_name', '').strip()
         schedule_name = data.get('schedule_name', '').strip()
 
-        temp_password = os.environ.get('DEFAULT_PASSWORD')
+        temp_password = os.environ.get('DEFAULT_PASSWORD', '***REMOVED***')
         processed_by  = session.get('user', {}).get('name', 'System')
         cpanel_domain = os.environ.get('CPANEL_DOMAIN', 'cohere.ph')
 
