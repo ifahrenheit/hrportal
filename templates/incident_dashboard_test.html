@@ -1,34 +1,5 @@
 {% extends 'base.html' %}
-{% block title %}Incident Reports
-<script>
-async function markRweServed(reportNumber, btn){
-  if(!confirm('Mark ' + reportNumber + ' as RWE Served?')) return;
-  btn.disabled = true;
-  btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span>';
-  try {
-    const fd = new FormData();
-    fd.append('report_number', reportNumber);
-    fd.append('comment', 'RWE has been served.');
-    fd.append('status_action', 'rwe_served');
-    const r = await fetch('/incident-reports/add-comment', {method:'POST', body:fd});
-    const d = await r.json();
-    if(d.success){
-      btn.closest('.rwe-card').style.opacity='0.5';
-      btn.innerHTML='✅ Done';
-      setTimeout(()=>location.reload(), 800);
-    } else {
-      alert('Error: '+d.message);
-      btn.disabled=false;
-      btn.innerHTML='✅ Mark RWE Served';
-    }
-  } catch(e){
-    alert('Error: '+e.message);
-    btn.disabled=false;
-    btn.innerHTML='✅ Mark RWE Served';
-  }
-}
-</script>
-{% endblock %}
+{% block title %}Incident Reports{% endblock %}
 
 {% block content %}
 <style>
@@ -123,14 +94,6 @@ async function markRweServed(reportNumber, btn){
   .rwe-empty { background:var(--surface); border-radius:12px; padding:36px; text-align:center;
                box-shadow:var(--card-shadow); color:var(--text-muted); }
   .rwe-empty i { font-size:40px; color:#10b981; opacity:.5; display:block; margin-bottom:10px; }
-  .sla-ok      { background:#d1fae5; color:#065f46; padding:3px 10px; border-radius:20px; font-size:11px; font-weight:700; }
-  .sla-warning { background:#fef3c7; color:#92400e; padding:3px 10px; border-radius:20px; font-size:11px; font-weight:700; }
-  .sla-overdue { background:#fee2e2; color:#991b1b; padding:3px 10px; border-radius:20px; font-size:11px; font-weight:700; }
-  .sla-served  { background:#dbeafe; color:#1e40af; padding:3px 10px; border-radius:20px; font-size:11px; font-weight:700; }
-  .report-table thead th { background:var(--accent); color:#fff; border:none; font-size:11px;
-                           text-transform:uppercase; letter-spacing:.5px; padding:10px 12px; }
-  .report-table tbody td { padding:10px 12px; font-size:13px; border-bottom:1px solid var(--border); }
-  .report-table tbody tr:hover { background:var(--bg); }
 </style>
 
 <div class="ir-page-header">
@@ -227,13 +190,6 @@ async function markRweServed(reportNumber, btn){
       {% if rwe_req_count > 0 %}
       <span class="rwe-count">{{ rwe_req_count }}</span>
       {% endif %}
-    </button>
-  </li>
-  {% endif %}
-  {% if user.is_admin %}
-  <li class="nav-item">
-    <button class="nav-link" data-bs-toggle="tab" data-bs-target="#rwe-report">
-      <i class="bi bi-bar-chart-line me-1"></i>RWE Report
     </button>
   </li>
   {% endif %}
@@ -386,112 +342,9 @@ async function markRweServed(reportNumber, btn){
   </div>
   {% endif %}
 
-
-  {# RWE Report Tab — Admin only #}
-  {% if user.is_admin %}
-  <div class="tab-pane fade" id="rwe-report">
-    <div class="d-flex justify-content-between align-items-center mb-3">
-      <div style="font-family:'Outfit',sans-serif;font-size:15px;font-weight:700;color:var(--text);">
-        <i class="bi bi-bar-chart-line me-2" style="color:var(--accent);"></i>RWE Resolution Report
-        <span style="font-size:12px;font-weight:400;color:var(--text-muted);margin-left:8px;">5-day SLA target</span>
-      </div>
-      <button class="btn-ir-sm" onclick="copyRweTable()">
-        <i class="bi bi-clipboard"></i>Copy
-      </button>
-    </div>
-
-    {% if rwe_report_data %}
-    {% set served_count  = rwe_report_data | selectattr('sla_status','equalto','served')  | list | length %}
-    {% set overdue_count = rwe_report_data | selectattr('sla_status','equalto','overdue') | list | length %}
-    {% set warning_count = rwe_report_data | selectattr('sla_status','equalto','warning') | list | length %}
-    {% set ok_count      = rwe_report_data | selectattr('sla_status','equalto','ok')      | list | length %}
-
-    <div class="row g-3 mb-4">
-      {% for label,val,color,icon in [
-        ('Total RWE',      rwe_report_data|length, '#1e5fd4','bi-clipboard2-data'),
-        ('RWE Served',     served_count,            '#10b981','bi-check-circle'),
-        ('Overdue >5 days',overdue_count,            '#ef4444','bi-exclamation-circle'),
-        ('Nearing SLA',    warning_count,            '#d97706','bi-hourglass-split'),
-        ('On Track',       ok_count,                 '#6b7280','bi-clock'),
-      ] %}
-      <div class="col-6 col-md">
-        <div class="ir-stat" style="border-top-color:{{ color }};">
-          <i class="bi {{ icon }}" style="color:{{ color }};font-size:16px;"></i>
-          <div class="ir-stat-num" style="color:{{ color }};">{{ val }}</div>
-          <div class="ir-stat-lbl">{{ label }}</div>
-        </div>
-      </div>
-      {% endfor %}
-    </div>
-
-    <div class="ir-table-wrap">
-      <table class="table report-table mb-0" id="rweReportTable">
-        <thead><tr>
-          <th>IR Number</th><th>Agent</th><th>Filed By</th>
-          <th>RWE Requested</th><th>RWE Served</th><th>Days</th><th>SLA</th><th></th>
-        </tr></thead>
-        <tbody>
-        {% for r in rwe_report_data %}
-        <tr>
-          <td>
-            <a href="{{ url_for('incident_reports.view_report', report_number=r.report_number) }}"
-               style="color:var(--accent);font-weight:600;font-size:12px;text-decoration:none;">
-              {{ r.report_number }}
-            </a>
-          </td>
-          <td>{{ r.employee_name }}</td>
-          <td>{{ r.submitted_by_name or 'N/A' }}</td>
-          <td style="font-size:12px;white-space:nowrap;">
-            {{ r.rwe_requested_at.strftime('%b %d, %Y %I:%M %p') if r.rwe_requested_at else '—' }}
-          </td>
-          <td style="font-size:12px;white-space:nowrap;">
-            {{ r.rwe_served_at.strftime('%b %d, %Y %I:%M %p') if r.rwe_served_at else '—' }}
-          </td>
-          <td style="text-align:center;font-weight:700;">
-            {% if r.days_open is not none %}
-            <span style="color:{{ '#ef4444' if r.days_open > 5 else '#d97706' if r.days_open >= 3 else '#10b981' }};">
-              {{ r.days_open }}d
-            </span>
-            {% else %}—{% endif %}
-          </td>
-          <td>
-            {% if r.sla_status == 'served' %}<span class="sla-served">✅ Served</span>
-            {% elif r.sla_status == 'overdue' %}<span class="sla-overdue">🔴 Overdue</span>
-            {% elif r.sla_status == 'warning' %}<span class="sla-warning">⚠️ Nearing</span>
-            {% else %}<span class="sla-ok">🟢 On Track</span>{% endif %}
-          </td>
-          <td>
-            <a href="{{ url_for('incident_reports.view_report', report_number=r.report_number) }}"
-               class="btn-ir-sm"><i class="bi bi-eye"></i></a>
-          </td>
-        </tr>
-        {% endfor %}
-        </tbody>
-      </table>
-    </div>
-
-    {% else %}
-    <div class="rwe-empty">
-      <i class="bi bi-bar-chart-line"></i>
-      No RWE data yet. Reports will appear once tickets are escalated to RWE.
-    </div>
-    {% endif %}
-  </div>
-  {% endif %}
-
 </div>
 
 <script>
-function copyRweTable(){
-  const t=document.getElementById('rweReportTable');
-  if(!t) return;
-  let txt=[...t.querySelectorAll('thead th')].map(h=>h.textContent.trim()).join('\t')+'\n';
-  t.querySelectorAll('tbody tr').forEach(r=>{
-    txt+=[...r.querySelectorAll('td')].map(td=>td.textContent.trim().replace(/\s+/g,' ')).join('\t')+'\n';
-  });
-  navigator.clipboard.writeText(txt).then(()=>alert('Copied!'));
-}
-
 function copyTable(){
   const t=document.getElementById('irTable');
   let txt=[...t.querySelectorAll('thead th')].map(h=>h.textContent.trim()).join('\t')+'\n';

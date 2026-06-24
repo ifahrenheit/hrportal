@@ -250,9 +250,14 @@
   document.addEventListener('DOMContentLoaded', function () {
     checkActiveBreak();
     loadBreakLogs();
+    setInterval(checkActiveBreak, 30000);  // re-sync every 30s; catches server-side auto-close
     if ('Notification' in window && Notification.permission === 'default') {
       Notification.requestPermission();
     }
+  });
+
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden) stopFlashTitle();
   });
 
   function showAlert(message, type) {
@@ -287,6 +292,10 @@
   function startTimer(startTime) {
     breakStartTime = startTime;
     isOnBreak = true;
+    // Ask for notification permission so reminders reach the agent on other tabs
+    if ('Notification' in window && Notification.permission === 'default') {
+      Notification.requestPermission();
+    }
     const btn = document.getElementById('breakToggle');
     btn.className = 'break-btn end';
     btn.innerHTML = '■ End Break';
@@ -301,6 +310,10 @@
   function stopTimer() {
     isOnBreak = false;
     breakStartTime = null;
+    stopFlashTitle();
+    sessionStorage.removeItem('warned85');
+    sessionStorage.removeItem('warned89');
+    sessionStorage.removeItem('overtimeNotified');
     if (timerInterval) { clearInterval(timerInterval); timerInterval = null; }
     const btn = document.getElementById('breakToggle');
     btn.className = 'break-btn start';
@@ -313,7 +326,15 @@
     try {
       const r = await fetch('/api/break?action=check_active');
       const d = await r.json();
-      if (d.success && d.activeBreak) startTimer(d.activeBreak.break_start);
+      if (d.success && d.activeBreak) {
+        if (!isOnBreak) startTimer(d.activeBreak.break_start);
+      } else if (isOnBreak) {
+        // Server has no active break but the page thinks one is running →
+        // it was force-closed (2-hour cap) or ended elsewhere. Re-sync.
+        stopTimer();
+        loadBreakLogs();
+        showAlert('Your break was automatically closed after reaching the 2-hour limit. Please make sure to end breaks manually.', 'warning');
+      }
     } catch(e) { console.error(e); }
   }
 
@@ -350,20 +371,41 @@
       const totalEl = document.getElementById('totalBreakTime');
       const otAlert = document.getElementById('overtimeAlert');
 
-      if (d.success && d.breaks && d.breaks.length > 0) {
-        tbody.innerHTML = d.breaks.map(log => `
-          <tr>
-            <td>${formatDateTime(log.break_start)}</td>
-            <td>${formatDateTime(log.break_end)}</td>
-            <td><span class="dur-badge">${formatTime(log.duration)}</span></td>
-          </tr>
-        `).join('');
+      if (d.success) {
+        if (d.breaks && d.breaks.length > 0) {
+          tbody.innerHTML = d.breaks.map(log => `
+            <tr>
+              <td>${formatDateTime(log.break_start)}</td>
+              <td>${formatDateTime(log.break_end)}</td>
+              <td><span class="dur-badge">${formatTime(log.duration)}</span></td>
+            </tr>
+          `).join('');
+        } else {
+          tbody.innerHTML = '<tr><td colspan="3" class="text-center text-muted py-4">No breaks logged yet today</td></tr>';
+        }
 
-        let total = d.total_break_time;
+        let total = d.total_break_time || 0;
         if (isOnBreak && breakStartTime) {
           total += Math.floor((Date.now() - new Date(breakStartTime)) / 1000);
         }
         totalEl.textContent = 'Total: ' + formatTime(total);
+
+        if (isOnBreak) {
+          if (total >= 85 * 60 && total < 89 * 60 && !sessionStorage.getItem('warned85')) {
+            sessionStorage.setItem('warned85', 'true');
+            showAlert('⏰ Your total break time today is almost 1 hour 30 minutes. Please end your break soon.', 'warning');
+            showBreakNotification('⏰ Break Reminder', "You're almost at your 1 hour 30 minute break limit. Please end your break soon.");
+            playBreakSound();
+            flashTitle('⏰ END YOUR BREAK');
+          }
+          if (total >= 89 * 60 && total < 90 * 60 && !sessionStorage.getItem('warned89')) {
+            sessionStorage.setItem('warned89', 'true');
+            showAlert('⚠️ You are about to reach your 1 hour 30 minute break limit. Please end it now.', 'danger');
+            showBreakNotification('⚠️ Break Limit', 'You are about to reach your 1 hour 30 minute break limit. Please end it now.');
+            playBreakSound();
+            flashTitle('⏰ END YOUR BREAK');
+          }
+        }
 
         const MAX = 90 * 60;
         if (total > MAX) {
@@ -377,13 +419,49 @@
           totalEl.classList.remove('overtime');
           otAlert.style.display = 'none';
         }
-      } else {
-        tbody.innerHTML = '<tr><td colspan="3" class="text-center text-muted py-4">No breaks logged yet today</td></tr>';
-        totalEl.textContent = 'Total: 00:00:00';
-        totalEl.classList.remove('overtime');
-        otAlert.style.display = 'none';
       }
     } catch(e) { console.error(e); }
+  }
+
+  function showBreakNotification(title, body) {
+    if ('Notification' in window && Notification.permission === 'granted') {
+      new Notification(title, { body, requireInteraction: true, tag: 'break-nudge' });
+    }
+  }
+
+  function playBreakSound() {
+    try {
+      const ctx = new (window.AudioContext || window.webkitAudioContext)();
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.type = 'sine';
+      osc.frequency.value = 880;          // tone pitch
+      gain.gain.setValueAtTime(0.3, ctx.currentTime);
+      osc.start();
+      // two quick beeps
+      osc.frequency.setValueAtTime(880, ctx.currentTime);
+      osc.frequency.setValueAtTime(660, ctx.currentTime + 0.15);
+      osc.frequency.setValueAtTime(880, ctx.currentTime + 0.3);
+      gain.gain.setValueAtTime(0.0001, ctx.currentTime + 0.45);
+      osc.stop(ctx.currentTime + 0.45);
+    } catch (e) { console.error('sound failed', e); }
+  }
+
+  let titleFlashInterval = null;
+  function flashTitle(message) {
+    const original = 'Break Log';            // your normal tab title
+    if (titleFlashInterval) clearInterval(titleFlashInterval);
+    let on = false;
+    titleFlashInterval = setInterval(() => {
+      document.title = on ? original : message;
+      on = !on;
+    }, 1000);
+  }
+  function stopFlashTitle() {
+    if (titleFlashInterval) { clearInterval(titleFlashInterval); titleFlashInterval = null; }
+    document.title = 'Break Log';
   }
 
   function showOvertimeNotification(totalSeconds) {

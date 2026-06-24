@@ -290,12 +290,14 @@
             {% if top_factors %}
             {% set max_f = top_factors[0].cnt %}
             {% for f in top_factors %}
-            <div class="d-flex align-items-center mb-2">
-              <div class="text-truncate me-2 small" style="width:150px" title="{{ f.factor }}">{{ f.factor }}</div>
-              <div class="flex-grow-1 bg-light rounded" style="height:14px">
-                <div class="bg-warning rounded" style="height:14px;width:{{ [(f.cnt / max_f * 100)|int, 100]|min }}%"></div>
+            <div class="mb-2">
+              <div class="d-flex justify-content-between small mb-1">
+                <span>{{ f.factor }}</span>
+                <span class="fw-bold ms-2">{{ f.cnt }}</span>
               </div>
-              <div class="ms-2 small fw-bold">{{ f.cnt }}</div>
+              <div class="bg-light rounded" style="height:12px">
+                <div class="bg-warning rounded" style="height:12px;width:{{ [(f.cnt / max_f * 100)|int, 100]|min }}%"></div>
+              </div>
             </div>
             {% endfor %}
             {% else %}<p class="text-muted small">No data for this filter.</p>{% endif %}
@@ -308,12 +310,14 @@
             {% if top_likes %}
             {% set max_l = top_likes[0].cnt %}
             {% for l in top_likes %}
-            <div class="d-flex align-items-center mb-2">
-              <div class="text-truncate me-2 small" style="width:130px" title="{{ l.item }}">{{ l.item }}</div>
-              <div class="flex-grow-1 bg-light rounded" style="height:14px">
-                <div class="bg-success rounded" style="height:14px;width:{{ [(l.cnt / max_l * 100)|int, 100]|min }}%"></div>
+            <div class="mb-2">
+              <div class="d-flex justify-content-between small mb-1">
+                <span>{{ l.item }}</span>
+                <span class="fw-bold ms-2">{{ l.cnt }}</span>
               </div>
-              <div class="ms-2 small fw-bold">{{ l.cnt }}</div>
+              <div class="bg-light rounded" style="height:12px">
+                <div class="bg-success rounded" style="height:12px;width:{{ [(l.cnt / max_l * 100)|int, 100]|min }}%"></div>
+              </div>
             </div>
             {% endfor %}
             {% else %}<p class="text-muted small">No data for this filter.</p>{% endif %}
@@ -333,17 +337,97 @@
           {% for r in ei_reasons %}
           <div class="col-md-6">
             <div class="d-flex align-items-center">
-              <div class="text-truncate me-2 small" style="width:280px" title="{{ r.reason }}">{{ r.reason }}</div>
-              <div class="flex-grow-1 bg-light rounded" style="height:14px">
-                <div class="bg-danger rounded" style="height:14px;width:{{ [(r.cnt / max_r * 100)|int, 100]|min }}%"></div>
+              <div class="w-100">
+                <div class="d-flex justify-content-between small mb-1">
+                  <span>{{ r.reason }}</span>
+                  <span class="fw-bold ms-2">{{ r.cnt }}</span>
+                </div>
+                <div class="bg-light rounded" style="height:12px">
+                  <div class="bg-primary rounded" style="height:12px;width:{{ [(r.cnt / max_r * 100)|int, 100]|min }}%"></div>
+                </div>
               </div>
-              <div class="ms-2 small fw-bold">{{ r.cnt }}</div>
             </div>
           </div>
           {% endfor %}
         </div>
         {% else %}
         <p class="text-muted small mb-0">No records match the selected filters.</p>
+        {% endif %}
+      </div>
+
+
+
+      {# ── Improvement Areas Analysis ──────────────────────────────────── #}
+      <div class="card border-0 shadow-sm p-3 mt-3">
+        <div class="fw-semibold mb-1">
+          Improvement Areas Analysis
+          <span class="badge bg-secondary-subtle text-dark border ms-1">{{ improve_total }} responses</span>
+        </div>
+        <p class="text-muted small mb-3">Responses grouped by recurring themes. One response may appear in multiple themes.</p>
+
+        {% if improve_themes %}
+        {# Theme bars #}
+        <div class="row g-2 mb-3">
+          {% set max_t = improve_themes[0].count %}
+          {% for t in improve_themes %}
+          <div class="col-md-6">
+            <div class="mb-1">
+              <div class="d-flex justify-content-between small mb-1">
+                <span class="fw-semibold">{{ t.theme }}</span>
+                <span class="badge bg-danger-subtle text-danger border">{{ t.count }}</span>
+              </div>
+              <div class="bg-light rounded" style="height:10px">
+                <div class="bg-danger rounded" style="height:10px;width:{{ [(t.count / max_t * 100)|int, 100]|min }}%"></div>
+              </div>
+            </div>
+          </div>
+          {% endfor %}
+        </div>
+
+        <hr class="my-3">
+
+        {# Collapsible theme details #}
+        <div class="fw-semibold small mb-2">Response Details by Theme</div>
+        <div class="accordion accordion-flush" id="improveAccordion">
+          {% for t in improve_themes %}
+          <div class="accordion-item border mb-2 rounded">
+            <h2 class="accordion-header">
+              <button class="accordion-button collapsed rounded small fw-semibold py-2" type="button"
+                      data-bs-toggle="collapse" data-bs-target="#theme{{ loop.index }}">
+                {{ t.theme }}
+                <span class="badge bg-danger ms-2">{{ t.count }}</span>
+              </button>
+            </h2>
+            <div id="theme{{ loop.index }}" class="accordion-collapse collapse" data-bs-parent="#improveAccordion">
+              <div class="accordion-body p-0">
+                <table class="table table-sm small mb-0">
+                  <thead class="table-light">
+                    <tr>
+                      <th style="width:90px">Date</th>
+                      <th style="width:130px">Name</th>
+                      <th style="width:110px">Supervisor</th>
+                      <th>What they said</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {% for r in t.responses %}
+                    <tr>
+                      <td class="text-nowrap text-muted">{{ r.submitted_at.strftime('%b %Y') if r.submitted_at else '—' }}</td>
+                      <td>{{ r.full_name or '—' }}</td>
+                      <td>{{ r.supervisor or '—' }}</td>
+                      <td style="white-space:pre-wrap">{{ r.improve_areas }}</td>
+                    </tr>
+                    {% endfor %}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+          {% endfor %}
+        </div>
+
+        {% else %}
+        <p class="text-muted small mb-0">No improvement area responses for the selected filters.</p>
         {% endif %}
       </div>
 

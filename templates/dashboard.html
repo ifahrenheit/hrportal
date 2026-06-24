@@ -170,6 +170,317 @@
 </div>
 {% endif %}
 </div><!-- end outer flex -->
+
+<!-- ===================== MY CSAT CARD ===================== -->
+<div class="card balance-card mb-4" id="myCsatCard" style="display:none">
+  <div class="card-body">
+    <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+      <h5 class="fw-semibold mb-0"><i class="bi bi-emoji-smile me-2"></i>My CSAT</h5>
+      <div class="d-flex align-items-center gap-2 flex-wrap">
+        <select id="myCsatMonth" class="form-select form-select-sm" style="width:auto;min-width:130px"></select>
+        <select id="myCsatWeek"  class="form-select form-select-sm" style="width:auto;min-width:90px;display:none"></select>
+        <div class="btn-group btn-group-sm" role="group" id="myCsatRange">
+          <button type="button" class="btn btn-outline-primary" data-range="day">Daily</button>
+          <button type="button" class="btn btn-outline-primary" data-range="week">Weekly</button>
+          <button type="button" class="btn btn-primary active" data-range="month">Monthly</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="myCsatLoading" class="text-muted small py-3">Loading…</div>
+    <div id="myCsatEmpty" class="text-muted py-3" style="display:none">
+      <i class="bi bi-info-circle me-1"></i> No CSAT data yet.
+    </div>
+
+    <!-- Monthly summary -->
+    <div id="myCsatWindowView" style="display:none">
+      <div class="row g-3 align-items-center">
+        <div class="col-auto">
+          <div class="text-muted small">Weighted CSAT</div>
+          <div id="myCsatWeighted" style="font-size:2.4rem;font-weight:700;line-height:1">—</div>
+          <div id="myCsatWindow" class="text-muted" style="font-size:.75rem"></div>
+        </div>
+        <div class="col">
+          <div class="row g-2">
+            <div class="col-6 col-md-3">
+              <div class="text-muted small">Responses</div>
+              <div id="myCsatResp" style="font-size:1.2rem;font-weight:600">—</div>
+            </div>
+            <div class="col-6 col-md-3">
+              <div class="text-muted small">Resolved</div>
+              <div id="myCsatResolved" style="font-size:1.2rem;font-weight:600">—</div>
+            </div>
+            <div class="col-12 col-md-6">
+              <div class="text-muted small">By channel</div>
+              <div id="myCsatChannels" style="font-size:.85rem;line-height:1.5"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Matrix (Daily = days, Weekly = weeks) -->
+    <div id="myCsatMatrixView" style="display:none">
+      <div id="myCsatMatrix"></div>
+      <div class="text-muted mt-2" style="font-size:.72rem" id="myCsatMatrixNote"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ticket drill-down modal -->
+<div class="modal fade" id="myCsatModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-lg modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="myCsatModalTitle">My Responses</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <div class="table-responsive">
+          <table class="table table-sm table-hover align-middle">
+            <thead class="table-light">
+              <tr><th>Date</th><th>Ticket ID</th><th>Channel</th><th class="text-center">Rate</th><th class="text-center">Result</th></tr>
+            </thead>
+            <tbody id="myCsatModalBody"><tr><td colspan="5" class="text-muted p-3">Loading…</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+(function(){
+  const $ = function(id){ return document.getElementById(id); };
+  const card = $('myCsatCard');
+  if(!card) return;
+
+  const ZENDESK_BASE = 'https://getyourguidesupport.zendesk.com/agent/tickets/';
+  const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  function gradeColor(v){ return v==null ? 'var(--text-muted)' : (v>=90 ? '#198754' : (v>=80 ? '#fd7e14' : '#dc3545')); }
+  function pct(v){ return (v==null? '—' : v.toFixed(2)+'%'); }
+  function tint(v){ if(v==null) return 'transparent'; if(v>=90) return 'rgba(25,135,84,.10)'; if(v>=80) return 'rgba(253,126,20,.12)'; return 'rgba(220,53,69,.10)'; }
+  function monthLabel(ym){ const p=ym.split('-'); return MONTHS[parseInt(p[1],10)-1]+' '+p[0]; }
+  function dayLabel(iso, isToday){ if(isToday) return 'Today'; const p=iso.split('-'); return MONTHS[parseInt(p[1],10)-1]+' '+parseInt(p[2],10); }
+
+  let curRange = 'month';
+  let curMonth = '';     // 'YYYY-MM'
+  let curWeek  = '';     // 'NN'
+
+  // ----- modal -----
+  let myCsatModal = null;
+  function getModal(){ if(!myCsatModal && window.bootstrap){ myCsatModal = new bootstrap.Modal($('myCsatModal')); } return myCsatModal; }
+  async function openTickets(opts, label){
+    $('myCsatModalTitle').textContent = 'My Responses — ' + label;
+    $('myCsatModalBody').innerHTML = '<tr><td colspan="5" class="text-muted p-3">Loading…</td></tr>';
+    const m = getModal(); if(m) m.show();
+    const p = new URLSearchParams();
+    if(opts.date) p.set('date', opts.date);
+    if(opts.week) p.set('week', opts.week);
+    if(opts.month) p.set('month', opts.month);
+    if(opts.start) p.set('start', opts.start);
+    if(opts.end) p.set('end', opts.end);
+    if(opts.channel) p.set('channel', opts.channel);
+    let d;
+    try { const r = await fetch('/api/my-csat/responses?'+p.toString()); if(!r.ok) throw 0; d = await r.json(); }
+    catch(e){ $('myCsatModalBody').innerHTML='<tr><td colspan="5" class="text-danger p-3">Failed to load.</td></tr>'; return; }
+    if(!d.responses.length){ $('myCsatModalBody').innerHTML='<tr><td colspan="5" class="text-muted p-3">No responses.</td></tr>'; return; }
+    $('myCsatModalBody').innerHTML = d.responses.map(function(x){
+      const badge = (String(x.score)==='1') ? '<span style="color:#198754;font-weight:600">CSAT</span>'
+                  : (String(x.score)==='0') ? '<span style="color:#dc3545;font-weight:600">DSAT</span>' : '';
+      const link = x.ticket_id ? '<a href="'+ZENDESK_BASE+encodeURIComponent(x.ticket_id)+'" target="_blank" rel="noopener">'+x.ticket_id+'</a>' : '';
+      return '<tr><td>'+(x.date||'')+'</td><td>'+link+'</td><td>'+(x.channel||'')+'</td><td class="text-center">'+(x.rate||'')+'</td><td class="text-center">'+badge+'</td></tr>';
+    }).join('');
+  }
+
+  // ----- matrix (shared by Daily[days] and Weekly[weeks]) -----
+  // cols: array of {key, head, weighted, responses, chat, email, phone, clickMeta}
+  function renderMatrix(cols){
+    function respLink(n, meta){
+      if(!n) return '<span class="text-muted" style="font-weight:400">0</span>';
+      return '<a href="#" class="myc-cell" data-meta="'+encodeURIComponent(JSON.stringify(meta))+'" '+
+             'style="font-weight:400;text-decoration:underline;cursor:pointer">'+n+'</a>';
+    }
+    function subLine(n, resolved, meta){
+      return '<div class="text-muted" style="font-weight:400;font-size:.68rem;margin-top:.1rem">'+
+             respLink(n, meta)+' resp \u00b7 '+ (resolved||0) +' res</div>';
+    }
+    function chCell(obj, meta){
+      const col = gradeColor(obj.pct);
+      return '<td style="text-align:center;color:'+col+'">'+
+               '<div style="font-weight:600;font-size:.85rem">'+pct(obj.pct)+'</div>'+
+               subLine(obj.n, obj.resolved, meta)+
+             '</td>';
+    }
+    function totalCell(c){
+      const col = gradeColor(c.weighted);
+      return '<td style="text-align:center;background:'+tint(c.weighted)+';border-radius:6px">'+
+               '<div style="font-weight:700;font-size:1.5rem;line-height:1.1;color:'+col+'">'+pct(c.weighted)+'</div>'+
+               subLine(c.responses, c.resolved, c.totalMeta)+
+             '</td>';
+    }
+    const head = '<tr><th></th>'+ cols.map(function(c){
+        return '<th style="text-align:center;font-size:.72rem;font-weight:600;color:var(--text-muted)">'+c.head+'</th>';
+      }).join('') +'</tr>';
+    const rowTotal = '<tr><td style="font-size:.9rem;font-weight:700;vertical-align:middle">Total <span class="text-muted" style="font-weight:400;font-size:.7rem">(weighted)</span></td>'+
+                     cols.map(totalCell).join('')+'</tr>';
+    const rowChat  = '<tr><td class="text-muted" style="font-size:.8rem">Chat</td>'+  cols.map(function(c){ return chCell(c.chat,  c.chatMeta);  }).join('')+'</tr>';
+    const rowEmail = '<tr><td class="text-muted" style="font-size:.8rem">Email</td>'+ cols.map(function(c){ return chCell(c.email, c.emailMeta); }).join('')+'</tr>';
+    const rowPhone = '<tr><td class="text-muted" style="font-size:.8rem">Phone</td>'+ cols.map(function(c){ return chCell(c.phone, c.phoneMeta); }).join('')+'</tr>';
+    $('myCsatMatrix').innerHTML =
+      '<div class="table-responsive"><table class="table table-sm align-middle mb-0" style="font-size:.85rem">'+
+        '<thead>'+head+'</thead><tbody>'+rowTotal+rowChat+rowEmail+rowPhone+'</tbody></table></div>';
+  }
+
+  // ----- dropdown population -----
+  async function loadPeriods(selectMonth){
+    let d;
+    try { const r = await fetch('/api/my-csat/periods'); if(!r.ok) return; d = await r.json(); }
+    catch(e){ return; }
+    if(!d.months || !d.months.length) return;
+    const monthSel = $('myCsatMonth');
+    monthSel.innerHTML = d.months.map(function(m){ return '<option value="'+m+'">'+monthLabel(m)+'</option>'; }).join('');
+    curMonth = (selectMonth && d.months.indexOf(selectMonth)>=0) ? selectMonth : d.months[0];
+    monthSel.value = curMonth;
+  }
+  async function loadWeeksFor(month){
+    let d;
+    try { const r = await fetch('/api/my-csat/periods?month='+encodeURIComponent(month)); if(!r.ok) return []; d = await r.json(); }
+    catch(e){ return []; }
+    return d.weeks || [];
+  }
+  async function refreshWeekDropdown(){
+    const weeks = await loadWeeksFor(curMonth);   // already sorted desc by backend
+    const weekSel = $('myCsatWeek');
+    if(!weeks.length){ weekSel.innerHTML = '<option value="">—</option>'; curWeek=''; return; }
+    weekSel.innerHTML = weeks.map(function(w){ return '<option value="'+w+'">W'+w+'</option>'; }).join('');
+    if(weeks.indexOf(curWeek) < 0) curWeek = weeks[0];   // latest by default
+    weekSel.value = curWeek;
+  }
+
+  // ----- main loader -----
+  async function loadData(){
+    $('myCsatLoading').style.display='block';
+    $('myCsatEmpty').style.display='none';
+    $('myCsatWindowView').style.display='none';
+    $('myCsatMatrixView').style.display='none';
+    $('myCsatWeek').style.display = (curRange==='day') ? '' : 'none';
+
+    const p = new URLSearchParams();
+    p.set('range', curRange);
+    if(curMonth) p.set('month', curMonth);
+    if(curRange==='day' && curWeek) p.set('week', curWeek);
+
+    let d;
+    try { const r = await fetch('/api/my-csat?'+p.toString()); if(!r.ok){ card.style.display='none'; return; } d = await r.json(); }
+    catch(e){ card.style.display='none'; return; }
+
+    card.style.display='block';
+    $('myCsatLoading').style.display='none';
+    if(!d.has_data){ $('myCsatEmpty').style.display='block'; return; }
+
+    if(d.range === 'week'){
+      const cols = (d.weeks||[]).map(function(w){
+        const base = {week: w.week, month: d.month};
+        const lbl = monthLabel(d.month)+' \u00b7 '+w.label;
+        return {
+          head: w.label, weighted: w.weighted, responses: w.responses, resolved: w.resolved,
+          chat: w.chat, email: w.email, phone: w.phone,
+          totalMeta: Object.assign({}, base, {label: lbl}),
+          chatMeta:  Object.assign({}, base, {channel:'Chat',  label: lbl+' \u00b7 Chat'}),
+          emailMeta: Object.assign({}, base, {channel:'Email', label: lbl+' \u00b7 Email'}),
+          phoneMeta: Object.assign({}, base, {channel:'Phone', label: lbl+' \u00b7 Phone'})
+        };
+      });
+      renderMatrix(cols);
+      $('myCsatMatrixNote').textContent = 'Weeks of '+monthLabel(d.month)+' · Total = weighted · channels = response CSAT · (n) = responses';
+      $('myCsatMatrixView').style.display='block';
+      return;
+    }
+
+    if(d.range === 'day'){
+      const cols = (d.days||[]).map(function(x){
+        const dl = dayLabel(x.date, x.is_today);
+        return {
+          head: dl, weighted: x.weighted, responses: x.responses, resolved: x.resolved,
+          chat: x.chat, email: x.email, phone: x.phone,
+          totalMeta: {date: x.date, label: dl},
+          chatMeta:  {date: x.date, channel:'Chat',  label: dl+' · Chat'},
+          emailMeta: {date: x.date, channel:'Email', label: dl+' · Email'},
+          phoneMeta: {date: x.date, channel:'Phone', label: dl+' · Phone'}
+        };
+      });
+      renderMatrix(cols);
+      $('myCsatMatrixNote').textContent = (d.week? ('Week '+d.week+' · ') : '')+'Total = weighted · channels = response CSAT · (n) = responses (click to view tickets)';
+      $('myCsatMatrixView').style.display='block';
+      return;
+    }
+
+    // monthly summary
+    const s = d.window.start, e2 = d.window.end;
+    const wEl = $('myCsatWeighted'); wEl.textContent = pct(d.weighted); wEl.style.color = gradeColor(d.weighted);
+    $('myCsatWindow').textContent = s + (s!==e2 ? (' \u2192 '+e2) : '');
+    $('myCsatResp').innerHTML = d.total_responses>0
+      ? '<a href="#" class="myc-cell text-reset" data-meta="'+encodeURIComponent(JSON.stringify({start:s,end:e2,label:monthLabel(d.month)}))+'" style="text-decoration:underline;cursor:pointer">'+d.total_responses.toLocaleString()+'</a>'
+      : d.total_responses.toLocaleString();
+    $('myCsatResolved').textContent = d.total_resolved.toLocaleString();
+    const ch = d.by_channel;
+    function winCh(name, o){
+      const link = o.responses>0
+        ? '<a href="#" class="myc-cell" data-meta="'+encodeURIComponent(JSON.stringify({start:s,end:e2,channel:name,label:monthLabel(d.month)+' \u00b7 '+name}))+'" style="text-decoration:underline;cursor:pointer">'+o.responses+'</a>'
+        : '0';
+      return name+' '+pct(o.pct)+' <span class="text-muted" style="font-size:.8rem">('+link+' resp \u00b7 '+(o.resolved||0)+' res)</span>';
+    }
+    $('myCsatChannels').innerHTML =
+      winCh('Chat', ch.Chat)+' &nbsp; '+ winCh('Email', ch.Email)+' &nbsp; '+ winCh('Phone', ch.Phone);
+    $('myCsatWindowView').style.display='block';
+  }
+
+  function _lastDay(ym){ // 'YYYY-MM' -> 'YYYY-MM-DD' last day
+    const p=ym.split('-'); const d=new Date(parseInt(p[0],10), parseInt(p[1],10), 0);
+    const mm=('0'+(d.getMonth()+1)).slice(-2); const dd=('0'+d.getDate()).slice(-2);
+    return d.getFullYear()+'-'+mm+'-'+dd;
+  }
+
+  // ----- click delegation for any (n) link -----
+  card.addEventListener('click', function(e){
+    const a = e.target.closest('.myc-cell');
+    if(!a) return;
+    e.preventDefault();
+    let meta; try { meta = JSON.parse(decodeURIComponent(a.dataset.meta)); } catch(_){ return; }
+    const label = meta.label || 'Responses';
+    openTickets(meta, label);
+  });
+
+  // ----- controls -----
+  $('myCsatRange').addEventListener('click', function(e){
+    const btn = e.target.closest('button[data-range]'); if(!btn) return;
+    $('myCsatRange').querySelectorAll('button').forEach(function(b){ b.classList.remove('btn-primary','active'); b.classList.add('btn-outline-primary'); });
+    btn.classList.remove('btn-outline-primary'); btn.classList.add('btn-primary','active');
+    curRange = btn.dataset.range;
+    (async function(){
+      if(curRange==='day'){ await refreshWeekDropdown(); }
+      loadData();
+    })();
+  });
+  $('myCsatMonth').addEventListener('change', function(){
+    curMonth = this.value;
+    (async function(){
+      if(curRange==='day'){ curWeek=''; await refreshWeekDropdown(); }
+      loadData();
+    })();
+  });
+  $('myCsatWeek').addEventListener('change', function(){ curWeek = this.value; loadData(); });
+
+  // ----- init -----
+  (async function(){
+    await loadPeriods();          // sets curMonth to latest
+    if(!curMonth){ card.style.display='block'; $('myCsatLoading').style.display='none'; $('myCsatEmpty').style.display='block'; return; }
+    loadData();                   // default Monthly / current month
+  })();
+})();
+</script>
+
 <a href="{{ url_for('file_leave') }}" class="fab" style="margin-top:1.5rem;"><i class="bi bi-calendar-plus"></i> File Leave</a>
 
 <div class="dash-grid">

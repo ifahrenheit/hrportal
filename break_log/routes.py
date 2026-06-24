@@ -8,9 +8,17 @@ from flask import (Blueprint, render_template, request, jsonify,
                    session, redirect, url_for, Response)
 from functools import wraps
 from datetime import datetime, date, timedelta
-import re, csv, io, ipaddress
+import re, csv, io, ipaddress, logging
 
 break_log_bp = Blueprint('break_log', __name__)
+
+# Break log file — tail this to debug end-break failures
+_logger = logging.getLogger('break_log')
+if not _logger.handlers:
+    _h = logging.FileHandler('/var/www/html/leavesystem/break_log.log')
+    _h.setFormatter(logging.Formatter('%(asctime)s %(levelname)s %(message)s'))
+    _logger.addHandler(_h)
+    _logger.setLevel(logging.INFO)
 
 # ── IP Allowlist (same as PHP) ────────────────────────────────────────────────
 ALLOWED_IPS = [
@@ -18,6 +26,8 @@ ALLOWED_IPS = [
     '203.82.42.177', '203.82.42.178', '203.82.42.179',
     '203.82.42.180', '203.82.42.181', '203.82.42.182',
     '3.124.128.189',          # Numa VPN
+    '113.19.42.130', '113.19.42.131', '113.19.42.132',
+    '113.19.42.133', '113.19.42.134',
     '192.168.0.0/16',
     '10.0.0.0/8',
     '172.16.0.0/12',
@@ -50,6 +60,21 @@ def _normalize_shift(s):
     if ep == 'pm' and eh != 12: eh += 12
     elif ep == 'am' and eh == 12: eh = 0
     return f'{sh:02d}:00-{eh:02d}:00'
+
+def _force_close_stale(conn):
+    """Force-close any break left open past 2 hours.
+    Caps duration at 2h, marks auto_closed=1 for coaching visibility."""
+    with conn.cursor() as c:
+        c.execute("""
+            UPDATE break_logs
+            SET break_end = break_start + INTERVAL 2 HOUR,
+                duration = 7200,
+                is_active = 0,
+                auto_closed = 1
+            WHERE break_end IS NULL
+              AND break_start < NOW() - INTERVAL 2 HOUR
+        """)
+    conn.commit()
 
 
 def _shift_date(conn, employee_id):
@@ -102,15 +127,33 @@ def login_required(f):
     return decorated
 
 
+OVERHEAD_GROUPS = {'Finest', 'RTA', 'QA', 'IT', 'TL', 'Trainer', 'BO TL'}
+
+def _has_supervisor_access():
+    """Admin/supervisor/sub-admin session flags, or overhead group (RTA, QA, etc.).
+    Group lookup is cached in session to avoid a DB hit on every page render."""
+    if 'user' not in session:
+        return False
+    if session.get('is_admin') or session.get('is_supervisor') or session.get('is_sub_admin'):
+        return True
+    if 'bl_is_overhead' not in session:
+        emp = _get_employee_id(session['user'].get('email', ''))
+        session['bl_is_overhead'] = bool(emp and emp.get('group_name') in OVERHEAD_GROUPS)
+    return session['bl_is_overhead']
+
 def supervisor_required(f):
     @wraps(f)
     def decorated(*args, **kwargs):
         if 'user' not in session:
             return redirect(url_for('index'))
-        if not (session.get('is_admin') or session.get('is_supervisor') or session.get('is_sub_admin')):
+        if not _has_supervisor_access():
             return redirect(url_for('dashboard'))
         return f(*args, **kwargs)
     return decorated
+
+@break_log_bp.app_context_processor
+def _inject_break_log_access():
+    return {'break_log_supervisor_access': _has_supervisor_access}
 
 def _get_employee_id(email):
     """Resolve employee_id from gsheet_employees using email."""
@@ -144,7 +187,7 @@ def break_log():
     email = session['user'].get('email', '')
     emp = _get_employee_id(email)
 
-    if not emp or emp['account'] not in ('Arctic', 'Numa'):
+    if not emp or emp['account'] not in ('Arctic', 'Numa', 'Test'):
         return render_template('break_log/access_denied.html',
                                account_type=emp['account'] if emp else 'Unknown'), 403
 
@@ -176,6 +219,13 @@ def break_api():
         if not emp:
             return jsonify({'success': False, 'error': 'Employee not found'})
         employee_id = emp['employee_id']
+
+        # Self-heal: force-close any abandoned breaks before processing
+        _heal_db = get_central_db()
+        try:
+            _force_close_stale(_heal_db)
+        finally:
+            _heal_db.close()
 
         if request.method == 'GET':
             action = request.args.get('action')
@@ -284,13 +334,25 @@ def break_api():
                     """, (employee_id,))
                     active = c.fetchone()
                     if not active:
+                        # Check whether an OLDER open break exists (the silent-error trap)
+                        c.execute("""
+                            SELECT id, break_start FROM break_logs
+                            WHERE employee_id = %s AND break_end IS NULL
+                            ORDER BY break_start DESC LIMIT 1
+                        """, (employee_id,))
+                        stale = c.fetchone()
+                        _logger.info(f"END FAIL emp={employee_id} reason=no_active_in_24h "
+                                     f"older_open={stale['break_start'] if stale else None}")
                         return jsonify({'success': False, 'error': 'No active break found'})
 
                     now = datetime.now()
-                    c.execute("UPDATE break_logs SET break_end = %s WHERE id = %s",
-                              (now, active['id']))
-                    db.commit()
                     duration = int((now - active['break_start']).total_seconds())
+                    c.execute("""UPDATE break_logs
+                                 SET break_end = %s, duration = %s, is_active = 0
+                                 WHERE id = %s""",
+                              (now, duration, active['id']))
+                    db.commit()
+                    _logger.info(f"END OK emp={employee_id} break_id={active['id']} dur={duration}s")
             finally:
                 db.close()
 
@@ -302,9 +364,10 @@ def break_api():
 
         return jsonify({'success': False, 'error': 'Invalid action'})
 
-    except Exception as e:
-        import traceback
-        return jsonify({'success': False, 'error': str(e), 'trace': traceback.format_exc()})
+    except Exception:
+        _logger.exception(f"BREAK API ERROR email={session.get('user', {}).get('email', '?')}")
+        return jsonify({'success': False,
+                        'error': 'Server error — please try again. If it keeps failing, contact IT.'})
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -428,6 +491,7 @@ def supervisor_api():
 
     db = get_central_db()
     try:
+        _force_close_stale(db)
         with db.cursor() as c:
             # Active breaks (no date filter — always show current)
             c.execute(f"""

@@ -27,22 +27,10 @@ def nl2br_filter(s):
 # ── Incident Reports blueprint ─────────────────────────────────────────
 from incident_reports import ir_bp
 app.register_blueprint(ir_bp, url_prefix='/incident-reports')
-
-# Tardiness Blueprint
-from tardiness import tardiness_bp
-app.register_blueprint(tardiness_bp, url_prefix='/tardiness')
-
-# ── Incident Reports blueprint (TEST COPY) ────────────────────────────
-
 from floor_map import floor_map_bp
 app.register_blueprint(floor_map_bp)
 from tl_view import tl_view_bp
 app.register_blueprint(tl_view_bp)
-
-# ── QA Updates blueprint ─────────────────────────────────────────
-from qa_updates import qa_updates_bp, qa_can_manage
-app.register_blueprint(qa_updates_bp)
-app.jinja_env.globals.update(qa_can_manage=qa_can_manage)
 
 IR_SGA      = os.getenv('IR_SGA', '').split(',')
 IR_RTA      = os.getenv('IR_RTA', '').split(',')
@@ -110,7 +98,18 @@ keycloak = oauth.register(
     client_kwargs={'scope': 'openid email profile'}
 )
 
-from db_core import get_db_connection
+def get_db_connection():
+    """Main app DB — central_db (gsheet_employees, Employees, etc.)"""
+    return pymysql.connect(
+        host=os.environ.get('MAIN_DB_HOST', 'localhost'),
+        port=int(os.environ.get('MAIN_DB_PORT', 3306)),
+        user=os.environ.get('MAIN_DB_USER', 'employee_sync'),
+        password=os.environ.get('MAIN_DB_PASSWORD'),
+        database=os.environ.get('MAIN_DB_NAME', 'central_db'),
+        charset='utf8mb4',
+        cursorclass=pymysql.cursors.DictCursor,
+        autocommit=False
+    )
 
 def get_db():
     return pymysql.connect(
@@ -340,7 +339,6 @@ def get_sub_admin_permissions(emp_number):
                 'can_schedules':    bool(row['can_schedules']),
                 'can_reports':      bool(row['can_reports']),
                 'can_absences':     bool(row.get('can_absences', 0)),
-                'can_tardiness':    bool(row.get('can_tardiness', 0)),
                 'can_work_mode':    bool(row['can_work_mode']),
                 'can_settings':     bool(row['can_settings']),
                 'can_entitlements': bool(row['can_entitlements']),
@@ -357,8 +355,6 @@ def get_sub_admin_permissions(emp_number):
                 'can_csat':         bool(row.get('can_csat', 0)),
                 'can_surveys':      bool(row.get('can_surveys', 0)),
                 'can_floor_map':    bool(row.get('can_floor_map', 0)),
-                'can_pim':          bool(row.get('can_pim', 0)),
-                'can_qa_updates': bool(row.get('can_qa_updates', 0)),
             }
     finally:
         db.close()
@@ -844,7 +840,7 @@ def auth_callback():
             'can_all_leaves': True, 'can_approve': True,
             'can_file_for_emp': True, 'can_schedules': True,
             'can_reports': True, 'can_work_mode': True,
-            'can_settings': True, 'can_entitlements': True, 'can_file_requests': True, 'can_material_requests': True, 'can_final_approval': True, 'can_view_tickets': True, 'can_facilities_review': True, 'can_facilities_final': True, 'can_view_approved_items': True, 'can_onboarding': True, 'can_inventory': True, 'can_pim': True,
+            'can_settings': True, 'can_entitlements': True, 'can_file_requests': True, 'can_material_requests': True, 'can_final_approval': True, 'can_view_tickets': True, 'can_facilities_review': True, 'can_facilities_final': True, 'can_view_approved_items': True, 'can_onboarding': True, 'can_inventory': True,
         }
     return redirect(url_for('dashboard'))
 
@@ -970,7 +966,7 @@ def login_as_back():
         'can_all_leaves': True, 'can_approve': True,
         'can_file_for_emp': True, 'can_schedules': True,
         'can_reports': True, 'can_work_mode': True,
-        'can_settings': True, 'can_entitlements': True, 'can_pim': True,
+        'can_settings': True, 'can_entitlements': True,
         'can_file_requests': True, 'can_material_requests': True,
         'can_final_approval': True, 'can_facilities_review': True, 'can_facilities_final': True, 'can_view_approved_items': True, 'can_onboarding': True, 'can_inventory': True,
     }
@@ -1859,7 +1855,6 @@ def admin_sub_admins():
                     'can_schedules':    1 if request.form.get('can_schedules') else 0,
                     'can_reports':      1 if request.form.get('can_reports') else 0,
                     'can_absences':     1 if request.form.get('can_absences') else 0,
-                    'can_tardiness':    1 if request.form.get('can_tardiness') else 0,
                     'can_work_mode':    1 if request.form.get('can_work_mode') else 0,
                     'can_settings':     1 if request.form.get('can_settings') else 0,
                     'can_entitlements': 1 if request.form.get('can_entitlements') else 0,
@@ -1876,35 +1871,33 @@ def admin_sub_admins():
                     'can_csat': 1 if request.form.get('can_csat') else 0,
                     'can_surveys': 1 if request.form.get('can_surveys') else 0,
                     'can_floor_map': 1 if request.form.get('can_floor_map') else 0,
-                    'can_pim': 1 if request.form.get('can_pim') else 0,
-                    'can_qa_updates': 1 if request.form.get('can_qa_updates') else 0,
                 }
                 with db.cursor() as c:
                     c.execute("""
                         INSERT INTO leave4day_sub_admins
                             (emp_number, can_all_leaves, can_all_requests, can_approve, can_file_for_emp,
-                             can_schedules, can_reports, can_work_mode, can_settings, can_absences, can_tardiness,
+                             can_schedules, can_reports, can_work_mode, can_settings, can_absences,
                              can_entitlements, can_file_requests, can_material_requests,
-                             can_final_approval, can_view_tickets, can_facilities_review, can_facilities_final, can_view_approved_items, can_onboarding, can_inventory, can_attrition_report, can_csat, can_surveys, can_floor_map, can_pim, can_qa_updates, assigned_by)
-                        VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                             can_final_approval, can_view_tickets, can_facilities_review, can_facilities_final, can_view_approved_items, can_onboarding, can_inventory, can_attrition_report, can_csat, can_surveys, can_floor_map, assigned_by)
+                        VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
                         ON DUPLICATE KEY UPDATE
                             can_all_leaves=%s, can_all_requests=%s, can_approve=%s, can_file_for_emp=%s,
                             can_schedules=%s, can_reports=%s, can_work_mode=%s, can_absences=%s,
-                            can_tardiness=%s, can_settings=%s, can_entitlements=%s, can_file_requests=%s,
+                            can_settings=%s, can_entitlements=%s, can_file_requests=%s,
                             can_material_requests=%s, can_final_approval=%s,
-                            can_view_tickets=%s, can_facilities_review=%s, can_facilities_final=%s, can_view_approved_items=%s, can_onboarding=%s, can_inventory=%s, can_attrition_report=%s, can_csat=%s, can_surveys=%s, can_floor_map=%s, can_pim=%s, can_qa_updates=%s, assigned_by=%s
+                            can_view_tickets=%s, can_facilities_review=%s, can_facilities_final=%s, can_view_approved_items=%s, can_onboarding=%s, can_inventory=%s, can_attrition_report=%s, can_csat=%s, can_surveys=%s, can_floor_map=%s, assigned_by=%s
                     """, (
                         emp_number,
                         perms['can_all_leaves'], perms['can_all_requests'], perms['can_approve'], perms['can_file_for_emp'],
                         perms['can_schedules'], perms['can_reports'], perms['can_work_mode'],
-                        perms['can_settings'], perms['can_absences'], perms['can_tardiness'],    perms['can_entitlements'], perms['can_file_requests'],
+                        perms['can_settings'], perms['can_absences'], perms['can_entitlements'], perms['can_file_requests'],
                         perms['can_material_requests'], perms['can_final_approval'],
-                        perms['can_view_tickets'], perms['can_facilities_review'], perms['can_facilities_final'], perms['can_view_approved_items'], perms['can_onboarding'], perms['can_inventory'], perms['can_attrition_report'], perms['can_csat'], perms['can_surveys'], perms['can_floor_map'], perms['can_pim'], perms['can_qa_updates'], session['user']['emp_number'],
+                        perms['can_view_tickets'], perms['can_facilities_review'], perms['can_facilities_final'], perms['can_view_approved_items'], perms['can_onboarding'], perms['can_inventory'], perms['can_attrition_report'], perms['can_csat'], perms['can_surveys'], perms['can_floor_map'], session['user']['emp_number'],
                         perms['can_all_leaves'], perms['can_all_requests'], perms['can_approve'], perms['can_file_for_emp'],
                         perms['can_schedules'], perms['can_reports'], perms['can_work_mode'],
-                        perms['can_settings'], perms['can_absences'], perms['can_tardiness'],    perms['can_entitlements'], perms['can_file_requests'],
+                        perms['can_settings'], perms['can_absences'], perms['can_entitlements'], perms['can_file_requests'],
                         perms['can_material_requests'], perms['can_final_approval'],
-                        perms['can_view_tickets'], perms['can_facilities_review'], perms['can_facilities_final'], perms['can_view_approved_items'], perms['can_onboarding'], perms['can_inventory'], perms['can_attrition_report'], perms['can_csat'], perms['can_surveys'], perms['can_floor_map'], perms['can_pim'], perms['can_qa_updates'], session['user']['emp_number']
+                        perms['can_view_tickets'], perms['can_facilities_review'], perms['can_facilities_final'], perms['can_view_approved_items'], perms['can_onboarding'], perms['can_inventory'], perms['can_attrition_report'], perms['can_csat'], perms['can_surveys'], perms['can_floor_map'], session['user']['emp_number']
                     ))
                 db.commit()
                 flash('Sub-admin permissions updated!', 'success')
@@ -1939,9 +1932,6 @@ def admin_sub_admins():
                     'can_csat': 1 if request.form.get('can_csat') else 0,
                     'can_surveys': 1 if request.form.get('can_surveys') else 0,
                     'can_floor_map': 1 if request.form.get('can_floor_map') else 0,
-                    'can_pim': 1 if request.form.get('can_pim') else 0,
-                    'can_qa_updates': 1 if request.form.get('can_qa_updates') else 0,
-                    'can_tardiness': 1 if request.form.get('can_tardiness') else 0,
                 }
                 if not group_name:
                     flash('Please select a group.', 'danger')
@@ -1960,26 +1950,26 @@ def admin_sub_admins():
                                     (emp_number, can_all_leaves, can_all_requests, can_approve, can_file_for_emp,
                                      can_schedules, can_reports, can_work_mode, can_settings,
                                      can_entitlements, can_file_requests, can_material_requests,
-                                     can_final_approval, can_view_tickets, can_facilities_review, can_facilities_final, can_view_approved_items, can_onboarding, can_inventory, can_attrition_report, can_csat, can_surveys, can_floor_map, can_pim, assigned_by)
-                                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                                     can_final_approval, can_view_tickets, can_facilities_review, can_facilities_final, can_view_approved_items, can_onboarding, can_inventory, can_attrition_report, can_csat, can_surveys, can_floor_map, assigned_by)
+                                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
                                 ON DUPLICATE KEY UPDATE
                                     can_all_leaves=%s, can_all_requests=%s, can_approve=%s, can_file_for_emp=%s,
                                     can_schedules=%s, can_reports=%s, can_work_mode=%s,
                                     can_settings=%s, can_entitlements=%s, can_file_requests=%s,
                                     can_material_requests=%s, can_final_approval=%s,
-                                    can_view_tickets=%s, can_facilities_review=%s, can_facilities_final=%s, can_view_approved_items=%s, can_onboarding=%s, can_inventory=%s, can_attrition_report=%s, can_csat=%s, can_surveys=%s, can_floor_map=%s, can_pim=%s, assigned_by=%s
+                                    can_view_tickets=%s, can_facilities_review=%s, can_facilities_final=%s, can_view_approved_items=%s, can_onboarding=%s, can_inventory=%s, can_attrition_report=%s, can_csat=%s, can_surveys=%s, can_floor_map=%s, assigned_by=%s
                             """, (
                                 en,
                                 perms['can_all_leaves'], perms['can_all_requests'], perms['can_approve'], perms['can_file_for_emp'],
                                 perms['can_schedules'], perms['can_reports'], perms['can_work_mode'],
                                 perms['can_settings'], perms['can_entitlements'], perms['can_file_requests'],
                                 perms['can_material_requests'], perms['can_final_approval'],
-                                perms['can_view_tickets'], perms['can_facilities_review'], perms['can_facilities_final'], perms['can_view_approved_items'], perms['can_onboarding'], perms['can_inventory'], perms['can_attrition_report'], perms['can_csat'], perms['can_surveys'], perms['can_floor_map'], perms['can_pim'], session['user']['emp_number'],
+                                perms['can_view_tickets'], perms['can_facilities_review'], perms['can_facilities_final'], perms['can_view_approved_items'], perms['can_onboarding'], perms['can_inventory'], perms['can_attrition_report'], perms['can_csat'], perms['can_surveys'], perms['can_floor_map'], session['user']['emp_number'],
                                 perms['can_all_leaves'], perms['can_all_requests'], perms['can_approve'], perms['can_file_for_emp'],
                                 perms['can_schedules'], perms['can_reports'], perms['can_work_mode'],
                                 perms['can_settings'], perms['can_entitlements'], perms['can_file_requests'],
                                 perms['can_material_requests'], perms['can_final_approval'],
-                                perms['can_view_tickets'], perms['can_facilities_review'], perms['can_facilities_final'], perms['can_view_approved_items'], perms['can_onboarding'], perms['can_inventory'], perms['can_attrition_report'], perms['can_csat'], perms['can_surveys'], perms['can_floor_map'], perms['can_pim'], perms['can_qa_updates'], session['user']['emp_number']
+                                perms['can_view_tickets'], perms['can_facilities_review'], perms['can_facilities_final'], perms['can_view_approved_items'], perms['can_onboarding'], perms['can_inventory'], perms['can_attrition_report'], perms['can_csat'], perms['can_surveys'], perms['can_floor_map'], session['user']['emp_number']
                             ))
                             count += 1
                     db.commit()
@@ -1994,8 +1984,8 @@ def admin_sub_admins():
                        g.group_name,
                        sa.can_all_leaves, sa.can_all_requests, sa.can_approve, sa.can_file_for_emp,
                        sa.can_schedules, sa.can_reports, sa.can_work_mode,
-                       sa.can_settings, sa.can_absences, sa.can_tardiness, sa.can_entitlements, sa.can_file_requests, sa.can_attrition_report,
-                       sa.can_material_requests, sa.can_final_approval, sa.can_view_tickets, sa.can_facilities_review, sa.can_facilities_final, sa.can_view_approved_items, sa.can_onboarding, sa.can_inventory, sa.can_csat, sa.can_surveys, sa.can_floor_map, sa.can_pim, sa.can_qa_updates
+                       sa.can_settings, sa.can_absences, sa.can_entitlements, sa.can_file_requests, sa.can_attrition_report,
+                       sa.can_material_requests, sa.can_final_approval, sa.can_view_tickets, sa.can_facilities_review, sa.can_facilities_final, sa.can_view_approved_items, sa.can_onboarding, sa.can_inventory, sa.can_csat, sa.can_surveys, sa.can_floor_map
                 FROM hs_hr_employee h
                 JOIN ohrm_user u ON u.emp_number = h.emp_number
                 LEFT JOIN leave4day_sub_admins sa ON sa.emp_number = h.emp_number
@@ -9592,7 +9582,7 @@ def admin_ticket_update(ticket_number):
 
 @app.route('/pim')
 def pim_index():
-    if not (session.get('is_admin') or session.get('permissions', {}).get('can_pim')):
+    if not (session.get('is_admin') or session.get('is_sub_admin')):
         abort(403)
     conn = get_central_db()
     cursor = conn.cursor(pymysql.cursors.DictCursor)
@@ -9626,7 +9616,7 @@ def pim_index():
 
 @app.route('/pim/<employee_id>')
 def pim_profile(employee_id):
-    if not (session.get('is_admin') or session.get('permissions', {}).get('can_pim')):
+    if not (session.get('is_admin') or session.get('is_sub_admin')):
         abort(403)
     import calendar as _cal
     from datetime import date as _date
@@ -10329,44 +10319,6 @@ def _csat_date_range():
     return (start, end)
 
 
-def _active_emails():
-    """Cached list of currently-Active agent emails (lowercased). Resolved once per request."""
-    if hasattr(g, '_csat_active_emails'):
-        return g._csat_active_emails
-    cdb = get_central_db()
-    try:
-        with cdb.cursor() as c:
-            c.execute("""
-                SELECT LOWER(TRIM(email)) AS em
-                FROM gsheet_employees
-                WHERE status='Active' AND email IS NOT NULL AND email<>''
-            """)
-            emails = [r['em'] for r in c.fetchall() if r['em']]
-    finally:
-        cdb.close()
-    g._csat_active_emails = emails
-    return emails
-
-
-def _cs_emails():
-    """Cached list of CS-group agent emails (lowercased), from csat_responses.group_name='CS'."""
-    if hasattr(g, '_csat_cs_emails'):
-        return g._csat_cs_emails
-    cdb = get_central_db()
-    try:
-        with cdb.cursor() as c:
-            c.execute("""
-                SELECT DISTINCT LOWER(TRIM(agent_email)) AS em
-                FROM csat_responses
-                WHERE group_name='CS' AND agent_email IS NOT NULL AND agent_email<>''
-            """)
-            emails = [r['em'] for r in c.fetchall() if r['em']]
-    finally:
-        cdb.close()
-    g._csat_cs_emails = emails
-    return emails
-
-
 def _csat_filters(tl_name):
     """
     Shared WHERE conditions/params for BOTH tables.
@@ -10416,29 +10368,6 @@ def _csat_filters(tl_name):
             conds.append("{a}.tenure IN (" + ','.join(['%s']*len(tenures)) + ")")
             params.extend(tenures)
 
-    # --- CS-only (default ON). cs_only=0 to include all groups. ---
-    if request.args.get('cs_only', '1') not in ('0', 'false', 'off', 'no'):
-        cs = _cs_emails()
-        if cs:
-            conds.append("LOWER({a}.agent_email) IN (" + ','.join(['%s']*len(cs)) + ")")
-            params.extend(cs)
-        else:
-            conds.append("1=0")
-
-    # --- Active-only (default ON). active_only=0 to include separated agents. ---
-    if request.args.get('active_only', '1') not in ('0', 'false', 'off', 'no'):
-        act = _active_emails()
-        if act:
-            conds.append("LOWER({a}.agent_email) IN (" + ','.join(['%s']*len(act)) + ")")
-            params.extend(act)
-        else:
-            conds.append("1=0")
-
-    # --- single agent (exact email). Scopes the whole dashboard to one person. ---
-    f_agent = request.args.get('agent')
-    if f_agent and f_agent != 'All':
-        conds.append("LOWER({a}.agent_email) = %s")
-        params.append(f_agent.strip().lower())
     return (conds, params)
 
 
@@ -10828,19 +10757,6 @@ def api_csat_agents():
                     "phone_resolved":a["phone_wt"],
                     "total_resolved":a["total_resolved"],"responses":resp_count.get(em,0)})
             rows.sort(key=lambda x:x['weighted'],reverse=True)
-            # attach display names (schedule_name) from gsheet_employees
-            if rows:
-                emails = [r['email'] for r in rows if r.get('email')]
-                if emails:
-                    ph = ','.join(['%s']*len(emails))
-                    c.execute(
-                        "SELECT LOWER(TRIM(email)) AS em, schedule_name "
-                        "FROM gsheet_employees WHERE LOWER(TRIM(email)) IN (" + ph + ")",
-                        [e.lower().strip() for e in emails]
-                    )
-                    name_map = {row['em']: row['schedule_name'] for row in c.fetchall()}
-                    for r in rows:
-                        r['name'] = name_map.get((r.get('email') or '').lower().strip()) or r.get('email')
         return jsonify({"range":{"start":start,"end":end},"agents":rows})
     finally:
         cdb.close()
@@ -11071,26 +10987,6 @@ def survey_results_csv(slug):
 
     return Response(out.getvalue(), mimetype='text/csv',
                     headers={'Content-Disposition': f'attachment; filename={slug}-responses.csv'})
-
-@survey_bp.route('/<int:sid>/toggle', methods=['POST'])
-@login_required
-def survey_toggle(sid):
-    if not (session.get('is_admin') or has_permission('can_surveys')):
-        return jsonify({"error": "forbidden"}), 403
-    db = get_central_db()
-    try:
-        cur = db.cursor(pymysql.cursors.DictCursor)
-        cur.execute("UPDATE surveys SET is_active = 1 - is_active WHERE id=%s", (sid,))
-        db.commit()
-        cur.execute("SELECT is_active FROM surveys WHERE id=%s", (sid,))
-        row = cur.fetchone()
-        if not row:
-            return jsonify({"error": "not found"}), 404
-        return jsonify({"id": sid, "is_active": int(row['is_active'])})
-    except Exception as e:
-        db.rollback()
-        return jsonify({"error": str(e)}), 500
-
 
 @survey_bp.route('/admin')
 @login_required

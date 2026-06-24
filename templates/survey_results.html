@@ -1,0 +1,231 @@
+{% extends "base.html" %}
+{% block title %}{{ survey.title }} — Results{% endblock %}
+
+{% block content %}
+<div class="container py-4" style="max-width: 1040px;">
+
+  <div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+      <h3 class="mb-1" style="font-family: 'Outfit', sans-serif; color: var(--text);">{{ survey.title }}</h3>
+      <p class="text-muted mb-0" style="font-family: 'DM Sans', sans-serif;">Survey results</p>
+    </div>
+    <a href="{{ url_for('survey.survey_results_csv', slug=survey.slug) }}"
+       class="btn btn-sm" style="background: var(--accent); color: #fff; border: none; border-radius: 8px;">
+      <i class="bi bi-download me-1"></i> Export CSV
+    </a>
+  </div>
+
+  {# ---------- KPI cards ---------- #}
+  <div class="row g-3 mb-4">
+    <div class="col-md-4">
+      <div class="card border-0 shadow-sm" style="border-radius: 12px; background: var(--surface);">
+        <div class="card-body">
+          <div class="text-muted small">Total responses</div>
+          <div class="fw-bold" style="font-size: 1.8rem; font-family: 'Outfit', sans-serif; color: var(--text);">{{ total }}</div>
+        </div>
+      </div>
+    </div>
+    <div class="col-md-4">
+      <div class="card border-0 shadow-sm" style="border-radius: 12px; background: var(--surface);">
+        <div class="card-body">
+          <div class="text-muted small">Active headcount</div>
+          <div class="fw-bold" style="font-size: 1.8rem; font-family: 'Outfit', sans-serif; color: var(--text);">{{ headcount }}</div>
+        </div>
+      </div>
+    </div>
+    <div class="col-md-4">
+      <div class="card border-0 shadow-sm" style="border-radius: 12px; background: var(--surface);">
+        <div class="card-body">
+          <div class="text-muted small">Completion rate</div>
+          <div class="fw-bold" style="font-size: 1.8rem; font-family: 'Outfit', sans-serif; color: var(--accent);">{{ completion }}%</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  {% if total == 0 %}
+    <div class="alert alert-info">No responses yet.</div>
+  {% else %}
+
+  {# ---------- Tabs ---------- #}
+  <ul class="nav nav-pills mb-3" id="resultTabs" role="tablist">
+    <li class="nav-item" role="presentation">
+      <button class="nav-link active" id="charts-tab" data-bs-toggle="pill" data-bs-target="#charts-pane"
+              type="button" role="tab" style="font-family: 'Outfit', sans-serif;">
+        <i class="bi bi-bar-chart-line me-1"></i> Charts
+      </button>
+    </li>
+    <li class="nav-item" role="presentation">
+      <button class="nav-link" id="responses-tab" data-bs-toggle="pill" data-bs-target="#responses-pane"
+              type="button" role="tab" style="font-family: 'Outfit', sans-serif;">
+        <i class="bi bi-list-ul me-1"></i> Responses ({{ total }})
+      </button>
+    </li>
+  </ul>
+
+  <div class="tab-content">
+
+    {# ============ CHARTS TAB ============ #}
+    <div class="tab-pane fade show active" id="charts-pane" role="tabpanel">
+
+      {% for qid, q in breakdown.items() %}
+        <div class="card border-0 shadow-sm mb-4" style="border-radius: 12px; background: var(--surface);">
+          <div class="card-body p-4">
+            <h6 class="mb-3" style="font-family: 'Outfit', sans-serif; color: var(--text);">{{ loop.index }}. {{ q.text }}</h6>
+            <div style="position: relative; height: {{ 60 + (q.counts|length * 44) }}px;">
+              <canvas id="chart_{{ qid }}"></canvas>
+            </div>
+          </div>
+        </div>
+      {% endfor %}
+
+      {% if crosstab %}
+        <div class="card border-0 shadow-sm mb-4" style="border-radius: 12px; background: var(--surface);">
+          <div class="card-body p-4">
+            <h6 class="mb-3" style="font-family: 'Outfit', sans-serif; color: var(--text);">Schedule preference × strength of feeling</h6>
+            <div class="table-responsive">
+              <table class="table table-sm align-middle mb-0">
+                <thead>
+                  <tr>
+                    <th></th>
+                    {% for c in crosstab.cols %}<th class="text-center small">{{ c }}</th>{% endfor %}
+                  </tr>
+                </thead>
+                <tbody>
+                  {% for r in crosstab.rows %}
+                    <tr>
+                      <td class="fw-semibold small">{{ r }}</td>
+                      {% for c in crosstab.cols %}
+                        {% set v = crosstab.data[r][c] %}
+                        <td class="text-center" style="{% if v > 0 %}background: var(--accent); color:#fff; border-radius:6px;{% else %}color: var(--text-muted);{% endif %}">{{ v }}</td>
+                      {% endfor %}
+                    </tr>
+                  {% endfor %}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      {% endif %}
+
+    </div>
+
+    {# ============ RESPONSES TAB ============ #}
+    <div class="tab-pane fade" id="responses-pane" role="tabpanel">
+      <div class="card border-0 shadow-sm" style="border-radius: 12px; background: var(--surface);">
+        <div class="card-body p-4">
+
+          {# Filters #}
+          <div class="row g-2 mb-3">
+            <div class="col-md-4">
+              <input type="text" id="respSearch" class="form-control form-control-sm"
+                     placeholder="Search name or email…">
+            </div>
+            {% for q in questions %}
+            <div class="col-md-4">
+              <select class="form-select form-select-sm resp-filter" data-qid="{{ q.id }}">
+                <option value="">{{ q.text[:28] }}{% if q.text|length > 28 %}…{% endif %} — all</option>
+                {% for opt in q.options %}
+                  <option value="{{ opt }}">{{ opt }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            {% endfor %}
+          </div>
+
+          <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0" id="respTable">
+              <thead>
+                <tr>
+                  <th>Name</th>
+                  <th>Email</th>
+                  <th>Group</th>
+                  {% for q in questions %}<th>{{ q.text[:24] }}{% if q.text|length > 24 %}…{% endif %}</th>{% endfor %}
+                  <th>Submitted</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for r in responses %}
+                  <tr class="resp-row"
+                      data-name="{{ r.name|lower }}"
+                      data-email="{{ r.email|lower }}"
+                      {% for q in questions %}data-{{ q.id }}="{{ r.answers.get(q.id, '')|e }}"{% endfor %}>
+                    <td class="fw-semibold small">{{ r.name }}</td>
+                    <td class="small text-muted">{{ r.email }}</td>
+                    <td class="small">{{ r.group }}</td>
+                    {% for q in questions %}<td class="small">{{ r.answers.get(q.id, '—') }}</td>{% endfor %}
+                    <td class="small text-muted">{{ r.submitted_at }}</td>
+                  </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+          <div id="noMatch" class="text-center text-muted py-4" style="display:none;">No matching responses.</div>
+
+        </div>
+      </div>
+    </div>
+
+  </div>
+  {% endif %}
+</div>
+{% endblock %}
+
+{% block scripts %}
+{% if total > 0 %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+  const accent = getComputedStyle(document.documentElement).getPropertyValue('--accent').trim() || '#185FA5';
+  const breakdown = {{ breakdown | tojson }};
+
+  Object.keys(breakdown).forEach(function (qid) {
+    const q = breakdown[qid];
+    const labels = Object.keys(q.counts);
+    const data = labels.map(function (l) { return q.counts[l]; });
+    const el = document.getElementById('chart_' + qid);
+    if (!el) return;
+    new Chart(el, {
+      type: 'bar',
+      data: { labels: labels, datasets: [{ data: data, backgroundColor: accent, borderRadius: 6, barThickness: 22 }] },
+      options: {
+        indexAxis: 'y', responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { display: false } },
+        scales: { x: { beginAtZero: true, ticks: { precision: 0 } }, y: { ticks: { font: { size: 12 } } } }
+      }
+    });
+  });
+
+  // ----- Responses filtering -----
+  const search = document.getElementById('respSearch');
+  const filters = Array.from(document.querySelectorAll('.resp-filter'));
+  const rows = Array.from(document.querySelectorAll('.resp-row'));
+  const noMatch = document.getElementById('noMatch');
+
+  function applyFilters() {
+    const term = (search.value || '').toLowerCase().trim();
+    let visible = 0;
+    rows.forEach(function (row) {
+      let show = true;
+      if (term) {
+        const hay = (row.dataset.name || '') + ' ' + (row.dataset.email || '');
+        if (hay.indexOf(term) === -1) show = false;
+      }
+      if (show) {
+        for (const f of filters) {
+          const want = f.value;
+          if (want && row.dataset[f.dataset.qid] !== want) { show = false; break; }
+        }
+      }
+      row.style.display = show ? '' : 'none';
+      if (show) visible++;
+    });
+    noMatch.style.display = visible === 0 ? 'block' : 'none';
+  }
+
+  if (search) search.addEventListener('input', applyFilters);
+  filters.forEach(function (f) { f.addEventListener('change', applyFilters); });
+});
+</script>
+{% endif %}
+{% endblock %}

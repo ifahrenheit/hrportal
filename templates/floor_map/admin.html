@@ -1,0 +1,489 @@
+{% extends "base.html" %}
+{% block title %}Floor Map — Seat Admin{% endblock %}
+{% block content %}
+<div class="container-fluid px-4 py-3">
+
+  <div class="d-flex align-items-center justify-content-between mb-3 flex-wrap gap-2">
+    <div>
+      <h4 class="mb-0 fw-semibold">Floor Map — Seat Setup</h4>
+      <small class="text-muted">Click a seat to edit · Shift+click to multi-select · <strong>Right-click</strong> to clear a seat</small>
+    </div>
+    <div class="d-flex gap-2">
+      <span class="badge bg-primary" id="selected-count">0 selected</span>
+      <a href="/floor-map/" class="btn btn-sm btn-outline-secondary">
+        <i class="bi bi-map"></i> View Floor Map
+      </a>
+    </div>
+  </div>
+
+  <!-- Bulk toolbar (shows when multi-selected) -->
+  <div id="bulk-toolbar" class="alert alert-primary py-2 px-3 d-none mb-3">
+    <div class="d-flex align-items-center gap-3 flex-wrap">
+      <strong id="bulk-label">0 seats selected</strong>
+      <select id="bulk-team" class="form-select form-select-sm" style="width:140px">
+        <option value="">— Team —</option>
+        <option value="cs">CS</option>
+        <option value="bo">BO</option>
+        <option value="l2">L2</option>
+        <option value="rta">RTA</option>
+        <option value="qa">QA</option>
+        <option value="arctic">Arctic</option>
+        <option value="training">Training</option>
+            <option value="sme">SME</option>
+      </select>
+      <select id="bulk-type" class="form-select form-select-sm" style="width:140px">
+        <option value="">— Type —</option>
+        <option value="agent">Agent</option>
+        <option value="supervisor">Supervisor</option>
+        <option value="stand">Stand</option>
+      </select>
+      <button class="btn btn-sm btn-primary" onclick="applyBulk()">Apply to selected</button>
+      <button class="btn btn-sm btn-outline-secondary" onclick="clearSelection()">Clear selection</button>
+    </div>
+  </div>
+
+  <!-- Floor -->
+  <div id="floor-admin"></div>
+
+</div>
+
+<!-- Add Seat Modal -->
+<div class="modal fade" id="addSeatModal" tabindex="-1">
+  <div class="modal-dialog modal-sm">
+    <div class="modal-content">
+      <div class="modal-header py-2">
+        <h6 class="modal-title mb-0" id="add-modal-title">Add Seat</h6>
+        <button type="button" class="btn-close btn-sm" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <input type="hidden" id="add-sg">
+        <div class="mb-2">
+          <label class="form-label small mb-1">Seat Number</label>
+          <input type="number" id="add-snum" class="form-control form-control-sm" placeholder="e.g. 101">
+        </div>
+        <div class="mb-2">
+          <label class="form-label small mb-1">Team</label>
+          <select id="add-team" class="form-select form-select-sm">
+            <option value="cs">CS</option>
+            <option value="bo">BO</option>
+            <option value="l2">L2</option>
+            <option value="rta">RTA</option>
+            <option value="qa">QA</option>
+            <option value="arctic">Arctic</option>
+            <option value="training">Training</option>
+            <option value="sme">SME</option>
+          </select>
+        </div>
+        <div class="mb-2">
+          <label class="form-label small mb-1">Seat Type</label>
+          <select id="add-type" class="form-select form-select-sm">
+            <option value="agent">Agent</option>
+            <option value="supervisor">Supervisor</option>
+            <option value="stand">Stand</option>
+          </select>
+        </div>
+        <div class="mb-2">
+          <label class="form-label small mb-1">Computer Name <span class="text-muted">(optional)</span></label>
+          <input type="text" id="add-computer" class="form-control form-control-sm"
+                 placeholder="e.g. DESKTOP-ABC123" style="text-transform:uppercase">
+        </div>
+      </div>
+      <div class="modal-footer py-2">
+        <button class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button class="btn btn-sm btn-primary" onclick="saveNewSeat()">Add Seat</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Single seat modal -->
+<div class="modal fade" id="seatEditModal" tabindex="-1">
+  <div class="modal-dialog modal-sm">
+    <div class="modal-content">
+      <div class="modal-header py-2">
+        <h6 class="modal-title mb-0" id="edit-modal-title">Edit Seat</h6>
+        <button type="button" class="btn-close btn-sm" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <input type="hidden" id="edit-sg">
+        <input type="hidden" id="edit-snum">
+        <div class="mb-2">
+          <label class="form-label small mb-1">Team</label>
+          <select id="edit-team" class="form-select form-select-sm">
+            <option value="cs">CS</option>
+            <option value="bo">BO</option>
+            <option value="l2">L2</option>
+            <option value="rta">RTA</option>
+            <option value="qa">QA</option>
+            <option value="arctic">Arctic</option>
+            <option value="training">Training</option>
+            <option value="sme">SME</option>
+          </select>
+        </div>
+        <div class="mb-2">
+          <label class="form-label small mb-1">Seat Type</label>
+          <select id="edit-type" class="form-select form-select-sm">
+            <option value="agent">Agent</option>
+            <option value="supervisor">Supervisor</option>
+            <option value="stand">Stand</option>
+          </select>
+        </div>
+        <div class="mb-2">
+          <label class="form-label small mb-1">Computer Name</label>
+          <input type="text" id="edit-computer" class="form-control form-control-sm"
+                 placeholder="e.g. DESKTOP-ABC123" style="text-transform:uppercase">
+        </div>
+      </div>
+      <div class="modal-footer py-2">
+        <button class="btn btn-sm btn-danger me-auto" onclick="deleteSeat()">Delete seat</button>
+        <button class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button class="btn btn-sm btn-primary" onclick="saveSeat()">Save</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<style>
+.sg-pod-admin { display:inline-flex; flex-direction:column; gap:2px; padding:6px;
+  border:1px solid #dee2e6; border-radius:8px; background:#fff;
+  vertical-align:top; margin-right:8px; margin-bottom:8px; }
+.sg-pod-name-admin { font-size:9px; color:#adb5bd; text-align:center; margin-bottom:2px;
+  letter-spacing:.05em; text-transform:uppercase; font-weight:600; }
+.seat-row-admin { display:flex; gap:2px; }
+.seat-admin { width:52px; height:52px; border-radius:5px; display:flex; flex-direction:column;
+  align-items:center; justify-content:center; cursor:pointer;
+  border:2px solid transparent; transition:transform .1s; position:relative; }
+.seat-admin:hover { transform:scale(1.08); z-index:10; }
+.seat-admin.selected { border-color:#0d6efd !important; box-shadow:0 0 0 2px #0d6efd44; }
+.seat-admin.t-cs     { background:#1D9E75; color:#fff; }
+.seat-admin.t-bo     { background:#1D9E75; color:#fff; }
+.seat-admin.t-l2     { background:#1D9E75; color:#fff; }
+.seat-admin.t-rta    { background:#7F77DD; color:#fff; }
+.seat-admin.t-qa     { background:#378ADD; color:#fff; }
+.seat-admin.t-arctic { background:#C0436B; color:#fff; }
+.seat-admin.t-training { background:#D4B800; color:#fff; }
+.seat-admin.t-sme     { background:#6f42c1; color:#fff; }
+.seat-admin.t-supervisor { background:#E07B39; color:#fff; }
+.seat-admin.t-stand  { background:#343a40; color:#fff; }
+.seat-admin.t-unmapped { background:#adb5bd; color:#fff; }
+.seat-admin .s-num  { font-size:11px; font-weight:600; line-height:1; }
+.seat-admin .s-team { font-size:8px; opacity:.85; }
+.seat-admin .s-pc   { font-size:7px; opacity:.7; max-width:48px;
+  overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
+.area-title-admin { font-size:13px; font-weight:600; color:#495057; margin:1rem 0 8px; }
+.cc-block-admin { display:inline-flex; align-items:center; justify-content:center;
+  background:#e3f2fd; border:2px solid #90caf9; border-radius:8px;
+  padding:10px 16px; font-size:12px; font-weight:600; color:#1565c0;
+  margin-bottom:8px; writing-mode:vertical-rl; height:200px; }
+</style>
+
+<script>
+let seatsData = {};
+let selectedSeats = new Set();
+let editModal = null;
+
+const TEAMS = ['cs','bo','l2','rta','qa','arctic','training','sme'];
+const TEAM_LABEL = {cs:'CS',bo:'BO',l2:'L2',rta:'RTA',qa:'QA',arctic:'Arctic',training:'Train',sme:'SME'};
+
+const SG_ORDER = {
+  top:    ['SG8','SG7','SG6','SG5','SG4','SG3','SG2','SG1'],
+  bottom: ['SG16','SG15','SG14','SG13','SG12','SG11','SG10','SG9']
+};
+
+function seatKey(sg, num) { return sg + '|' + num; }
+
+function getSeatClass(seat) {
+  if (!seat) return 't-unmapped';
+  if (seat.seat_type === 'stand') return 't-stand';
+  if (seat.seat_type === 'supervisor') return 't-supervisor';
+  return 't-' + (seat.team || 'unmapped');
+}
+
+function buildAdminMap(seats) {
+  seatsData = {};
+  seats.forEach(s => { seatsData[seatKey(s.station_group, s.seat_number)] = s; });
+
+  const floor = document.getElementById('floor-admin');
+  floor.innerHTML = '';
+
+  ['top','bottom'].forEach(area => {
+    const areaDiv = document.createElement('div');
+    const title = document.createElement('div');
+    title.className = 'area-title-admin';
+    title.textContent = area === 'top' ? 'Top Area' : 'Bottom Area';
+    areaDiv.appendChild(title);
+
+    const podRow = document.createElement('div');
+    podRow.style.cssText = 'display:flex;flex-wrap:wrap;gap:6px;align-items:flex-start;';
+
+    // Group seats by station_group
+    const sgGroups = {};
+    seats.filter(s => {
+      const idx = parseInt(s.station_group.replace('SG',''));
+      return area === 'top' ? idx <= 8 : idx > 8;
+    }).forEach(s => {
+      if (!sgGroups[s.station_group]) sgGroups[s.station_group] = [];
+      sgGroups[s.station_group].push(s);
+    });
+
+    SG_ORDER[area].forEach(sgId => {
+      const sgSeats = sgGroups[sgId] || [];
+      if (!sgSeats.length) return;
+
+      const pod = document.createElement('div');
+      pod.className = 'sg-pod-admin';
+      pod.innerHTML = `<div class="sg-pod-name-admin">${sgId}</div>`;
+
+      // Build rows of 2 from DB order
+      for (let i = 0; i < sgSeats.length; i += 2) {
+        const row = document.createElement('div');
+        row.className = 'seat-row-admin';
+        [sgSeats[i], sgSeats[i+1]].forEach(seat => {
+          if (!seat) { row.appendChild(document.createElement('div')); return; }
+          const el = document.createElement('div');
+          const cls = getSeatClass(seat);
+          const isSelected = selectedSeats.has(seatKey(seat.station_group, seat.seat_number));
+          el.className = `seat-admin ${cls}${isSelected ? ' selected' : ''}`;
+          el.dataset.sg   = seat.station_group;
+          el.dataset.snum = seat.seat_number;
+          el.innerHTML = `
+            <span class="s-num">${seat.seat_number}</span>
+            <span class="s-team">${seat.seat_type === 'supervisor' ? 'Sup' : seat.seat_type === 'stand' ? 'Stand' : TEAM_LABEL[seat.team] || seat.team || '?'}</span>
+            ${seat.computer_name ? `<span class="s-pc">${seat.computer_name.replace('DESKTOP-','')}</span>` : ''}
+          `;
+          el.addEventListener('click', (e) => handleSeatClick(e, seat));
+          el.addEventListener('contextmenu', (e) => { e.preventDefault(); clearSeatDirect(seat); });
+          row.appendChild(el);
+        });
+        pod.appendChild(row);
+      }
+      // Add Seat button at bottom of pod
+      const addBtn = document.createElement('button');
+      addBtn.className = 'btn btn-sm w-100 mt-1';
+      addBtn.style.cssText = 'font-size:10px;padding:2px;border:1px dashed #adb5bd;color:#6c757d;background:transparent;';
+      addBtn.innerHTML = '+ Add';
+      addBtn.onclick = () => openAddModal(sgId);
+      pod.appendChild(addBtn);
+
+      podRow.appendChild(pod);
+    });
+
+    if (area === 'bottom') {
+      const cc = document.createElement('div');
+      cc.className = 'cc-block-admin';
+      cc.textContent = 'Command Center';
+      podRow.appendChild(cc);
+    }
+
+    areaDiv.appendChild(podRow);
+    floor.appendChild(areaDiv);
+  });
+}
+
+function handleSeatClick(e, seat) {
+  const key = seatKey(seat.station_group, seat.seat_number);
+  if (e.shiftKey) {
+    if (selectedSeats.has(key)) selectedSeats.delete(key);
+    else selectedSeats.add(key);
+    updateSelection();
+    refreshSeatEl(seat);
+  } else {
+    if (selectedSeats.size > 0) {
+      if (selectedSeats.has(key)) selectedSeats.delete(key);
+      else selectedSeats.add(key);
+      updateSelection();
+      refreshSeatEl(seat);
+    } else {
+      openEditModal(seat);
+    }
+  }
+}
+
+function updateSelection() {
+  const n = selectedSeats.size;
+  document.getElementById('selected-count').textContent = n + ' selected';
+  document.getElementById('bulk-label').textContent = n + ' seats selected';
+  document.getElementById('bulk-toolbar').classList.toggle('d-none', n === 0);
+}
+
+function clearSelection() {
+  selectedSeats.forEach(key => {
+    const [sg, snum] = key.split('|');
+    const seat = seatsData[key];
+    if (seat) refreshSeatEl(seat);
+  });
+  selectedSeats.clear();
+  updateSelection();
+}
+
+function refreshSeatEl(seat) {
+  const key = seatKey(seat.station_group, seat.seat_number);
+  const el = document.querySelector(`[data-sg="${seat.station_group}"][data-snum="${seat.seat_number}"]`);
+  if (!el) return;
+  const fresh = seatsData[key] || seat;
+  el.className = `seat-admin ${getSeatClass(fresh)}${selectedSeats.has(key) ? ' selected' : ''}`;
+  el.innerHTML = `
+    <span class="s-num">${fresh.seat_number}</span>
+    <span class="s-team">${fresh.seat_type === 'supervisor' ? 'Sup' : fresh.seat_type === 'stand' ? 'Stand' : TEAM_LABEL[fresh.team] || fresh.team || '?'}</span>
+    ${fresh.computer_name ? `<span class="s-pc">${fresh.computer_name.replace('DESKTOP-','')}</span>` : ''}
+  `;
+  el.addEventListener('click', (e) => handleSeatClick(e, fresh));
+  el.addEventListener('contextmenu', (e) => { e.preventDefault(); clearSeatDirect(fresh); });
+}
+
+function openEditModal(seat) {
+  document.getElementById('edit-sg').value    = seat.station_group;
+  document.getElementById('edit-snum').value  = seat.seat_number;
+  document.getElementById('edit-modal-title').textContent = `${seat.station_group} — Seat ${seat.seat_number}`;
+  document.getElementById('edit-team').value  = seat.team || 'cs';
+  document.getElementById('edit-type').value  = seat.seat_type || 'agent';
+  document.getElementById('edit-computer').value = seat.computer_name || '';
+  if (!editModal) editModal = new bootstrap.Modal(document.getElementById('seatEditModal'));
+  editModal.show();
+}
+
+async function saveSeat() {
+  const sg    = document.getElementById('edit-sg').value;
+  const snum  = parseInt(document.getElementById('edit-snum').value);
+  const team  = document.getElementById('edit-team').value;
+  const stype = document.getElementById('edit-type').value;
+  const pc    = document.getElementById('edit-computer').value.toUpperCase().trim();
+  const res = await fetch('/floor-map/api/update-seat', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({ seats:[{station_group:sg, seat_number:snum}],
+      team, seat_type:stype, computer_name:pc })
+  });
+  const data = await res.json();
+  if (data.ok) {
+    const key = seatKey(sg, snum);
+    seatsData[key] = {...(seatsData[key]||{}), team, seat_type:stype, computer_name:pc||null};
+    refreshSeatEl(seatsData[key]);
+    editModal.hide();
+    showToast('Saved!', 'success');
+  } else {
+    showToast('Error: ' + data.error, 'danger');
+  }
+}
+
+async function clearSeat() {
+  const sg   = document.getElementById('edit-sg').value;
+  const snum = parseInt(document.getElementById('edit-snum').value);
+  await clearSeatDirect({station_group:sg, seat_number:snum});
+  if (editModal) editModal.hide();
+}
+
+async function clearSeatDirect(seat) {
+  const res = await fetch('/floor-map/api/update-seat', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({ seats:[{station_group:seat.station_group, seat_number:seat.seat_number}],
+      team:'cs', seat_type:'agent', computer_name:'' })
+  });
+  const data = await res.json();
+  if (data.ok) {
+    const key = seatKey(seat.station_group, seat.seat_number);
+    seatsData[key] = {...(seatsData[key]||{}), team:'cs', seat_type:'agent', computer_name:null};
+    refreshSeatEl(seatsData[key]);
+    showToast('Cleared', 'secondary');
+  }
+}
+
+async function applyBulk() {
+  const team  = document.getElementById('bulk-team').value;
+  const stype = document.getElementById('bulk-type').value;
+  if (!team && !stype) { showToast('Select a team or type first','warning'); return; }
+  const seats = [...selectedSeats].map(k => {
+    const [sg, snum] = k.split('|');
+    return {station_group:sg, seat_number:parseInt(snum)};
+  });
+  const body = {seats};
+  if (team)  body.team = team;
+  if (stype) body.seat_type = stype;
+  const res = await fetch('/floor-map/api/update-seat', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify(body)
+  });
+  const data = await res.json();
+  if (data.ok) {
+    seats.forEach(s => {
+      const key = seatKey(s.station_group, s.seat_number);
+      if (seatsData[key]) {
+        if (team)  seatsData[key].team = team;
+        if (stype) seatsData[key].seat_type = stype;
+        refreshSeatEl(seatsData[key]);
+      }
+    });
+    clearSelection();
+    showToast(`Updated ${data.updated} seats`, 'success');
+  } else {
+    showToast('Error: ' + data.error, 'danger');
+  }
+}
+
+function showToast(msg, type) {
+  const t = document.createElement('div');
+  t.className = `alert alert-${type} position-fixed`;
+  t.style.cssText = 'bottom:1rem;right:1rem;z-index:9999;padding:8px 16px;font-size:13px;';
+  t.textContent = msg;
+  document.body.appendChild(t);
+  setTimeout(() => t.remove(), 2500);
+}
+
+function openAddModal(sgId) {
+  document.getElementById('add-sg').value   = sgId;
+  document.getElementById('add-modal-title').textContent = `Add Seat — ${sgId}`;
+  document.getElementById('add-snum').value = '';
+  document.getElementById('add-team').value = 'cs';
+  document.getElementById('add-type').value = 'agent';
+  document.getElementById('add-computer').value = '';
+  new bootstrap.Modal(document.getElementById('addSeatModal')).show();
+}
+
+async function saveNewSeat() {
+  const sg    = document.getElementById('add-sg').value;
+  const snum  = parseInt(document.getElementById('add-snum').value);
+  const team  = document.getElementById('add-team').value;
+  const stype = document.getElementById('add-type').value;
+  const pc    = document.getElementById('add-computer').value.toUpperCase().trim();
+  if (!snum) { showToast('Enter a seat number', 'warning'); return; }
+  const res = await fetch('/floor-map/api/add-seat', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({station_group:sg, seat_number:snum,
+      team, seat_type:stype, computer_name:pc||null})
+  });
+  const data = await res.json();
+  if (data.ok) {
+    bootstrap.Modal.getInstance(document.getElementById('addSeatModal')).hide();
+    showToast(`Seat ${snum} added to ${sg}`, 'success');
+    await loadSeats();
+  } else {
+    showToast('Error: ' + data.error, 'danger');
+  }
+}
+
+async function deleteSeat() {
+  const sg   = document.getElementById('edit-sg').value;
+  const snum = parseInt(document.getElementById('edit-snum').value);
+  if (!confirm(`Delete seat ${snum} from ${sg}? This cannot be undone.`)) return;
+  const res = await fetch('/floor-map/api/delete-seat', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({station_group:sg, seat_number:snum})
+  });
+  const data = await res.json();
+  if (data.ok) {
+    if (editModal) editModal.hide();
+    showToast(`Seat ${snum} deleted`, 'secondary');
+    await loadSeats();
+  } else {
+    showToast('Error: ' + data.error, 'danger');
+  }
+}
+
+async function loadSeats() {
+  const res  = await fetch('/floor-map/api/seats');
+  const data = await res.json();
+  buildAdminMap(data);
+}
+
+loadSeats();
+</script>
+{% endblock %}

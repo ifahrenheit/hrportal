@@ -1,0 +1,277 @@
+{% extends 'base.html' %}
+{% block title %}My Team - Requests{% endblock %}
+{% block page_title %}My Team - File Requests{% endblock %}
+{% block content %}
+
+{% if is_admin %}
+  {% if tl_name %}
+  <div class="alert alert-info py-2 px-3 mb-3 small">
+    <i class="bi bi-eye me-1"></i>
+    View-only. Showing file requests for <strong>{{ tl_name }}</strong>'s team.
+  </div>
+  {% else %}
+  <div class="alert alert-secondary py-2 px-3 mb-3 small">
+    <i class="bi bi-info-circle me-1"></i>
+    Select a Team Lead below to view their team's file requests.
+  </div>
+  {% endif %}
+{% else %}
+<div class="alert alert-info py-2 px-3 mb-3 small">
+  <i class="bi bi-eye me-1"></i>
+  View-only. Showing file requests for <strong>{{ tl_name }}</strong>'s team.
+</div>
+{% endif %}
+
+<div class="card mb-3">
+  <div class="card-body pb-2">
+    <form method="GET" action="{{ url_for('tl_view.tl_view_requests') }}" id="tlReqFilterForm">
+      <div class="row g-2 align-items-end">
+
+        {% if is_admin %}
+        <div class="col-6 col-md-2">
+          <label class="form-label small mb-1">Team Lead</label>
+          <select name="tl" id="f_tl" class="form-select form-select-sm" onchange="this.form.submit()">
+            <option value="">Select TL...</option>
+            {% for tl in tl_list %}
+            <option value="{{ tl }}" {% if tl_name == tl %}selected{% endif %}>{{ tl }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        {% endif %}
+
+        <div class="col-6 col-md-2">
+          <label class="form-label small mb-1">Request Type</label>
+          <select name="req_type" id="f_req_type" class="form-select form-select-sm">
+            <option value="">All Types</option>
+            <option value="FTS" {% if req_type == 'FTS' %}selected{% endif %}>FTS</option>
+            <option value="OT" {% if req_type == 'OT' %}selected{% endif %}>OT</option>
+            <option value="CWS" {% if req_type == 'CWS' %}selected{% endif %}>CWS</option>
+            <option value="RDW" {% if req_type == 'RDW' %}selected{% endif %}>RDW</option>
+            <option value="MAGIC_CWS" {% if req_type == 'MAGIC_CWS' %}selected{% endif %}>Magic CWS</option>
+          </select>
+        </div>
+
+        <div class="col-6 col-md-2">
+          <label class="form-label small mb-1">Date From</label>
+          <input type="date" name="date_from" id="f_date_from" class="form-control form-control-sm" value="{{ date_from }}">
+        </div>
+
+        <div class="col-6 col-md-2">
+          <label class="form-label small mb-1">Date To</label>
+          <input type="date" name="date_to" id="f_date_to" class="form-control form-control-sm" value="{{ date_to }}">
+        </div>
+
+        <div class="col-6 col-md-2">
+          <label class="form-label small mb-1">Status</label>
+          <select name="status" id="f_status" class="form-select form-select-sm">
+            <option value="">All Statuses</option>
+            {% for s in ['Pending','Approved','Rejected','Deleted'] %}
+            <option value="{{ s }}" {% if status == s %}selected{% endif %}>{{ s }}</option>
+            {% endfor %}
+          </select>
+        </div>
+
+        <div class="col-6 col-md-3">
+          <label class="form-label small mb-1">Employee</label>
+          <div class="position-relative">
+            <input type="text" id="empSearchInput" class="form-control form-control-sm"
+                   placeholder="Name or ID..." value="{{ emp_display or emp_search }}" autocomplete="off">
+            <input type="hidden" name="emp_search" id="empSearchValue" value="{{ emp_search }}">
+            <div id="empDropdown" class="position-absolute bg-white border rounded shadow-sm w-100" style="z-index:999;display:none;max-height:200px;overflow-y:auto;"></div>
+          </div>
+        </div>
+
+        <div class="col-12 d-flex gap-2">
+          <button type="submit" class="btn btn-primary btn-sm">
+            <i class="bi bi-search me-1"></i>Apply
+          </button>
+          <button type="button" class="btn btn-outline-secondary btn-sm" onclick="clearReqFilters()">
+            <i class="bi bi-x-circle me-1"></i>Clear
+          </button>
+          <span class="ms-auto text-muted small align-self-center">
+            {{ records|length }} record{{ 's' if records|length != 1 }}
+          </span>
+          <button type="button" class="btn btn-outline-secondary btn-sm" onclick="copyTable()" title="Copy table to clipboard">
+            <i class="bi bi-clipboard me-1"></i>Copy Table
+          </button>
+        </div>
+
+      </div>
+    </form>
+  </div>
+</div>
+
+<div class="card">
+  <div class="table-responsive">
+    <table class="table table-hover mb-0" id="tlReqTbl">
+      <thead class="table-light">
+        <tr>
+          <th>Type</th>
+          <th>Employee</th>
+          <th>ID</th>
+          <th>Date</th>
+          <th>Details</th>
+          <th>Status</th>
+          <th>Filed At</th>
+          <th>Approved At</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in records %}
+          <tr>
+            <td><span class="badge bg-light text-dark border">{{ r.req_type }}</span></td>
+            <td>{{ r.employee_name }}</td>
+            <td class="text-muted small">{{ r.emp_id or '-' }}</td>
+            <td>
+              {% if r.req_date %}
+                {{ r.req_date.strftime('%b %d, %Y') }}
+              {% else %}-{% endif %}
+            </td>
+            <td class="small">{{ r.details }}</td>
+            <td>
+              {% if r.status == 'Approved' %}
+                <span class="badge bg-success">Approved</span>
+              {% elif r.status == 'Rejected' %}
+                <span class="badge bg-danger">Rejected</span>
+              {% elif r.status == 'Pending' %}
+                <span class="badge bg-warning text-dark">Pending</span>
+              {% elif r.status == 'Deleted' or r.status == 'Cancelled' %}
+                <span class="badge bg-secondary">{{ r.status }}</span>
+              {% else %}
+                <span class="badge bg-secondary">{{ r.status }}</span>
+              {% endif %}
+            </td>
+            <td class="text-muted small">
+              {% if r.created_at %}{{ r.created_at.strftime('%b %d %H:%M') }}{% else %}-{% endif %}
+            </td>
+            <td class="text-muted small">
+              {% if r.approved_at %}{{ r.approved_at.strftime('%b %d %H:%M') }}{% else %}-{% endif %}
+            </td>
+          </tr>
+        {% else %}
+          {% if is_admin and not tl_name %}
+          <tr><td colspan="8" class="text-center text-muted py-4">Select a Team Lead above to view their team's requests.</td></tr>
+          {% else %}
+          <tr><td colspan="8" class="text-center text-muted py-4">No records found.</td></tr>
+          {% endif %}
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+var empSearchTimeout;
+var TL_REQ_FILTER_KEY = 'tlview_requests_filters';
+
+document.addEventListener("DOMContentLoaded", function() {
+  var hasQueryParams = window.location.search.length > 1;
+  if (!hasQueryParams) {
+    try {
+      var saved = JSON.parse(localStorage.getItem(TL_REQ_FILTER_KEY) || '{}');
+      var changed = false;
+      ['date_from','date_to','status','req_type'].forEach(function(key) {
+        var el = document.getElementById('f_' + key);
+        if (el && saved[key]) { el.value = saved[key]; changed = true; }
+      });
+      var tlEl = document.getElementById('f_tl');
+      if (tlEl && saved.tl) { tlEl.value = saved.tl; changed = true; }
+      if (saved.emp_search) {
+        document.getElementById('empSearchValue').value = saved.emp_search;
+        document.getElementById('empSearchInput').value = saved.emp_display || saved.emp_search;
+        changed = true;
+      }
+      if (changed) {
+        document.getElementById('tlReqFilterForm').submit();
+        return;
+      }
+    } catch (e) { /* ignore corrupt storage */ }
+  }
+
+  document.getElementById('tlReqFilterForm').addEventListener('submit', function() {
+    var tlEl = document.getElementById('f_tl');
+    var data = {
+      tl: tlEl ? tlEl.value : '',
+      req_type: document.getElementById('f_req_type').value,
+      date_from: document.getElementById('f_date_from').value,
+      date_to: document.getElementById('f_date_to').value,
+      status: document.getElementById('f_status').value,
+      emp_search: document.getElementById('empSearchValue').value,
+      emp_display: document.getElementById('empSearchInput').value
+    };
+    localStorage.setItem(TL_REQ_FILTER_KEY, JSON.stringify(data));
+  });
+
+  var input = document.getElementById("empSearchInput");
+  var dropdown = document.getElementById("empDropdown");
+  if (!input) return;
+
+  input.addEventListener("input", function() {
+    var q = this.value.trim();
+    document.getElementById("empSearchValue").value = q;
+    clearTimeout(empSearchTimeout);
+    if (q.length < 2) { dropdown.style.display = "none"; return; }
+    empSearchTimeout = setTimeout(function() {
+      fetch("/api/employee-search?q=" + encodeURIComponent(q))
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+          dropdown.innerHTML = "";
+          if (!data.length) { dropdown.style.display = "none"; return; }
+          data.forEach(function(emp) {
+            var item = document.createElement("div");
+            item.className = "px-3 py-2 small";
+            item.style.cursor = "pointer";
+            item.textContent = emp.name + " (" + emp.id + ")";
+            item.onmouseenter = function() { this.style.background = "#f0f4ff"; };
+            item.onmouseleave = function() { this.style.background = ""; };
+            item.onclick = function() {
+              input.value = emp.name;
+              document.getElementById("empSearchValue").value = emp.id;
+              dropdown.style.display = "none";
+              input.form.submit();
+            };
+            dropdown.appendChild(item);
+          });
+          dropdown.style.display = "block";
+        });
+    }, 300);
+  });
+
+  document.addEventListener("click", function(e) {
+    if (!input.contains(e.target) && !dropdown.contains(e.target)) {
+      dropdown.style.display = "none";
+    }
+  });
+});
+
+function clearReqFilters() {
+  localStorage.removeItem(TL_REQ_FILTER_KEY);
+  window.location.href = "{{ url_for('tl_view.tl_view_requests') }}";
+}
+
+function copyTable() {
+  const table = document.getElementById('tlReqTbl');
+  if (!table) return;
+  let text = '';
+  for (const row of table.rows) {
+    const cells = Array.from(row.cells).map(c => c.innerText.trim().replace(/\n+/g,' '));
+    text += cells.join('\t') + '\n';
+  }
+  navigator.clipboard.writeText(text).then(() => {
+    const btn = document.querySelector('[onclick="copyTable()"]');
+    const orig = btn.innerHTML;
+    btn.innerHTML = '<i class="bi bi-check-lg me-1"></i>Copied!';
+    btn.classList.add('btn-success');
+    btn.classList.remove('btn-outline-secondary');
+    setTimeout(() => {
+      btn.innerHTML = orig;
+      btn.classList.remove('btn-success');
+      btn.classList.add('btn-outline-secondary');
+    }, 2000);
+  });
+}
+</script>
+{% endblock %}

@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+{% block title %}Surveys{% endblock %}
+
+{% block content %}
+<div class="container py-4" style="max-width: 960px;">
+
+  <div class="mb-4">
+    <h3 class="mb-1" style="font-family: 'Outfit', sans-serif; color: var(--text);">Surveys</h3>
+    <p class="text-muted mb-0" style="font-family: 'DM Sans', sans-serif;">All surveys and their response counts</p>
+  </div>
+
+  {% if not surveys %}
+    <div class="alert alert-info">No surveys yet.</div>
+  {% else %}
+  <div class="card border-0 shadow-sm" style="border-radius: 12px; background: var(--surface);">
+    <div class="card-body p-0">
+      <div class="table-responsive">
+        <table class="table table-hover align-middle mb-0">
+          <thead>
+            <tr>
+              <th>Survey</th>
+              <th class="text-center">Status</th>
+              <th class="text-center">Responses</th>
+              <th class="text-center">Completion</th>
+              <th class="text-end">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for s in surveys %}
+              <tr>
+                <td>
+                  <div class="fw-semibold" style="font-family: 'Outfit', sans-serif;">{{ s.title }}</div>
+                  <div class="text-muted small">{{ s.slug }}</div>
+                </td>
+                <td class="text-center">
+                  {% if s.is_active %}
+                    <span class="badge-work" style="padding:.25rem .6rem;border-radius:6px;">Active</span>
+                  {% else %}
+                    <span class="badge-off" style="padding:.25rem .6rem;border-radius:6px;">Inactive</span>
+                  {% endif %}
+                </td>
+                <td class="text-center fw-semibold">{{ s.response_count }}</td>
+                <td class="text-center">
+                  {% if headcount %}
+                    {{ ((s.response_count / headcount) * 100) | round(1) }}%
+                  {% else %}—{% endif %}
+                </td>
+                <td class="text-end">
+                  <a href="{{ url_for('survey.survey_results', slug=s.slug) }}"
+                     class="btn btn-sm" style="background: var(--accent); color:#fff; border:none; border-radius:6px;">
+                    <i class="bi bi-bar-chart-line me-1"></i> Results
+                  </a>
+                  <a href="{{ url_for('survey.survey_form', slug=s.slug) }}"
+                     class="btn btn-sm" style="border:1px solid var(--border); color: var(--text); border-radius:6px;">
+                    <i class="bi bi-box-arrow-up-right"></i>
+                  </a>
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+
+</div>
+{% endblock %}

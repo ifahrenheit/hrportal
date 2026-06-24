@@ -1,5 +1,5 @@
 import json
-from flask import Flask, session, redirect, url_for, request, render_template, flash, jsonify, Blueprint, abort, g
+from flask import Flask, session, redirect, url_for, request, render_template, flash, jsonify, Blueprint, abort
 from authlib.integrations.flask_client import OAuth
 import pymysql
 import os
@@ -27,22 +27,6 @@ def nl2br_filter(s):
 # ── Incident Reports blueprint ─────────────────────────────────────────
 from incident_reports import ir_bp
 app.register_blueprint(ir_bp, url_prefix='/incident-reports')
-
-# Tardiness Blueprint
-from tardiness import tardiness_bp
-app.register_blueprint(tardiness_bp, url_prefix='/tardiness')
-
-# ── Incident Reports blueprint (TEST COPY) ────────────────────────────
-
-from floor_map import floor_map_bp
-app.register_blueprint(floor_map_bp)
-from tl_view import tl_view_bp
-app.register_blueprint(tl_view_bp)
-
-# ── QA Updates blueprint ─────────────────────────────────────────
-from qa_updates import qa_updates_bp, qa_can_manage
-app.register_blueprint(qa_updates_bp)
-app.jinja_env.globals.update(qa_can_manage=qa_can_manage)
 
 IR_SGA      = os.getenv('IR_SGA', '').split(',')
 IR_RTA      = os.getenv('IR_RTA', '').split(',')
@@ -88,8 +72,6 @@ def ir_can_view():
 
 app.config.from_object(Config)
 app.register_blueprint(break_log_bp)
-from fts_review import fts_review_bp
-app.register_blueprint(fts_review_bp, url_prefix='/fts-review')
 
 from werkzeug.middleware.proxy_fix import ProxyFix
 app.wsgi_app = ProxyFix(app.wsgi_app, x_proto=1, x_host=1)
@@ -110,7 +92,18 @@ keycloak = oauth.register(
     client_kwargs={'scope': 'openid email profile'}
 )
 
-from db_core import get_db_connection
+def get_db_connection():
+    """Main app DB — central_db (gsheet_employees, Employees, etc.)"""
+    return pymysql.connect(
+        host=os.environ.get('MAIN_DB_HOST', 'localhost'),
+        port=int(os.environ.get('MAIN_DB_PORT', 3306)),
+        user=os.environ.get('MAIN_DB_USER', 'employee_sync'),
+        password=os.environ.get('MAIN_DB_PASSWORD'),
+        database=os.environ.get('MAIN_DB_NAME', 'central_db'),
+        charset='utf8mb4',
+        cursorclass=pymysql.cursors.DictCursor,
+        autocommit=False
+    )
 
 def get_db():
     return pymysql.connect(
@@ -340,7 +333,6 @@ def get_sub_admin_permissions(emp_number):
                 'can_schedules':    bool(row['can_schedules']),
                 'can_reports':      bool(row['can_reports']),
                 'can_absences':     bool(row.get('can_absences', 0)),
-                'can_tardiness':    bool(row.get('can_tardiness', 0)),
                 'can_work_mode':    bool(row['can_work_mode']),
                 'can_settings':     bool(row['can_settings']),
                 'can_entitlements': bool(row['can_entitlements']),
@@ -356,9 +348,6 @@ def get_sub_admin_permissions(emp_number):
                 'can_attrition_report': bool(row.get('can_attrition_report', 0)),
                 'can_csat':         bool(row.get('can_csat', 0)),
                 'can_surveys':      bool(row.get('can_surveys', 0)),
-                'can_floor_map':    bool(row.get('can_floor_map', 0)),
-                'can_pim':          bool(row.get('can_pim', 0)),
-                'can_qa_updates': bool(row.get('can_qa_updates', 0)),
             }
     finally:
         db.close()
@@ -810,21 +799,6 @@ def auth_callback():
         _cdb.close()
     except Exception:
         session['is_csat_tl'] = False
-    # TL-view flag (for "My Team" view) — set if email is in tl_view_map
-    session['is_tl'] = False
-    session['tl_name'] = None
-    try:
-        _cdb = get_central_db()
-        with _cdb.cursor() as _c:
-            _c.execute("SELECT tl_name FROM tl_view_map WHERE login_email = %s", (email,))
-            _row = _c.fetchone()
-            if _row:
-                session['is_tl'] = True
-                session['tl_name'] = _row['tl_name']
-        _cdb.close()
-    except Exception:
-        session['is_tl'] = False
-        session['tl_name'] = None
 
     # Check sub-admin permissions
     if not session['is_admin']:
@@ -844,7 +818,7 @@ def auth_callback():
             'can_all_leaves': True, 'can_approve': True,
             'can_file_for_emp': True, 'can_schedules': True,
             'can_reports': True, 'can_work_mode': True,
-            'can_settings': True, 'can_entitlements': True, 'can_file_requests': True, 'can_material_requests': True, 'can_final_approval': True, 'can_view_tickets': True, 'can_facilities_review': True, 'can_facilities_final': True, 'can_view_approved_items': True, 'can_onboarding': True, 'can_inventory': True, 'can_pim': True,
+            'can_settings': True, 'can_entitlements': True, 'can_file_requests': True, 'can_material_requests': True, 'can_final_approval': True, 'can_view_tickets': True, 'can_facilities_review': True, 'can_facilities_final': True, 'can_view_approved_items': True, 'can_onboarding': True, 'can_inventory': True,
         }
     return redirect(url_for('dashboard'))
 
@@ -857,8 +831,6 @@ def login_as(target_emp):
         'email':      session['user']['email'],
         'name':       session['user']['name'],
         'is_admin':   session.get('is_admin'),
-        'is_tl':      session.get('is_tl'),
-        'tl_name':    session.get('tl_name'),
     }
     # Load target employee — supports both emp_number (int) and employee_id (string)
     db = get_db()
@@ -915,23 +887,6 @@ def login_as(target_emp):
     except Exception as _e:
         app.logger.warning(f"CSAT-TL lookup FAILED: {_e!r}")
         session['is_csat_tl'] = False
-    # TL-view flag for impersonated user (sidebar visibility + My Team view)
-    session['is_tl'] = False
-    session['tl_name'] = None
-    try:
-        _cdb = get_central_db()
-        with _cdb.cursor() as _c:
-            _c.execute("SELECT tl_name FROM tl_view_map WHERE login_email = %s", (emp['user_name'],))
-            _r2 = _c.fetchone()
-            if _r2:
-                session['is_tl'] = True
-                session['tl_name'] = _r2['tl_name']
-            app.logger.warning(f"TL-view lookup: email={emp['user_name']!r} result={_r2!r} flag={session['is_tl']}")
-        _cdb.close()
-    except Exception as _e:
-        app.logger.warning(f"TL-view lookup FAILED: {_e!r}")
-        session['is_tl'] = False
-        session['tl_name'] = None
     session['is_sub_admin']  = False
 
     perms = get_sub_admin_permissions(emp['emp_number'])
@@ -962,15 +917,13 @@ def login_as_back():
         'employee_id': original.get('employee_id', '')
     }
     session['is_admin']      = original['is_admin']
-    session['is_tl']         = original.get('is_tl', False)
-    session['tl_name']       = original.get('tl_name')
     session['is_supervisor'] = is_supervisor(original['emp_number'])
     session['is_sub_admin']  = False
     session['permissions']   = {
         'can_all_leaves': True, 'can_approve': True,
         'can_file_for_emp': True, 'can_schedules': True,
         'can_reports': True, 'can_work_mode': True,
-        'can_settings': True, 'can_entitlements': True, 'can_pim': True,
+        'can_settings': True, 'can_entitlements': True,
         'can_file_requests': True, 'can_material_requests': True,
         'can_final_approval': True, 'can_facilities_review': True, 'can_facilities_final': True, 'can_view_approved_items': True, 'can_onboarding': True, 'can_inventory': True,
     }
@@ -1859,7 +1812,6 @@ def admin_sub_admins():
                     'can_schedules':    1 if request.form.get('can_schedules') else 0,
                     'can_reports':      1 if request.form.get('can_reports') else 0,
                     'can_absences':     1 if request.form.get('can_absences') else 0,
-                    'can_tardiness':    1 if request.form.get('can_tardiness') else 0,
                     'can_work_mode':    1 if request.form.get('can_work_mode') else 0,
                     'can_settings':     1 if request.form.get('can_settings') else 0,
                     'can_entitlements': 1 if request.form.get('can_entitlements') else 0,
@@ -1875,36 +1827,33 @@ def admin_sub_admins():
                     'can_attrition_report': 1 if request.form.get('can_attrition_report') else 0,
                     'can_csat': 1 if request.form.get('can_csat') else 0,
                     'can_surveys': 1 if request.form.get('can_surveys') else 0,
-                    'can_floor_map': 1 if request.form.get('can_floor_map') else 0,
-                    'can_pim': 1 if request.form.get('can_pim') else 0,
-                    'can_qa_updates': 1 if request.form.get('can_qa_updates') else 0,
                 }
                 with db.cursor() as c:
                     c.execute("""
                         INSERT INTO leave4day_sub_admins
                             (emp_number, can_all_leaves, can_all_requests, can_approve, can_file_for_emp,
-                             can_schedules, can_reports, can_work_mode, can_settings, can_absences, can_tardiness,
+                             can_schedules, can_reports, can_work_mode, can_settings, can_absences,
                              can_entitlements, can_file_requests, can_material_requests,
-                             can_final_approval, can_view_tickets, can_facilities_review, can_facilities_final, can_view_approved_items, can_onboarding, can_inventory, can_attrition_report, can_csat, can_surveys, can_floor_map, can_pim, can_qa_updates, assigned_by)
-                        VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                             can_final_approval, can_view_tickets, can_facilities_review, can_facilities_final, can_view_approved_items, can_onboarding, can_inventory, can_attrition_report, can_csat, can_surveys, assigned_by)
+                        VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
                         ON DUPLICATE KEY UPDATE
                             can_all_leaves=%s, can_all_requests=%s, can_approve=%s, can_file_for_emp=%s,
                             can_schedules=%s, can_reports=%s, can_work_mode=%s, can_absences=%s,
-                            can_tardiness=%s, can_settings=%s, can_entitlements=%s, can_file_requests=%s,
+                            can_settings=%s, can_entitlements=%s, can_file_requests=%s,
                             can_material_requests=%s, can_final_approval=%s,
-                            can_view_tickets=%s, can_facilities_review=%s, can_facilities_final=%s, can_view_approved_items=%s, can_onboarding=%s, can_inventory=%s, can_attrition_report=%s, can_csat=%s, can_surveys=%s, can_floor_map=%s, can_pim=%s, can_qa_updates=%s, assigned_by=%s
+                            can_view_tickets=%s, can_facilities_review=%s, can_facilities_final=%s, can_view_approved_items=%s, can_onboarding=%s, can_inventory=%s, can_attrition_report=%s, can_csat=%s, can_surveys=%s, assigned_by=%s
                     """, (
                         emp_number,
                         perms['can_all_leaves'], perms['can_all_requests'], perms['can_approve'], perms['can_file_for_emp'],
                         perms['can_schedules'], perms['can_reports'], perms['can_work_mode'],
-                        perms['can_settings'], perms['can_absences'], perms['can_tardiness'],    perms['can_entitlements'], perms['can_file_requests'],
+                        perms['can_settings'], perms['can_absences'], perms['can_entitlements'], perms['can_file_requests'],
                         perms['can_material_requests'], perms['can_final_approval'],
-                        perms['can_view_tickets'], perms['can_facilities_review'], perms['can_facilities_final'], perms['can_view_approved_items'], perms['can_onboarding'], perms['can_inventory'], perms['can_attrition_report'], perms['can_csat'], perms['can_surveys'], perms['can_floor_map'], perms['can_pim'], perms['can_qa_updates'], session['user']['emp_number'],
+                        perms['can_view_tickets'], perms['can_facilities_review'], perms['can_facilities_final'], perms['can_view_approved_items'], perms['can_onboarding'], perms['can_inventory'], perms['can_attrition_report'], perms['can_csat'], perms['can_surveys'], session['user']['emp_number'],
                         perms['can_all_leaves'], perms['can_all_requests'], perms['can_approve'], perms['can_file_for_emp'],
                         perms['can_schedules'], perms['can_reports'], perms['can_work_mode'],
-                        perms['can_settings'], perms['can_absences'], perms['can_tardiness'],    perms['can_entitlements'], perms['can_file_requests'],
+                        perms['can_settings'], perms['can_absences'], perms['can_entitlements'], perms['can_file_requests'],
                         perms['can_material_requests'], perms['can_final_approval'],
-                        perms['can_view_tickets'], perms['can_facilities_review'], perms['can_facilities_final'], perms['can_view_approved_items'], perms['can_onboarding'], perms['can_inventory'], perms['can_attrition_report'], perms['can_csat'], perms['can_surveys'], perms['can_floor_map'], perms['can_pim'], perms['can_qa_updates'], session['user']['emp_number']
+                        perms['can_view_tickets'], perms['can_facilities_review'], perms['can_facilities_final'], perms['can_view_approved_items'], perms['can_onboarding'], perms['can_inventory'], perms['can_attrition_report'], perms['can_csat'], perms['can_surveys'], session['user']['emp_number']
                     ))
                 db.commit()
                 flash('Sub-admin permissions updated!', 'success')
@@ -1938,10 +1887,6 @@ def admin_sub_admins():
                     'can_attrition_report': 1 if request.form.get('can_attrition_report') else 0,
                     'can_csat': 1 if request.form.get('can_csat') else 0,
                     'can_surveys': 1 if request.form.get('can_surveys') else 0,
-                    'can_floor_map': 1 if request.form.get('can_floor_map') else 0,
-                    'can_pim': 1 if request.form.get('can_pim') else 0,
-                    'can_qa_updates': 1 if request.form.get('can_qa_updates') else 0,
-                    'can_tardiness': 1 if request.form.get('can_tardiness') else 0,
                 }
                 if not group_name:
                     flash('Please select a group.', 'danger')
@@ -1960,26 +1905,26 @@ def admin_sub_admins():
                                     (emp_number, can_all_leaves, can_all_requests, can_approve, can_file_for_emp,
                                      can_schedules, can_reports, can_work_mode, can_settings,
                                      can_entitlements, can_file_requests, can_material_requests,
-                                     can_final_approval, can_view_tickets, can_facilities_review, can_facilities_final, can_view_approved_items, can_onboarding, can_inventory, can_attrition_report, can_csat, can_surveys, can_floor_map, can_pim, assigned_by)
-                                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                                     can_final_approval, can_view_tickets, can_facilities_review, can_facilities_final, can_view_approved_items, can_onboarding, can_inventory, can_attrition_report, can_csat, can_surveys, assigned_by)
+                                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
                                 ON DUPLICATE KEY UPDATE
                                     can_all_leaves=%s, can_all_requests=%s, can_approve=%s, can_file_for_emp=%s,
                                     can_schedules=%s, can_reports=%s, can_work_mode=%s,
                                     can_settings=%s, can_entitlements=%s, can_file_requests=%s,
                                     can_material_requests=%s, can_final_approval=%s,
-                                    can_view_tickets=%s, can_facilities_review=%s, can_facilities_final=%s, can_view_approved_items=%s, can_onboarding=%s, can_inventory=%s, can_attrition_report=%s, can_csat=%s, can_surveys=%s, can_floor_map=%s, can_pim=%s, assigned_by=%s
+                                    can_view_tickets=%s, can_facilities_review=%s, can_facilities_final=%s, can_view_approved_items=%s, can_onboarding=%s, can_inventory=%s, can_attrition_report=%s, can_csat=%s, can_surveys=%s, assigned_by=%s
                             """, (
                                 en,
                                 perms['can_all_leaves'], perms['can_all_requests'], perms['can_approve'], perms['can_file_for_emp'],
                                 perms['can_schedules'], perms['can_reports'], perms['can_work_mode'],
                                 perms['can_settings'], perms['can_entitlements'], perms['can_file_requests'],
                                 perms['can_material_requests'], perms['can_final_approval'],
-                                perms['can_view_tickets'], perms['can_facilities_review'], perms['can_facilities_final'], perms['can_view_approved_items'], perms['can_onboarding'], perms['can_inventory'], perms['can_attrition_report'], perms['can_csat'], perms['can_surveys'], perms['can_floor_map'], perms['can_pim'], session['user']['emp_number'],
+                                perms['can_view_tickets'], perms['can_facilities_review'], perms['can_facilities_final'], perms['can_view_approved_items'], perms['can_onboarding'], perms['can_inventory'], perms['can_attrition_report'], perms['can_csat'], perms['can_surveys'],session['user']['emp_number'],
                                 perms['can_all_leaves'], perms['can_all_requests'], perms['can_approve'], perms['can_file_for_emp'],
                                 perms['can_schedules'], perms['can_reports'], perms['can_work_mode'],
                                 perms['can_settings'], perms['can_entitlements'], perms['can_file_requests'],
                                 perms['can_material_requests'], perms['can_final_approval'],
-                                perms['can_view_tickets'], perms['can_facilities_review'], perms['can_facilities_final'], perms['can_view_approved_items'], perms['can_onboarding'], perms['can_inventory'], perms['can_attrition_report'], perms['can_csat'], perms['can_surveys'], perms['can_floor_map'], perms['can_pim'], perms['can_qa_updates'], session['user']['emp_number']
+                                perms['can_view_tickets'], perms['can_facilities_review'], perms['can_facilities_final'], perms['can_view_approved_items'], perms['can_onboarding'], perms['can_inventory'], perms['can_attrition_report'], perms['can_csat'], perms['can_surveys'], session['user']['emp_number']
                             ))
                             count += 1
                     db.commit()
@@ -1994,8 +1939,8 @@ def admin_sub_admins():
                        g.group_name,
                        sa.can_all_leaves, sa.can_all_requests, sa.can_approve, sa.can_file_for_emp,
                        sa.can_schedules, sa.can_reports, sa.can_work_mode,
-                       sa.can_settings, sa.can_absences, sa.can_tardiness, sa.can_entitlements, sa.can_file_requests, sa.can_attrition_report,
-                       sa.can_material_requests, sa.can_final_approval, sa.can_view_tickets, sa.can_facilities_review, sa.can_facilities_final, sa.can_view_approved_items, sa.can_onboarding, sa.can_inventory, sa.can_csat, sa.can_surveys, sa.can_floor_map, sa.can_pim, sa.can_qa_updates
+                       sa.can_settings, sa.can_absences, sa.can_entitlements, sa.can_file_requests, sa.can_attrition_report,
+                       sa.can_material_requests, sa.can_final_approval, sa.can_view_tickets, sa.can_facilities_review, sa.can_facilities_final, sa.can_view_approved_items, sa.can_onboarding, sa.can_inventory, sa.can_csat, sa.can_surveys
                 FROM hs_hr_employee h
                 JOIN ohrm_user u ON u.emp_number = h.emp_number
                 LEFT JOIN leave4day_sub_admins sa ON sa.emp_number = h.emp_number
@@ -5157,19 +5102,7 @@ def file_material():
                         payment_required = 0
                         payment_reason = None
                         amount_due = 0.0
-                        # FREE_ITEM_OVERRIDE: employee_id:item_keyword pairs
-                        free_overrides = {}
-                        for _fo in os.getenv("FREE_ITEM_OVERRIDE","").split(","):
-                            if ":" in _fo:
-                                _feid, _fkw = _fo.split(":", 1)
-                                free_overrides[_feid.strip()] = _fkw.strip().lower()
-                        _fo_kw = free_overrides.get(employee_id, "")
-                        if _fo_kw and _fo_kw in iname.lower():
-                            is_special = 0
-                            payment_required = 0
-                            payment_reason = None
-                            amount_due = 0.0
-                        elif sp:
+                        if sp:
                             if not is_tenured:
                                 payment_required = 1
                                 payment_reason = 'Less than 2 years tenure ({:.1f} yrs)'.format(tenure_years)
@@ -5180,21 +5113,9 @@ def file_material():
                                     payment_required = 1
                                     payment_reason = 'Free item already claimed within the last 2 years'
                                     amount_due = float(sp['price'])
-                        auto_ids = [x.strip() for x in os.getenv("AUTO_RECOMMEND_IDS","").split(",") if x.strip()]
-                    if employee_id in auto_ids:
-                        c.execute('INSERT INTO material_requests (employee_id, employee_name, request_group_id, category, item_name, quantity, reason, date_needed, status, som_name, is_special, payment_required, payment_reason, amount_due) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,"Recommended",%s,%s,%s,%s,%s)', (employee_id, emp_name, group_id, cat, iname, qty, reason, date_needed, emp_name, is_special, payment_required, payment_reason, amount_due))
-                    else:
                         c.execute('INSERT INTO material_requests (employee_id, employee_name, request_group_id, category, item_name, quantity, reason, date_needed, status, is_special, payment_required, payment_reason, amount_due) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,"Pending",%s,%s,%s,%s)', (employee_id, emp_name, group_id, cat, iname, qty, reason, date_needed, is_special, payment_required, payment_reason, amount_due))
                     cdb.commit()
-                    grp_som_map = {}
-                    for _entry in os.getenv("GROUP_SOM_OVERRIDES","").split(","):
-                        if ":" in _entry:
-                            _g, _e = _entry.split(":", 1)
-                            grp_som_map[_g.strip()] = _e.strip()
-                    c.execute("SELECT group_name FROM gsheet_employees WHERE employee_id=%s", (employee_id,))
-                    _grow = c.fetchone()
-                    _emp_grp = (_grow or {}).get("group_name", "")
-                    sup_email = grp_som_map.get(_emp_grp) or get_supervisor_email(session["user"]["emp_number"])
+                    sup_email = get_supervisor_email(session["user"]["emp_number"])
                     if sup_email:
                         body = (f"<p><b>{emp_name}</b> filed a material request:</p><ul>{items_html}</ul>"
                                 f"<p><b>Reason:</b> {reason or chr(8212)}</p>"
@@ -5235,16 +5156,10 @@ def material_som_approvals():
     cdb = get_central_db()
     try:
         with cdb.cursor() as c:
-            tab = request.args.get('tab', 'pending')
             if session.get('is_admin'):
-                if tab == 'pending':
-                    c.execute("""SELECT * FROM material_requests
-                                 WHERE deleted_at IS NULL AND category != 'Medicine' AND status='Pending'
-                                 ORDER BY created_at DESC""")
-                else:
-                    c.execute("""SELECT * FROM material_requests
-                                 WHERE deleted_at IS NULL AND category != 'Medicine' AND status!='Pending'
-                                 ORDER BY FIELD(status,'Recommended','Pending Final Approval','Approved','Awaiting Confirmation','Served','Rejected','Released'), created_at DESC""")
+                c.execute("""SELECT * FROM material_requests
+                             WHERE deleted_at IS NULL AND category != 'Medicine'
+                             ORDER BY FIELD(status,'Pending','Recommended','Pending Final Approval','Approved','Awaiting Confirmation','Served','Rejected'), created_at DESC""")
             else:
                 # Get employee IDs under this supervisor (regular assignments)
                 sub_ids = get_supervisor_central_employees(user_email) or []
@@ -5254,38 +5169,20 @@ def material_som_approvals():
                 override_ids = [r['employee_id'] for r in c.fetchall()]
                 # Merge and deduplicate
                 all_ids = list(set(sub_ids + override_ids))
-                grp_som_map2 = {}
-                for _entry in os.getenv("GROUP_SOM_OVERRIDES","").split(","):
-                    if ":" in _entry:
-                        _g, _e = _entry.split(":", 1)
-                        grp_som_map2[_g.strip()] = _e.strip()
-                override_groups = [g for g,e in grp_som_map2.items() if e == user_email]
-                override_emp_ids = []
-                if override_groups:
-                    ph_g = ','.join(['%s'] * len(override_groups))
-                    c.execute(f"SELECT employee_id FROM gsheet_employees WHERE group_name IN ({ph_g})", override_groups)
-                    override_emp_ids = [r['employee_id'] for r in c.fetchall()]
-                combined_ids = list(set(all_ids + override_emp_ids))
-                if not combined_ids:
+                if not all_ids:
                     requests_ = []
                 else:
-                    ph = ','.join(['%s'] * len(combined_ids))
-                    if tab == 'pending':
-                        c.execute(f"""SELECT * FROM material_requests
-                                      WHERE employee_id IN ({ph}) AND deleted_at IS NULL
-                                      AND category != 'Medicine' AND status='Pending'
-                                      ORDER BY created_at DESC""", combined_ids)
-                    else:
-                        c.execute(f"""SELECT * FROM material_requests
-                                      WHERE employee_id IN ({ph}) AND deleted_at IS NULL
-                                      AND category != 'Medicine' AND status!='Pending'
-                                      ORDER BY FIELD(status,'Recommended','Pending Final Approval','Approved','Awaiting Confirmation','Served','Rejected','Released'), created_at DESC""", combined_ids)
+                    ph = ','.join(['%s'] * len(all_ids))
+                    c.execute(f"""SELECT * FROM material_requests
+                                  WHERE employee_id IN ({ph}) AND deleted_at IS NULL AND category != 'Medicine'
+                                  ORDER BY FIELD(status,'Pending','Recommended','Pending Final Approval','Approved','Awaiting Confirmation','Served','Rejected'), created_at DESC""",
+                              all_ids)
             requests_ = c.fetchall()
     finally:
         cdb.close()
 
     return render_template('file_requests/material_som.html',
-                           requests=requests_, tab=tab, user=session['user'])
+                           requests=requests_, user=session['user'])
 
 
 @app.route('/file-requests/material/som-action', methods=['POST'])
@@ -5356,27 +5253,9 @@ def material_requests_pending_count():
                 if not sub_ids:
                     return jsonify({'count': 0})
                 ph = ','.join(['%s'] * len(sub_ids))
-                # Also include IT group override employees
-                grp_som_map_c = {}
-                for _entry in os.getenv('GROUP_SOM_OVERRIDES','').split(','):
-                    if ':' in _entry:
-                        _g, _e = _entry.split(':', 1)
-                        grp_som_map_c[_g.strip()] = _e.strip()
-                override_grps_c = [g for g,e in grp_som_map_c.items() if e == user_email]
-                override_ids_c = []
-                if override_grps_c:
-                    with cdb.cursor() as c2:
-                        ph_g = ','.join(['%s'] * len(override_grps_c))
-                        c2.execute(f"SELECT employee_id FROM gsheet_employees WHERE group_name IN ({ph_g})", override_grps_c)
-                        override_ids_c = [r['employee_id'] for r in c2.fetchall()]
-                all_count_ids = list(set(sub_ids + override_ids_c))
-                if not all_count_ids:
-                    return jsonify({'count': 0})
-                ph = ','.join(['%s'] * len(all_count_ids))
                 c.execute(f"""SELECT COUNT(*) as cnt FROM material_requests
                               WHERE status='Pending' AND deleted_at IS NULL
-                              AND category != 'Medicine'
-                              AND employee_id IN ({ph})""", all_count_ids)
+                              AND employee_id IN ({ph})""", sub_ids)
             count = c.fetchone()['cnt']
     finally:
         cdb.close()
@@ -6850,10 +6729,10 @@ def file_ot():
                 raw_tickets = [t.strip() for t in raw_tickets if t.strip()]
                 invalid = []
                 for t in raw_tickets:
-                    if not t.isalnum():
-                        invalid.append(f"{t} (invalid characters)")
+                    if not t.isdigit():
+                        invalid.append(f"{t} (non-numeric)")
                     elif len(t) < 5:
-                        invalid.append(f"{t} (too short, min 5 characters)")
+                        invalid.append(f"{t} (too short, min 5 digits)")
                     else:
                         ticket_list.append(t)
                 if invalid:
@@ -8093,8 +7972,8 @@ def hrportal_onboard():
         # 2. ACTIVE DIRECTORY ──────────────────────────────
         try:
             first_name_parts   = first_name.split()
-            primary_username   = (first_name_parts[0] + '.' + last_name).lower().replace(' ', '')
-            secondary_username = (first_name_parts[1] + '.' + last_name).lower().replace(' ', '') if len(first_name_parts) > 1 else None
+            primary_username   = (first_name_parts[0] + last_name).lower().replace(' ', '')
+            secondary_username = (first_name_parts[1] + last_name).lower().replace(' ', '') if len(first_name_parts) > 1 else None
 
             # Check primary username
             check = ext_requests.post(
@@ -8318,27 +8197,6 @@ def hrportal_onboard():
         results['success']       = True
         results['employee_id']   = employee_id
         results['temp_password'] = temp_password
-
-        # ── Notify HR/IT teams ────────────────────────────
-        try:
-            notify_emails = os.environ.get('ONBOARDING_NOTIFY_EMAILS', '')
-            if notify_emails:
-                for recipient in [e.strip() for e in notify_emails.split(',')]:
-                    send_email(recipient, f'New Employee Onboarded — {schedule_name}', f"""
-                    <p>A new employee has been successfully onboarded.</p>
-                    <table style="border-collapse:collapse;font-family:sans-serif;font-size:14px">
-                      <tr><td style="padding:4px 16px 4px 0;font-weight:bold">Employee ID</td><td>{employee_id}</td></tr>
-                      <tr><td style="padding:4px 16px 4px 0;font-weight:bold">Name</td><td>{schedule_name}</td></tr>
-                      <tr><td style="padding:4px 16px 4px 0;font-weight:bold">Email</td><td>{email}</td></tr>
-                      <tr><td style="padding:4px 16px 4px 0;font-weight:bold">Training Date</td><td>{training_date}</td></tr>
-                      <tr><td style="padding:4px 16px 4px 0;font-weight:bold">Temp Password</td><td>{temp_password}</td></tr>
-                      <tr><td style="padding:4px 16px 4px 0;font-weight:bold">AD Username</td><td>{results.get('ad_username', 'N/A')}</td></tr>
-                      <tr><td style="padding:4px 16px 4px 0;font-weight:bold">Processed By</td><td>{processed_by}</td></tr>
-                    </table>
-                    """)
-        except Exception as e:
-            app.logger.error(f'❌ Onboarding notify email error: {e}')
-
         return jsonify(results)
 
     except Exception as e:
@@ -9592,7 +9450,7 @@ def admin_ticket_update(ticket_number):
 
 @app.route('/pim')
 def pim_index():
-    if not (session.get('is_admin') or session.get('permissions', {}).get('can_pim')):
+    if not (session.get('is_admin') or session.get('is_sub_admin')):
         abort(403)
     conn = get_central_db()
     cursor = conn.cursor(pymysql.cursors.DictCursor)
@@ -9626,7 +9484,7 @@ def pim_index():
 
 @app.route('/pim/<employee_id>')
 def pim_profile(employee_id):
-    if not (session.get('is_admin') or session.get('permissions', {}).get('can_pim')):
+    if not (session.get('is_admin') or session.get('is_sub_admin')):
         abort(403)
     import calendar as _cal
     from datetime import date as _date
@@ -10329,44 +10187,6 @@ def _csat_date_range():
     return (start, end)
 
 
-def _active_emails():
-    """Cached list of currently-Active agent emails (lowercased). Resolved once per request."""
-    if hasattr(g, '_csat_active_emails'):
-        return g._csat_active_emails
-    cdb = get_central_db()
-    try:
-        with cdb.cursor() as c:
-            c.execute("""
-                SELECT LOWER(TRIM(email)) AS em
-                FROM gsheet_employees
-                WHERE status='Active' AND email IS NOT NULL AND email<>''
-            """)
-            emails = [r['em'] for r in c.fetchall() if r['em']]
-    finally:
-        cdb.close()
-    g._csat_active_emails = emails
-    return emails
-
-
-def _cs_emails():
-    """Cached list of CS-group agent emails (lowercased), from csat_responses.group_name='CS'."""
-    if hasattr(g, '_csat_cs_emails'):
-        return g._csat_cs_emails
-    cdb = get_central_db()
-    try:
-        with cdb.cursor() as c:
-            c.execute("""
-                SELECT DISTINCT LOWER(TRIM(agent_email)) AS em
-                FROM csat_responses
-                WHERE group_name='CS' AND agent_email IS NOT NULL AND agent_email<>''
-            """)
-            emails = [r['em'] for r in c.fetchall() if r['em']]
-    finally:
-        cdb.close()
-    g._csat_cs_emails = emails
-    return emails
-
-
 def _csat_filters(tl_name):
     """
     Shared WHERE conditions/params for BOTH tables.
@@ -10407,38 +10227,6 @@ def _csat_filters(tl_name):
         conds.append("{a}.month = %s")
         params.append(f_month)
 
-    f_tenure = request.args.get('tenure')
-    if f_tenure and f_tenure != 'All':
-        tenures = [t.strip() for t in f_tenure.split(',') if t.strip() and t.strip() != 'All']
-        # only the two real buckets are valid; Training/#N/A/NULL are excluded by exact match
-        tenures = [t for t in tenures if t in ('Tenured', 'Non-tenured')]
-        if tenures:
-            conds.append("{a}.tenure IN (" + ','.join(['%s']*len(tenures)) + ")")
-            params.extend(tenures)
-
-    # --- CS-only (default ON). cs_only=0 to include all groups. ---
-    if request.args.get('cs_only', '1') not in ('0', 'false', 'off', 'no'):
-        cs = _cs_emails()
-        if cs:
-            conds.append("LOWER({a}.agent_email) IN (" + ','.join(['%s']*len(cs)) + ")")
-            params.extend(cs)
-        else:
-            conds.append("1=0")
-
-    # --- Active-only (default ON). active_only=0 to include separated agents. ---
-    if request.args.get('active_only', '1') not in ('0', 'false', 'off', 'no'):
-        act = _active_emails()
-        if act:
-            conds.append("LOWER({a}.agent_email) IN (" + ','.join(['%s']*len(act)) + ")")
-            params.extend(act)
-        else:
-            conds.append("1=0")
-
-    # --- single agent (exact email). Scopes the whole dashboard to one person. ---
-    f_agent = request.args.get('agent')
-    if f_agent and f_agent != 'All':
-        conds.append("LOWER({a}.agent_email) = %s")
-        params.append(f_agent.strip().lower())
     return (conds, params)
 
 
@@ -10524,7 +10312,6 @@ def api_csat_filter_options():
             "batches": batches,
             "weeks": weeks_obj,
             "months": months,
-            "tenures": ["Tenured", "Non-tenured"],
         })
     finally:
         cdb.close()
@@ -10659,54 +10446,6 @@ def api_csat_summary():
                 })
             trend.sort(key=lambda x:x['month'])
 
-            def _tenure_series(tenure_label):
-                # per bucket, per channel -> pct ; also per-bucket total response COUNT
-                c.execute(f"""
-                    SELECT {bucket_cr} AS bk, cr.channel_type, AVG(cr.csat_score) pct, COUNT(*) n
-                    FROM csat_responses cr WHERE {_apply(conds,'cr')}
-                      AND cr.tenure = %s
-                    GROUP BY bk, cr.channel_type
-                """, params + [tenure_label])
-                tpct = {}; tcount = {}
-                for row in c.fetchall():
-                    tpct.setdefault(row['bk'], {})[row['channel_type']] = float(row['pct'] or 0)
-                    tcount[row['bk']] = tcount.get(row['bk'], 0) + int(row['n'])
-                c.execute(f"""
-                    SELECT {bucket_r} AS bk,
-                           COALESCE(SUM(chat_resolved),0) chat_wt,
-                           COALESCE(SUM(email_resolved),0) email_wt,
-                           COALESCE(SUM(phone_resolved),0) phone_wt
-                    FROM resolve_counts r WHERE {_apply(conds,'r')}
-                      AND r.tenure = %s
-                    GROUP BY bk
-                """, params + [tenure_label])
-                twt = {}
-                for row in c.fetchall():
-                    twt[row['bk']] = (int(row['chat_wt']), int(row['email_wt']), int(row['phone_wt']))
-                vals = []; counts = []
-                for t in trend:
-                    bk = t['month']
-                    cwt, ewt, pwt = twt.get(bk, (0, 0, 0))
-                    mp = tpct.get(bk, {})
-                    d2 = cwt + ewt + pwt
-                    if d2:
-                        v = (mp.get('Chat',0)*cwt + mp.get('Email',0)*ewt + mp.get('Phone',0)*pwt) / d2
-                        vals.append(round(v*100, 2))
-                    else:
-                        vals.append(None)
-                    counts.append(tcount.get(bk, 0))
-                return vals, counts
-
-            _ten_vals, _ten_cnt = _tenure_series('Tenured')
-            _non_vals, _non_cnt = _tenure_series('Non-tenured')
-            tenure_trend = {
-                "buckets":         [t['month'] for t in trend],
-                "tenured":         _ten_vals,
-                "nontenured":      _non_vals,
-                "tenured_resp":    _ten_cnt,
-                "nontenured_resp": _non_cnt,
-            }
-
             by_tl = [] if tl_name else _weighted_group(c,'tl',conds,params)
             by_batch = _weighted_group(c,'batch',conds,params)
 
@@ -10764,7 +10503,7 @@ def api_csat_summary():
                     "Phone":{"pct":round(phone_pct*100,2),"resolved":phone_wt},
                 }
             },
-            "trend":trend,"by_tl":by_tl,"by_batch":by_batch,"tl_trend":tl_trend,"tenure_trend":tenure_trend,
+            "trend":trend,"by_tl":by_tl,"by_batch":by_batch,"tl_trend":tl_trend,
         })
     finally:
         cdb.close()
@@ -10828,19 +10567,6 @@ def api_csat_agents():
                     "phone_resolved":a["phone_wt"],
                     "total_resolved":a["total_resolved"],"responses":resp_count.get(em,0)})
             rows.sort(key=lambda x:x['weighted'],reverse=True)
-            # attach display names (schedule_name) from gsheet_employees
-            if rows:
-                emails = [r['email'] for r in rows if r.get('email')]
-                if emails:
-                    ph = ','.join(['%s']*len(emails))
-                    c.execute(
-                        "SELECT LOWER(TRIM(email)) AS em, schedule_name "
-                        "FROM gsheet_employees WHERE LOWER(TRIM(email)) IN (" + ph + ")",
-                        [e.lower().strip() for e in emails]
-                    )
-                    name_map = {row['em']: row['schedule_name'] for row in c.fetchall()}
-                    for r in rows:
-                        r['name'] = name_map.get((r.get('email') or '').lower().strip()) or r.get('email')
         return jsonify({"range":{"start":start,"end":end},"agents":rows})
     finally:
         cdb.close()
@@ -10890,40 +10616,26 @@ def api_csat_agent_responses():
 survey_bp = Blueprint('survey', __name__, url_prefix='/survey')
 
 @survey_bp.route('/')
-@login_required
-def survey_list():
-    db = get_central_db()
-    cur = db.cursor(pymysql.cursors.DictCursor)
-    user_email = session['user'].get('email')
-    cur.execute(
-        """SELECT s.slug, s.title, s.description, s.is_active,
-                  (sr.id IS NOT NULL) AS answered
-           FROM surveys s
-           LEFT JOIN survey_responses sr
-                  ON sr.survey_id = s.id AND sr.email = %s
-           WHERE s.is_active = 1
-           ORDER BY s.created_at DESC""",
-        (user_email,)
-    )
-    surveys = cur.fetchall()
-    return render_template('survey_list.html', surveys=surveys)
-
-
 @survey_bp.route('/<slug>')
 @login_required
-def survey_form(slug):
+def survey_form(slug=None):
     db = get_central_db()
     cur = db.cursor(pymysql.cursors.DictCursor)
-    cur.execute("SELECT * FROM surveys WHERE slug=%s AND is_active=1", (slug,))
+    if slug:
+        cur.execute("SELECT * FROM surveys WHERE slug=%s AND is_active=1", (slug,))
+    else:
+        cur.execute("SELECT * FROM surveys WHERE is_active=1 ORDER BY created_at DESC LIMIT 1")
     survey = cur.fetchone()
     if not survey:
         abort(404)
+
     user_email = session['user'].get('email')
     cur.execute(
         "SELECT id FROM survey_responses WHERE survey_id=%s AND email=%s",
         (survey['id'], user_email)
     )
     already = cur.fetchone() is not None
+
     survey['questions'] = json.loads(survey['questions'])
     return render_template('survey.html', survey=survey, already_answered=already)
 
@@ -11071,26 +10783,6 @@ def survey_results_csv(slug):
 
     return Response(out.getvalue(), mimetype='text/csv',
                     headers={'Content-Disposition': f'attachment; filename={slug}-responses.csv'})
-
-@survey_bp.route('/<int:sid>/toggle', methods=['POST'])
-@login_required
-def survey_toggle(sid):
-    if not (session.get('is_admin') or has_permission('can_surveys')):
-        return jsonify({"error": "forbidden"}), 403
-    db = get_central_db()
-    try:
-        cur = db.cursor(pymysql.cursors.DictCursor)
-        cur.execute("UPDATE surveys SET is_active = 1 - is_active WHERE id=%s", (sid,))
-        db.commit()
-        cur.execute("SELECT is_active FROM surveys WHERE id=%s", (sid,))
-        row = cur.fetchone()
-        if not row:
-            return jsonify({"error": "not found"}), 404
-        return jsonify({"id": sid, "is_active": int(row['is_active'])})
-    except Exception as e:
-        db.rollback()
-        return jsonify({"error": str(e)}), 500
-
 
 @survey_bp.route('/admin')
 @login_required

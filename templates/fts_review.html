@@ -1,0 +1,180 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="container-fluid py-3">
+
+  <div class="d-flex flex-wrap align-items-center justify-content-between mb-3 gap-2">
+    <h4 class="mb-0"><i class="bi bi-fingerprint"></i> FTS Review <span class="text-muted fs-6">(Path B)</span></h4>
+
+    {% if not denied %}
+    <form id="periodForm" method="get" class="d-flex align-items-center gap-2">
+      <button type="button" class="btn btn-outline-secondary btn-sm" onclick="stepPeriod(-1)" title="Older period">&lsaquo;</button>
+      <select name="period_sel" class="form-select form-select-sm" style="min-width:260px" onchange="jumpPeriod(this)">
+        {% for o in period_options %}
+        <option value="{{ o.from }}|{{ o.to }}"
+          {% if o.from == period.from and o.to == period.to %}selected{% endif %}>
+          {{ o.label }}
+        </option>
+        {% endfor %}
+      </select>
+      <button type="button" class="btn btn-outline-secondary btn-sm" onclick="stepPeriod(1)" title="Newer period">&rsaquo;</button>
+      <input type="hidden" name="date_from" value="{{ period.from }}">
+      <input type="hidden" name="date_to" value="{{ period.to }}">
+    </form>
+    {% endif %}
+  </div>
+
+  {% if denied %}
+    <div class="alert alert-danger">You don't have access to FTS review.</div>
+  {% else %}
+
+  <div class="text-muted small mb-2">Payroll period: <strong>{{ period.label }}</strong></div>
+
+  <ul class="nav nav-tabs mb-3" role="tablist">
+    {% for t in tabs %}
+    <li class="nav-item" role="presentation">
+      <button class="nav-link {% if loop.first %}active{% endif %}"
+              data-bs-toggle="tab" data-bs-target="#tab-{{ t.key }}" type="button" role="tab">
+        {{ t.label }}
+        <span class="badge {% if t.key=='fts' %}bg-warning text-dark{% elif t.key=='absent_unexplained' %}bg-danger{% elif t.key=='on_leave' %}bg-success{% elif t.key=='cws' %}bg-info text-dark{% else %}bg-secondary{% endif %} ms-1">{{ t.count }}</span>
+      </button>
+    </li>
+    {% endfor %}
+  </ul>
+
+  <div class="tab-content">
+    {% for t in tabs %}
+    <div class="tab-pane fade {% if loop.first %}show active{% endif %}" id="tab-{{ t.key }}" role="tabpanel">
+      <div class="d-flex justify-content-between align-items-center mb-3">
+        <p class="text-muted small mb-0">{{ t.desc }}</p>
+        {% if t.key in ['fts','absent_unexplained'] %}
+        <div class="form-check form-switch">
+          <input class="form-check-input filed-toggle" type="checkbox" id="unfiled-{{ t.key }}"
+                 onchange="toggleUnfiled('{{ t.key }}', this.checked)">
+          <label class="form-check-label small" for="unfiled-{{ t.key }}">Show unfiled only</label>
+        </div>
+        {% endif %}
+      </div>
+      {% if not t.groups %}
+        <div class="alert alert-light border mb-0">No records in this period.</div>
+      {% else %}
+        {% for g in t.groups %}
+        <div class="card mb-3 shadow-sm">
+          <div class="card-header bg-light fw-bold">
+            <i class="bi bi-person-badge"></i> TL: {{ g.tl }}
+            <span class="badge bg-secondary ms-2">{{ g['items']|length }}</span>
+          </div>
+          <div class="table-responsive">
+            <table class="table table-sm align-middle mb-0">
+              <thead class="table-light">
+                <tr>
+                  <th>Agent</th><th>Date</th><th>Shift</th><th>Missing</th>
+                  <th>Candidate punch</th><th>OT context</th><th>FTS Filed</th><th>Status</th><th class="text-end">Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for r in g['items'] %}
+                <tr id="inc-{{ r.id }}" data-status="{{ r.review_status }}">
+                  <td>{{ r.name or r.employee_id }}<br><small class="text-muted">{{ r.employee_id }}</small></td>
+                  <td>{{ r.schedule_date }}</td>
+                  <td>{{ r.shift_time }}</td>
+                  <td>
+                    {% if r.flag_type == 'missing_both' %}<span class="badge bg-danger">IN &amp; OUT</span>
+                    {% elif r.flag_type == 'missing_in' %}<span class="badge bg-warning text-dark">IN</span>
+                    {% elif r.flag_type == 'missing_out' %}<span class="badge bg-warning text-dark">OUT</span>
+                    {% else %}<span class="badge bg-dark">{{ r.flag_type }}</span>{% endif %}
+                  </td>
+                  <td><small>{{ r.candidate_note or '—' }}</small></td>
+                  <td>
+                    {% if 'Approved' in (r.ot_context or '') %}<span class="badge bg-success">{{ r.ot_context }}</span>
+                    {% elif 'Pending' in (r.ot_context or '') %}<span class="badge bg-warning text-dark">{{ r.ot_context }}</span>
+                    {% else %}<span class="text-muted small">{{ r.ot_context }}</span>{% endif %}
+                  </td>
+                  <td class="filed-cell" data-filed="{{ '1' if r.fts_filed else '0' }}">
+                    {% if r.fts_filed %}
+                      <span class="badge bg-success" title="{{ r.fts_filed }}"><i class="bi bi-check-lg"></i> {{ r.fts_filed }}</span>
+                    {% else %}
+                      <span class="badge bg-warning text-dark">Not filed</span>
+                    {% endif %}
+                  </td>
+                  <td class="status-cell">
+                    {% if r.review_status == 'confirmed' %}
+                      <span class="badge bg-success">Confirmed</span>
+                      <small class="text-muted d-block">{{ r.reviewed_by }}{% if r.reviewed_at %} · {{ r.reviewed_at.strftime('%b %d, %H:%M') }}{% endif %}</small>
+                    {% elif r.review_status == 'dismissed' %}
+                      <span class="badge bg-secondary">Dismissed</span>
+                      <small class="text-muted d-block">{{ r.reviewed_by }}{% if r.reviewed_at %} · {{ r.reviewed_at.strftime('%b %d, %H:%M') }}{% endif %}</small>
+                    {% else %}
+                      <span class="badge bg-light text-dark border">Pending</span>
+                    {% endif %}
+                  </td>
+                  <td class="text-end text-nowrap action-cell">
+                    {% if r.review_status == 'pending' %}
+                      <button class="btn btn-sm btn-success" onclick="ftsAct({{ r.id }},'confirm')"><i class="bi bi-check-lg"></i> Confirm</button>
+                      <button class="btn btn-sm btn-outline-secondary" onclick="ftsAct({{ r.id }},'dismiss')"><i class="bi bi-x-lg"></i> Dismiss</button>
+                    {% else %}
+                      <button class="btn btn-sm btn-outline-secondary" onclick="ftsAct({{ r.id }},'reset')"><i class="bi bi-arrow-counterclockwise"></i> Undo</button>
+                    {% endif %}
+                  </td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </div>
+        {% endfor %}
+      {% endif %}
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+</div>
+
+<script>
+function jumpPeriod(sel){
+  const [f,t] = sel.value.split('|');
+  window.location = '/fts-review/?date_from='+f+'&date_to='+t;
+}
+function stepPeriod(dir){
+  // dir -1 = older, +1 = newer : move selection in the dropdown
+  const sel = document.querySelector('select[name=period_sel]');
+  let i = sel.selectedIndex + (dir<0 ? 1 : -1);   // options are newest-first
+  if(i < 0 || i >= sel.options.length) return;
+  sel.selectedIndex = i; jumpPeriod(sel);
+}
+function toggleUnfiled(tabKey, on){
+  const pane = document.getElementById('tab-'+tabKey);
+  if(!pane) return;
+  pane.querySelectorAll('tr[id^="inc-"]').forEach(function(row){
+    const cell = row.querySelector('.filed-cell');
+    const isFiled = cell && cell.getAttribute('data-filed')==='1';
+    row.style.display = (on && isFiled) ? 'none' : '';
+  });
+}
+async function ftsAct(id, action){
+  const row = document.getElementById('inc-'+id);
+  try{
+    const res = await fetch('/fts-review/api/'+id+'/'+action,{method:'POST'});
+    const d = await res.json();
+    if(!d.ok){ alert('Error: '+(d.error||'failed')); return; }
+    const statusCell = row.querySelector('.status-cell');
+    const actionCell = row.querySelector('.action-cell');
+    if(d.status === 'pending'){
+      statusCell.innerHTML = '<span class="badge bg-light text-dark border">Pending</span>';
+      actionCell.innerHTML =
+        '<button class="btn btn-sm btn-success" onclick="ftsAct('+id+",'confirm')\">"+
+        '<i class=\"bi bi-check-lg\"></i> Confirm</button> '+
+        '<button class="btn btn-sm btn-outline-secondary" onclick="ftsAct('+id+",'dismiss')\">"+
+        '<i class=\"bi bi-x-lg\"></i> Dismiss</button>';
+    } else {
+      const badge = d.status==='confirmed' ? 'bg-success\">Confirmed' : 'bg-secondary\">Dismissed';
+      statusCell.innerHTML = '<span class="badge '+badge+'</span>'+
+        '<small class="text-muted d-block">'+(d.reviewed_by||'')+
+        (d.reviewed_at? ' · '+d.reviewed_at : '')+'</small>';
+      actionCell.innerHTML =
+        '<button class="btn btn-sm btn-outline-secondary" onclick="ftsAct('+id+",'reset')\">"+
+        '<i class=\"bi bi-arrow-counterclockwise\"></i> Undo</button>';
+    }
+  }catch(e){ alert('Request failed: '+e); }
+}
+</script>
+{% endblock %}

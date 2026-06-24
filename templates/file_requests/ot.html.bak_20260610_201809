@@ -110,11 +110,11 @@
           </div>
           <label class="form-label">
             Enter Ticket Numbers <span class="text-danger" id="ticketRequired">*</span>
-            <span class="text-muted fw-normal small ms-1">— min 5 characters, letters or numbers</span>
+            <span class="text-muted fw-normal small ms-1">— numbers only, min 5 digits</span>
           </label>
           <textarea name="ticket_numbers" id="ticket_numbers"
                     class="form-control font-monospace" rows="6"
-                    placeholder="Enter one ticket per line:&#10;&#10;123456&#10;123457&#10;123458&#10;&#10;Or comma-separated: 123456, 123457, 123458&#10;&#10;✅ Valid: 112334, REF12345, ABC2024 (min 5 chars)&#10;❌ Invalid: 7, ab, pre ot"></textarea>
+                    placeholder="Enter one ticket per line:&#10;&#10;123456&#10;123457&#10;123458&#10;&#10;Or comma-separated: 123456, 123457, 123458&#10;&#10;✅ Valid: 112334, 221312, 123456 (min 5 digits)&#10;❌ Invalid: 7, 8, pre-ot, chat, email"></textarea>
           <div class="form-text mt-1" id="ticketCounter">0 tickets detected</div>
         </div>
 

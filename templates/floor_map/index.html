@@ -1,0 +1,479 @@
+{% extends "base.html" %}
+{% block title %}Floor Map{% endblock %}
+{% block content %}
+<div class="container-fluid px-4 py-3" id="floor-map-app">
+
+  <!-- Top Bar -->
+  <div class="d-flex align-items-start justify-content-between mb-3 flex-wrap gap-2">
+    <div>
+      <h4 class="mb-0 fw-semibold">Floor Map
+        <button class="btn btn-sm btn-outline-secondary ms-2" id="fullscreen-btn" onclick="toggleFullscreen()" title="Fullscreen">
+          <i class="bi bi-fullscreen"></i>
+        </button>
+        <button class="btn btn-sm btn-outline-secondary ms-1" id="darkmode-btn" onclick="toggleDark()" title="Dark mode">
+          <i class="bi bi-moon-fill"></i>
+        </button>
+      </h4>
+      <small class="text-muted" id="last-updated">Loading...</small>
+      <div id="countdown-bar" class="mt-1" style="font-size:11px;color:#6c757d">
+        Next refresh in <span id="countdown">30</span>s
+      </div>
+    </div>
+    <div class="d-flex gap-2 align-items-center flex-wrap">
+      <!-- Search -->
+      <div class="input-group input-group-sm" style="width:220px">
+        <span class="input-group-text"><i class="bi bi-search"></i></span>
+        <input type="text" class="form-control" id="search-input" placeholder="Search agent..." oninput="searchAgent(this.value)">
+        <button class="btn btn-outline-secondary" onclick="clearSearch()" title="Clear"><i class="bi bi-x"></i></button>
+      </div>
+      <!-- Team Filter -->
+      <select class="form-select form-select-sm" style="width:130px" id="team-filter" onchange="filterTeam(this.value)">
+        <option value="">All Teams</option>
+        <option value="cs">CS</option>
+        <option value="bo">BO</option>
+        <option value="l2">L2</option>
+        <option value="rta">RTA</option>
+        <option value="qa">QA</option>
+        <option value="arctic">Arctic</option>
+        <option value="training">Training</option>
+        <option value="sme">SME</option>
+      </select>
+      <span class="badge rounded-pill bg-success px-3" id="badge-online">0 Online</span>
+      <span class="badge rounded-pill bg-secondary px-3" id="badge-vacant">0 Vacant</span>
+      <span class="badge rounded-pill bg-warning text-dark px-3" id="badge-unmapped">0 Unmapped</span>
+      <button class="btn btn-sm btn-outline-secondary" onclick="loadPresence()">
+        <i class="bi bi-arrow-clockwise"></i> Refresh
+      </button>
+      <span class="badge bg-danger px-2" id="live-badge"><i class="bi bi-circle-fill" style="font-size:8px"></i> LIVE</span>
+    </div>
+  </div>
+
+  <!-- Attendance Summary -->
+  <div id="summary-bar" class="d-flex gap-2 flex-wrap mb-3" style="font-size:12px"></div>
+
+  <!-- Legend -->
+  <div class="d-flex gap-3 flex-wrap mb-3 align-items-center" style="font-size:12px">
+    <strong style="font-size:11px;color:#6c757d">TEAMS:</strong>
+    <span><span class="legend-swatch" style="background:#1D9E75"></span> CS / BO / L2</span>
+    <span><span class="legend-swatch" style="background:#7F77DD"></span> RTA</span>
+    <span><span class="legend-swatch" style="background:#C0436B"></span> Arctic</span>
+    <span><span class="legend-swatch" style="background:#378ADD"></span> QA</span>
+    <span><span class="legend-swatch" style="background:#D4B800"></span> Training</span>
+    <span><span class="legend-swatch" style="background:#6f42c1"></span> SME</span>
+    <span style="border-left:1px solid #dee2e6;padding-left:12px">
+      <span class="legend-swatch" style="background:#E07B39"></span> Supervisor
+    </span>
+    <span><span class="legend-swatch" style="background:#343a40"></span> Stand</span>
+    <span><span class="legend-swatch" style="background:#adb5bd;border:1px solid #ccc"></span> Unmapped</span>
+  </div>
+
+  <!-- Floor Map -->
+  <div id="floor-map">
+    <div class="text-center py-5 text-muted">
+      <div class="spinner-border spinner-border-sm me-2"></div> Loading floor map...
+    </div>
+  </div>
+
+</div>
+
+<!-- Seat Detail Modal -->
+<div class="modal fade" id="seatModal" tabindex="-1">
+  <div class="modal-dialog modal-md">
+    <div class="modal-content border-0 shadow">
+      <div class="modal-header border-0 pb-0" id="modal-header-bar" style="background:#f8f9fa;border-radius:12px 12px 0 0">
+        <div>
+          <h6 class="modal-title mb-0 fw-semibold" id="modal-title">Seat Detail</h6>
+          <small class="text-muted" id="modal-subtitle"></small>
+        </div>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body pt-2" id="modal-body"></div>
+      <div class="modal-footer border-0 pt-0" id="modal-footer" style="display:none">
+        <a href="#" class="btn btn-sm btn-outline-primary" id="modal-profile-link" target="_blank">
+          <i class="bi bi-person-badge"></i> View Profile
+        </a>
+      </div>
+    </div>
+  </div>
+</div>
+
+<style>
+/* ===== DARK MODE ===== */
+body.dark-floor #floor-map-app { background: #1a1a2e; color: #e0e0e0; }
+body.dark-floor .sg-pod { background: #16213e !important; border-color: #0f3460 !important; }
+body.dark-floor .sg-pod-name { color: #4a9eff !important; }
+body.dark-floor .area-title { color: #adb5bd !important; }
+body.dark-floor .seat.vacant { background: #2d3436 !important; border-color: #4a4a4a !important; color: #636e72 !important; }
+body.dark-floor .seat.unmapped { background: #3d3d3d !important; }
+body.dark-floor .modal-content { background: #1e1e2e !important; color: #e0e0e0 !important; }
+body.dark-floor #modal-header-bar { background: #16213e !important; }
+body.dark-floor .form-control, body.dark-floor .form-select { background: #2d3436; color: #e0e0e0; border-color: #4a4a4a; }
+body.dark-floor .input-group-text { background: #2d3436; color: #adb5bd; border-color: #4a4a4a; }
+
+/* ===== LEGEND ===== */
+.legend-swatch { display:inline-block; width:12px; height:12px; border-radius:3px; margin-right:4px; vertical-align:middle; }
+
+/* ===== SUMMARY BAR ===== */
+.summary-chip { padding:4px 12px; border-radius:20px; font-size:11px; font-weight:500; border:1px solid; display:inline-flex; align-items:center; gap:5px; }
+
+/* ===== FLOOR ===== */
+.area-title { font-size:13px; font-weight:600; color:#495057; margin:1rem 0 8px; }
+.area-divider { border:none; border-top:2px dashed #dee2e6; margin:1rem 0; }
+.sg-pod { display:inline-flex; flex-direction:column; gap:2px; padding:8px;
+  border:1px solid #dee2e6; border-radius:10px; background:#fff;
+  vertical-align:top; margin-right:8px; margin-bottom:8px;
+  transition: box-shadow .2s; }
+.sg-pod:hover { box-shadow: 0 2px 12px rgba(0,0,0,.08); }
+.sg-pod-name { font-size:9px; color:#adb5bd; text-align:center; margin-bottom:3px;
+  letter-spacing:.06em; text-transform:uppercase; font-weight:600; }
+.seat-row { display:flex; gap:3px; }
+
+/* ===== SEATS ===== */
+.seat { width:68px; height:68px; border-radius:8px; display:flex; flex-direction:column;
+  align-items:center; justify-content:center; cursor:pointer; border:2px solid transparent;
+  transition: transform .12s, box-shadow .15s, opacity .3s; position:relative; }
+.seat:hover { transform:scale(1.1); box-shadow:0 4px 12px rgba(0,0,0,.2); z-index:10; }
+.seat.seat-highlight { border-color:#FFD700 !important; box-shadow:0 0 0 3px #FFD70066 !important; transform:scale(1.15) !important; z-index:20; }
+.seat.seat-dimmed { opacity:0.25; }
+.seat.online  { background:#1D9E75; color:#fff; }
+.seat.online.rta { background:#7F77DD; color:#fff; }
+.seat.online.arctic { background:#C0436B; color:#fff; }
+.seat.online.qa  { background:#378ADD; color:#fff; }
+.seat.online.training { background:#D4B800; color:#fff; }
+.seat.online.sme { background:#6f42c1; color:#fff; }
+.seat.vacant  { background:#f0f2f5; border:2px solid #dee2e6; color:#adb5bd; }
+.seat.unmapped { background:#e9ecef; color:#adb5bd; }
+.seat.supervisor { background:#E07B39; color:#fff; }
+.seat.stand   { background:#343a40; color:#fff; }
+.seat-num  { font-size:13px; font-weight:700; line-height:1; }
+.seat-name { font-size:9px; line-height:1.2; text-align:center;
+  max-width:64px; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; margin-top:2px; }
+
+/* Online pulse animation */
+.seat.online::after {
+  content:''; position:absolute; top:4px; right:4px;
+  width:7px; height:7px; border-radius:50%; background:#fff;
+  opacity:.8; animation: seat-pulse 2s infinite;
+}
+@keyframes seat-pulse { 0%,100%{opacity:.8;transform:scale(1)} 50%{opacity:.3;transform:scale(1.3)} }
+
+/* ===== COMMAND CENTER ===== */
+.cc-block { display:inline-flex; align-items:center; justify-content:center;
+  background:linear-gradient(135deg,#e3f2fd,#bbdefb); border:2px solid #90caf9;
+  border-radius:10px; padding:10px 16px; font-size:12px; font-weight:600; color:#1565c0;
+  margin-bottom:8px; writing-mode:vertical-rl; height:220px; letter-spacing:.05em; }
+
+/* ===== MODAL ===== */
+.modal-content { border-radius:12px !important; }
+.presence-card { border-radius:8px; padding:12px 14px; margin-bottom:8px; }
+.presence-card.online-card { background:#f0fdf4; border:1px solid #bbf7d0; }
+.presence-card.vacant-card { background:#f8f9fa; border:1px solid #dee2e6; }
+.presence-card.last-card   { background:#fff8f0; border:1px solid #fed7aa; }
+
+/* ===== FULLSCREEN ===== */
+#floor-map-app.fullscreen-mode {
+  position:fixed; top:0; left:0; width:100vw; height:100vh;
+  z-index:9999; overflow-y:auto; background:#fff; padding:1rem 2rem;
+}
+body.dark-floor #floor-map-app.fullscreen-mode { background:#1a1a2e; }
+</style>
+
+<script>
+const TEAM_CLASS = {cs:'',bo:'',l2:'',rta:'rta',arctic:'arctic',qa:'qa',training:'training',sme:'sme'};
+const TEAM_COLORS = {
+  cs:'#1D9E75',bo:'#1D9E75',l2:'#1D9E75',rta:'#7F77DD',
+  arctic:'#C0436B',qa:'#378ADD',training:'#D4B800',sme:'#6f42c1'
+};
+
+let allRows = [];
+let refreshTimer = null;
+let countdownTimer = null;
+let countdownSec = 30;
+let isDark = false;
+let currentSearch = '';
+let currentTeam = '';
+
+function getSeatClass(row) {
+  if (row.seat_type === 'stand') return 'stand';
+  if (row.seat_type === 'supervisor') return 'supervisor';
+  const tc = TEAM_CLASS[row.team] || '';
+  if (!row.computer_name) return 'unmapped';
+  if (row.status === 'active') return ('online ' + tc).trim();
+  return ('vacant ' + tc).trim();
+}
+
+function getSeatLabel(row) {
+  if (row.seat_type === 'stand') return '▲';
+  if (row.seat_type === 'supervisor') return '★';
+  if (row.status === 'active' && row.active_user_display) {
+    return row.active_user_display.split(' ')[0];
+  }
+  return '';
+}
+
+function buildMap(rows) {
+  const map = document.getElementById('floor-map');
+  map.innerHTML = '';
+  const TOP    = ['SG1','SG2','SG3','SG4','SG5','SG6','SG7','SG8'];
+  const BOTTOM = ['SG9','SG10','SG11','SG12','SG13','SG14','SG15','SG16'];
+
+  const grouped = {};
+  rows.forEach(r => {
+    if (!grouped[r.station_group]) grouped[r.station_group] = [];
+    grouped[r.station_group].push(r);
+  });
+  Object.keys(grouped).forEach(sg => grouped[sg].sort((a,b) => a.seat_number - b.seat_number));
+
+  ['top','bottom'].forEach(area => {
+    const sgList = area === 'top' ? TOP : BOTTOM;
+    const areaDiv = document.createElement('div');
+    const title = document.createElement('div');
+    title.className = 'area-title';
+    title.textContent = area === 'top' ? '⬆ Top Area' : '⬇ Bottom Area';
+    areaDiv.appendChild(title);
+
+    const podRow = document.createElement('div');
+    podRow.style.cssText = 'display:flex;flex-wrap:wrap;gap:6px;align-items:flex-start;';
+
+    [...sgList].reverse().forEach(sgId => {
+      const seats = grouped[sgId] || [];
+      if (!seats.length) return;
+      const pod = document.createElement('div');
+      pod.className = 'sg-pod';
+
+      // SG headcount badge
+      const online = seats.filter(s => s.status === 'active').length;
+      const total  = seats.filter(s => s.seat_type === 'agent' && s.computer_name).length;
+      pod.innerHTML = `<div class="sg-pod-name">${sgId} <span style="color:${online>0?'#1D9E75':'#adb5bd'}">${online}/${total}</span></div>`;
+
+      for (let i = 0; i < seats.length; i += 2) {
+        const rowEl = document.createElement('div');
+        rowEl.className = 'seat-row';
+        [seats[i], seats[i+1]].forEach(row => {
+          if (!row) { const ph = document.createElement('div'); ph.style.cssText='width:68px;height:68px;'; rowEl.appendChild(ph); return; }
+          const el  = document.createElement('div');
+          const cls = getSeatClass(row);
+          const lbl = getSeatLabel(row);
+          el.className = `seat ${cls}`;
+          el.id = `seat-${row.station_group}-${row.seat_number}`;
+          el.dataset.sg   = row.station_group;
+          el.dataset.snum = row.seat_number;
+          el.dataset.team = row.team || '';
+          el.dataset.user = (row.active_user_display || '').toLowerCase();
+          el.dataset.status = row.status || '';
+          el.title = `Seat ${row.seat_number} · ${(row.team||'').toUpperCase()} · ${row.computer_name || 'Unmapped'}`;
+          el.innerHTML = `<span class="seat-num">${row.seat_number}</span><span class="seat-name">${lbl}</span>`;
+          el.onclick = () => showModal(row);
+          rowEl.appendChild(el);
+        });
+        pod.appendChild(rowEl);
+      }
+      podRow.appendChild(pod);
+    });
+
+    if (area === 'bottom') {
+      const cc = document.createElement('div');
+      cc.className = 'cc-block';
+      cc.innerHTML = '<i class="bi bi-display me-0" style="font-size:16px;margin-bottom:6px"></i><br>Command<br>Center';
+      cc.style.writingMode = 'horizontal-tb';
+      cc.style.height = 'auto';
+      cc.style.width = '70px';
+      cc.style.textAlign = 'center';
+      podRow.appendChild(cc);
+    }
+
+    areaDiv.appendChild(podRow);
+    if (area === 'top') { const hr = document.createElement('hr'); hr.className = 'area-divider'; areaDiv.appendChild(hr); }
+    map.appendChild(areaDiv);
+  });
+
+  applyFilters();
+  buildSummary(rows);
+}
+
+function buildSummary(rows) {
+  const bar = document.getElementById('summary-bar');
+  const teams = {};
+  rows.forEach(r => {
+    if (r.seat_type !== 'agent' || !r.computer_name) return;
+    const t = r.team || 'unknown';
+    if (!teams[t]) teams[t] = {online:0,total:0};
+    teams[t].total++;
+    if (r.status === 'active') teams[t].online++;
+  });
+  bar.innerHTML = Object.entries(teams).map(([team,data]) => {
+    const color = TEAM_COLORS[team] || '#6c757d';
+    const pct   = data.total ? Math.round(data.online/data.total*100) : 0;
+    return `<span class="summary-chip" style="background:${color}11;border-color:${color}44;color:${color}">
+      <span style="width:7px;height:7px;border-radius:50%;background:${color};display:inline-block"></span>
+      ${team.toUpperCase()} &nbsp;<strong>${data.online}/${data.total}</strong>
+      <span style="color:#999;font-weight:400">${pct}%</span>
+    </span>`;
+  }).join('');
+}
+
+function showModal(row) {
+  document.getElementById('modal-title').textContent = `Seat ${row.seat_number} · ${row.station_group}`;
+  document.getElementById('modal-subtitle').textContent = `${row.computer_name || 'Not mapped'} · ${(row.team||'').toUpperCase()} · ${row.seat_type}`;
+
+  const statusBadge = row.status === 'active'
+    ? '<span class="badge bg-success">Online</span>'
+    : '<span class="badge bg-secondary">Vacant</span>';
+
+  let html = '';
+
+  if (row.status === 'active') {
+    html += `<div class="presence-card online-card">
+      <div class="d-flex align-items-center gap-3">
+        <div style="width:44px;height:44px;border-radius:50%;background:#1D9E75;display:flex;align-items:center;justify-content:center;color:#fff;font-size:18px;font-weight:700;flex-shrink:0">
+          ${(row.active_user_display||'?').charAt(0).toUpperCase()}
+        </div>
+        <div style="flex:1">
+          <div style="font-size:16px;font-weight:600;color:#166534">${row.active_user_display || row.active_user || '—'}</div>
+          <div class="text-muted small">${row.active_user || ''}</div>
+          <div class="mt-1">${statusBadge}</div>
+        </div>
+      </div>
+      <hr class="my-2">
+      <div class="d-flex gap-3" style="font-size:12px;color:#555">
+        ${row.login_time ? `<span><i class="bi bi-clock me-1"></i>${row.login_time}</span>` : ''}
+        ${row.ip_address ? `<span><i class="bi bi-wifi me-1"></i>${row.ip_address}</span>` : ''}
+      </div>
+    </div>`;
+  } else if (row.computer_name) {
+    html += `<div class="presence-card vacant-card">
+      <div class="d-flex align-items-center gap-2 text-muted">
+        <i class="bi bi-person-slash" style="font-size:24px"></i>
+        <div>
+          <div style="font-size:14px;font-weight:500">No one logged in</div>
+          ${row.ip_address ? `<div class="small"><i class="bi bi-wifi me-1"></i>${row.ip_address}</div>` : ''}
+        </div>
+      </div>
+    </div>`;
+  } else {
+    html += `<div class="presence-card vacant-card">
+      <div class="text-muted small"><i class="bi bi-hdd me-1"></i>No computer assigned to this seat yet</div>
+    </div>`;
+  }
+
+  if (row.last_user_display || row.last_user) {
+    html += `<div class="presence-card last-card">
+      <div style="font-size:11px;font-weight:600;color:#92400e;text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px">
+        <i class="bi bi-clock-history me-1"></i>Last Session
+      </div>
+      <div style="font-size:14px;font-weight:500">${row.last_user_display || row.last_user}</div>
+      ${row.logoff_time ? `<div class="text-muted small mt-1"><i class="bi bi-box-arrow-right me-1"></i>Logged off: ${row.logoff_time}</div>` : ''}
+    </div>`;
+  }
+
+  document.getElementById('modal-body').innerHTML = html;
+
+  // Profile link
+  const footer = document.getElementById('modal-footer');
+  const profileLink = document.getElementById('modal-profile-link');
+  if (row.active_user) {
+    const username = (row.active_user || '').replace('COHERE\\', '').replace('COHERE\\\\', '');
+    profileLink.href = `/employee-directory?search=${username}`;
+    footer.style.display = '';
+  } else {
+    footer.style.display = 'none';
+  }
+
+  new bootstrap.Modal(document.getElementById('seatModal')).show();
+}
+
+function searchAgent(val) {
+  currentSearch = val.toLowerCase().trim();
+  applyFilters();
+}
+
+function clearSearch() {
+  document.getElementById('search-input').value = '';
+  currentSearch = '';
+  applyFilters();
+}
+
+function filterTeam(val) {
+  currentTeam = val;
+  applyFilters();
+}
+
+function applyFilters() {
+  const seats = document.querySelectorAll('.seat');
+  seats.forEach(el => {
+    const user   = el.dataset.user || '';
+    const team   = el.dataset.team || '';
+    const stype  = el.closest('.sg-pod') ? '' : '';
+
+    let show = true;
+    if (currentSearch && !user.includes(currentSearch)) show = false;
+    if (currentTeam && team !== currentTeam) show = false;
+
+    if (currentSearch || currentTeam) {
+      el.classList.toggle('seat-dimmed', !show);
+      el.classList.toggle('seat-highlight', show && currentSearch && user.includes(currentSearch) && el.dataset.status === 'active');
+    } else {
+      el.classList.remove('seat-dimmed', 'seat-highlight');
+    }
+  });
+}
+
+function toggleDark() {
+  isDark = !isDark;
+  document.body.classList.toggle('dark-floor', isDark);
+  const btn = document.getElementById('darkmode-btn');
+  btn.innerHTML = isDark ? '<i class="bi bi-sun-fill"></i>' : '<i class="bi bi-moon-fill"></i>';
+  localStorage.setItem('floorDark', isDark);
+}
+
+function toggleFullscreen() {
+  const app = document.getElementById('floor-map-app');
+  app.classList.toggle('fullscreen-mode');
+  const btn = document.getElementById('fullscreen-btn');
+  btn.innerHTML = app.classList.contains('fullscreen-mode')
+    ? '<i class="bi bi-fullscreen-exit"></i>'
+    : '<i class="bi bi-fullscreen"></i>';
+}
+
+function startCountdown() {
+  clearInterval(countdownTimer);
+  countdownSec = 30;
+  document.getElementById('countdown').textContent = countdownSec;
+  countdownTimer = setInterval(() => {
+    countdownSec--;
+    document.getElementById('countdown').textContent = countdownSec;
+    if (countdownSec <= 0) { countdownSec = 30; }
+  }, 1000);
+}
+
+async function loadPresence() {
+  try {
+    const res  = await fetch('/floor-map/api/presence');
+    const data = await res.json();
+    allRows = data;
+    let online = 0, vacant = 0, unmapped = 0;
+    data.forEach(row => {
+      if (row.seat_type === 'stand' || row.seat_type === 'supervisor') return;
+      if (!row.computer_name) { unmapped++; return; }
+      if (row.status === 'active') online++;
+      else vacant++;
+    });
+    buildMap(data);
+    document.getElementById('badge-online').textContent   = online + ' Online';
+    document.getElementById('badge-vacant').textContent   = vacant + ' Vacant';
+    document.getElementById('badge-unmapped').textContent = unmapped + ' Unmapped';
+    const now = new Date().toLocaleTimeString('en-PH', {hour:'2-digit',minute:'2-digit',second:'2-digit'});
+    document.getElementById('last-updated').textContent   = 'Last updated: ' + now;
+    startCountdown();
+  } catch(e) {
+    document.getElementById('last-updated').textContent = 'Error: ' + e.message;
+  }
+}
+
+// Restore dark mode preference
+if (localStorage.getItem('floorDark') === 'true') toggleDark();
+
+loadPresence();
+refreshTimer = setInterval(loadPresence, 30000);
+</script>
+{% endblock %}

@@ -1,0 +1,389 @@
+{% extends "base.html" %}
+{% block title %}QA Updates{% endblock %}
+
+{% block content %}
+<style>
+  .qa-header { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; margin-bottom: 24px; }
+  .qa-header h2 { font-family: 'Outfit', sans-serif; font-weight: 600; margin: 0; display: flex; align-items: center; gap: 10px; }
+  .qa-filters { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 20px; }
+  .qa-filters select, .qa-filters input { border: 1px solid var(--border); border-radius: 8px; padding: 6px 12px; font-size: 0.875rem; background: var(--surface); font-family: 'DM Sans', sans-serif; }
+  .qa-filters input[type="text"] { min-width: 240px; }
+  .qa-card { background: var(--surface); border-radius: 12px; box-shadow: var(--card-shadow); padding: 18px 20px; margin-bottom: 14px; border-left: 4px solid var(--accent); transition: box-shadow 0.15s ease; }
+  .qa-card:hover { box-shadow: 0 4px 16px rgba(0,0,0,0.08); }
+  .qa-card-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; flex-wrap: wrap; }
+  .qa-title-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .qa-title { font-weight: 600; font-size: 1.05rem; font-family: 'Outfit', sans-serif; }
+  .qa-pin-icon { color: var(--accent); font-size: 0.9rem; }
+  .qa-badge-category { font-size: 0.7rem; font-weight: 600; padding: 3px 10px; border-radius: 20px; background: #e8f0fd; color: #1e5fd4; text-transform: uppercase; letter-spacing: 0.03em; white-space: nowrap; }
+  [data-theme="dark"] .qa-badge-category { background: rgba(59,130,246,.15); color: #93c5fd; }
+  .qa-meta { color: var(--text-muted); font-size: 0.8rem; margin-top: 6px; }
+  .qa-desc { margin-top: 10px; font-size: 0.9rem; white-space: pre-wrap; max-height: 4.5em; overflow: hidden; position: relative; }
+  .qa-desc.expanded { max-height: none; }
+  .qa-expand-btn { font-size: 0.8rem; color: var(--accent); cursor: pointer; margin-top: 4px; display: inline-block; background: none; border: none; padding: 0; }
+  .qa-attachments { margin-top: 10px; display: flex; gap: 8px; flex-wrap: wrap; }
+  .qa-attachment-chip { font-size: 0.78rem; color: var(--text-muted); border: 1px solid var(--border); border-radius: 6px; padding: 3px 10px; text-decoration: none; }
+  .qa-attachment-chip:hover { background: var(--bg); }
+  .qa-footer-row { display: flex; justify-content: space-between; align-items: center; margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--border); }
+  .qa-ack-btn { font-size: 0.8rem; border: 1px solid var(--accent); color: var(--accent); background: transparent; border-radius: 20px; padding: 5px 14px; cursor: pointer; transition: all 0.15s; }
+  .qa-ack-btn:hover { background: var(--accent); color: #fff; }
+  .qa-ack-btn.acked { background: var(--accent); color: #fff; cursor: default; }
+  .qa-ack-count { font-size: 0.78rem; color: var(--text-muted); }
+  .qa-empty { text-align: center; padding: 60px 20px; color: var(--text-muted); }
+  .qa-empty i { font-size: 2.5rem; opacity: 0.4; display: block; margin-bottom: 10px; }
+
+  .qa-attachment-link {
+    display: block;
+    margin-top: 8px;
+    color: #007bff;
+    text-decoration: none;
+    font-size: 0.9rem;
+  }
+  .qa-attachment-link:hover {
+    text-decoration: underline;
+    color: #0056b3;
+  }
+
+  #imageModal {
+    display: none;
+    position: fixed;
+    z-index: 99999;
+    left: 0; top: 0;
+    width: 100%; height: 100%;
+    background: rgba(0,0,0,0.9);
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+  }
+  .modal-content {
+    background: transparent !important;
+    box-shadow: none !important;
+    width: 90vw;
+    height: 80vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+    margin-top: 5vh;
+  }
+  #modalContentContainer {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+  }
+  /* PDFs need block-level full-bleed iframe */
+  .modal-pdf-wrapper {
+    display: block !important;
+    width: 100%;
+    height: 100%;
+  }
+  .modal-pdf {
+    width: 100% !important;
+    height: 100% !important;
+    border: none;
+    display: block;
+  }
+  /* Images must NOT be stretched to fill - contain within the viewport */
+  .modal-image {
+    max-width: 100%;
+    max-height: 100%;
+    width: auto;
+    height: auto;
+    object-fit: contain;
+    display: block;
+    margin: 0 auto;
+  }
+  .close-btn {
+    position: absolute;
+    top: -40px;
+    right: 0;
+    color: white;
+    font-size: 30px;
+    cursor: pointer;
+  }
+</style>
+
+<div class="qa-header">
+  <h2><i class="bi bi-megaphone"></i> QA Updates</h2>
+  <span id="qaUnackBadge" style="display:none;background:#fde8e8;color:#c0392b;font-size:0.8rem;font-weight:700;padding:4px 12px;border-radius:20px;"></span>
+</div>
+
+<div class="qa-filters">
+  <input type="text" id="qaSearch" placeholder="Search updates...">
+  <select id="qaCategoryFilter">
+    <option value="">All Categories</option>
+    {% for c in category_choices %}
+    <option value="{{ c }}">{{ c }}</option>
+    {% endfor %}
+  </select>
+</div>
+
+<div id="qaList"></div>
+<div id="qaEmpty" class="qa-empty" style="display:none;">
+  <i class="bi bi-clipboard2-check"></i>
+  <div>No QA updates match your filters.</div>
+</div>
+
+<div id="imageModal" class="modal" onclick="closeModal()">
+  <div class="modal-content">
+    <span class="close-btn" onclick="closeModal()">&times;</span>
+    <div id="modalContentContainer" onclick="event.stopPropagation()"></div>
+    <div id="caption" style="color:white; margin-top:10px;"></div>
+  </div>
+</div>
+
+<script>
+const qaState = { category: '', q: '' };
+let qaSearchTimeout;
+
+const IMAGE_EXTENSIONS = ['png', 'jpg', 'jpeg', 'gif', 'webp'];
+
+function qaGetExtension(filename) {
+  if (!filename) return '';
+  const parts = filename.split('.');
+  return parts.length > 1 ? parts.pop().toLowerCase() : '';
+}
+
+function qaTimeAgo(isoStr) {
+  if (!isoStr) return '';
+  const d = new Date(isoStr);
+  const diffMs = Date.now() - d.getTime();
+  const mins = Math.floor(diffMs / 60000);
+  if (mins < 1) return 'just now';
+  if (mins < 60) return mins + 'm ago';
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return hrs + 'h ago';
+  const days = Math.floor(hrs / 24);
+  if (days < 30) return days + 'd ago';
+  return d.toLocaleDateString();
+}
+
+function qaEscape(str) {
+  if (!str) return '';
+  const div = document.createElement('div');
+  div.textContent = str;
+  return div.innerHTML;
+}
+
+// Single source of truth for formatting the implementation date.
+// Accepts a plain 'YYYY-MM-DD' date string (no time component).
+function qaImplDate(isoDateStr) {
+  if (!isoDateStr) return '';
+  const d = new Date(isoDateStr + 'T00:00:00');
+  return d.toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' });
+}
+
+// Linkify runs AFTER qaEscape, so it only ever inserts <a> tags around
+// already-escaped text - it never re-introduces raw HTML from user input.
+//
+// IMPORTANT: markdown links are extracted into placeholders BEFORE the raw-URL
+// pass runs. Without this, the raw-URL regex re-scans the <a href="..."> HTML
+// already produced by the markdown pass, finds the bare URL sitting inside the
+// href attribute, and wraps it in a second <a> tag - corrupting the first tag's
+// attributes and leaving broken text on screen.
+function qaLinkify(escapedText) {
+  if (!escapedText) return '';
+
+  const placeholders = [];
+  const placeholderToken = (i) => `\u0000QALINK${i}\u0000`;
+
+  // Pass 1: markdown-style [label](url) -> placeholder, store the real <a> tag
+  const markdownRegex = /\[([^\]]+)\]\((https?:\/\/[^\s)]+|www\.[^\s)]+\.[^\s)]+)\)/g;
+  let result = escapedText.replace(markdownRegex, (match, label, url) => {
+    const fullUrl = url.startsWith('http') ? url : 'https://' + url;
+    const anchor = `<a href="${fullUrl}" target="_blank" rel="noopener" style="color: var(--accent); text-decoration: underline; font-weight: bold;">${label}</a>`;
+    placeholders.push(anchor);
+    return placeholderToken(placeholders.length - 1);
+  });
+
+  // Pass 2: bare URLs in whatever plain text remains (placeholders are immune
+  // since they contain no http/www substrings)
+  const urlRegex = /(https?:\/\/[^\s]+|www\.[^\s]+\.[^\s]+)/g;
+  result = result.replace(urlRegex, (url) => {
+    const fullUrl = url.startsWith('http') ? url : 'https://' + url;
+    const anchor = `<a href="${fullUrl}" target="_blank" rel="noopener" style="color: var(--accent); text-decoration: underline;">${url}</a>`;
+    placeholders.push(anchor);
+    return placeholderToken(placeholders.length - 1);
+  });
+
+  // Pass 3: restore placeholders with their real <a> tags
+  result = result.replace(/\u0000QALINK(\d+)\u0000/g, (match, idx) => placeholders[Number(idx)]);
+
+  return result;
+}
+
+function qaRenderCard(u) {
+  const pin = u.is_pinned ? '<i class="bi bi-pin-angle-fill qa-pin-icon" title="Pinned"></i>' : '';
+
+  const implDate = u.implementation_date
+    ? `<span class="qa-badge-category" style="background:#fff0e0;color:#b8580b;"><i class="bi bi-calendar-event"></i> Effective ${qaImplDate(u.implementation_date)}</span>`
+    : '';
+
+  const linkedDescription = qaLinkify(qaEscape(u.description));
+
+  const attachments = (u.attachments || []).map(a =>
+    `<a href="javascript:void(0)"
+        class="qa-attachment-link"
+        data-url="/qa-updates/uploads/${encodeURIComponent(a.filename)}"
+        data-name="${qaEscape(a.original_filename)}"
+        data-ext="${qaGetExtension(a.original_filename)}">
+        <i class="bi bi-paperclip"></i> ${qaEscape(a.original_filename)}
+     </a>`
+  ).join('');
+
+  const ackBtn = u.acknowledged_by_me
+    ? `<button class="qa-ack-btn acked" disabled><i class="bi bi-check2"></i> Acknowledged</button>`
+    : `<button class="qa-ack-btn" onclick="qaAcknowledge(${u.id}, this)"><i class="bi bi-check2"></i> Acknowledge</button>`;
+
+  return `
+    <div class="qa-card" data-id="${u.id}">
+      <div class="qa-card-top">
+        <div>
+          <div class="qa-title-row">
+            ${pin}
+            <span class="qa-title">${qaEscape(u.title)}</span>
+            ${u.category ? `<span class="qa-badge-category">${qaEscape(u.category)}</span>` : ''}
+          </div>
+          <div style="margin-top: 5px;">${implDate}</div>
+          <div class="qa-meta">Posted by ${qaEscape(u.author_name || 'Unknown')} &middot; ${qaTimeAgo(u.created_at)}</div>
+        </div>
+      </div>
+      <div class="qa-desc" id="desc-${u.id}">${linkedDescription}</div>
+      <button class="qa-expand-btn" onclick="qaToggleDesc(${u.id}, this)">Read more</button>
+      ${attachments ? `<div class="qa-attachments">${attachments}</div>` : ''}
+      <div class="qa-footer-row">
+        ${ackBtn}
+        <span class="qa-ack-count" id="ack-count-${u.id}">${u.ack_count || 0} acknowledged</span>
+      </div>
+    </div>
+  `;
+}
+
+function qaToggleDesc(id, btn) {
+  const desc = document.getElementById('desc-' + id);
+  desc.classList.toggle('expanded');
+  btn.textContent = desc.classList.contains('expanded') ? 'Show less' : 'Read more';
+}
+
+function qaRefreshUnackBadge() {
+  fetch('/qa-updates/api/unacknowledged-count')
+    .then(r => r.json())
+    .then(data => {
+      const badge = document.getElementById('qaUnackBadge');
+      if (data.count > 0) {
+        badge.textContent = `${data.count} need${data.count === 1 ? 's' : ''} your acknowledgment`;
+        badge.style.display = 'inline-block';
+      } else {
+        badge.style.display = 'none';
+      }
+    })
+    .catch(() => {});
+}
+
+function qaAcknowledge(id, btn) {
+  btn.disabled = true;
+  fetch(`/qa-updates/api/${id}/acknowledge`, { method: 'POST' })
+    .then(r => r.json())
+    .then(data => {
+      if (data.success) {
+        btn.outerHTML = '<button class="qa-ack-btn acked" disabled><i class="bi bi-check2"></i> Acknowledged</button>';
+        document.getElementById('ack-count-' + id).textContent = data.ack_count + ' acknowledged';
+        qaRefreshUnackBadge();
+        if (typeof refreshQaUpdatesBadge === 'function') refreshQaUpdatesBadge();
+      } else {
+        btn.disabled = false;
+        alert(data.error || 'Failed to acknowledge.');
+      }
+    })
+    .catch(() => { btn.disabled = false; });
+}
+
+function qaLoad() {
+  const params = new URLSearchParams();
+  if (qaState.category) params.set('category', qaState.category);
+  if (qaState.q) params.set('q', qaState.q);
+  const qs = params.toString();
+
+  fetch('/qa-updates/api/list' + (qs ? '?' + qs : ''))
+    .then(r => r.json())
+    .then(data => {
+      const list = document.getElementById('qaList');
+      const empty = document.getElementById('qaEmpty');
+      const updates = data.updates || [];
+      if (updates.length === 0) {
+        list.innerHTML = '';
+        empty.style.display = 'block';
+      } else {
+        empty.style.display = 'none';
+        list.innerHTML = updates.map(qaRenderCard).join('');
+      }
+    });
+}
+
+document.getElementById('qaCategoryFilter').addEventListener('change', e => { qaState.category = e.target.value; qaLoad(); });
+document.getElementById('qaSearch').addEventListener('input', e => {
+  clearTimeout(qaSearchTimeout);
+  qaSearchTimeout = setTimeout(() => { qaState.q = e.target.value; qaLoad(); }, 350);
+});
+
+qaLoad();
+qaRefreshUnackBadge();
+
+// ---------------------------------------------------------------------------
+// Attachment preview modal - renders an <img> for images, an <iframe> for
+// PDFs, and falls back to opening anything else in a new tab.
+// ---------------------------------------------------------------------------
+window.openModal = function (fileUrl, fileName, ext) {
+  const container = document.getElementById('modalContentContainer');
+  container.innerHTML = '';
+
+  if (IMAGE_EXTENSIONS.includes(ext)) {
+    const img = document.createElement('img');
+    img.src = fileUrl;
+    img.alt = fileName;
+    img.className = 'modal-image';
+    container.appendChild(img);
+  } else if (ext === 'pdf') {
+    const wrapper = document.createElement('div');
+    wrapper.className = 'modal-pdf-wrapper';
+    const iframe = document.createElement('iframe');
+    iframe.src = fileUrl;
+    iframe.className = 'modal-pdf';
+    wrapper.appendChild(iframe);
+    container.appendChild(wrapper);
+  } else {
+    // Unsupported preview type - just open it directly instead of
+    // showing a broken/empty modal.
+    window.open(fileUrl, '_blank');
+    return;
+  }
+
+  document.getElementById('caption').textContent = fileName || '';
+  document.getElementById('imageModal').style.display = 'flex';
+};
+
+function closeModal() {
+  document.getElementById('imageModal').style.display = 'none';
+  document.getElementById('modalContentContainer').innerHTML = '';
+}
+
+window.onclick = function (event) {
+  const modal = document.getElementById('imageModal');
+  if (event.target === modal) closeModal();
+};
+
+document.addEventListener('click', function (event) {
+  const link = event.target.closest('.qa-attachment-link');
+  if (link) {
+    event.preventDefault();
+    const url = link.getAttribute('data-url');
+    const name = link.getAttribute('data-name');
+    const ext = link.getAttribute('data-ext');
+    openModal(url, name, ext);
+  }
+});
+</script>
+{% endblock %}

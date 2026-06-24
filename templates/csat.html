@@ -1,0 +1,932 @@
+{% extends "base.html" %}
+{% block content %}
+<style>
+  .csat-kpi { border-radius: 14px; padding: 18px 20px; color:#fff; }
+  .csat-kpi h2 { font-size: 2rem; margin:0; font-weight:700; }
+  .csat-kpi small { opacity:.9; }
+  /* ---- softened KPI cards ---- */
+  .kpi-card { background:var(--surface); border:1px solid var(--border); border-radius:16px; padding:16px 18px;
+              display:flex; align-items:flex-start; gap:14px; box-shadow:0 1px 3px rgba(16,24,40,.04);
+              transition:box-shadow .2s, transform .2s; height:100%; }
+  .kpi-card:hover { box-shadow:0 6px 20px rgba(0,0,0,.18); transform:translateY(-1px); }
+  .kpi-ic { width:44px; height:44px; border-radius:12px; display:flex; align-items:center;
+            justify-content:center; font-size:1.3rem; flex-shrink:0; }
+  .kpi-ic.csat { background:rgba(30,95,212,.12);  color:#1e5fd4; }
+  .kpi-ic.resp { background:rgba(25,135,84,.12);  color:#198754; }
+  .kpi-ic.resv { background:rgba(111,66,193,.12); color:#6f42c1; }
+  .kpi-ic.chan { background:rgba(253,126,20,.12); color:#fd7e14; }
+  .kpi-body { min-width:0; flex:1; }
+  .kpi-body .kpi-label { font-size:.7rem; text-transform:uppercase; letter-spacing:.06em;
+                         color:var(--text-muted); font-weight:600; margin-bottom:1px; }
+  .kpi-body .kpi-num { font-size:1.9rem; font-weight:700; line-height:1.15; color:var(--text); }
+  .kpi-body .kpi-sub { font-size:.76rem; color:var(--text-muted); }
+  /* ---- grouped filters ---- */
+  .filter-group { display:flex; gap:.5rem; align-items:flex-end; }
+  .filter-group-label { font-size:.66rem; text-transform:uppercase; letter-spacing:.07em;
+                        color:var(--text-muted); font-weight:700; margin-bottom:.4rem; display:flex;
+                        align-items:center; gap:4px; }
+  .filter-divider { width:1px; align-self:stretch; background:var(--border); margin:0 .25rem; }
+  .filter-col { min-width:120px; }
+  .filter-col.narrow { min-width:96px; }
+  @media (max-width: 991px){ .filter-divider{ display:none; } }
+  .csat-card { background:var(--surface); border:1px solid var(--border); border-radius:14px; padding:18px; }
+  .csat-grade-good { color:#198754; font-weight:600; }
+  .csat-grade-warn { color:#fd7e14; font-weight:600; }
+  .csat-grade-bad  { color:#dc3545; font-weight:600; }
+  .table-csat th { white-space:nowrap; }
+  .table-csat th.sortable { cursor:pointer; user-select:none; }
+  .table-csat th.sortable:hover { background:var(--bg); }
+  .table-csat th .sort-arrow { opacity:.35; font-size:.75rem; margin-left:2px; }
+  .table-csat th.sort-active .sort-arrow { opacity:1; }
+  .csat-loading { color:var(--text-muted); padding:20px; }
+  .csat-filters .form-label { margin-bottom:2px; }
+  .ms { position:relative; }
+  .ms-btn { width:100%; text-align:left; display:flex; justify-content:space-between; align-items:center;
+            background:var(--surface); border:1px solid var(--border); border-radius:.375rem; padding:.25rem .5rem;
+            font-size:.875rem; cursor:pointer; min-height:31px; color:var(--text); }
+  .ms-btn .ms-caret { opacity:.6; margin-left:6px; }
+  .ms-panel { position:absolute; z-index:1000; top:calc(100% + 4px); left:0; right:0;
+              background:var(--surface); border:1px solid var(--border); border-radius:.5rem; box-shadow:0 6px 24px rgba(0,0,0,.25);
+              padding:8px; display:none; max-width:280px; color:var(--text); }
+  .ms-panel.open { display:block; }
+  .ms-search { width:100%; font-size:.85rem; padding:.25rem .4rem; border:1px solid var(--border); border-radius:.375rem; margin-bottom:6px; background:var(--bg); color:var(--text); }
+  .ms-actions { display:flex; justify-content:space-between; font-size:.78rem; margin-bottom:6px; }
+  .ms-actions a { cursor:pointer; text-decoration:none; }
+  .ms-list { max-height:220px; overflow:auto; }
+  .ms-item { display:flex; align-items:center; gap:6px; padding:3px 4px; font-size:.85rem; border-radius:.3rem; }
+  .ms-item:hover { background:var(--bg); }
+  .ms-item input { margin:0; }
+  #tlModal 
+  .modal-xl { max-width: 92vw; }
+</style>
+
+<div class="container-fluid py-3">
+  <div class="d-flex flex-wrap justify-content-between align-items-center mb-3">
+    <h3 class="mb-0"><i class="bi bi-emoji-smile"></i> CSAT Dashboard
+      {% if scoped_tl %}<span class="badge bg-secondary">{{ scoped_tl }} team</span>{% endif %}
+    </h3>
+  </div>
+
+  <div class="csat-card mb-3 csat-filters">
+    <div class="d-flex flex-wrap align-items-start" style="gap:1rem;">
+
+      <!-- PERIOD -->
+      <div>
+        <div class="filter-group-label"><i class="bi bi-calendar3"></i> Period</div>
+        <div class="filter-group flex-wrap">
+          <div class="filter-col narrow">
+            <label class="form-label small">Month</label>
+            <select id="fMonth" class="form-select form-select-sm"><option value="All">All</option></select>
+          </div>
+          <div class="filter-col narrow">
+            <label class="form-label small">Week</label>
+            <select id="fWeek" class="form-select form-select-sm"><option value="All">All</option></select>
+          </div>
+          <div class="filter-col narrow">
+            <label class="form-label small">From</label>
+            <input type="date" id="csatStart" class="form-control form-control-sm">
+          </div>
+          <div class="filter-col narrow">
+            <label class="form-label small">To</label>
+            <input type="date" id="csatEnd" class="form-control form-control-sm">
+          </div>
+        </div>
+      </div>
+
+      <div class="filter-divider"></div>
+
+      <!-- SEGMENT -->
+      <div style="overflow: visible !important;">
+        <div class="filter-group-label"><i class="bi bi-people"></i> Segment</div>
+        <div class="filter-group flex-wrap" style="overflow: visible !important;">
+          {% if not is_tl_view %}
+          <div class="filter-col">
+            <label class="form-label small">TL</label>
+            <select id="fTL" class="form-select form-select-sm"><option value="All">All</option></select>
+          </div>
+          
+          <!-- Changed col-lg-3 to filter-col to match your dashboard design and added a safety min-width -->
+          <div class="filter-col position-relative" style="min-width: 220px;">
+            <label class="form-label small">Agent Search</label>
+            <input type="text" id="fAgent" class="form-control form-control-sm" placeholder="Type to search agent..." autocomplete="off">
+            <div id="agentDropdown" class="dropdown-menu w-100 shadow-sm" style="display: none; max-height: 210px; overflow-y: auto; overflow-x: hidden; z-index: 1050;"></div>
+          </div>
+          {% endif %}
+          <div class="filter-col">
+            <label class="form-label small">Batch</label>
+            <div class="ms" id="msBatch"></div>
+          </div>
+          <div class="filter-col narrow">
+            <label class="form-label small">Tenure</label>
+            <select id="fTenure" class="form-select form-select-sm"><option value="All">All</option></select>
+          </div>
+        </div>
+      </div>
+
+      <div class="filter-divider"></div>
+
+      <!-- SCOPE -->
+      <div>
+        <div class="filter-group-label"><i class="bi bi-funnel"></i> Scope</div>
+        <div class="d-flex flex-column" style="gap:.35rem; padding-top:.15rem;">
+          <div class="form-check form-switch mb-0">
+            <input class="form-check-input" type="checkbox" id="fActive" checked>
+            <label class="form-check-label small" for="fActive">Active only</label>
+          </div>
+          <div class="form-check form-switch mb-0">
+            <input class="form-check-input" type="checkbox" id="fCS" checked>
+            <label class="form-check-label small" for="fCS">CS only</label>
+          </div>
+        </div>
+      </div>
+
+    </div>
+    <div class="mt-2 d-flex align-items-center gap-2">
+      <button id="csatReset" class="btn btn-outline-secondary btn-sm">Reset</button>
+      <span id="filterSummary" class="text-muted small"></span>
+    </div>
+  </div>
+
+  <div class="row g-3 mb-3" id="kpiRow">
+    <div class="col-md-3">
+      <div class="kpi-card">
+        <div class="kpi-ic csat"><i class="bi bi-emoji-smile"></i></div>
+        <div class="kpi-body">
+          <div class="kpi-label">Volume Weighted CSAT</div>
+          <div class="kpi-num" id="kpiWeighted">—</div>
+          <div class="kpi-sub" id="kpiWeightedSub"></div>
+        </div>
+      </div>
+    </div>
+    <div class="col-md-3">
+      <div class="kpi-card">
+        <div class="kpi-ic resp"><i class="bi bi-inbox"></i></div>
+        <div class="kpi-body">
+          <div class="kpi-label">Total Responses</div>
+          <div class="kpi-num" id="kpiResp">—</div>
+          <div class="kpi-sub">survey responses</div>
+        </div>
+      </div>
+    </div>
+    <div class="col-md-3">
+      <div class="kpi-card">
+        <div class="kpi-ic resv"><i class="bi bi-check2-circle"></i></div>
+        <div class="kpi-body">
+          <div class="kpi-label">Total Resolved</div>
+          <div class="kpi-num" id="kpiResolved">—</div>
+          <div class="kpi-sub">chat + email + phone</div>
+        </div>
+      </div>
+    </div>
+    <div class="col-md-3">
+      <div class="kpi-card">
+        <div class="kpi-ic chan"><i class="bi bi-bar-chart-line"></i></div>
+        <div class="kpi-body">
+          <div class="kpi-label">Channels</div>
+          <div id="kpiChannels" style="font-size:.9rem;line-height:1.5;margin-top:2px"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="csat-card mb-3">
+    <div class="d-flex justify-content-between align-items-center mb-2">
+      <h6 class="mb-0">CSAT Trend <span class="text-muted" style="font-weight:400">(line = volume weighted CSAT, bars = responses)</span></h6>
+      <div class="d-flex align-items-center gap-2">
+        <label class="form-label small mb-0">View by</label>
+        <select id="fGran" class="form-select form-select-sm" style="width:auto">
+          <option value="day">Day</option>
+          <option value="week">Week</option>
+          <option value="month" selected>Month</option>
+          <option value="quarter">Quarter</option>
+        </select>
+      </div>
+    </div>
+    <div class="d-flex justify-content-end mb-1">
+      <div class="form-check form-switch">
+        <input class="form-check-input" type="checkbox" id="trendShowValues">
+        <label class="form-check-label small text-muted" for="trendShowValues">Show values</label>
+      </div>
+    </div>
+    <canvas id="trendChart" height="90"></canvas>
+    <canvas id="trendChart" height="90"></canvas>
+  </div>
+
+  <div class="row g-3 mb-3" id="teamChartsRow">
+    {% if not is_tl_view %}
+    <div class="col-lg-6"><div class="csat-card">
+      <h6 class="mb-2">Volume Weighted CSAT by TL — Trend</h6>
+      <canvas id="tlChart" height="160"></canvas>
+    </div></div>
+    {% endif %}
+    <div class="{% if is_tl_view %}col-12{% else %}col-lg-6{% endif %}"><div class="csat-card">
+      <h6 class="mb-2">Volume Weighted CSAT by Batch</h6>
+      <canvas id="batchChart" height="160"></canvas>
+    </div></div>
+  </div>
+
+  <div class="csat-card">
+    <div class="d-flex justify-content-between align-items-center mb-2">
+      <h6 class="mb-0">Per-Agent Volume Weighted CSAT</h6>
+      <input type="text" id="agentSearch" class="form-control form-control-sm" style="max-width:240px"
+             placeholder="Search agent / TL / batch…">
+    </div>
+    <div class="table-responsive">
+      <table class="table table-sm table-hover table-csat align-middle">
+        <thead class="table-light">
+          <tr id="agentHead">
+            <th class="sortable" data-key="email" data-type="str">Agent<span class="sort-arrow">↕</span></th>
+            <th class="sortable" data-key="tl" data-type="str">TL<span class="sort-arrow">↕</span></th>
+            <th class="sortable" data-key="batch" data-type="str">Batch<span class="sort-arrow">↕</span></th>
+            <th class="sortable text-end" data-key="weighted" data-type="num">Volume Weighted CSAT<span class="sort-arrow">↕</span></th>
+            <th class="sortable text-end" data-key="chat_pct" data-type="num">Chat%<span class="sort-arrow">↕</span></th>
+            <th class="sortable text-end" data-key="chat_resolved" data-type="num">Chat Resolved<span class="sort-arrow">↕</span></th>
+            <th class="sortable text-end" data-key="email_pct" data-type="num">Email%<span class="sort-arrow">↕</span></th>
+            <th class="sortable text-end" data-key="email_resolved" data-type="num">Email Resolved<span class="sort-arrow">↕</span></th>
+            <th class="sortable text-end" data-key="phone_pct" data-type="num">Phone%<span class="sort-arrow">↕</span></th>
+            <th class="sortable text-end" data-key="phone_resolved" data-type="num">Phone Resolved<span class="sort-arrow">↕</span></th>
+            <th class="sortable text-end" data-key="total_resolved" data-type="num">Total Resolved<span class="sort-arrow">↕</span></th>
+            <th class="sortable text-end" data-key="responses" data-type="num">Responses<span class="sort-arrow">↕</span></th>
+          </tr>
+        </thead>
+        <tbody id="agentBody">
+          <tr><td colspan="12" class="csat-loading">Loading…</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- QA Responses Modal -->
+<div class="modal fade" id="respModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-xl modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="respModalTitle">Responses</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <div class="table-responsive">
+          <table class="table table-sm table-hover align-middle">
+            <thead class="table-light">
+              <tr>
+                <th>Date</th><th>Ticket ID</th><th>Channel</th>
+                <th class="text-center">Rate</th><th class="text-center">CSAT</th>
+                <th>QA Comment</th><th>QA</th>
+              </tr>
+            </thead>
+            <tbody id="respModalBody">
+              <tr><td colspan="7" class="text-muted p-3">Loading…</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- TL Chart Expanded Modal -->
+<div class="modal fade" id="tlModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-xl modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Volume Weighted CSAT by TL — Trend</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <div style="height:70vh"><canvas id="tlChartBig"></canvas></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.2.0/dist/chartjs-plugin-datalabels.min.js"></script>
+<script>
+(function(){
+  const fmtPct = function(v){ return (v==null? '—' : v.toFixed(2)+'%'); };
+  const grade = function(v){ return v>=90 ? 'csat-grade-good' : (v>=80 ? 'csat-grade-warn' : 'csat-grade-bad'); };
+  const $ = function(id){ return document.getElementById(id); };
+
+  const today = new Date();
+  const first = new Date(today.getFullYear(), today.getMonth(), 1);
+  const iso = function(d){ return d.toISOString().slice(0,10); };
+  const defStart = iso(first), defEnd = iso(today);
+  const allStart = '2026-01-01';
+  const allEnd   = iso(today);
+  $('csatStart').value = defStart;
+  $('csatEnd').value   = defEnd;
+
+  let trendChart, tlChart, batchChart, agentRows = [];
+  let monthSpans = {}, weekSpans = {};
+  let sortKey = 'weighted', sortDir = 'desc', sortType = 'num';
+  let selectedAgent = '';
+  let allAgentsForPicker = [];
+
+  function initAgentPicker() {
+    const input = $('fAgent');
+    const dropdown = $('agentDropdown');
+    if (!input || !dropdown) return;
+
+    function renderDropdown(filterText) {
+      const f = (filterText || '').toLowerCase();
+      
+      // 1. Grab the currently selected TL from the dropdown (fallback to 'all')
+      const selectedTL = ($('fTL') ? $('fTL').value : 'All').toLowerCase();
+
+      // 2. Filter the master list using BOTH the active TL and search text
+      const matched = allAgentsForPicker.filter(function(a) {
+        // If TL is "All", pass everything. Otherwise, exact match the agent's TL.
+        const matchesTL = (selectedTL === 'all' || (a.tl || '').toLowerCase() === selectedTL);
+        
+        // Check if the input text matches the email string
+        const matchesText = !f || (a.email || '').toLowerCase().includes(f);
+        
+        return matchesTL && matchesText;
+      });
+
+      // 3. Render the narrowed down dataset
+      if (!matched.length) {
+        dropdown.innerHTML = '<a class="dropdown-item disabled text-muted small">No matching agents found</a>';
+      } else {
+        dropdown.innerHTML = matched.map(function(a) {
+          return '<a class="dropdown-item small agent-picker-item text-truncate" href="#" title="' + a.email + '" data-email="' + a.email + '">' + (a.email || '') + '</a>';
+        }).join('');
+      }
+      dropdown.style.display = 'block';
+    }
+
+    input.addEventListener('focus', function() { renderDropdown(input.value); });
+    input.addEventListener('input', function() { renderDropdown(input.value); });
+
+    // Close dropdown if user clicks away
+    document.addEventListener('click', function(e) {
+      if (!input.contains(e.target) && !dropdown.contains(e.target)) {
+        dropdown.style.display = 'none';
+      }
+    });
+
+    // Handle choice selection
+    dropdown.addEventListener('click', function(e) {
+      e.preventDefault();
+      const item = e.target.closest('.agent-picker-item');
+      if (!item) return;
+
+      selectedAgent = item.dataset.email;
+      input.value = selectedAgent;
+      dropdown.style.display = 'none';
+
+      // Auto-assign TL if matching metadata is found
+      const match = allAgentsForPicker.find(function(a) { return a.email === selectedAgent; });
+      if (match && match.tl && $('fTL')) {
+        $('fTL').value = match.tl;
+      }
+
+      toggleAgentViewLayout();
+      loadAll();
+    });
+
+    // Handle direct manual input clears
+    input.addEventListener('change', function() {
+      if (input.value === '') {
+        selectedAgent = '';
+        toggleAgentViewLayout();
+        loadAll();
+      }
+    });
+  }
+
+  function toggleAgentViewLayout() {
+    const teamCharts = $('teamChartsRow');
+    if (!teamCharts) return;
+    // If single agent context is verified, collapse the TL/Batch comparison blocks
+    teamCharts.style.display = selectedAgent ? 'none' : '';
+  }
+
+  function MultiSelect(mountId, label){
+    const mount = $(mountId);
+    if(!mount) return null;
+    let options = [];
+    let selected = new Set();
+    mount.innerHTML =
+      '<button type="button" class="ms-btn"><span class="ms-text">'+label+': All</span><span class="ms-caret">▾</span></button>'+
+      '<div class="ms-panel">'+
+        '<input type="text" class="ms-search" placeholder="Search…">'+
+        '<div class="ms-actions"><a class="ms-all">Select all</a><a class="ms-clear">Clear</a></div>'+
+        '<div class="ms-list"></div>'+
+      '</div>';
+    const btn = mount.querySelector('.ms-btn');
+    const panel = mount.querySelector('.ms-panel');
+    const search = mount.querySelector('.ms-search');
+    const list = mount.querySelector('.ms-list');
+    const textEl = mount.querySelector('.ms-text');
+
+    function updateText(){
+      if(selected.size===0){ textEl.textContent = label+': All'; return; }
+      const arr = Array.from(selected);
+      textEl.textContent = arr.length<=2 ? (label+': '+arr.join(', ')) : (label+': '+arr.length+' selected');
+    }
+    function renderList(){
+      const q = search.value.toLowerCase();
+      const html = options.filter(function(o){ return !q || o.text.toLowerCase().includes(q); }).map(function(o){
+        return '<label class="ms-item"><input type="checkbox" value="'+o.value+'" '+(selected.has(o.value)?'checked':'')+'><span>'+o.text+'</span></label>';
+      }).join('');
+      list.innerHTML = html || '<div class="text-muted small px-1">No matches</div>';
+      list.querySelectorAll('input').forEach(function(cb){
+        cb.addEventListener('change', function(){
+          if(cb.checked) selected.add(cb.value); else selected.delete(cb.value);
+          updateText();
+        });
+      });
+    }
+    btn.addEventListener('click', function(e){
+      e.stopPropagation();
+      document.querySelectorAll('.ms-panel.open').forEach(function(p){ if(p!==panel) p.classList.remove('open'); });
+      panel.classList.toggle('open');
+      if(panel.classList.contains('open')) search.focus();
+    });
+    panel.addEventListener('click', function(e){ e.stopPropagation(); });
+    search.addEventListener('input', renderList);
+    mount.querySelector('.ms-all').addEventListener('click', function(){ options.forEach(function(o){ selected.add(o.value); }); renderList(); updateText(); });
+    mount.querySelector('.ms-clear').addEventListener('click', function(){ selected.clear(); renderList(); updateText(); });
+
+    return {
+      setOptions: function(opts){ options = opts; renderList(); },
+      value: function(){ return selected.size ? Array.from(selected).join(',') : 'All'; },
+      clear: function(){ selected.clear(); renderList(); updateText(); }
+    };
+  }
+  document.addEventListener('click', function(){
+    let wasOpen = false;
+    document.querySelectorAll('.ms-panel.open').forEach(function(p){ wasOpen = true; p.classList.remove('open'); });
+    if(wasOpen) loadAll();
+  });
+
+  const msBatch = MultiSelect('msBatch', 'Batch');
+
+  function val(id){ const el=$(id); return el ? el.value : 'All'; }
+
+  function qs(){
+    const p = new URLSearchParams();
+    p.set('start', $('csatStart').value);
+    p.set('end', $('csatEnd').value);
+    if($('fTL')) p.set('tl', val('fTL'));
+    if($('fTenure')) p.set('tenure', val('fTenure'));
+    p.set('week', val('fWeek'));
+    p.set('month', val('fMonth'));
+    p.set('gran', val('fGran'));
+    p.set('active_only', ($('fActive') && $('fActive').checked) ? '1' : '0');
+    p.set('cs_only', ($('fCS') && $('fCS').checked) ? '1' : '0');
+    if(typeof msBatch !== 'undefined' && msBatch && msBatch.value() && msBatch.value()!=='All') p.set('batch', msBatch.value());
+    if(selectedAgent) p.set('agent', selectedAgent);
+    return '?'+p.toString();
+  }
+
+  function bar(ctx, labels, data, label){
+    return new Chart(ctx, {
+      type:'bar',
+      data:{ labels:labels, datasets:[{ label:label, data:data,
+        backgroundColor: data.map(function(v){ return v>=90?'#198754': v>=80?'#fd7e14':'#dc3545'; }) }]},
+      options:{ indexAxis:'y', plugins:{legend:{display:false}, datalabels:{display:false}},
+        scales:{ x:{ suggestedMin:0, suggestedMax:100, ticks:{callback:function(v){ return v+'%'; }} } } }
+    });
+  }
+
+  async function loadOptions(){
+    const r = await fetch('/api/csat/filter-options');
+    if(!r.ok) return;
+    const d = await r.json();
+    if($('fTL') && d.tls){
+      d.tls.forEach(function(t){ const o=document.createElement('option'); o.value=t; o.textContent=t; $('fTL').appendChild(o); });
+    }
+    if($('fTenure') && d.tenures){
+      d.tenures.forEach(function(t){ const o=document.createElement('option'); o.value=t; o.textContent=t; $('fTenure').appendChild(o); });
+    }
+    if(msBatch) msBatch.setOptions((d.batches||[]).map(function(b){ return {value:b, text:b}; }));
+    (d.months||[]).forEach(function(m){ const o=document.createElement('option'); o.value=m.name; o.textContent=m.name; $('fMonth').appendChild(o); monthSpans[m.name]={start:m.start,end:m.end}; });
+    (d.weeks||[]).forEach(function(w){ const o=document.createElement('option'); o.value=w.name; o.textContent='Week '+w.name; $('fWeek').appendChild(o); if(w.start) weekSpans[w.name]={start:w.start,end:w.end}; });
+  }
+
+  $('fMonth').addEventListener('change', function(e){
+    const m=e.target.value;
+    if(m!=='All' && monthSpans[m]){
+      $('csatStart').value=monthSpans[m].start;
+      $('csatEnd').value=monthSpans[m].end;
+      $('fWeek').value='All';
+      if($('fGran').value==='month' || $('fGran').value==='quarter') $('fGran').value='week';
+    } else if(m==='All'){
+      $('csatStart').value=allStart;
+      $('csatEnd').value=allEnd;
+      $('fGran').value='month';
+    }
+    loadAll();
+  });
+  $('fWeek').addEventListener('change', function(e){
+    const w=e.target.value;
+    if(w!=='All' && weekSpans[w]){
+      $('csatStart').value=weekSpans[w].start;
+      $('csatEnd').value=weekSpans[w].end;
+      $('fMonth').value='All';
+      if($('fGran').value!=='day') $('fGran').value='day';
+    }
+    loadAll();
+  });
+  if($('fTL')) $('fTL').addEventListener('change', loadAll);
+  if($('fTenure')) $('fTenure').addEventListener('change', loadAll);
+  $('csatStart').addEventListener('change', loadAll);
+  $('csatEnd').addEventListener('change', loadAll);
+  if($('fActive')) $('fActive').addEventListener('change', loadAll);
+  if($('fCS')) $('fCS').addEventListener('change', loadAll);
+  if($('trendShowValues')) $('trendShowValues').addEventListener('change', function(){
+    if(trendChart) trendChart.update();
+  });
+  $('fGran').addEventListener('change', function(){ loadSummary(); });
+
+  async function loadSummary(){
+    const r = await fetch('/api/csat/summary'+qs());
+    if(!r.ok) return;
+    const d = await r.json();
+    $('kpiWeighted').textContent = fmtPct(d.overall.weighted);
+    $('kpiWeightedSub').textContent = d.range.start+' → '+d.range.end;
+    $('kpiResp').textContent = d.overall.total_responses.toLocaleString();
+    $('kpiResolved').textContent = d.overall.total_resolved.toLocaleString();
+    const ch = d.overall.by_channel;
+    $('kpiChannels').innerHTML =
+      'Chat '+fmtPct(ch.Chat.pct)+' ('+ch.Chat.resolved+')<br>'+
+      'Email '+fmtPct(ch.Email.pct)+' ('+ch.Email.resolved+')<br>'+
+      'Phone '+fmtPct(ch.Phone.pct)+' ('+ch.Phone.resolved+')';
+
+    const labels = d.trend.map(function(t){ return t.month; });
+    const csatLine = d.trend.map(function(t){ return t.weighted; });
+    const respBars = d.trend.map(function(t){ return t.responses!=null ? t.responses : 0; });
+
+    // show tenure breakdown lines only when the Tenure filter is "All"
+    const tenureAll = (!$('fTenure') || val('fTenure')==='All');
+    const tt = d.tenure_trend || {};
+    const datasets = [
+
+      ...(tenureAll && tt.tenured_resp ? [
+        {
+          type:'bar', label:'Resp - Tenured', data:tt.tenured_resp, yAxisID:'yResp',
+          backgroundColor:'#0f2744', stack:'resp', order:3,
+          datalabels:{
+            display:function(){ return $('trendShowValues') && $('trendShowValues').checked; },
+            anchor:'center', align:'center', color:'#fff',
+            font:{ weight:'600', size:9 },
+            formatter:function(v){ return v ? v.toLocaleString() : ''; }
+          }
+        },
+        {
+          type:'bar', label:'Resp - Non-tenured', data:tt.nontenured_resp, yAxisID:'yResp',
+          backgroundColor:'#5a7a9e', stack:'resp', order:3,
+          datalabels:{
+            display:function(){ return $('trendShowValues') && $('trendShowValues').checked; },
+            anchor:'center', align:'center', color:'#fff',
+            font:{ weight:'600', size:9 },
+            formatter:function(v){ return v ? v.toLocaleString() : ''; }
+          }
+        },
+        {
+          // invisible cap dataset: carries the TOTAL label on top, always visible
+          type:'bar', label:'Resp - Total', data:tt.tenured_resp.map(function(_,i){
+            return 0; // zero height — adds nothing to the stack
+          }), yAxisID:'yResp', backgroundColor:'rgba(0,0,0,0)', stack:'resp', order:3,
+          datalabels:{
+            display:true, anchor:'end', align:'top', color:'#0f2744',
+            font:{ weight:'600', size:10 },
+            formatter:function(v, ctx){
+              const ten = (tt.tenured_resp&&tt.tenured_resp[ctx.dataIndex])||0;
+              const non = (tt.nontenured_resp&&tt.nontenured_resp[ctx.dataIndex])||0;
+              const total = ten+non;
+              return total ? total.toLocaleString() : '';
+            }
+          }
+        }
+      ] : [
+    {
+      type:'bar', label:'Responses', data:respBars, yAxisID:'yResp',
+      backgroundColor:'#0f2744', order:3,
+      datalabels:{
+        display:true, anchor:'end', align:'top', color:'#0f2744',
+        font:{ weight:'600', size:10 },
+        formatter:function(v){ return v ? v.toLocaleString() : ''; }
+      }
+    }
+  ]),
+      {
+        type:'line', label:(tenureAll?'Total (volume weighted)':'Volume Weighted CSAT'), data:csatLine, yAxisID:'yCsat',
+        borderColor:'#4ea8de', backgroundColor:'#4ea8de', tension:.3,
+        pointRadius:3, pointBackgroundColor:'#fff', pointBorderColor:'#4ea8de',
+        borderWidth:2, order:1,
+        datalabels:{
+          display:true, align:'top', anchor:'end', color:'#1e5fd4',
+          font:{ weight:'600', size:10 },
+          formatter:function(v){ return (v==null?'':v.toFixed(2)+'%'); }
+        }
+      }
+    ];
+    if(tenureAll && tt.tenured){
+      datasets.push({
+        type:'line', label:'Tenured', data:tt.tenured, yAxisID:'yCsat',
+        borderColor:'#198754', backgroundColor:'#198754', tension:.3,
+        pointRadius:2, pointBackgroundColor:'#fff', pointBorderColor:'#198754',
+        borderWidth:2, borderDash:[4,3], order:1, spanGaps:true,
+        datalabels:{
+          display:function(){ return $('trendShowValues') && $('trendShowValues').checked; },
+          align:'top', anchor:'end', color:'#198754',
+          font:{ weight:'700', size:9 },
+          formatter:function(v){ return (v==null?'':v.toFixed(1)+'%'); }
+        }
+      });
+      datasets.push({
+        type:'line', label:'Non-tenured', data:tt.nontenured, yAxisID:'yCsat',
+        borderColor:'#fd7e14', backgroundColor:'#fd7e14', tension:.3,
+        pointRadius:2, pointBackgroundColor:'#fff', pointBorderColor:'#fd7e14',
+        borderWidth:2, borderDash:[4,3], order:1, spanGaps:true,
+        datalabels:{
+          display:function(){ return $('trendShowValues') && $('trendShowValues').checked; },
+          align:'bottom', anchor:'start', color:'#fd7e14',
+          font:{ weight:'700', size:9 },
+          formatter:function(v){ return (v==null?'':v.toFixed(1)+'%'); }
+        }
+      });
+    }
+    if(trendChart) trendChart.destroy();
+    trendChart = new Chart($('trendChart'), {
+      data:{
+        labels:labels,
+        datasets:datasets
+      },
+      options:{
+        responsive:true, maintainAspectRatio:true,
+        layout:{ padding:{ top:18 } },
+        plugins:{
+          legend:{ display:true, position:'bottom',
+            labels:{ filter:function(item){ return item.text !== 'Resp - Total'; } } },
+          datalabels:{ display:false },
+          tooltip:{ callbacks:{ label:function(ctx){
+            if(ctx.dataset.yAxisID==='yCsat') return ctx.dataset.label+': '+(ctx.parsed.y==null?'—':ctx.parsed.y.toFixed(2)+'%');
+            return 'Responses: '+ctx.parsed.y.toLocaleString();
+          }}}
+        },
+        scales:{
+          yResp:{ position:'left', beginAtZero:true, stacked:true, title:{display:true,text:'Responses'} },
+          yCsat:{ position:'right', min:0, max:100, grid:{drawOnChartArea:false},
+                  title:{display:true,text:'Volume Weighted CSAT %'},
+                  ticks:{ callback:function(v){ return v+'%'; } } }
+        }
+      },
+      plugins:[ChartDataLabels]
+    });
+
+    if(d.tl_trend && d.tl_trend.series){ lastTlTrend = d.tl_trend; renderTlChart(); }
+    if(batchChart) batchChart.destroy();
+    batchChart = bar($('batchChart'), d.by_batch.map(function(x){ return x.name; }), d.by_batch.map(function(x){ return x.weighted; }), 'Volume Weighted CSAT');
+  }
+
+  function sortRows(rows){
+    const k = sortKey, dir = sortDir==='asc'?1:-1;
+    const isNum = sortType==='num';
+    return rows.slice().sort(function(a,b){
+      let va = a[k], vb = b[k];
+      if(isNum){ va = Number(va)||0; vb = Number(vb)||0; return (va-vb)*dir; }
+      va = (va==null?'':String(va)).toLowerCase();
+      vb = (vb==null?'':String(vb)).toLowerCase();
+      if(va<vb) return -1*dir;
+      if(va>vb) return 1*dir;
+      return 0;
+    });
+  }
+
+  function updateArrows(){
+    document.querySelectorAll('#agentHead th.sortable').forEach(function(th){
+      const arrow = th.querySelector('.sort-arrow');
+      if(th.dataset.key===sortKey){
+        th.classList.add('sort-active');
+        arrow.textContent = sortDir==='asc' ? '▲' : '▼';
+      } else {
+        th.classList.remove('sort-active');
+        arrow.textContent = '↕';
+      }
+    });
+  }
+
+  function renderAgents(filter){
+    const body = $('agentBody');
+    const f = (filter||'').toLowerCase();
+    let rows = agentRows.filter(function(a){
+      return !f || (a.email||'').toLowerCase().includes(f)
+         || (a.tl||'').toLowerCase().includes(f)
+         || (a.batch||'').toLowerCase().includes(f);
+    });
+    rows = sortRows(rows);
+    updateArrows();
+    if(!rows.length){ body.innerHTML = '<tr><td colspan="12" class="csat-loading">No agents in range.</td></tr>'; return; }
+    body.innerHTML = rows.map(function(a){
+      const respCell = a.responses>0
+        ? '<a href="#" class="resp-link" data-email="'+encodeURIComponent(a.email)+'">'+a.responses.toLocaleString()+'</a>'
+        : a.responses.toLocaleString();
+      return '<tr>'+
+        '<td>'+(a.email||'')+'</td><td>'+(a.tl||'')+'</td><td>'+(a.batch||'')+'</td>'+
+        '<td class="text-end '+grade(a.weighted)+'">'+fmtPct(a.weighted)+'</td>'+
+        '<td class="text-end">'+a.chat_pct.toFixed(2)+'%</td>'+
+        '<td class="text-end">'+(a.chat_resolved||0).toLocaleString()+'</td>'+
+        '<td class="text-end">'+a.email_pct.toFixed(2)+'%</td>'+
+        '<td class="text-end">'+(a.email_resolved||0).toLocaleString()+'</td>'+
+        '<td class="text-end">'+a.phone_pct.toFixed(2)+'%</td>'+
+        '<td class="text-end">'+(a.phone_resolved||0).toLocaleString()+'</td>'+
+        '<td class="text-end">'+a.total_resolved.toLocaleString()+'</td>'+
+        '<td class="text-end">'+respCell+'</td>'+
+      '</tr>';
+    }).join('');
+  }
+
+  $('agentHead').addEventListener('click', function(e){
+    const th = e.target.closest('th.sortable');
+    if(!th) return;
+    const key = th.dataset.key;
+    if(sortKey===key){
+      sortDir = (sortDir==='asc') ? 'desc' : 'asc';
+    } else {
+      sortKey = key;
+      sortType = th.dataset.type || 'str';
+      sortDir = (sortType==='num') ? 'desc' : 'asc';
+    }
+    renderAgents($('agentSearch').value);
+  });
+
+  async function loadAgents(){
+  $('agentBody').innerHTML = '<tr><td colspan="12" class="csat-loading">Loading…</td></tr>';
+  
+  // 1. Pull a clean, unfiltered list for the picker if it hasn't been populated yet
+  if (!allAgentsForPicker.length) {
+    // We only pass start and end dates so the API has a time context, 
+    // deliberately skipping fTL, fTenure, fMonth, and active toggles.
+    const cleanParams = new URLSearchParams();
+    cleanParams.set('start', $('csatStart').value);
+    cleanParams.set('end', $('csatEnd').value);
+    
+    try {
+      const pickerRes = await fetch('/api/csat/agents?' + cleanParams.toString());
+      if (pickerRes.ok) {
+        const pickerData = await pickerRes.json();
+        allAgentsForPicker = pickerData.agents || [];
+        initAgentPicker();
+      }
+    } catch (err) {
+      console.error("Failed to load agent picker baseline:", err);
+    }
+  }
+
+  // 2. Proceed with your normal dashboard query that obeys all active UI filters
+  const r = await fetch('/api/csat/agents'+qs());
+  if(!r.ok) return;
+  const d = await r.json();
+  agentRows = d.agents;
+  renderAgents($('agentSearch').value);
+}
+
+  function updateFilterSummary(){
+  const parts = ['Showing: ' + $('csatStart').value + ' → ' + $('csatEnd').value];
+  if(selectedAgent) parts.push('Agent: ' + selectedAgent);
+  if($('fTL') && $('fTL').value!=='All') parts.push('TL: '+$('fTL').value);
+  if($('fTenure')) { if($('fTenure').value!=='All') parts.push('Tenure: '+$('fTenure').value); }
+  if(typeof msBatch !== 'undefined' && msBatch && msBatch.value()!=='All') parts.push('Batch: '+msBatch.value().split(',').join(', '));
+  if($('fMonth').value!=='All') parts.push('Month: '+$('fMonth').value);
+  if($('fWeek').value!=='All') parts.push('Week '+$('fWeek').value);
+  $('filterSummary').textContent = parts.join('  ·  ');
+}
+
+  function loadAll(){ updateFilterSummary(); loadSummary(); loadAgents(); }
+
+    $('csatReset').addEventListener('click', function(){
+    if($('fTL')) $('fTL').value='All';
+    if($('fTenure')) $('fTenure').value='All';
+    selectedAgent = '';
+    if($('fAgent')) $('fAgent').value = '';
+    toggleAgentViewLayout();
+    if($('fActive')) $('fActive').checked = true;
+    if($('fCS')) $('fCS').checked = true;
+    if(msBatch) msBatch.clear();
+    $('fWeek').value='All'; $('fMonth').value='All'; $('fGran').value='month';
+    $('csatStart').value=allStart; $('csatEnd').value=allEnd;
+    loadAll();
+  });
+  $('agentSearch').addEventListener('input', function(e){ renderAgents(e.target.value); });
+
+  // ---- QA responses drill-down modal ----
+  const ZENDESK_BASE = 'https://getyourguidesupport.zendesk.com/agent/tickets/';
+  let respModal = null;
+  function getRespModal(){
+    if(!respModal && window.bootstrap){ respModal = new bootstrap.Modal($('respModal')); }
+    return respModal;
+  }
+
+  async function openResponses(email){
+    $('respModalTitle').textContent = 'Responses — ' + email;
+    $('respModalBody').innerHTML = '<tr><td colspan="7" class="text-muted p-3">Loading…</td></tr>';
+    const m = getRespModal();
+    if(m) m.show();
+    const p = new URLSearchParams(qs().slice(1));
+    p.set('email', email);
+    const r = await fetch('/api/csat/agent-responses?'+p.toString());
+    if(!r.ok){ $('respModalBody').innerHTML = '<tr><td colspan="7" class="text-danger p-3">Failed to load.</td></tr>'; return; }
+    const d = await r.json();
+    if(!d.responses.length){ $('respModalBody').innerHTML = '<tr><td colspan="7" class="text-muted p-3">No responses in range.</td></tr>'; return; }
+    $('respModalBody').innerHTML = d.responses.map(function(x){
+      const csat = (String(x.score)==='1') ? '<span class="csat-grade-good">CSAT</span>'
+                 : (String(x.score)==='0') ? '<span class="csat-grade-bad">DSAT</span>' : '';
+      const ticketLink = x.ticket_id
+        ? '<a href="'+ZENDESK_BASE+encodeURIComponent(x.ticket_id)+'" target="_blank" rel="noopener">'+x.ticket_id+'</a>'
+        : '';
+      const comment = (x.qa_comment||'').replace(/</g,'&lt;');
+      return '<tr>'+
+        '<td>'+x.date+'</td>'+
+        '<td>'+ticketLink+'</td>'+
+        '<td>'+(x.channel||'')+'</td>'+
+        '<td class="text-center">'+(x.rate||'')+'</td>'+
+        '<td class="text-center">'+csat+'</td>'+
+        '<td style="max-width:380px;white-space:pre-wrap">'+comment+'</td>'+
+        '<td>'+(x.qa_name||'')+'</td>'+
+      '</tr>';
+    }).join('');
+  }
+
+  $('agentBody').addEventListener('click', function(e){
+    const a = e.target.closest('.resp-link');
+    if(!a) return;
+    e.preventDefault();
+    openResponses(decodeURIComponent(a.dataset.email));
+  });
+
+  // ---- TL trend chart: shared builder + click-to-expand ----
+  let lastTlTrend = null, tlBigChart = null;
+  const TL_FOCUS = ['Crestine','Flor','Florence','Honey','Jhon','Jubeth','Mozo'];
+  const TL_COLORS = ['#0d6efd','#dc3545','#198754','#fd7e14','#6f42c1','#20c997','#e83e8c'];
+
+  function tlChartConfig(data, labelSize, fillContainer){
+    const dsets = data.series.filter(function(s){ return TL_FOCUS.indexOf(s.name) !== -1; })
+      .map(function(s){
+        const col = TL_COLORS[TL_FOCUS.indexOf(s.name) % TL_COLORS.length];
+        return {
+          type:'line', label:s.name, data:s.data,
+          borderColor:col, backgroundColor:col,
+          tension:.3, borderWidth:2, pointRadius:3,
+          pointBackgroundColor:'#fff', pointBorderColor:col,
+          spanGaps:false,
+          datalabels:{
+            display:true, align:'top', anchor:'end', color:col,
+            font:{ weight:'600', size:labelSize },
+            formatter:function(v){ return (v==null?'':v.toFixed(1)+'%'); }
+          }
+        };
+      });
+    return {
+      data:{ labels:data.buckets, datasets:dsets },
+      options:{
+        responsive:true,
+        maintainAspectRatio: fillContainer ? false : true,
+        layout:{ padding:{ top:14 } },
+        plugins:{
+          legend:{ display:true, position:'bottom' },
+          datalabels:{ display:false },
+          tooltip:{ callbacks:{ label:function(ctx){
+            return ctx.dataset.label+': '+(ctx.parsed.y==null?'—':ctx.parsed.y.toFixed(2)+'%');
+          }}}
+        },
+        scales:{
+          y:{ suggestedMin:60, suggestedMax:100,
+              ticks:{ callback:function(v){ return v+'%'; } } }
+        }
+      },
+      plugins:[ChartDataLabels]
+    };
+  }
+
+  function renderTlChart(){
+    const tlCanvas = $('tlChart');
+    if(!tlCanvas || !lastTlTrend) return;
+    if(tlChart) tlChart.destroy();
+    tlChart = new Chart(tlCanvas, tlChartConfig(lastTlTrend, 9, false));
+  }
+
+  const tlModalEl = $('tlModal');
+  if($('tlChart') && tlModalEl){
+    $('tlChart').style.cursor = 'zoom-in';
+    $('tlChart').addEventListener('click', function(){
+      if(!lastTlTrend || !window.bootstrap) return;
+      bootstrap.Modal.getOrCreateInstance(tlModalEl).show();
+    });
+    tlModalEl.addEventListener('shown.bs.modal', function(){
+      if(tlBigChart) tlBigChart.destroy();
+      tlBigChart = new Chart($('tlChartBig'), tlChartConfig(lastTlTrend, 12, true));
+    });
+    tlModalEl.addEventListener('hidden.bs.modal', function(){
+      if(tlBigChart){ tlBigChart.destroy(); tlBigChart = null; }
+    });
+  }
+
+  (async function init(){ await loadOptions(); loadAll(); })();
+})();
+</script>
+{% endblock %}

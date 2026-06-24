@@ -9,7 +9,7 @@ import os, uuid, smtplib, logging
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 
-ir_bp = Blueprint('incident_reports', __name__)
+ir_bp = Blueprint('incident_reports_test', __name__)
 
 # ─── Constants ────────────────────────────────────────────────────────────────
 HR_EMAILS   = ['jed.sagardui@cohere.ph', 'honey.cortes@cohere.ph', 'anamarie.munez@cohere.ph']
@@ -119,60 +119,46 @@ def get_group_emails(employee_id, conn):
 
 # ─── Email ────────────────────────────────────────────────────────────────────
 def _send(to_list, subject, html_body, bcc_list=None, thread_id=None):
-    """Send email using portal SMTP with IR-specific From name."""
-    import smtplib
-    from email.mime.multipart import MIMEMultipart
-    from email.mime.text import MIMEText
+    """Send email reusing the portal's working SMTP setup."""
+    from app import send_email
     all_rcpt = list(filter(None, set(to_list) | set(bcc_list or [])))
     print(f"[IR EMAIL] to={all_rcpt} subj={subject[:50]}", flush=True)
-    try:
-        msg = MIMEMultipart('alternative')
-        msg['Subject'] = subject
-        msg['From']    = f"{os.getenv('IR_FROM_NAME','Incident Report System')} <{os.getenv('SMTP_USER')}>"
-        msg['To']      = ', '.join(filter(None, set(to_list)))
-        if thread_id:
-            mid = f"<incident-{thread_id}@dashboard.cohere.ph>"
-            msg['In-Reply-To'] = mid
-            msg['References']  = mid
-        msg.attach(MIMEText(html_body, 'html'))
-        with smtplib.SMTP(os.getenv('SMTP_SERVER'), int(os.getenv('SMTP_PORT', 2525))) as s:
-            s.login(os.getenv('SMTP_USER'), os.getenv('SMTP_PASSWORD'))
-            s.sendmail(os.getenv('SMTP_USER'), all_rcpt, msg.as_string())
-        print(f"[IR EMAIL OK] sent to {all_rcpt}", flush=True)
-        return True
-    except Exception as e:
-        print(f"[IR EMAIL ERROR] {e}", flush=True)
-        return False
+    for recipient in all_rcpt:
+        try:
+            send_email(recipient, subject, html_body)
+        except Exception as e:
+            print(f"[IR EMAIL ERROR] {recipient}: {e}", flush=True)
+    return True
 
 def _ir_email_body(title, subtitle, fields, action_url, action_label='📊 View Report', alert=None):
-    """Generic branded email body matching portal theme."""
+    """Generic branded email body builder."""
     field_html = ''
     for label, value in fields:
-        field_html += f"""<tr><td style="padding:10px 0;border-bottom:1px solid #e2e8f4;vertical-align:top;">
-            <div style="font-size:11px;font-weight:700;color:#6b7a99;text-transform:uppercase;letter-spacing:.5px;margin-bottom:3px;">{label}</div>
-            <div style="font-size:14px;color:#1a2440;">{value}</div></td></tr>"""
-    alert_html = f"""<div style="background:#fef3c7;border-left:3px solid #f59e0b;border-radius:6px;
-        padding:12px 14px;margin-bottom:18px;font-size:13px;color:#92400e;">
-        <strong>⚠️ Action Required:</strong> {alert}</div>""" if alert else ''
-    return f"""<html><body style="font-family:'Segoe UI',Arial,sans-serif;background:#f0f2f8;margin:0;padding:20px;">
-    <div style="max-width:580px;margin:0 auto;">
-      <div style="background:#0f2744;border-radius:12px 12px 0 0;padding:28px 32px;text-align:center;">
-        <div style="font-size:12px;font-weight:600;color:#93c5fd;letter-spacing:1px;text-transform:uppercase;margin-bottom:6px;">Incident Report System</div>
-        <h1 style="margin:0;font-size:22px;font-weight:700;color:#fff;">{title}</h1>
-        <div style="margin-top:8px;font-size:13px;color:#94a3b8;">{subtitle}</div>
-      </div>
-      <div style="background:#fff;padding:28px 32px;border:1px solid #e2e8f4;">
-        {alert_html}
-        <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;">{field_html}</table>
-        <div style="text-align:center;margin-top:28px;">
-          <a href="{action_url}" style="display:inline-block;background:#1e5fd4;color:#fff;padding:13px 32px;
-             text-decoration:none;border-radius:8px;font-weight:700;font-size:14px;">{action_label}</a>
+        field_html += f"""
+        <div style="background:white;border-left:4px solid #ff6b35;padding:15px;margin:8px 0;border-radius:4px;">
+            <div style="color:#0f2557;font-weight:bold;font-size:12px;text-transform:uppercase;">{label}</div>
+            <div style="margin-top:5px;color:#333;">{value}</div>
+        </div>"""
+
+    alert_html = ''
+    if alert:
+        alert_html = f"""<div style="background:white;border-left:4px solid #dc3545;padding:15px;margin-bottom:20px;border-radius:4px;">
+            <strong>⚠️ Action Required:</strong> {alert}</div>"""
+
+    return f"""
+    <html><body style="font-family:Arial,sans-serif;line-height:1.6;color:#333;">
+    <div style="max-width:600px;margin:0 auto;">
+        <div style="background:linear-gradient(135deg,#0f2557,#1e3a8a);color:white;padding:30px;text-align:center;border-radius:10px 10px 0 0;">
+            <h2 style="margin:0;">{title}</h2>
+            <p style="margin:8px 0 0;font-size:14px;">{subtitle}</p>
         </div>
-      </div>
-      <div style="background:#f0f2f8;border-radius:0 0 12px 12px;padding:14px 32px;text-align:center;
-                  font-size:11px;color:#6b7a99;border:1px solid #e2e8f4;border-top:none;">
-        Cohere HR Portal · Incident Report System
-      </div>
+        <div style="background:#f9f9f9;padding:25px;border:1px solid #ddd;">
+            {alert_html}{field_html}
+            <div style="background:#fff3cd;border:2px solid #ff6b35;border-radius:8px;padding:20px;margin:25px 0;text-align:center;">
+                <a href="{action_url}" style="background:linear-gradient(135deg,#0f2557,#ff6b35);color:white;padding:14px 35px;text-decoration:none;border-radius:8px;font-weight:bold;">{action_label}</a>
+            </div>
+        </div>
+        <div style="background:#333;color:white;padding:12px;text-align:center;border-radius:0 0 10px 10px;font-size:12px;">⚡ Incident Report System</div>
     </div></body></html>"""
 
 def send_incident_email(report_number, incident_date, agent_eid, employee_name,
@@ -229,56 +215,31 @@ def send_hr_notification(report_number, commenter_name, comment, agent_eid, stat
             status_text = 'PENDING HR — ATTENTION REQUIRED'
             bg_color = '#ffc107' # Yellow warning
 
-        body = f"""<html><body style="font-family:'Segoe UI',Arial,sans-serif;background:#f0f2f8;margin:0;padding:20px;">
-    <div style="max-width:580px;margin:0 auto;">
-      <div style="background:#0f2744;border-radius:12px 12px 0 0;padding:24px 32px;text-align:center;">
-        <div style="font-size:12px;font-weight:600;color:#93c5fd;letter-spacing:1px;text-transform:uppercase;margin-bottom:6px;">HR Escalation</div>
-        <h1 style="margin:0;font-size:20px;font-weight:700;color:#fff;">📋 Incident Report Action</h1>
-        <div style="margin-top:6px;font-size:13px;color:#94a3b8;">Report #{report_number}</div>
-      </div>
-      <div style="background:#fff;padding:24px 32px;border:1px solid #e2e8f4;">
-        <div style="display:inline-block;background:{bg_color};color:white;padding:6px 16px;
-                    border-radius:20px;font-weight:700;font-size:12px;margin-bottom:18px;">
-          {status_text}
-        </div>
-        <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;margin-bottom:16px;">
-          <tr><td style="padding:8px 0;border-bottom:1px solid #e2e8f4;">
-            <div style="font-size:11px;font-weight:700;color:#6b7a99;text-transform:uppercase;">Date</div>
-            <div style="font-size:14px;color:#1a2440;">{inc['incident_date'].strftime('%B %d, %Y') if hasattr(inc['incident_date'], 'strftime') else str(inc['incident_date'])}</div>
-          </td></tr>
-          <tr><td style="padding:8px 0;border-bottom:1px solid #e2e8f4;">
-            <div style="font-size:11px;font-weight:700;color:#6b7a99;text-transform:uppercase;">Agent</div>
-            <div style="font-size:14px;color:#1a2440;">{inc['employee_name']} ({inc['employee_id']})</div>
-          </td></tr>
-          <tr><td style="padding:8px 0;border-bottom:1px solid #e2e8f4;">
-            <div style="font-size:11px;font-weight:700;color:#6b7a99;text-transform:uppercase;">Group</div>
-            <div style="font-size:14px;color:#1a2440;">{inc.get('group_name') or 'N/A'}</div>
-          </td></tr>
-          <tr><td style="padding:8px 0;">
-            <div style="font-size:11px;font-weight:700;color:#6b7a99;text-transform:uppercase;">Summary</div>
-            <div style="font-size:14px;color:#1a2440;">{inc['summary']}</div>
-          </td></tr>
-        </table>
-        <div style="font-size:12px;font-weight:700;color:#6b7a99;text-transform:uppercase;margin-bottom:6px;">
-          Comment from {commenter_name}
-        </div>
-        <div style="background:#f8faff;border:1px solid #e2e8f4;border-radius:8px;padding:14px;
-                    font-size:14px;color:#1a2440;line-height:1.7;margin-bottom:20px;">
-          {comment.replace(chr(10), '<br>')}
-        </div>
-        <div style="text-align:center;">
-          <a href="https://hrportal.cohere.ph/incident-reports/{report_number}"
-             style="display:inline-block;background:#1e5fd4;color:#fff;padding:12px 28px;
-                    text-decoration:none;border-radius:8px;font-weight:700;font-size:14px;">
-            View Full Report
-          </a>
-        </div>
-      </div>
-      <div style="background:#f0f2f8;border-radius:0 0 12px 12px;padding:12px 32px;text-align:center;
-                  font-size:11px;color:#6b7a99;border:1px solid #e2e8f4;border-top:none;">
-        Cohere HR Portal · Incident Report System
-      </div>
-    </div></body></html>"""
+        body = f"""
+        <html><body style="font-family:Arial,sans-serif;">
+        <div style="max-width:600px;margin:0 auto;">
+            <div style="background:linear-gradient(135deg,#dc3545,#ff6b35);color:white;padding:25px;text-align:center;border-radius:10px 10px 0 0;">
+                <h2 style="margin:0;">📋 HR Escalation</h2>
+                <p style="margin:8px 0 0;">Report #{report_number}</p>
+            </div>
+            <div style="padding:25px;background:#f9f9f9;">
+                <div style="background:{bg_color};color:white;padding:10px 20px;border-radius:20px;display:inline-block;font-weight:bold;margin-bottom:20px;">{status_text}</div>
+                <div style="background:white;padding:15px;margin:10px 0;border-radius:4px;">
+                    <p><strong>Date:</strong> {inc['incident_date'].strftime('%B %d, %Y') if hasattr(inc['incident_date'], 'strftime') else str(inc['incident_date'])}</p>
+                    <p><strong>Agent:</strong> {inc['employee_name']} ({inc['employee_id']})</p>
+                    <p><strong>Group:</strong> {inc.get('group_name') or 'N/A'}</p>
+                    <p><strong>Summary:</strong> {inc['summary']}</p>
+                </div>
+                <p><strong>Comment from {commenter_name}:</strong></p>
+                <div style="background:#fff3cd;border-left:4px solid #ff6b35;padding:20px;margin:15px 0;">{comment.replace(chr(10), '<br>')}</div>
+                <div style="text-align:center;margin-top:25px;">
+                    <a href="https://hrportal.cohere.ph/incident-reports/{report_number}"
+                       style="background:linear-gradient(135deg,#dc3545,#ff6b35);color:white;padding:14px 35px;text-decoration:none;border-radius:8px;font-weight:bold;">📊 View Full Report</a>
+                </div>
+            </div>
+            <div style="background:#333;color:white;padding:12px;text-align:center;font-size:12px;">⚡ HR Escalation Notification</div>
+        </div></body></html>"""
+
         _send(HR_EMAILS, f"Re: New Incident Report: {report_number} — HR ACTION REQUIRED",
               body, thread_id=report_number)
     finally:
@@ -286,72 +247,6 @@ def send_hr_notification(report_number, commenter_name, comment, agent_eid, stat
             conn.close()
         except Exception:
             pass
-
-def send_rwe_served_to_tl(report_number, served_by, comment, agent_eid):
-    """Notify the TL/supervisor that HR has served the RWE for their agent."""
-    conn = get_db()
-    try:
-        # Get report details
-        with conn.cursor() as cur:
-            cur.execute("""SELECT ir.*, g.group_name FROM incident_reports ir
-                           LEFT JOIN gsheet_employees g ON ir.employee_id = g.employee_id
-                           WHERE ir.report_number = %s""", (report_number,))
-            inc = cur.fetchone()
-        if not inc:
-            return
-
-        # Get supervisor of the agent
-        sup_email = get_supervisor_email(agent_eid, conn)
-        if not sup_email:
-            return
-
-        recipients = [IR_EMAIL_TO, sup_email]
-
-        body = f"""
-        <html><body style="font-family:Arial,sans-serif;">
-        <div style="max-width:600px;margin:0 auto;">
-            <div style="background:linear-gradient(135deg,#10b981,#059669);color:white;padding:25px;
-                        text-align:center;border-radius:10px 10px 0 0;">
-                <h2 style="margin:0;">✅ RWE Served</h2>
-                <p style="margin:8px 0 0;">Report #{report_number}</p>
-            </div>
-            <div style="padding:25px;background:#f9f9f9;">
-                <div style="background:#d1fae5;border:1px solid #6ee7b7;border-radius:8px;
-                            padding:14px 16px;margin-bottom:20px;color:#065f46;font-weight:600;">
-                    ✅ HR has marked the Written Explanation as served for this incident.
-                </div>
-                <div style="background:white;padding:15px;border-radius:6px;margin-bottom:15px;">
-                    <p><strong>Agent:</strong> {inc['employee_name']} ({inc['employee_id']})</p>
-                    <p><strong>Group:</strong> {inc.get('group_name') or 'N/A'}</p>
-                    <p><strong>Incident Date:</strong> {inc['incident_date'].strftime('%B %d, %Y') if hasattr(inc.get('incident_date'), 'strftime') else str(inc.get('incident_date',''))}</p>
-                    <p><strong>Summary:</strong> {inc['summary']}</p>
-                </div>
-                <p style="font-weight:600;color:#374151;">Note from {served_by}:</p>
-                <div style="background:#f0fdf4;border-left:4px solid #10b981;padding:16px;
-                            border-radius:4px;margin-bottom:20px;">
-                    {comment.replace(chr(10),'<br>')}
-                </div>
-                <div style="text-align:center;">
-                    <a href="https://hrportal.cohere.ph/incident-reports/{report_number}"
-                       style="background:linear-gradient(135deg,#10b981,#059669);color:white;
-                              padding:12px 28px;text-decoration:none;border-radius:8px;font-weight:700;">
-                        📋 View Full Report
-                    </a>
-                </div>
-            </div>
-            <div style="background:#333;color:white;padding:12px;text-align:center;
-                        font-size:12px;border-radius:0 0 10px 10px;">⚡ Incident Report System</div>
-        </div></body></html>"""
-
-        _send(recipients,
-              f"RWE Served: {report_number} — {inc['employee_name']}",
-              body, thread_id=report_number)
-    finally:
-        try:
-            conn.close()
-        except Exception:
-            pass
-
 
 def send_comment_notification(report_number, commenter_name, comment,
                                agent_eid, submitter_eid, status_action):
@@ -362,53 +257,35 @@ def send_comment_notification(report_number, commenter_name, comment,
         if sup: recipients.append(sup)
         recipients += get_group_emails(submitter_eid, conn)
 
-        status_colors = {
-            'rwe_request': ('#fee2e2','#991b1b','⚠️ RWE Requested'),
-            'rwe_served':  ('#d1fae5','#065f46','✅ RWE Served'),
-            'resolved':    ('#d1fae5','#065f46','✅ Resolved'),
-            'reviewed':    ('#dbeafe','#1e40af','👁 Reviewed'),
-            'pending_hr':  ('#f3e8ff','#6b21a8','📋 Pending HR'),
-            'resolved_hr': ('#f3f4f6','#374151','✅ Resolved HR'),
-        }
-        status_badge = ''
-        if status_action and status_action in status_colors:
-            bg, fg, label = status_colors[status_action]
-            status_badge = f"""<span style="background:{bg};color:{fg};padding:4px 12px;
-                border-radius:20px;font-size:11px;font-weight:700;margin-left:8px;">{label}</span>"""
+        status_badge = (f"<div style='background:#28a745;color:white;display:inline-block;"
+                        f"padding:5px 12px;border-radius:20px;font-weight:bold;font-size:12px;"
+                        f"margin-left:8px;'>STATUS: {status_action.upper()} ✅</div>"
+                        if status_action else '')
 
-        body = f"""<html><body style="font-family:'Segoe UI',Arial,sans-serif;background:#f0f2f8;margin:0;padding:20px;">
-    <div style="max-width:580px;margin:0 auto;">
-      <div style="background:#0f2744;border-radius:12px 12px 0 0;padding:24px 32px;text-align:center;">
-        <div style="font-size:12px;font-weight:600;color:#93c5fd;letter-spacing:1px;text-transform:uppercase;margin-bottom:6px;">Incident Report System</div>
-        <h1 style="margin:0;font-size:20px;font-weight:700;color:#fff;">New Comment</h1>
-        <div style="margin-top:6px;font-size:13px;color:#94a3b8;">Report #{report_number}</div>
-      </div>
-      <div style="background:#fff;padding:24px 32px;border:1px solid #e2e8f4;">
-        <div style="margin-bottom:16px;">
-          <span style="background:#1e5fd4;color:white;padding:4px 12px;border-radius:20px;font-size:11px;font-weight:700;">NEW COMMENT</span>
-          {status_badge}
-        </div>
-        <div style="border-left:3px solid #1e5fd4;padding:12px 16px;margin-bottom:16px;background:#f8faff;border-radius:0 6px 6px 0;">
-          <div style="font-weight:700;color:#1a2440;font-size:14px;">{commenter_name}</div>
-          <div style="color:#6b7a99;font-size:12px;margin-top:2px;">{datetime.now().strftime('%b %d, %Y at %I:%M %p')}</div>
-        </div>
-        <div style="background:#f8faff;border:1px solid #e2e8f4;border-radius:8px;padding:16px;
-                    font-size:14px;color:#1a2440;line-height:1.7;margin-bottom:20px;">
-          {comment.replace(chr(10),'<br>')}
-        </div>
-        <div style="text-align:center;">
-          <a href="https://hrportal.cohere.ph/incident-reports/{report_number}"
-             style="display:inline-block;background:#1e5fd4;color:#fff;padding:12px 28px;
-                    text-decoration:none;border-radius:8px;font-weight:700;font-size:14px;">
-            View Report
-          </a>
-        </div>
-      </div>
-      <div style="background:#f0f2f8;border-radius:0 0 12px 12px;padding:12px 32px;text-align:center;
-                  font-size:11px;color:#6b7a99;border:1px solid #e2e8f4;border-top:none;">
-        Cohere HR Portal · Incident Report System
-      </div>
-    </div></body></html>"""
+        body = f"""
+        <html><body style="font-family:Arial,sans-serif;">
+        <div style="max-width:600px;margin:0 auto;">
+            <div style="background:linear-gradient(135deg,#0f2557,#1e3a8a);color:white;padding:25px;text-align:center;border-radius:10px 10px 0 0;">
+                <h2 style="margin:0;">New Comment on Incident Report</h2>
+                <p style="margin:8px 0 0;font-size:14px;">Report #{report_number}</p>
+            </div>
+            <div style="background:#f9f9f9;padding:25px;border:1px solid #ddd;">
+                <div style="margin-bottom:15px;">
+                    <span style="background:#ff6b35;color:white;padding:5px 12px;border-radius:20px;font-weight:bold;font-size:12px;">NEW COMMENT</span>
+                    {status_badge}
+                </div>
+                <div style="background:white;padding:15px;border-left:4px solid #0f2557;border-radius:4px;margin-bottom:20px;">
+                    <strong style="color:#0f2557;font-size:16px;">{commenter_name}</strong>
+                    <div style="color:#999;font-size:13px;margin-top:4px;">{datetime.now().strftime('%b %d, %Y at %I:%M %p')}</div>
+                </div>
+                <div style="background:white;border-left:4px solid #ff6b35;padding:20px;margin:15px 0;">{comment.replace(chr(10),'<br>')}</div>
+                <div style="text-align:center;margin-top:25px;padding:20px;background:#fff3cd;border-radius:8px;">
+                    <a href="https://hrportal.cohere.ph/incident-reports/{report_number}"
+                       style="background:linear-gradient(135deg,#0f2557,#ff6b35);color:white;padding:12px 28px;text-decoration:none;border-radius:8px;font-weight:bold;">View Report</a>
+                </div>
+            </div>
+            <div style="background:#333;color:white;padding:12px;text-align:center;font-size:12px;">Incident Report System</div>
+        </div></body></html>"""
 
         _send(recipients, f"Re: New Incident Report: {report_number}", body,
               bcc_list=[IR_EMAIL_BCC], thread_id=report_number)
@@ -533,29 +410,14 @@ def dashboard():
                 rwe_reports = cur.fetchall()
             
             # Then add rwe_reports=rwe_reports to the render_template() call:
-        # RWE Report data (admin only)
-        rwe_report_data = []
-        if u['is_admin']:
-            with conn.cursor() as cur:
-                cur.execute("""
-                    SELECT ir.report_number, ir.employee_name, ir.submitted_by_name,
-                           ir.status, ir.rwe_requested_at, ir.rwe_served_at,
-                           DATEDIFF(COALESCE(ir.rwe_served_at, NOW()), ir.rwe_requested_at) as days_open,
-                           CASE
-                             WHEN ir.rwe_served_at IS NOT NULL THEN 'served'
-                             WHEN DATEDIFF(NOW(), ir.rwe_requested_at) > 5 THEN 'overdue'
-                             WHEN DATEDIFF(NOW(), ir.rwe_requested_at) >= 3 THEN 'warning'
-                             ELSE 'ok'
-                           END as sla_status
-                    FROM incident_reports ir
-                    WHERE ir.rwe_requested_at IS NOT NULL
-                    ORDER BY ir.rwe_requested_at DESC
-                """)
-                rwe_report_data = cur.fetchall()
+            # return render_template('incident_dashboard_test.html',
+            #     reports=reports, stats=stats, user=u,
+            #     rwe_reports=rwe_reports,          ← ADD THIS
+            #     status_filter=status_filter, ...
+            # )
 
-        return render_template('incident_dashboard.html',
+        return render_template('incident_dashboard_test.html',
             reports=reports, stats=stats, user=u,
-            rwe_reports=rwe_reports, rwe_report_data=rwe_report_data,
             status_filter=status_filter, search=search,
             start_date=start_date, end_date=end_date, sort_by=sort_by)
     finally:
@@ -614,21 +476,14 @@ def submit_report():
         employee_name  = agent['full_name']
         report_number  = generate_report_number()
         initial_status = 'rwe_request' if escalate_to_hr else 'pending'
+
         with conn.cursor() as cur:
-            if escalate_to_hr:
-                cur.execute("""INSERT INTO incident_reports
-                    (report_number, incident_date, employee_id, employee_name,
-                     submitted_by_id, submitted_by_name, summary, status, rwe_requested_at)
-                    VALUES (%s,%s,%s,%s,%s,%s,%s,%s,NOW())""",
-                    (report_number, incident_date, agent_eid, employee_name,
-                     u['employee_id'], u['name'], summary, initial_status))
-            else:
-                cur.execute("""INSERT INTO incident_reports
-                    (report_number, incident_date, employee_id, employee_name,
-                     submitted_by_id, submitted_by_name, summary, status)
-                    VALUES (%s,%s,%s,%s,%s,%s,%s,%s)""",
-                    (report_number, incident_date, agent_eid, employee_name,
-                     u['employee_id'], u['name'], summary, initial_status))
+            cur.execute("""INSERT INTO incident_reports
+                (report_number, incident_date, employee_id, employee_name,
+                 submitted_by_id, submitted_by_name, summary, status)
+                VALUES (%s,%s,%s,%s,%s,%s,%s,%s)""",
+                (report_number, incident_date, agent_eid, employee_name,
+                 u['employee_id'], u['name'], summary, initial_status))
             report_id = cur.lastrowid
         conn.commit()
 
@@ -864,19 +719,8 @@ def add_comment():
 
         if status_action:
             with conn.cursor() as cur:
-                if status_action == 'rwe_request':
-                    cur.execute("""UPDATE incident_reports
-                                   SET status=%s, rwe_requested_at=NOW()
-                                   WHERE report_number=%s""",
-                                (status_action, report_number))
-                elif status_action == 'rwe_served':
-                    cur.execute("""UPDATE incident_reports
-                                   SET status=%s, rwe_served_at=NOW()
-                                   WHERE report_number=%s""",
-                                (status_action, report_number))
-                else:
-                    cur.execute("UPDATE incident_reports SET status=%s WHERE report_number=%s",
-                                (status_action, report_number))
+                cur.execute("UPDATE incident_reports SET status=%s WHERE report_number=%s",
+                            (status_action, report_number))
         conn.commit()
 
         try:
@@ -890,10 +734,11 @@ def add_comment():
                                      f"RWE Requested by reporter: {comment_text}",
                                      report['employee_id'], 'rwe_request')
             
-            # Workflow Modification: HR serves RWE -> Notify TL/supervisor
+            # Workflow Modification: HR serves RWE -> Alerts Team/Reporter
             elif status_action == 'rwe_served':
-                send_rwe_served_to_tl(report_number, u['name'], comment_text,
-                                      report['employee_id'])
+                send_hr_notification(report_number, u['name'], 
+                                     f"RWE has been served to the agent: {comment_text}",
+                                     report['employee_id'], 'rwe_served')
                                      
             # Fallback legacy compatibility
             elif status_action in ['pending_hr', 'resolved_hr']:

@@ -187,6 +187,9 @@
     .sidebar.collapsed .nav-section-toggle span,
     .sidebar.collapsed .section-arrow { display: none; }
     .sidebar.collapsed .nav-section-body { max-height: 500px !important; }
+    .sidebar.collapsed #sidebarSearchWrap { display: none; }
+    #sidebarSearch::placeholder { color: rgba(255,255,255,.35); }
+    #sidebarSearch:focus { background: rgba(255,255,255,.13); border-color: rgba(255,255,255,.3); }
     .sidebar hr { border-color: rgba(255,255,255,.08); margin: .25rem 1rem; }
     ::-webkit-scrollbar { width: 6px; }
     .emp-id-copy { cursor: pointer; transition: color .15s; }
@@ -214,6 +217,25 @@
     <span class="brand-text">Cohere</span>
   </div>
 
+  <div style="padding:.25rem 1rem .4rem;border-bottom:1px solid rgba(255,255,255,.08);display:flex;justify-content:flex-end;">
+    <button onclick="collapseAll()" title="Collapse all sections"
+      style="background:none;border:none;color:rgba(255,255,255,.45);font-size:.72rem;cursor:pointer;padding:.2rem .5rem;border-radius:4px;display:flex;align-items:center;gap:.3rem;">
+      <i class="bi bi-layout-sidebar-reverse"></i>
+      <span class="nav-label">Collapse All</span>
+    </button>
+  </div>
+  <div id="sidebarSearchWrap" style="padding:.4rem .75rem .5rem;border-bottom:1px solid rgba(255,255,255,.08);">
+    <div style="position:relative;">
+      <i class="bi bi-search" style="position:absolute;left:.6rem;top:50%;transform:translateY(-50%);font-size:.75rem;color:rgba(255,255,255,.4);pointer-events:none;"></i>
+      <input type="text" id="sidebarSearch" placeholder="Search navigation..."
+        oninput="filterSidebar(this.value)"
+        style="width:100%;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.12);border-radius:6px;padding:.35rem .6rem .35rem 1.8rem;color:#fff;font-size:.78rem;outline:none;box-sizing:border-box;">
+      <button id="sidebarSearchClear" onclick="clearSidebarSearch()"
+        style="display:none;position:absolute;right:.5rem;top:50%;transform:translateY(-50%);background:none;border:none;color:rgba(255,255,255,.5);cursor:pointer;font-size:.7rem;padding:0;line-height:1;">
+        <i class="bi bi-x-lg"></i>
+      </button>
+    </div>
+  </div>
   <nav class="nav flex-column mt-2 sidebar-nav">
 
     {# ── MAIN ─────────────────────────────────────────────── #}
@@ -232,7 +254,15 @@
         href="{{ url_for('break_log.break_log') }}">
         <i class="bi bi-stopwatch"></i> <span class="nav-label">Break Log</span>
       </a>
-
+            <a class="nav-link {% if request.endpoint == 'survey.survey_list' %}active{% endif %}"
+         href="{{ url_for('survey.survey_list') }}">
+        <i class="bi bi-card-checklist"></i> <span class="nav-label">Survey</span>
+      </a>
+      <a class="nav-link {% if request.endpoint == 'qa_updates.bulletin' %}active{% endif %}"
+         href="{{ url_for('qa_updates.bulletin') }}">
+        <i class="bi bi-megaphone"></i> <span class="nav-label">QA Updates</span>
+        <span id="qaUpdatesBadge" style="display:none;margin-left:auto;background:#ef4444;color:#fff;font-size:.65rem;font-weight:700;padding:.15rem .45rem;border-radius:999px;min-width:18px;text-align:center;"></span>
+      </a>
     </div>
 
     {# ── MY REQUESTS ───────────────────────────────────── #}
@@ -289,7 +319,7 @@
     </div>
 
     {# ── MY TEAM (Supervisors) ────────────────────────────── #}
-    {% if session.get('is_supervisor') or session.get('is_admin') or session.get('permissions', {}).get('can_material_requests') %}
+    {% if session.get('is_supervisor') or session.get('is_admin') or session.get('permissions', {}).get('can_material_requests') or break_log_supervisor_access() %}
     <div class="nav-section-toggle nav-label" onclick="toggleSection('supervisor')" id="supervisor-header">
       <span>My Team</span>
       <i class="bi bi-chevron-down section-arrow" id="supervisor-arrow"></i>
@@ -314,6 +344,7 @@
                      border-radius:999px;min-width:18px;text-align:center;"></span>
       </a>
       {% endif %}
+      {% if session.get('is_supervisor') or session.get('is_admin') or session.get('permissions', {}).get('can_material_requests') %}
       <a class="nav-link {% if request.endpoint == 'material_som_approvals' %}active{% endif %}"
          href="{{ url_for('material_som_approvals') }}">
         <i class="bi bi-box-seam"></i>
@@ -323,10 +354,13 @@
                      font-size:.65rem;font-weight:700;padding:.15rem .45rem;
                      border-radius:999px;min-width:18px;text-align:center;"></span>
       </a>
+      {% endif %}
       {% if session.get('is_supervisor') or session.get('is_admin') %}
       <a class="nav-link {% if request.endpoint == 'supervisor_team_calendar' %}active{% endif %}" href="{{ url_for('supervisor_team_calendar') }}">
         <i class="bi bi-calendar3"></i> <span class="nav-label">Team Calendar</span>
       </a>
+      {% endif %}
+      {% if break_log_supervisor_access() %}
       <a class="nav-link {% if request.endpoint == 'break_log.supervisor_break_logs' %}active{% endif %}"
         href="{{ url_for('break_log.supervisor_break_logs') }}">
         <i class="bi bi-clipboard2-pulse"></i> <span class="nav-label">Break Logs</span>
@@ -334,8 +368,47 @@
       {% endif %}
     </div>
     {% endif %}
-
+    {# ── VIEW MY TEAM (Read-Only, Team Leads) ─────────────── #}
+    {% if session.get('is_tl') or session.get('is_admin') %}
+    <div class="nav-section-toggle nav-label" onclick="toggleSection('tlview')" id="tlview-header">
+      <span>View My Team (Read-Only)</span>
+      <i class="bi bi-chevron-down section-arrow" id="tlview-arrow"></i>
+    </div>
+    <div class="nav-section-body" id="tlview-body">
+      <a class="nav-link {% if request.endpoint == 'tl_view.tl_view_leave' %}active{% endif %}"
+         href="{{ url_for('tl_view.tl_view_leave') }}">
+        <i class="bi bi-eye"></i>
+        <span class="nav-label">Leave</span>
+      </a>
+      <a class="nav-link {% if request.endpoint == 'tl_view.tl_view_requests' %}active{% endif %}"
+         href="{{ url_for('tl_view.tl_view_requests') }}">
+        <i class="bi bi-eye"></i>
+        <span class="nav-label">Requests</span>
+      </a>
+    </div>
+    {% endif %}
     {# ── ADMIN SECTIONS ───────────────────────────────────── #}
+      {# Floor Map #}
+      {% if session.get('is_admin') or session.get('permissions', {}).get('can_floor_map') %}
+      <div class="nav-section-toggle nav-label" onclick="toggleSection('floor-map')" id="floor-map-header">
+        <span>Floor Map</span>
+        <i class="bi bi-chevron-down section-arrow" id="floor-map-arrow"></i>
+      </div>
+      <div class="nav-section-body" id="floor-map-body">
+        <a class="nav-link {% if request.endpoint and 'floor_map' in (request.endpoint or '') and 'admin' not in (request.endpoint or '') %}active{% endif %}"
+           href="{{ url_for('floor_map.index') }}">
+          <i class="bi bi-geo-alt"></i>
+          <span class="nav-label">Floor Map</span>
+        </a>
+        {% if session.get('is_admin') %}
+        <a class="nav-link {% if request.endpoint and 'floor_map' in (request.endpoint or '') and 'admin' in (request.endpoint or '') %}active{% endif %}"
+           href="{{ url_for('floor_map.admin') }}">
+          <i class="bi bi-pencil-square"></i>
+          <span class="nav-label">Seat Setup</span>
+        </a>
+        {% endif %}
+      </div>
+      {% endif %}
       {# Incident Reports #}
       {% if ir_can_file() or ir_can_view() %}
       <div class="nav-section-toggle nav-label" onclick="toggleSection('incident-reports')" id="incident-reports-header">
@@ -359,13 +432,30 @@
         {% endif %}
       </div>
       {% endif %}
+
+    {# QA Updates Admin #}
+      {% if qa_can_manage() %}
+      <div class="nav-section-toggle nav-label" onclick="toggleSection('qa-updates')" id="qa-updates-header">
+        <span>QA Updates Admin</span>
+        <i class="bi bi-chevron-down section-arrow" id="qa-updates-arrow"></i>
+      </div>
+      <div class="nav-section-body" id="qa-updates-body">
+        <a class="nav-link {% if request.endpoint == 'qa_updates.admin' %}active{% endif %}"
+           href="{{ url_for('qa_updates.admin') }}">
+          <i class="bi bi-clipboard2-pulse"></i>
+          <span class="nav-label">Manage QA Updates</span>
+        </a>
+      </div>
+      {% endif %}
+
     {% if session.get('is_admin') or session.get('is_sub_admin') %}
 
       {# People & Requests #}
       {% if session.get('is_admin')
             or session.get('permissions', {}).get('can_all_leaves')
             or session.get('permissions', {}).get('can_all_requests')
-            or session.get('permissions', {}).get('can_file_for_emp') %}
+            or session.get('permissions', {}).get('can_file_for_emp')
+            or session.get('permissions', {}).get('can_pim') %}
       <div class="nav-section-toggle nav-label" onclick="toggleSection('people')" id="people-header">
         <span>People &amp; Requests</span>
         <i class="bi bi-chevron-down section-arrow" id="people-arrow"></i>
@@ -386,7 +476,7 @@
           <i class="bi bi-person-plus"></i> <span class="nav-label">File for Employee</span>
         </a>
         {% endif %}
-        {% if session.get("is_admin") or session.get("is_sub_admin") %}
+        {% if session.get("is_admin") or session.get('permissions', {}).get('can_pim') %}
         <a class="nav-link {% if request.endpoint in ['pim_index', 'pim_profile'] %}active{% endif %}" href="{{ url_for('pim_index') }}">
           <i class="bi bi-people"></i> <span class="nav-label">Employee Database</span>
         </a>
@@ -467,8 +557,9 @@
         </a>
       </div>
       {% endif %}
+
       {# Analytics #}
-      {% if session.get('is_admin') or session.get('permissions', {}).get('can_reports') or session.get('permissions', {}).get('can_schedules') or session.get('permissions', {}).get('can_view_tickets') or session.get('permissions', {}).get('can_absences') or session.get('permissions', {}).get('can_attrition_report') %}
+      {% if session.get('is_admin') or session.get('permissions', {}).get('can_reports') or session.get('permissions', {}).get('can_schedules') or session.get('permissions', {}).get('can_view_tickets') or session.get('permissions', {}).get('can_absences') or session.get('permissions', {}).get('can_attrition_report') or session.get('permissions', {}).get('can_surveys') %}
       <div class="nav-section-toggle nav-label" onclick="toggleSection('analytics')" id="analytics-header">
         <span>Analytics</span>
         <i class="bi bi-chevron-down section-arrow" id="analytics-arrow"></i>
@@ -487,22 +578,44 @@
         <a class="nav-link {% if request.endpoint == 'admin_reports' %}active{% endif %}" href="{{ url_for('admin_reports') }}">
           <i class="bi bi-bar-chart-line"></i> <span class="nav-label">Reports</span>
         </a>
+        {% if session.get('is_admin') or session.get('permissions', {}).get('can_schedules') %}
+        <a class="nav-link {% if request.endpoint == 'admin_schedules' %}active{% endif %}"
+          href="{{ url_for('admin_schedules') }}">
+          <i class="bi bi-calendar3-week"></i>
+          <span class="nav-label">Schedules</span>
+        </a>
+        {% endif %}
         {% endif %}
         <a class="nav-link {% if request.endpoint == 'admin_night_diff' %}active{% endif %}" href="{{ url_for('admin_night_diff') }}">
           <i class="bi bi-moon-stars"></i> <span class="nav-label">Night Differential</span>
         </a>
         {% if session.get('is_admin') or session.get('permissions', {}).get('can_absences') %}
-        <a class="nav-link {% if request.endpoint == 'admin_absences' %}active{% endif %}"
-           href="{{ url_for('admin_absences') }}">
-          <i class="bi bi-person-x"></i> <span class="nav-label">Absences</span>
-        </a>
-        {% endif %}
+<a class="nav-link {% if request.endpoint == 'admin_absences' %}active{% endif %}"
+   href="{{ url_for('admin_absences') }}">
+  <i class="bi bi-person-x"></i> <span class="nav-label">Absences</span>
+</a>
+{% endif %}
+
+{% if session.get('is_admin') or session.get('permissions', {}).get('can_tardiness') %}
+<a class="nav-link {% if request.endpoint == 'tardiness.tardiness_page' %}active{% endif %}"
+   href="{{ url_for('tardiness.tardiness_page') }}">
+  <i class="bi bi-clock-history"></i> <span class="nav-label">Tardiness Report</span>
+</a>
+{% endif %}
         {% if session.get('is_admin') or session.get('permissions', {}).get('can_attrition_report') %}
         <a class="nav-link {% if request.endpoint == 'admin_attrition' %}active{% endif %}"
            href="{{ url_for('admin_attrition') }}">
           <i class="bi bi-person-dash"></i> <span class="nav-label">Attrition Report</span>
         </a>
         {% endif %}
+
+        {% if session.get('is_admin') or session.get('permissions', {}).get('can_surveys') %}
+        <a class="nav-link {% if request.endpoint in ['survey.survey_admin_list', 'survey.survey_results'] %}active{% endif %}"
+           href="{{ url_for('survey.survey_admin_list') }}">
+          <i class="bi bi-clipboard-data"></i> <span class="nav-label">Surveys</span>
+        </a>
+        {% endif %}
+
         {% if session.get('is_admin') or session.get('permissions', {}).get('can_view_tickets') %}
         <a class="nav-link {% if request.endpoint == 'admin_ot_tickets' %}active{% endif %}" href="{{ url_for('admin_ot_tickets') }}">
           <i class="bi bi-ticket-perforated"></i> <span class="nav-label">OT/RDW Tickets</span>
@@ -572,6 +685,21 @@
       </div>
       {% endif %}
 
+    {% endif %}
+
+  
+    {# CSAT — outside admin gate so SOMs and TLs see it too #}
+    {% if session.get('is_admin') or session.get('is_supervisor') or session.get('permissions', {}).get('can_csat') or session.get('is_csat_tl') %}
+    <div class="nav-section-toggle nav-label" onclick="toggleSection('csat')" id="csat-header">
+      <span>CSAT</span>
+      <i class="bi bi-chevron-down section-arrow" id="csat-arrow"></i>
+    </div>
+    <div class="nav-section-body" id="csat-body">
+      <a class="nav-link {% if request.endpoint == 'csat_dashboard' %}active{% endif %}"
+         href="{{ url_for('csat_dashboard') }}">
+        <i class="bi bi-emoji-smile"></i> <span class="nav-label">CSAT Dashboard</span>
+      </a>
+    </div>
     {% endif %}
 
   </nav>
@@ -721,6 +849,100 @@ function toggleSection(section) {
 
 
 /* ===============================
+   COLLAPSE ALL + LOGOUT CLEAR
+================================ */
+const SECTIONS = ['main','supervisor','tlview','people','analytics','operations','administration','filerequests','support','csat','incident-reports','floor-map','qa-updates'];
+
+function collapseAll() {
+  SECTIONS.forEach(section => {
+    const body  = document.getElementById(section + '-body');
+    const arrow = document.getElementById(section + '-arrow');
+    if (!body) return;
+    body.classList.add('collapsed');
+    if (arrow) arrow.style.transform = 'rotate(-90deg)';
+    localStorage.setItem('section-' + section, '1');
+  });
+}
+
+function filterSidebar(query) {
+  const q = query.trim().toLowerCase();
+  const clearBtn = document.getElementById('sidebarSearchClear');
+  if (clearBtn) clearBtn.style.display = q ? 'block' : 'none';
+
+  if (!q) {
+    document.querySelectorAll('.sidebar .nav-link').forEach(link => {
+      link.style.display = '';
+      const lbl = link.querySelector('.nav-label');
+      if (lbl && lbl.dataset.orig) { lbl.textContent = lbl.dataset.orig; delete lbl.dataset.orig; }
+    });
+    document.querySelectorAll('.nav-section-toggle').forEach(h => h.style.display = '');
+    document.querySelectorAll('.nav-section-body').forEach(b => b.style.display = '');
+    SECTIONS.forEach(section => {
+      const body = document.getElementById(section + '-body');
+      const arrow = document.getElementById(section + '-arrow');
+      if (!body) return;
+      const stored = localStorage.getItem('section-' + section);
+      const hasActive = body.querySelector('.nav-link.active');
+      if (hasActive || stored === '0') {
+        body.classList.remove('collapsed');
+        if (arrow) arrow.style.transform = 'rotate(0deg)';
+      } else {
+        body.classList.add('collapsed');
+        if (arrow) arrow.style.transform = 'rotate(-90deg)';
+      }
+    });
+    return;
+  }
+
+  SECTIONS.forEach(section => {
+    const body  = document.getElementById(section + '-body');
+    const arrow = document.getElementById(section + '-arrow');
+    const header = document.getElementById(section + '-header');
+    if (!body) return;
+    body.classList.remove('collapsed');
+    body.style.display = '';
+    if (arrow) arrow.style.transform = 'rotate(0deg)';
+    let anyVisible = false;
+    body.querySelectorAll('.nav-link').forEach(link => {
+      const lbl = link.querySelector('.nav-label');
+      if (!lbl) return;
+      if (!lbl.dataset.orig) lbl.dataset.orig = lbl.textContent.trim();
+      const text = lbl.dataset.orig.toLowerCase();
+      if (text.includes(q)) {
+        link.style.display = '';
+        anyVisible = true;
+        const orig = lbl.dataset.orig;
+        const idx = orig.toLowerCase().indexOf(q);
+        lbl.innerHTML = orig.substring(0, idx)
+          + '<mark style="background:#f59e0b;color:#000;border-radius:2px;padding:0 2px;">'
+          + orig.substring(idx, idx + q.length) + '</mark>'
+          + orig.substring(idx + q.length);
+      } else {
+        link.style.display = 'none';
+        lbl.textContent = lbl.dataset.orig;
+      }
+    });
+    if (header) header.style.display = anyVisible ? '' : 'none';
+    if (!anyVisible) body.style.display = 'none';
+  });
+}
+
+function clearSidebarSearch() {
+  const inp = document.getElementById('sidebarSearch');
+  if (inp) { inp.value = ''; filterSidebar(''); inp.focus(); }
+}
+
+function clearSectionMemory() {
+  SECTIONS.forEach(s => localStorage.removeItem('section-' + s));
+}
+
+/* Logout: clear section memory so next login starts collapsed */
+document.addEventListener('DOMContentLoaded', function() {
+  const logoutLink = document.querySelector('a[href*="logout"]');
+  if (logoutLink) logoutLink.addEventListener('click', clearSectionMemory);
+});
+
+/* ===============================
    INIT AFTER LOAD
 ================================ */
 document.addEventListener('DOMContentLoaded', function () {
@@ -738,7 +960,7 @@ document.addEventListener('DOMContentLoaded', function () {
   }
 
   /* Restore sections */
-  ['main','supervisor','people','analytics','operations','administration','filerequests','support'].forEach(section => {
+  ['main','supervisor','tlview','people','analytics','operations','administration','filerequests','support','csat','incident-reports','qa-updates'].forEach(section => {
     const body  = document.getElementById(section + '-body');
     const arrow = document.getElementById(section + '-arrow');
 
@@ -747,7 +969,7 @@ document.addEventListener('DOMContentLoaded', function () {
     const hasActive = body.querySelector('.nav-link.active');
     const stored = localStorage.getItem('section-' + section);
 
-    if (hasActive || stored === '0' || stored === null) {
+    if (hasActive || stored === '0') {
       body.classList.remove('collapsed');
       if (arrow) arrow.style.transform = 'rotate(0deg)';
     } else {
@@ -819,6 +1041,24 @@ setInterval(refreshPendingBadge, 60000);
 refreshFileRequestsBadge();
 setInterval(refreshFileRequestsBadge, 60000);
 {% endif %}
+
+function refreshQaUpdatesBadge() {
+  fetch('/qa-updates/api/unacknowledged-count')
+    .then(r => r.json())
+    .then(data => {
+      const badge = document.getElementById('qaUpdatesBadge');
+      if (!badge) return;
+      if (data.count > 0) {
+        badge.textContent = data.count;
+        badge.style.display = 'inline-block';
+      } else {
+        badge.style.display = 'none';
+      }
+    }).catch(() => {});
+}
+ 
+refreshQaUpdatesBadge();
+setInterval(refreshQaUpdatesBadge, 60000);
 </script>
 {% block scripts %}{% endblock %}
 <!-- ========== AI CHAT BUBBLE ========== -->

@@ -1,0 +1,589 @@
+{% extends "base.html" %}
+
+{% block title %}Tardiness Report{% endblock %}
+{% block page_title %}Tardiness Report{% endblock %}
+
+{% block content %}
+<style>
+  .summary-row { display: flex; gap: 1rem; margin-bottom: 1.5rem; flex-wrap: wrap; }
+  .summary-card {
+    flex: 1; min-width: 140px; background: var(--surface); border: 1px solid var(--border);
+    border-radius: 14px; box-shadow: var(--card-shadow); padding: 1rem 1.25rem;
+    display: flex; align-items: center; gap: .75rem;
+  }
+  .summary-card .icon {
+    width: 40px; height: 40px; border-radius: 10px; display: flex; align-items: center;
+    justify-content: center; font-size: 1.1rem; flex-shrink: 0;
+  }
+  .summary-card .num { font-family: 'Outfit', sans-serif; font-weight: 700; font-size: 1.4rem; line-height: 1; }
+  .summary-card .lbl { font-size: .78rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: .05em; }
+  .summary-card.late .icon { background: #fee2e2; color: #b91c1c; }
+  .summary-card.absent .icon { background: #f1f5f9; color: #64748b; }
+  .summary-card.ontime .icon { background: #d1fae5; color: #065f46; }
+  [data-theme="dark"] .summary-card.late .icon { background: #450a0a; color: #fca5a5; }
+  [data-theme="dark"] .summary-card.absent .icon { background: #1e3354; color: #93a3c0; }
+  [data-theme="dark"] .summary-card.ontime .icon { background: #022c22; color: #6ee7b7; }
+
+  .filter-bar {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 14px;
+    box-shadow: var(--card-shadow); padding: 1rem 1.25rem; margin-bottom: 1.5rem;
+    display: flex; align-items: center; gap: .75rem; flex-wrap: wrap;
+  }
+  .filter-bar label { font-size: .82rem; color: var(--text-muted); font-weight: 500; margin-right: -.25rem; }
+
+  .sortable-th a { color: var(--text-muted); text-decoration: none; display: flex; align-items: center; gap: .35rem; }
+  .sortable-th a:hover { color: var(--accent); }
+  .sortable-th .sort-icon { font-size: .7rem; opacity: .6; }
+  .sortable-th.active a { color: var(--accent); }
+  .sortable-th.active .sort-icon { opacity: 1; }
+
+  .status-pill {
+    display: inline-flex; align-items: center; gap: .35rem; padding: .25rem .65rem;
+    border-radius: 999px; font-size: .76rem; font-weight: 600; white-space: nowrap;
+  }
+  .status-pill.LATE { background: #fee2e2; color: #b91c1c; }
+  .status-pill.ABSENT { background: #f1f5f9; color: #64748b; }
+  .status-pill.ON_TIME { background: #d1fae5; color: #065f46; }
+  .status-pill.INVALID_SCHEDULE { background: #fef3c7; color: #92400e; }
+  [data-theme="dark"] .status-pill.LATE { background: #450a0a; color: #fca5a5; }
+  [data-theme="dark"] .status-pill.ABSENT { background: #1e3354; color: #93a3c0; }
+  [data-theme="dark"] .status-pill.ON_TIME { background: #022c22; color: #6ee7b7; }
+  [data-theme="dark"] .status-pill.INVALID_SCHEDULE { background: #422006; color: #fcd34d; }
+
+  tr.row-late { background: rgba(239,68,68,.04); }
+  tr.row-absent { opacity: .65; }
+  [data-theme="dark"] tr.row-late { background: rgba(239,68,68,.08); }
+
+  .late-minutes { font-weight: 700; color: #b91c1c; }
+  [data-theme="dark"] .late-minutes { color: #fca5a5; }
+
+  /* Sticky header */
+  .table-responsive { max-height: 70vh; overflow-y: auto; }
+  .table thead th { position: sticky; top: 0; z-index: 5; box-shadow: 0 1px 0 var(--border); }
+
+  /* Search box */
+  .search-wrap { position: relative; flex: 1; min-width: 200px; }
+  .search-wrap i { position: absolute; left: .7rem; top: 50%; transform: translateY(-50%); color: var(--text-muted); font-size: .85rem; }
+  .search-wrap input { padding-left: 2rem; }
+
+  /* Date nav buttons */
+  .date-nav { display: flex; align-items: center; gap: .25rem; }
+  .date-nav .btn-icon {
+    width: 32px; height: 32px; display: flex; align-items: center; justify-content: center;
+    border: 1px solid var(--border); border-radius: 8px; background: var(--bg); color: var(--text-muted);
+  }
+  .date-nav .btn-icon:hover { background: var(--accent); color: #fff; border-color: var(--accent); }
+
+  tr.no-match { display: none; }
+  tr.clickable-row { cursor: pointer; }
+  tr.clickable-row:hover { background: var(--bg) !important; }
+</style>
+
+<div class="btn-group btn-group-sm mb-3" role="group">
+  <a href="{{ url_for('tardiness.tardiness_page', date_from=date_from, date_to=date_to, view='late') }}"
+     class="btn {% if view != 'triggers' %}btn-primary{% else %}btn-outline-secondary{% endif %}">
+    <i class="bi bi-clock-history"></i> Late Records
+  </a>
+  <a href="{{ url_for('tardiness.tardiness_page', date_from=date_from, date_to=date_to, view='triggers') }}"
+     class="btn {% if view == 'triggers' %}btn-primary{% else %}btn-outline-secondary{% endif %}">
+    <i class="bi bi-envelope-exclamation"></i> Memo Triggers
+  </a>
+</div>
+
+<div class="summary-row">
+  {% if view == 'triggers' %}
+  <div class="summary-card late" style="flex:0 0 220px;">
+    <div class="icon"><i class="bi bi-arrow-repeat"></i></div>
+    <div>
+      <div class="num">{{ count_trigger_total }}</div>
+      <div class="lbl">3+ Lates Memos</div>
+    </div>
+  </div>
+  <div class="summary-card late" style="flex:0 0 220px;">
+    <div class="icon"><i class="bi bi-stopwatch"></i></div>
+    <div>
+      <div class="num">{{ minutes_trigger_total }}</div>
+      <div class="lbl">31+ Minutes Memos</div>
+    </div>
+  </div>
+  {% else %}
+  <div class="summary-card late" style="flex:0 0 260px;">
+    <div class="icon"><i class="bi bi-clock-history"></i></div>
+    <div>
+      <div class="num">{{ total_late }}</div>
+      <div class="lbl">Late Instances ({{ date_from }} to {{ date_to }})</div>
+    </div>
+  </div>
+  {% endif %}
+</div>
+
+<div class="filter-bar">
+  <form method="get" id="dateForm" class="d-flex align-items-center gap-2 flex-wrap" style="flex:1;">
+    <input type="hidden" name="view" value="{{ view }}">
+    <div id="rangeDateGroup" class="d-flex align-items-center gap-2">
+      <button type="button" class="btn-icon" id="prevPeriodBtn" title="Previous payroll period">
+        <i class="bi bi-chevron-left"></i>
+      </button>
+      <label for="date_from">From</label>
+      <input type="date" id="date_from" name="date_from" value="{{ date_from }}" class="form-control form-control-sm" style="width:auto;">
+      <label for="date_to">To</label>
+      <input type="date" id="date_to" name="date_to" value="{{ date_to }}" class="form-control form-control-sm" style="width:auto;">
+      <button type="button" class="btn-icon" id="nextPeriodBtn" title="Next payroll period">
+        <i class="bi bi-chevron-right"></i>
+      </button>
+      <button type="button" class="btn btn-outline-secondary btn-sm" id="currentPeriodBtn">Current Period</button>
+      <button type="button" class="btn btn-outline-secondary btn-sm" id="todayBtn">Today</button>
+    </div>
+
+    <select name="department" id="departmentSelect" class="form-select form-select-sm" style="width:auto;">
+      <option value="">All Departments</option>
+      {% for dept in available_departments %}
+      <option value="{{ dept }}" {% if dept == department_filter %}selected{% endif %}>{{ dept }}</option>
+      {% endfor %}
+    </select>
+
+    <input type="hidden" name="sort" value="{{ current_sort }}">
+    <input type="hidden" name="dir" value="{{ current_dir }}">
+    <button type="submit" class="btn btn-primary btn-sm" id="viewBtn">
+      <i class="bi bi-search"></i>
+      <span class="btn-label">View</span>
+      <span class="spinner-border spinner-border-sm d-none" role="status" aria-hidden="true"></span>
+    </button>
+
+    <a href="#" id="exportBtn" class="btn btn-outline-secondary btn-sm">
+      <i class="bi bi-download"></i> Export CSV
+    </a>
+
+    <button type="button" id="copyTableBtn" class="btn btn-outline-secondary btn-sm">
+      <i class="bi bi-clipboard"></i> <span id="copyTableBtnLabel">Copy Table</span>
+    </button>
+
+    <div class="search-wrap ms-auto">
+      <i class="bi bi-search"></i>
+      <input type="text" id="employeeSearch" class="form-control form-control-sm" placeholder="Filter by employee or TL name...">
+    </div>
+  </form>
+</div>
+
+<div class="card">
+  <div class="table-responsive">
+    {% if view == 'triggers' %}
+    <table class="table table-hover mb-0" id="tardinessTable">
+      <thead>
+        <tr>
+          <th class="sortable-th {% if current_sort == 'DATE' %}active{% endif %}">
+            <a href="{{ url_for('tardiness.tardiness_page', date_from=date_from, date_to=date_to, view='triggers', sort='DATE', dir=next_dir if current_sort == 'DATE' else 'asc') }}">
+              Date
+              {% if current_sort == 'DATE' %}
+              <i class="bi bi-arrow-{{ 'down' if current_dir == 'asc' else 'up' }} sort-icon"></i>
+              {% else %}
+              <i class="bi bi-arrow-down-up sort-icon"></i>
+              {% endif %}
+            </a>
+          </th>
+          <th class="sortable-th {% if current_sort == 'TYPE' %}active{% endif %}">
+            <a href="{{ url_for('tardiness.tardiness_page', date_from=date_from, date_to=date_to, view='triggers', sort='TYPE', dir=next_dir if current_sort == 'TYPE' else 'asc') }}">
+              Trigger Type
+              {% if current_sort == 'TYPE' %}
+              <i class="bi bi-arrow-{{ 'down' if current_dir == 'asc' else 'up' }} sort-icon"></i>
+              {% else %}
+              <i class="bi bi-arrow-down-up sort-icon"></i>
+              {% endif %}
+            </a>
+          </th>
+          <th class="sortable-th {% if current_sort == 'lname' %}active{% endif %}">
+            <a href="{{ url_for('tardiness.tardiness_page', date_from=date_from, date_to=date_to, view='triggers', sort='lname', dir=next_dir if current_sort == 'lname' else 'asc') }}">
+              Employee
+              {% if current_sort == 'lname' %}
+              <i class="bi bi-arrow-{{ 'down' if current_dir == 'asc' else 'up' }} sort-icon"></i>
+              {% else %}
+              <i class="bi bi-arrow-down-up sort-icon"></i>
+              {% endif %}
+            </a>
+          </th>
+          <th class="sortable-th {% if current_sort == 'TL' %}active{% endif %}">
+            <a href="{{ url_for('tardiness.tardiness_page', date_from=date_from, date_to=date_to, view='triggers', sort='TL', dir=next_dir if current_sort == 'TL' else 'asc') }}">
+              Team Lead
+              {% if current_sort == 'TL' %}
+              <i class="bi bi-arrow-{{ 'down' if current_dir == 'asc' else 'up' }} sort-icon"></i>
+              {% else %}
+              <i class="bi bi-arrow-down-up sort-icon"></i>
+              {% endif %}
+            </a>
+          </th>
+          <th class="sortable-th {% if current_sort == 'VALUE' %}active{% endif %}">
+            <a href="{{ url_for('tardiness.tardiness_page', date_from=date_from, date_to=date_to, view='triggers', sort='VALUE', dir=next_dir if current_sort == 'VALUE' else 'desc') }}">
+              Detail
+              {% if current_sort == 'VALUE' %}
+              <i class="bi bi-arrow-{{ 'down' if current_dir == 'asc' else 'up' }} sort-icon"></i>
+              {% else %}
+              <i class="bi bi-arrow-down-up sort-icon"></i>
+              {% endif %}
+            </a>
+          </th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for e in events %}
+        <tr class="clickable-row" data-name="{{ (e.fname ~ ' ' ~ e.lname ~ ' ' ~ (e.team_lead or ''))|lower }}"
+            data-companyid="{{ e.companyid }}" data-fname="{{ e.fname }}" data-lname="{{ e.lname }}"
+            data-tl="{{ e.team_lead or '' }}" data-batch="{{ e.batch or '' }}"
+            data-account="{{ e.account or '' }}" data-department="{{ e.department or '' }}" data-email="{{ e.email or '' }}"
+            title="View {{ e.fname }} {{ e.lname }}'s details">
+          <td>{{ e.event_date.strftime('%b %d, %Y') }}</td>
+          <td>
+            {% if e.trigger_type == 'COUNT' %}
+            <span class="status-pill LATE"><i class="bi bi-arrow-repeat"></i> 3+ Lates</span>
+            {% else %}
+            <span class="status-pill INVALID_SCHEDULE"><i class="bi bi-stopwatch"></i> 31+ Minutes</span>
+            {% endif %}
+          </td>
+          <td>
+            <div class="d-flex align-items-center gap-2">
+              <i class="bi bi-person-circle" style="color:var(--text-muted);"></i>
+              <span>{{ e.lname }}, {{ e.fname }}</span>
+            </div>
+          </td>
+          <td>{{ e.team_lead or '—' }}</td>
+          <td>{{ e.detail }}</td>
+        </tr>
+        {% else %}
+        <tr>
+          <td colspan="5" class="text-center text-muted py-5">
+            <i class="bi bi-envelope-check" style="font-size:2rem;"></i>
+            <div class="mt-2">No memo triggers in this date range.</div>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <table class="table table-hover mb-0" id="tardinessTable">
+      <thead>
+        <tr>
+          <th class="sortable-th {% if current_sort == 'DATE' %}active{% endif %}">
+            <a href="{{ url_for('tardiness.tardiness_page', date_from=date_from, date_to=date_to, view='late', sort='DATE', dir=next_dir if current_sort == 'DATE' else 'asc') }}">
+              Date
+              {% if current_sort == 'DATE' %}
+              <i class="bi bi-arrow-{{ 'down' if current_dir == 'asc' else 'up' }} sort-icon"></i>
+              {% else %}
+              <i class="bi bi-arrow-down-up sort-icon"></i>
+              {% endif %}
+            </a>
+          </th>
+          <th class="sortable-th {% if current_sort == 'lname' %}active{% endif %}">
+            <a href="{{ url_for('tardiness.tardiness_page', date_from=date_from, date_to=date_to, view='late', sort='lname', dir=next_dir if current_sort == 'lname' else 'asc') }}">
+              Employee
+              {% if current_sort == 'lname' %}
+              <i class="bi bi-arrow-{{ 'down' if current_dir == 'asc' else 'up' }} sort-icon"></i>
+              {% else %}
+              <i class="bi bi-arrow-down-up sort-icon"></i>
+              {% endif %}
+            </a>
+          </th>
+          <th class="sortable-th {% if current_sort == 'SHIFT' %}active{% endif %}">
+            <a href="{{ url_for('tardiness.tardiness_page', date_from=date_from, date_to=date_to, view='late', sort='SHIFT', dir=next_dir if current_sort == 'SHIFT' else 'asc') }}">
+              Shift
+              {% if current_sort == 'SHIFT' %}
+              <i class="bi bi-arrow-{{ 'down' if current_dir == 'asc' else 'up' }} sort-icon"></i>
+              {% else %}
+              <i class="bi bi-arrow-down-up sort-icon"></i>
+              {% endif %}
+            </a>
+          </th>
+          <th class="sortable-th {% if current_sort == 'TL' %}active{% endif %}">
+            <a href="{{ url_for('tardiness.tardiness_page', date_from=date_from, date_to=date_to, view='late', sort='TL', dir=next_dir if current_sort == 'TL' else 'asc') }}">
+              Team Lead
+              {% if current_sort == 'TL' %}
+              <i class="bi bi-arrow-{{ 'down' if current_dir == 'asc' else 'up' }} sort-icon"></i>
+              {% else %}
+              <i class="bi bi-arrow-down-up sort-icon"></i>
+              {% endif %}
+            </a>
+          </th>
+          <th>Scheduled Start</th>
+          <th>Time In</th>
+          <th class="sortable-th {% if current_sort == 'LATE' %}active{% endif %}">
+            <a href="{{ url_for('tardiness.tardiness_page', date_from=date_from, date_to=date_to, view='late', sort='LATE', dir=next_dir if current_sort == 'LATE' else 'desc') }}">
+              Minutes Late
+              {% if current_sort == 'LATE' %}
+              <i class="bi bi-arrow-{{ 'down' if current_dir == 'asc' else 'up' }} sort-icon"></i>
+              {% else %}
+              <i class="bi bi-arrow-down-up sort-icon"></i>
+              {% endif %}
+            </a>
+          </th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in records %}
+        <tr class="row-late clickable-row" data-name="{{ (r.fname ~ ' ' ~ r.lname ~ ' ' ~ (r.team_lead or ''))|lower }}"
+            data-companyid="{{ r.companyid }}" data-fname="{{ r.fname }}" data-lname="{{ r.lname }}"
+            data-tl="{{ r.team_lead or '' }}" data-batch="{{ r.batch or '' }}"
+            data-account="{{ r.account or '' }}" data-department="{{ r.department or '' }}" data-email="{{ r.email or '' }}"
+            title="View {{ r.fname }} {{ r.lname }}'s details">
+          <td>{{ r.record_date.strftime('%b %d, %Y') }}</td>
+          <td>
+            <div class="d-flex align-items-center gap-2">
+              <i class="bi bi-person-circle" style="color:var(--text-muted);"></i>
+              <span>{{ r.lname }}, {{ r.fname }}</span>
+            </div>
+          </td>
+          <td>{{ r.shift_time_raw or '—' }}</td>
+          <td>{{ r.team_lead or '—' }}</td>
+          <td>{{ r.shift_start.strftime('%I:%M %p') if r.shift_start else '—' }}</td>
+          <td>{{ r.time_in.strftime('%I:%M %p') if r.time_in else '—' }}</td>
+          <td>
+            {% if r.minutes_late %}
+            <span class="late-minutes">{{ r.minutes_late }} min</span>
+            {% else %}
+            <span class="text-muted">—</span>
+            {% endif %}
+          </td>
+        </tr>
+        {% else %}
+        <tr>
+          <td colspan="7" class="text-center text-muted py-5">
+            <i class="bi bi-calendar-x" style="font-size:2rem;"></i>
+            <div class="mt-2">No late records found in this date range.</div>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% endif %}
+    <div id="noSearchMatch" class="text-center text-muted py-4" style="display:none;">
+      <i class="bi bi-search" style="font-size:1.5rem;"></i>
+      <div class="mt-2">No employees match your search.</div>
+    </div>
+  </div>
+</div>
+
+<!-- Employee detail modal -->
+<div class="modal fade" id="employeeModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content" style="background:var(--surface);color:var(--text);border:1px solid var(--border);">
+      <div class="modal-header" style="border-color:var(--border);">
+        <h5 class="modal-title" id="employeeModalName">Employee</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body text-center">
+        <img id="employeeModalPhoto" src="" alt="Photo"
+             style="width:180px;height:180px;border-radius:50%;object-fit:cover;border:3px solid var(--border);background:var(--bg);"
+             onerror="this.src='data:image/svg+xml;charset=UTF-8,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 180 180%22%3E%3Crect width=%22180%22 height=%22180%22 fill=%22%23e2e8f4%22/%3E%3Ctext x=%2250%25%22 y=%2255%25%22 font-size=%2268%22 text-anchor=%22middle%22 fill=%22%236b7a99%22 font-family=%22sans-serif%22%3E%3F%3C/text%3E%3C/svg%3E'">
+        <table class="table table-sm mt-3 text-start" style="--bs-table-bg:transparent;">
+          <tbody>
+            <tr><td class="text-muted" style="width:40%;">Team Lead</td><td id="employeeModalTL">—</td></tr>
+            <tr><td class="text-muted">Batch</td><td id="employeeModalBatch">—</td></tr>
+            <tr><td class="text-muted">Account</td><td id="employeeModalAccount">—</td></tr>
+            <tr><td class="text-muted">Group</td><td id="employeeModalGroup">—</td></tr>
+            <tr><td class="text-muted">Email</td><td id="employeeModalEmail">—</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="modal-footer" style="border-color:var(--border);">
+        <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal">Close</button>
+        <a id="employeeModalPimLink" href="#" target="_blank" rel="noopener" class="btn btn-primary btn-sm">
+          <i class="bi bi-box-arrow-up-right"></i> View PIM Profile
+        </a>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+  const dateFromInput = document.getElementById('date_from');
+  const dateToInput = document.getElementById('date_to');
+  const form = document.getElementById('dateForm');
+
+  function ymd(y, m, d) {
+    return new Date(Date.UTC(y, m - 1, d));
+  }
+  function fmt(dt) {
+    return dt.toISOString().slice(0, 10);
+  }
+
+  // --- Payroll period navigation ---
+  // Two fixed cutoffs per month: 8th-22nd, and 23rd-7th of next month.
+  // This mirrors the Python logic in tardiness.py's get_previous_period()/
+  // get_next_period(), kept in sync deliberately since both need to agree
+  // on period boundaries.
+  function shiftPeriod(direction) {
+    const [fy, fm, fd] = dateFromInput.value.split('-').map(Number);
+    let newStart, newEnd;
+
+    if (fd === 8) {
+      if (direction === -1) {
+        let pm = fm - 1, py = fy;
+        if (pm === 0) { pm = 12; py = fy - 1; }
+        newStart = ymd(py, pm, 23);
+        newEnd = ymd(fy, fm, 7);
+      } else {
+        let nm = fm + 1, ny = fy;
+        if (nm === 13) { nm = 1; ny = fy + 1; }
+        newStart = ymd(fy, fm, 23);
+        newEnd = ymd(ny, nm, 7);
+      }
+    } else if (fd === 23) {
+      if (direction === -1) {
+        newStart = ymd(fy, fm, 8);
+        newEnd = ymd(fy, fm, 22);
+      } else {
+        let nm = fm + 1, ny = fy;
+        if (nm === 13) { nm = 1; ny = fy + 1; }
+        newStart = ymd(ny, nm, 8);
+        newEnd = ymd(ny, nm, 22);
+      }
+    } else {
+      // Custom/non-standard range: shift both dates by the range length
+      const [ty, tm, td] = dateToInput.value.split('-').map(Number);
+      const start = ymd(fy, fm, fd);
+      const end = ymd(ty, tm, td);
+      const rangeDays = Math.round((end - start) / 86400000) + 1;
+      const shiftMs = direction * rangeDays * 86400000;
+      newStart = new Date(start.getTime() + shiftMs);
+      newEnd = new Date(end.getTime() + shiftMs);
+    }
+
+    dateFromInput.value = fmt(newStart);
+    dateToInput.value = fmt(newEnd);
+    form.submit();
+  }
+
+  document.getElementById('prevPeriodBtn')?.addEventListener('click', () => shiftPeriod(-1));
+  document.getElementById('nextPeriodBtn')?.addEventListener('click', () => shiftPeriod(1));
+
+  document.getElementById('currentPeriodBtn')?.addEventListener('click', () => {
+    // Reset to the default (most recently completed) payroll period,
+    // matching get_default_payroll_period() server-side.
+    const today = new Date();
+    const y = today.getUTCFullYear(), m = today.getUTCMonth() + 1, d = today.getUTCDate();
+    let periodStart, periodEnd;
+    if (d >= 8 && d <= 22) {
+      periodStart = ymd(y, m, 8);
+      periodEnd = ymd(y, m, 22);
+    } else if (d >= 23) {
+      let nm = m + 1, ny = y;
+      if (nm === 13) { nm = 1; ny = y + 1; }
+      periodStart = ymd(y, m, 23);
+      periodEnd = ymd(ny, nm, 7);
+    } else {
+      let pm = m - 1, py = y;
+      if (pm === 0) { pm = 12; py = y - 1; }
+      periodStart = ymd(py, pm, 23);
+      periodEnd = ymd(y, m, 7);
+    }
+    // Default shown is the PREVIOUS (most recently completed) period
+    dateFromInput.value = fmt(periodStart);
+    dateToInput.value = fmt(periodEnd);
+    shiftPeriod(-1);  // step back once more + submits
+  });
+
+  // Today button: set both From and To to today's date (effectively a
+  // single-day view, just expressed as a one-day range).
+  document.getElementById('todayBtn')?.addEventListener('click', () => {
+    const today = new Date().toISOString().slice(0, 10);
+    dateFromInput.value = today;
+    dateToInput.value = today;
+    form.submit();
+  });
+
+  // Live employee name filter (client-side, no reload)
+  const searchInput = document.getElementById('employeeSearch');
+  const rows = Array.from(document.querySelectorAll('#tardinessTable tbody tr[data-name]'));
+  const noMatch = document.getElementById('noSearchMatch');
+
+  searchInput?.addEventListener('input', function () {
+    const q = this.value.trim().toLowerCase();
+    let visibleCount = 0;
+    rows.forEach(row => {
+      const match = row.dataset.name.includes(q);
+      row.classList.toggle('no-match', !match);
+      if (match) visibleCount++;
+    });
+    noMatch.style.display = (q && visibleCount === 0) ? 'block' : 'none';
+  });
+
+  // Row click -> show employee detail modal
+  const employeeModalEl = document.getElementById('employeeModal');
+  const employeeModal = employeeModalEl ? new bootstrap.Modal(employeeModalEl) : null;
+
+  document.querySelectorAll('#tardinessTable tbody tr.clickable-row').forEach(row => {
+    row.addEventListener('click', function () {
+      const companyid = this.dataset.companyid;
+      if (!companyid) return;  // guard against missing companyid
+
+      document.getElementById('employeeModalName').textContent = `${this.dataset.lname}, ${this.dataset.fname} (${companyid})`;
+      document.getElementById('employeeModalPhoto').src = `https://hrportal.cohere.ph/pim/${companyid}/photo`;
+      document.getElementById('employeeModalTL').textContent = this.dataset.tl || '—';
+      document.getElementById('employeeModalBatch').textContent = this.dataset.batch || '—';
+      document.getElementById('employeeModalAccount').textContent = this.dataset.account || '—';
+      document.getElementById('employeeModalGroup').textContent = this.dataset.department || '—';
+      document.getElementById('employeeModalEmail').textContent = this.dataset.email || '—';
+      document.getElementById('employeeModalPimLink').href = `https://hrportal.cohere.ph/pim/${companyid}`;
+
+      employeeModal?.show();
+    });
+  });
+
+  // Export CSV button: build the export URL from the current filters
+  document.getElementById('exportBtn')?.addEventListener('click', function (e) {
+    e.preventDefault();
+    const params = new URLSearchParams({
+      date_from: dateFromInput.value,
+      date_to: dateToInput.value,
+      view: document.querySelector('input[name="view"]').value,
+      sort: document.querySelector('input[name="sort"]').value,
+      dir: document.querySelector('input[name="dir"]').value,
+      department: document.getElementById('departmentSelect').value,
+    });
+    window.location.href = "{{ url_for('tardiness.tardiness_export') }}?" + params.toString();
+  });
+
+  // Copy Table button: copies the currently VISIBLE table (header + rows
+  // not hidden by the search filter) as tab-separated text, so it pastes
+  // cleanly into Excel/Sheets/Slack/etc.
+  document.getElementById('copyTableBtn')?.addEventListener('click', function () {
+    const table = document.getElementById('tardinessTable');
+    if (!table) return;
+
+    const headerCells = Array.from(table.querySelectorAll('thead th'))
+      .map(th => th.textContent.trim().replace(/\s+/g, ' '));
+
+    const visibleRows = Array.from(table.querySelectorAll('tbody tr'))
+      .filter(tr => !tr.classList.contains('no-match') && tr.style.display !== 'none');
+
+    const rowLines = visibleRows.map(tr =>
+      Array.from(tr.querySelectorAll('td'))
+        .map(td => td.textContent.trim().replace(/\s+/g, ' '))
+        .join('\t')
+    );
+
+    // If there are no data rows (e.g. the "no records" placeholder row),
+    // don't copy that placeholder text as if it were real data.
+    const hasRealData = visibleRows.length > 0 && visibleRows[0].querySelectorAll('td').length > 1;
+    const lines = hasRealData ? [headerCells.join('\t'), ...rowLines] : [headerCells.join('\t')];
+
+    const text = lines.join('\n');
+
+    navigator.clipboard.writeText(text).then(() => {
+      const label = document.getElementById('copyTableBtnLabel');
+      const original = label.textContent;
+      label.textContent = 'Copied!';
+      setTimeout(() => { label.textContent = original; }, 1500);
+    }).catch(() => {
+      alert('Could not copy to clipboard. Your browser may be blocking clipboard access on this page.');
+    });
+  });
+
+  // Loading spinner on the View button while the page reloads
+  form.addEventListener('submit', function () {
+    const btn = document.getElementById('viewBtn');
+    btn?.querySelector('.btn-label')?.classList.add('d-none');
+    btn?.querySelector('.spinner-border')?.classList.remove('d-none');
+    btn.disabled = true;
+  });
+});
+</script>
+{% endblock %}

@@ -1,5 +1,4 @@
-import json
-from flask import Flask, session, redirect, url_for, request, render_template, flash, jsonify, Blueprint, abort, g
+from flask import Flask, session, redirect, url_for, request, render_template, flash, jsonify
 from authlib.integrations.flask_client import OAuth
 import pymysql
 import os
@@ -27,22 +26,6 @@ def nl2br_filter(s):
 # ── Incident Reports blueprint ─────────────────────────────────────────
 from incident_reports import ir_bp
 app.register_blueprint(ir_bp, url_prefix='/incident-reports')
-
-# Tardiness Blueprint
-from tardiness import tardiness_bp
-app.register_blueprint(tardiness_bp, url_prefix='/tardiness')
-
-# ── Incident Reports blueprint (TEST COPY) ────────────────────────────
-
-from floor_map import floor_map_bp
-app.register_blueprint(floor_map_bp)
-from tl_view import tl_view_bp
-app.register_blueprint(tl_view_bp)
-
-# ── QA Updates blueprint ─────────────────────────────────────────
-from qa_updates import qa_updates_bp, qa_can_manage
-app.register_blueprint(qa_updates_bp)
-app.jinja_env.globals.update(qa_can_manage=qa_can_manage)
 
 IR_SGA      = os.getenv('IR_SGA', '').split(',')
 IR_RTA      = os.getenv('IR_RTA', '').split(',')
@@ -88,8 +71,6 @@ def ir_can_view():
 
 app.config.from_object(Config)
 app.register_blueprint(break_log_bp)
-from fts_review import fts_review_bp
-app.register_blueprint(fts_review_bp, url_prefix='/fts-review')
 
 from werkzeug.middleware.proxy_fix import ProxyFix
 app.wsgi_app = ProxyFix(app.wsgi_app, x_proto=1, x_host=1)
@@ -110,7 +91,18 @@ keycloak = oauth.register(
     client_kwargs={'scope': 'openid email profile'}
 )
 
-from db_core import get_db_connection
+def get_db_connection():
+    """Main app DB — central_db (gsheet_employees, Employees, etc.)"""
+    return pymysql.connect(
+        host=os.environ.get('MAIN_DB_HOST', 'localhost'),
+        port=int(os.environ.get('MAIN_DB_PORT', 3306)),
+        user=os.environ.get('MAIN_DB_USER', 'employee_sync'),
+        password=os.environ.get('MAIN_DB_PASSWORD'),
+        database=os.environ.get('MAIN_DB_NAME', 'central_db'),
+        charset='utf8mb4',
+        cursorclass=pymysql.cursors.DictCursor,
+        autocommit=False
+    )
 
 def get_db():
     return pymysql.connect(
@@ -340,7 +332,6 @@ def get_sub_admin_permissions(emp_number):
                 'can_schedules':    bool(row['can_schedules']),
                 'can_reports':      bool(row['can_reports']),
                 'can_absences':     bool(row.get('can_absences', 0)),
-                'can_tardiness':    bool(row.get('can_tardiness', 0)),
                 'can_work_mode':    bool(row['can_work_mode']),
                 'can_settings':     bool(row['can_settings']),
                 'can_entitlements': bool(row['can_entitlements']),
@@ -354,11 +345,6 @@ def get_sub_admin_permissions(emp_number):
                 'can_onboarding': bool(row.get('can_onboarding', 0)),
                 'can_inventory': bool(row.get('can_inventory', 0)),
                 'can_attrition_report': bool(row.get('can_attrition_report', 0)),
-                'can_csat':         bool(row.get('can_csat', 0)),
-                'can_surveys':      bool(row.get('can_surveys', 0)),
-                'can_floor_map':    bool(row.get('can_floor_map', 0)),
-                'can_pim':          bool(row.get('can_pim', 0)),
-                'can_qa_updates': bool(row.get('can_qa_updates', 0)),
             }
     finally:
         db.close()
@@ -800,31 +786,6 @@ def auth_callback():
         db_tmp.close()
     session['is_admin'] = (central_role == 'Admin')
     session['is_supervisor'] = is_supervisor(employee['emp_number'])
-    # CSAT TL flag (for sidebar visibility) — set if email is in csat_tl_map
-    session['is_csat_tl'] = False
-    try:
-        _cdb = get_central_db()
-        with _cdb.cursor() as _c:
-            _c.execute("SELECT 1 FROM csat_tl_map WHERE login_email = %s", (email,))
-            session['is_csat_tl'] = _c.fetchone() is not None
-        _cdb.close()
-    except Exception:
-        session['is_csat_tl'] = False
-    # TL-view flag (for "My Team" view) — set if email is in tl_view_map
-    session['is_tl'] = False
-    session['tl_name'] = None
-    try:
-        _cdb = get_central_db()
-        with _cdb.cursor() as _c:
-            _c.execute("SELECT tl_name FROM tl_view_map WHERE login_email = %s", (email,))
-            _row = _c.fetchone()
-            if _row:
-                session['is_tl'] = True
-                session['tl_name'] = _row['tl_name']
-        _cdb.close()
-    except Exception:
-        session['is_tl'] = False
-        session['tl_name'] = None
 
     # Check sub-admin permissions
     if not session['is_admin']:
@@ -844,7 +805,7 @@ def auth_callback():
             'can_all_leaves': True, 'can_approve': True,
             'can_file_for_emp': True, 'can_schedules': True,
             'can_reports': True, 'can_work_mode': True,
-            'can_settings': True, 'can_entitlements': True, 'can_file_requests': True, 'can_material_requests': True, 'can_final_approval': True, 'can_view_tickets': True, 'can_facilities_review': True, 'can_facilities_final': True, 'can_view_approved_items': True, 'can_onboarding': True, 'can_inventory': True, 'can_pim': True,
+            'can_settings': True, 'can_entitlements': True, 'can_file_requests': True, 'can_material_requests': True, 'can_final_approval': True, 'can_view_tickets': True, 'can_facilities_review': True, 'can_facilities_final': True, 'can_view_approved_items': True, 'can_onboarding': True, 'can_inventory': True,
         }
     return redirect(url_for('dashboard'))
 
@@ -857,8 +818,6 @@ def login_as(target_emp):
         'email':      session['user']['email'],
         'name':       session['user']['name'],
         'is_admin':   session.get('is_admin'),
-        'is_tl':      session.get('is_tl'),
-        'tl_name':    session.get('tl_name'),
     }
     # Load target employee — supports both emp_number (int) and employee_id (string)
     db = get_db()
@@ -902,36 +861,6 @@ def login_as(target_emp):
     }
     session['is_admin']      = False
     session['is_supervisor'] = is_supervisor(emp['emp_number'])
-    # CSAT TL flag for impersonated user (sidebar visibility)
-    session['is_csat_tl'] = False
-    try:
-        _cdb = get_central_db()
-        with _cdb.cursor() as _c:
-            _c.execute("SELECT 1 FROM csat_tl_map WHERE login_email = %s", (emp['user_name'],))
-            _r = _c.fetchone()
-            session['is_csat_tl'] = _r is not None
-            app.logger.warning(f"CSAT-TL lookup: email={emp['user_name']!r} result={_r!r} flag={session['is_csat_tl']}")
-        _cdb.close()
-    except Exception as _e:
-        app.logger.warning(f"CSAT-TL lookup FAILED: {_e!r}")
-        session['is_csat_tl'] = False
-    # TL-view flag for impersonated user (sidebar visibility + My Team view)
-    session['is_tl'] = False
-    session['tl_name'] = None
-    try:
-        _cdb = get_central_db()
-        with _cdb.cursor() as _c:
-            _c.execute("SELECT tl_name FROM tl_view_map WHERE login_email = %s", (emp['user_name'],))
-            _r2 = _c.fetchone()
-            if _r2:
-                session['is_tl'] = True
-                session['tl_name'] = _r2['tl_name']
-            app.logger.warning(f"TL-view lookup: email={emp['user_name']!r} result={_r2!r} flag={session['is_tl']}")
-        _cdb.close()
-    except Exception as _e:
-        app.logger.warning(f"TL-view lookup FAILED: {_e!r}")
-        session['is_tl'] = False
-        session['tl_name'] = None
     session['is_sub_admin']  = False
 
     perms = get_sub_admin_permissions(emp['emp_number'])
@@ -962,15 +891,13 @@ def login_as_back():
         'employee_id': original.get('employee_id', '')
     }
     session['is_admin']      = original['is_admin']
-    session['is_tl']         = original.get('is_tl', False)
-    session['tl_name']       = original.get('tl_name')
     session['is_supervisor'] = is_supervisor(original['emp_number'])
     session['is_sub_admin']  = False
     session['permissions']   = {
         'can_all_leaves': True, 'can_approve': True,
         'can_file_for_emp': True, 'can_schedules': True,
         'can_reports': True, 'can_work_mode': True,
-        'can_settings': True, 'can_entitlements': True, 'can_pim': True,
+        'can_settings': True, 'can_entitlements': True,
         'can_file_requests': True, 'can_material_requests': True,
         'can_final_approval': True, 'can_facilities_review': True, 'can_facilities_final': True, 'can_view_approved_items': True, 'can_onboarding': True, 'can_inventory': True,
     }
@@ -1859,7 +1786,6 @@ def admin_sub_admins():
                     'can_schedules':    1 if request.form.get('can_schedules') else 0,
                     'can_reports':      1 if request.form.get('can_reports') else 0,
                     'can_absences':     1 if request.form.get('can_absences') else 0,
-                    'can_tardiness':    1 if request.form.get('can_tardiness') else 0,
                     'can_work_mode':    1 if request.form.get('can_work_mode') else 0,
                     'can_settings':     1 if request.form.get('can_settings') else 0,
                     'can_entitlements': 1 if request.form.get('can_entitlements') else 0,
@@ -1873,38 +1799,33 @@ def admin_sub_admins():
                     'can_onboarding': 1 if request.form.get('can_onboarding') else 0,
                     'can_inventory': 1 if request.form.get('can_inventory') else 0,
                     'can_attrition_report': 1 if request.form.get('can_attrition_report') else 0,
-                    'can_csat': 1 if request.form.get('can_csat') else 0,
-                    'can_surveys': 1 if request.form.get('can_surveys') else 0,
-                    'can_floor_map': 1 if request.form.get('can_floor_map') else 0,
-                    'can_pim': 1 if request.form.get('can_pim') else 0,
-                    'can_qa_updates': 1 if request.form.get('can_qa_updates') else 0,
                 }
                 with db.cursor() as c:
                     c.execute("""
                         INSERT INTO leave4day_sub_admins
                             (emp_number, can_all_leaves, can_all_requests, can_approve, can_file_for_emp,
-                             can_schedules, can_reports, can_work_mode, can_settings, can_absences, can_tardiness,
+                             can_schedules, can_reports, can_work_mode, can_settings, can_absences,
                              can_entitlements, can_file_requests, can_material_requests,
-                             can_final_approval, can_view_tickets, can_facilities_review, can_facilities_final, can_view_approved_items, can_onboarding, can_inventory, can_attrition_report, can_csat, can_surveys, can_floor_map, can_pim, can_qa_updates, assigned_by)
-                        VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                             can_final_approval, can_view_tickets, can_facilities_review, can_facilities_final, can_view_approved_items, can_onboarding, can_inventory, can_attrition_report, assigned_by)
+                        VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
                         ON DUPLICATE KEY UPDATE
                             can_all_leaves=%s, can_all_requests=%s, can_approve=%s, can_file_for_emp=%s,
                             can_schedules=%s, can_reports=%s, can_work_mode=%s, can_absences=%s,
-                            can_tardiness=%s, can_settings=%s, can_entitlements=%s, can_file_requests=%s,
+                            can_settings=%s, can_entitlements=%s, can_file_requests=%s,
                             can_material_requests=%s, can_final_approval=%s,
-                            can_view_tickets=%s, can_facilities_review=%s, can_facilities_final=%s, can_view_approved_items=%s, can_onboarding=%s, can_inventory=%s, can_attrition_report=%s, can_csat=%s, can_surveys=%s, can_floor_map=%s, can_pim=%s, can_qa_updates=%s, assigned_by=%s
+                            can_view_tickets=%s, can_facilities_review=%s, can_facilities_final=%s, can_view_approved_items=%s, can_onboarding=%s, can_inventory=%s, can_attrition_report=%s, assigned_by=%s
                     """, (
                         emp_number,
                         perms['can_all_leaves'], perms['can_all_requests'], perms['can_approve'], perms['can_file_for_emp'],
                         perms['can_schedules'], perms['can_reports'], perms['can_work_mode'],
-                        perms['can_settings'], perms['can_absences'], perms['can_tardiness'],    perms['can_entitlements'], perms['can_file_requests'],
+                        perms['can_settings'], perms['can_absences'], perms['can_entitlements'], perms['can_file_requests'],
                         perms['can_material_requests'], perms['can_final_approval'],
-                        perms['can_view_tickets'], perms['can_facilities_review'], perms['can_facilities_final'], perms['can_view_approved_items'], perms['can_onboarding'], perms['can_inventory'], perms['can_attrition_report'], perms['can_csat'], perms['can_surveys'], perms['can_floor_map'], perms['can_pim'], perms['can_qa_updates'], session['user']['emp_number'],
+                        perms['can_view_tickets'], perms['can_facilities_review'], perms['can_facilities_final'], perms['can_view_approved_items'], perms['can_onboarding'], perms['can_inventory'], perms['can_attrition_report'], session['user']['emp_number'],
                         perms['can_all_leaves'], perms['can_all_requests'], perms['can_approve'], perms['can_file_for_emp'],
                         perms['can_schedules'], perms['can_reports'], perms['can_work_mode'],
-                        perms['can_settings'], perms['can_absences'], perms['can_tardiness'],    perms['can_entitlements'], perms['can_file_requests'],
+                        perms['can_settings'], perms['can_absences'], perms['can_entitlements'], perms['can_file_requests'],
                         perms['can_material_requests'], perms['can_final_approval'],
-                        perms['can_view_tickets'], perms['can_facilities_review'], perms['can_facilities_final'], perms['can_view_approved_items'], perms['can_onboarding'], perms['can_inventory'], perms['can_attrition_report'], perms['can_csat'], perms['can_surveys'], perms['can_floor_map'], perms['can_pim'], perms['can_qa_updates'], session['user']['emp_number']
+                        perms['can_view_tickets'], perms['can_facilities_review'], perms['can_facilities_final'], perms['can_view_approved_items'], perms['can_onboarding'], perms['can_inventory'], perms['can_attrition_report'], session['user']['emp_number']
                     ))
                 db.commit()
                 flash('Sub-admin permissions updated!', 'success')
@@ -1937,11 +1858,6 @@ def admin_sub_admins():
                     'can_inventory': 1 if request.form.get('can_inventory') else 0,
                     'can_attrition_report': 1 if request.form.get('can_attrition_report') else 0,
                     'can_csat': 1 if request.form.get('can_csat') else 0,
-                    'can_surveys': 1 if request.form.get('can_surveys') else 0,
-                    'can_floor_map': 1 if request.form.get('can_floor_map') else 0,
-                    'can_pim': 1 if request.form.get('can_pim') else 0,
-                    'can_qa_updates': 1 if request.form.get('can_qa_updates') else 0,
-                    'can_tardiness': 1 if request.form.get('can_tardiness') else 0,
                 }
                 if not group_name:
                     flash('Please select a group.', 'danger')
@@ -1960,26 +1876,26 @@ def admin_sub_admins():
                                     (emp_number, can_all_leaves, can_all_requests, can_approve, can_file_for_emp,
                                      can_schedules, can_reports, can_work_mode, can_settings,
                                      can_entitlements, can_file_requests, can_material_requests,
-                                     can_final_approval, can_view_tickets, can_facilities_review, can_facilities_final, can_view_approved_items, can_onboarding, can_inventory, can_attrition_report, can_csat, can_surveys, can_floor_map, can_pim, assigned_by)
-                                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                                     can_final_approval, can_view_tickets, can_facilities_review, can_facilities_final, can_view_approved_items, can_onboarding, can_inventory, can_attrition_report, can_csat, assigned_by)
+                                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
                                 ON DUPLICATE KEY UPDATE
                                     can_all_leaves=%s, can_all_requests=%s, can_approve=%s, can_file_for_emp=%s,
                                     can_schedules=%s, can_reports=%s, can_work_mode=%s,
                                     can_settings=%s, can_entitlements=%s, can_file_requests=%s,
                                     can_material_requests=%s, can_final_approval=%s,
-                                    can_view_tickets=%s, can_facilities_review=%s, can_facilities_final=%s, can_view_approved_items=%s, can_onboarding=%s, can_inventory=%s, can_attrition_report=%s, can_csat=%s, can_surveys=%s, can_floor_map=%s, can_pim=%s, assigned_by=%s
+                                    can_view_tickets=%s, can_facilities_review=%s, can_facilities_final=%s, can_view_approved_items=%s, can_onboarding=%s, can_inventory=%s, can_attrition_report=%s, can_csat=%s, assigned_by=%s
                             """, (
                                 en,
                                 perms['can_all_leaves'], perms['can_all_requests'], perms['can_approve'], perms['can_file_for_emp'],
                                 perms['can_schedules'], perms['can_reports'], perms['can_work_mode'],
                                 perms['can_settings'], perms['can_entitlements'], perms['can_file_requests'],
                                 perms['can_material_requests'], perms['can_final_approval'],
-                                perms['can_view_tickets'], perms['can_facilities_review'], perms['can_facilities_final'], perms['can_view_approved_items'], perms['can_onboarding'], perms['can_inventory'], perms['can_attrition_report'], perms['can_csat'], perms['can_surveys'], perms['can_floor_map'], perms['can_pim'], session['user']['emp_number'],
+                                perms['can_view_tickets'], perms['can_facilities_review'], perms['can_facilities_final'], perms['can_view_approved_items'], perms['can_onboarding'], perms['can_inventory'], perms['can_attrition_report'], perms['can_csat'],session['user']['emp_number'],
                                 perms['can_all_leaves'], perms['can_all_requests'], perms['can_approve'], perms['can_file_for_emp'],
                                 perms['can_schedules'], perms['can_reports'], perms['can_work_mode'],
                                 perms['can_settings'], perms['can_entitlements'], perms['can_file_requests'],
                                 perms['can_material_requests'], perms['can_final_approval'],
-                                perms['can_view_tickets'], perms['can_facilities_review'], perms['can_facilities_final'], perms['can_view_approved_items'], perms['can_onboarding'], perms['can_inventory'], perms['can_attrition_report'], perms['can_csat'], perms['can_surveys'], perms['can_floor_map'], perms['can_pim'], perms['can_qa_updates'], session['user']['emp_number']
+                                perms['can_view_tickets'], perms['can_facilities_review'], perms['can_facilities_final'], perms['can_view_approved_items'], perms['can_onboarding'], perms['can_inventory'], perms['can_attrition_report'], perms['can_csat'], session['user']['emp_number']
                             ))
                             count += 1
                     db.commit()
@@ -1994,8 +1910,8 @@ def admin_sub_admins():
                        g.group_name,
                        sa.can_all_leaves, sa.can_all_requests, sa.can_approve, sa.can_file_for_emp,
                        sa.can_schedules, sa.can_reports, sa.can_work_mode,
-                       sa.can_settings, sa.can_absences, sa.can_tardiness, sa.can_entitlements, sa.can_file_requests, sa.can_attrition_report,
-                       sa.can_material_requests, sa.can_final_approval, sa.can_view_tickets, sa.can_facilities_review, sa.can_facilities_final, sa.can_view_approved_items, sa.can_onboarding, sa.can_inventory, sa.can_csat, sa.can_surveys, sa.can_floor_map, sa.can_pim, sa.can_qa_updates
+                       sa.can_settings, sa.can_absences, sa.can_entitlements, sa.can_file_requests, sa.can_attrition_report,
+                       sa.can_material_requests, sa.can_final_approval, sa.can_view_tickets, sa.can_facilities_review, sa.can_facilities_final, sa.can_view_approved_items, sa.can_onboarding, sa.can_inventory
                 FROM hs_hr_employee h
                 JOIN ohrm_user u ON u.emp_number = h.emp_number
                 LEFT JOIN leave4day_sub_admins sa ON sa.emp_number = h.emp_number
@@ -5157,19 +5073,7 @@ def file_material():
                         payment_required = 0
                         payment_reason = None
                         amount_due = 0.0
-                        # FREE_ITEM_OVERRIDE: employee_id:item_keyword pairs
-                        free_overrides = {}
-                        for _fo in os.getenv("FREE_ITEM_OVERRIDE","").split(","):
-                            if ":" in _fo:
-                                _feid, _fkw = _fo.split(":", 1)
-                                free_overrides[_feid.strip()] = _fkw.strip().lower()
-                        _fo_kw = free_overrides.get(employee_id, "")
-                        if _fo_kw and _fo_kw in iname.lower():
-                            is_special = 0
-                            payment_required = 0
-                            payment_reason = None
-                            amount_due = 0.0
-                        elif sp:
+                        if sp:
                             if not is_tenured:
                                 payment_required = 1
                                 payment_reason = 'Less than 2 years tenure ({:.1f} yrs)'.format(tenure_years)
@@ -5180,21 +5084,9 @@ def file_material():
                                     payment_required = 1
                                     payment_reason = 'Free item already claimed within the last 2 years'
                                     amount_due = float(sp['price'])
-                        auto_ids = [x.strip() for x in os.getenv("AUTO_RECOMMEND_IDS","").split(",") if x.strip()]
-                    if employee_id in auto_ids:
-                        c.execute('INSERT INTO material_requests (employee_id, employee_name, request_group_id, category, item_name, quantity, reason, date_needed, status, som_name, is_special, payment_required, payment_reason, amount_due) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,"Recommended",%s,%s,%s,%s,%s)', (employee_id, emp_name, group_id, cat, iname, qty, reason, date_needed, emp_name, is_special, payment_required, payment_reason, amount_due))
-                    else:
                         c.execute('INSERT INTO material_requests (employee_id, employee_name, request_group_id, category, item_name, quantity, reason, date_needed, status, is_special, payment_required, payment_reason, amount_due) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,"Pending",%s,%s,%s,%s)', (employee_id, emp_name, group_id, cat, iname, qty, reason, date_needed, is_special, payment_required, payment_reason, amount_due))
                     cdb.commit()
-                    grp_som_map = {}
-                    for _entry in os.getenv("GROUP_SOM_OVERRIDES","").split(","):
-                        if ":" in _entry:
-                            _g, _e = _entry.split(":", 1)
-                            grp_som_map[_g.strip()] = _e.strip()
-                    c.execute("SELECT group_name FROM gsheet_employees WHERE employee_id=%s", (employee_id,))
-                    _grow = c.fetchone()
-                    _emp_grp = (_grow or {}).get("group_name", "")
-                    sup_email = grp_som_map.get(_emp_grp) or get_supervisor_email(session["user"]["emp_number"])
+                    sup_email = get_supervisor_email(session["user"]["emp_number"])
                     if sup_email:
                         body = (f"<p><b>{emp_name}</b> filed a material request:</p><ul>{items_html}</ul>"
                                 f"<p><b>Reason:</b> {reason or chr(8212)}</p>"
@@ -5235,16 +5127,10 @@ def material_som_approvals():
     cdb = get_central_db()
     try:
         with cdb.cursor() as c:
-            tab = request.args.get('tab', 'pending')
             if session.get('is_admin'):
-                if tab == 'pending':
-                    c.execute("""SELECT * FROM material_requests
-                                 WHERE deleted_at IS NULL AND category != 'Medicine' AND status='Pending'
-                                 ORDER BY created_at DESC""")
-                else:
-                    c.execute("""SELECT * FROM material_requests
-                                 WHERE deleted_at IS NULL AND category != 'Medicine' AND status!='Pending'
-                                 ORDER BY FIELD(status,'Recommended','Pending Final Approval','Approved','Awaiting Confirmation','Served','Rejected','Released'), created_at DESC""")
+                c.execute("""SELECT * FROM material_requests
+                             WHERE deleted_at IS NULL AND category != 'Medicine'
+                             ORDER BY FIELD(status,'Pending','Recommended','Rejected'), created_at DESC""")
             else:
                 # Get employee IDs under this supervisor (regular assignments)
                 sub_ids = get_supervisor_central_employees(user_email) or []
@@ -5254,38 +5140,20 @@ def material_som_approvals():
                 override_ids = [r['employee_id'] for r in c.fetchall()]
                 # Merge and deduplicate
                 all_ids = list(set(sub_ids + override_ids))
-                grp_som_map2 = {}
-                for _entry in os.getenv("GROUP_SOM_OVERRIDES","").split(","):
-                    if ":" in _entry:
-                        _g, _e = _entry.split(":", 1)
-                        grp_som_map2[_g.strip()] = _e.strip()
-                override_groups = [g for g,e in grp_som_map2.items() if e == user_email]
-                override_emp_ids = []
-                if override_groups:
-                    ph_g = ','.join(['%s'] * len(override_groups))
-                    c.execute(f"SELECT employee_id FROM gsheet_employees WHERE group_name IN ({ph_g})", override_groups)
-                    override_emp_ids = [r['employee_id'] for r in c.fetchall()]
-                combined_ids = list(set(all_ids + override_emp_ids))
-                if not combined_ids:
+                if not all_ids:
                     requests_ = []
                 else:
-                    ph = ','.join(['%s'] * len(combined_ids))
-                    if tab == 'pending':
-                        c.execute(f"""SELECT * FROM material_requests
-                                      WHERE employee_id IN ({ph}) AND deleted_at IS NULL
-                                      AND category != 'Medicine' AND status='Pending'
-                                      ORDER BY created_at DESC""", combined_ids)
-                    else:
-                        c.execute(f"""SELECT * FROM material_requests
-                                      WHERE employee_id IN ({ph}) AND deleted_at IS NULL
-                                      AND category != 'Medicine' AND status!='Pending'
-                                      ORDER BY FIELD(status,'Recommended','Pending Final Approval','Approved','Awaiting Confirmation','Served','Rejected','Released'), created_at DESC""", combined_ids)
+                    ph = ','.join(['%s'] * len(all_ids))
+                    c.execute(f"""SELECT * FROM material_requests
+                                  WHERE employee_id IN ({ph}) AND deleted_at IS NULL AND category != 'Medicine'
+                                  ORDER BY FIELD(status,'Pending','Recommended','Rejected'), created_at DESC""",
+                              all_ids)
             requests_ = c.fetchall()
     finally:
         cdb.close()
 
     return render_template('file_requests/material_som.html',
-                           requests=requests_, tab=tab, user=session['user'])
+                           requests=requests_, user=session['user'])
 
 
 @app.route('/file-requests/material/som-action', methods=['POST'])
@@ -5356,27 +5224,9 @@ def material_requests_pending_count():
                 if not sub_ids:
                     return jsonify({'count': 0})
                 ph = ','.join(['%s'] * len(sub_ids))
-                # Also include IT group override employees
-                grp_som_map_c = {}
-                for _entry in os.getenv('GROUP_SOM_OVERRIDES','').split(','):
-                    if ':' in _entry:
-                        _g, _e = _entry.split(':', 1)
-                        grp_som_map_c[_g.strip()] = _e.strip()
-                override_grps_c = [g for g,e in grp_som_map_c.items() if e == user_email]
-                override_ids_c = []
-                if override_grps_c:
-                    with cdb.cursor() as c2:
-                        ph_g = ','.join(['%s'] * len(override_grps_c))
-                        c2.execute(f"SELECT employee_id FROM gsheet_employees WHERE group_name IN ({ph_g})", override_grps_c)
-                        override_ids_c = [r['employee_id'] for r in c2.fetchall()]
-                all_count_ids = list(set(sub_ids + override_ids_c))
-                if not all_count_ids:
-                    return jsonify({'count': 0})
-                ph = ','.join(['%s'] * len(all_count_ids))
                 c.execute(f"""SELECT COUNT(*) as cnt FROM material_requests
                               WHERE status='Pending' AND deleted_at IS NULL
-                              AND category != 'Medicine'
-                              AND employee_id IN ({ph})""", all_count_ids)
+                              AND employee_id IN ({ph})""", sub_ids)
             count = c.fetchone()['cnt']
     finally:
         cdb.close()
@@ -6850,10 +6700,10 @@ def file_ot():
                 raw_tickets = [t.strip() for t in raw_tickets if t.strip()]
                 invalid = []
                 for t in raw_tickets:
-                    if not t.isalnum():
-                        invalid.append(f"{t} (invalid characters)")
+                    if not t.isdigit():
+                        invalid.append(f"{t} (non-numeric)")
                     elif len(t) < 5:
-                        invalid.append(f"{t} (too short, min 5 characters)")
+                        invalid.append(f"{t} (too short, min 5 digits)")
                     else:
                         ticket_list.append(t)
                 if invalid:
@@ -8093,8 +7943,8 @@ def hrportal_onboard():
         # 2. ACTIVE DIRECTORY ──────────────────────────────
         try:
             first_name_parts   = first_name.split()
-            primary_username   = (first_name_parts[0] + '.' + last_name).lower().replace(' ', '')
-            secondary_username = (first_name_parts[1] + '.' + last_name).lower().replace(' ', '') if len(first_name_parts) > 1 else None
+            primary_username   = (first_name_parts[0] + last_name).lower().replace(' ', '')
+            secondary_username = (first_name_parts[1] + last_name).lower().replace(' ', '') if len(first_name_parts) > 1 else None
 
             # Check primary username
             check = ext_requests.post(
@@ -8258,7 +8108,7 @@ def hrportal_onboard():
         # 7. BIOMETRIC QUEUE (central_db) ─────────────────
         try:
             personid = int(employee_id.replace('-', ''))
-            uname    = (first_name.split()[0] + '.' + last_name).lower().replace(' ', '')
+            uname    = (first_name[0] + last_name).lower().replace(' ', '')
             with conn.cursor() as cur:
                 cur.execute("""
                     INSERT INTO pending_biometric_sync
@@ -8318,27 +8168,6 @@ def hrportal_onboard():
         results['success']       = True
         results['employee_id']   = employee_id
         results['temp_password'] = temp_password
-
-        # ── Notify HR/IT teams ────────────────────────────
-        try:
-            notify_emails = os.environ.get('ONBOARDING_NOTIFY_EMAILS', '')
-            if notify_emails:
-                for recipient in [e.strip() for e in notify_emails.split(',')]:
-                    send_email(recipient, f'New Employee Onboarded — {schedule_name}', f"""
-                    <p>A new employee has been successfully onboarded.</p>
-                    <table style="border-collapse:collapse;font-family:sans-serif;font-size:14px">
-                      <tr><td style="padding:4px 16px 4px 0;font-weight:bold">Employee ID</td><td>{employee_id}</td></tr>
-                      <tr><td style="padding:4px 16px 4px 0;font-weight:bold">Name</td><td>{schedule_name}</td></tr>
-                      <tr><td style="padding:4px 16px 4px 0;font-weight:bold">Email</td><td>{email}</td></tr>
-                      <tr><td style="padding:4px 16px 4px 0;font-weight:bold">Training Date</td><td>{training_date}</td></tr>
-                      <tr><td style="padding:4px 16px 4px 0;font-weight:bold">Temp Password</td><td>{temp_password}</td></tr>
-                      <tr><td style="padding:4px 16px 4px 0;font-weight:bold">AD Username</td><td>{results.get('ad_username', 'N/A')}</td></tr>
-                      <tr><td style="padding:4px 16px 4px 0;font-weight:bold">Processed By</td><td>{processed_by}</td></tr>
-                    </table>
-                    """)
-        except Exception as e:
-            app.logger.error(f'❌ Onboarding notify email error: {e}')
-
         return jsonify(results)
 
     except Exception as e:
@@ -8410,7 +8239,7 @@ def hrportal_offboard(employee_id):
         # 2. ACTIVE DIRECTORY ──────────────────────────────
         try:
             first_name_parts = first_name.split()
-            ad_username = (first_name_parts[0] + '.' + last_name).lower().replace(' ', '')
+            ad_username = (first_name_parts[0] + last_name).lower().replace(' ', '')
             ar = ext_requests.post(
                 f"{ad['base_url']}/api/user/disable",
                 headers=ad['headers'],
@@ -9592,7 +9421,7 @@ def admin_ticket_update(ticket_number):
 
 @app.route('/pim')
 def pim_index():
-    if not (session.get('is_admin') or session.get('permissions', {}).get('can_pim')):
+    if not (session.get('is_admin') or session.get('is_sub_admin')):
         abort(403)
     conn = get_central_db()
     cursor = conn.cursor(pymysql.cursors.DictCursor)
@@ -9626,7 +9455,7 @@ def pim_index():
 
 @app.route('/pim/<employee_id>')
 def pim_profile(employee_id):
-    if not (session.get('is_admin') or session.get('permissions', {}).get('can_pim')):
+    if not (session.get('is_admin') or session.get('is_sub_admin')):
         abort(403)
     import calendar as _cal
     from datetime import date as _date
@@ -10201,7 +10030,7 @@ CSAT_SYNC_TOKEN = os.environ.get("CSAT_SYNC_TOKEN")  # add to .env
 CSAT_COLS = [
     "performed_at_date","ticket_id","core_language","customer_name","booking_reference",
     "theme_l1","agent_tenure","agent_email","ticket_language","csat_rate","csat_score",
-    "week","month","tl","tenure","group_name","batch","channel_type","som","qa_comment","qa_name"
+    "week","month","tl","tenure","group_name","batch","channel_type","som"
 ]
 
 @app.route("/api/csat/sync", methods=["POST"])
@@ -10289,1133 +10118,5 @@ def resolve_counts_sync():
 
     return jsonify({"received": len(rows), "affected": affected})
 
-# ============================================================================
-#  CSAT DASHBOARD  (with filters: TL, Batch, Week, Month)
-#  Paste this block into app.py BEFORE the `app.run()` line, REPLACING the
-#  previous CSAT block. Requires get_central_db(), session, has_permission(),
-#  login_required.
-# ============================================================================
-from datetime import date
-
-MONTH_ORDER = ['January','February','March','April','May','June',
-               'July','August','September','October','November','December']
-
-
-def _csat_scope():
-    """(allowed, tl_name): admin/can_csat/SOM -> (True,None); TL -> (True,name)."""
-    if not session.get('user'):
-        return (False, None)
-    if session.get('is_admin') or has_permission('can_csat') or session.get('is_supervisor'):
-        return (True, None)
-    email = session['user'].get('email')
-    if not email:
-        return (False, None)
-    cdb = get_central_db()
-    try:
-        with cdb.cursor() as c:
-            c.execute("SELECT tl_name FROM csat_tl_map WHERE login_email = %s", (email,))
-            row = c.fetchone()
-    finally:
-        cdb.close()
-    if row:
-        return (True, row['tl_name'] if isinstance(row, dict) else row[0])
-    return (False, None)
-
-
-def _csat_date_range():
-    today = date.today()
-    start = request.args.get('start') or today.replace(day=1).isoformat()
-    end = request.args.get('end') or today.isoformat()
-    return (start, end)
-
-
-def _active_emails():
-    """Cached list of currently-Active agent emails (lowercased). Resolved once per request."""
-    if hasattr(g, '_csat_active_emails'):
-        return g._csat_active_emails
-    cdb = get_central_db()
-    try:
-        with cdb.cursor() as c:
-            c.execute("""
-                SELECT LOWER(TRIM(email)) AS em
-                FROM gsheet_employees
-                WHERE status='Active' AND email IS NOT NULL AND email<>''
-            """)
-            emails = [r['em'] for r in c.fetchall() if r['em']]
-    finally:
-        cdb.close()
-    g._csat_active_emails = emails
-    return emails
-
-
-def _cs_emails():
-    """Cached list of CS-group agent emails (lowercased), from csat_responses.group_name='CS'."""
-    if hasattr(g, '_csat_cs_emails'):
-        return g._csat_cs_emails
-    cdb = get_central_db()
-    try:
-        with cdb.cursor() as c:
-            c.execute("""
-                SELECT DISTINCT LOWER(TRIM(agent_email)) AS em
-                FROM csat_responses
-                WHERE group_name='CS' AND agent_email IS NOT NULL AND agent_email<>''
-            """)
-            emails = [r['em'] for r in c.fetchall() if r['em']]
-    finally:
-        cdb.close()
-    g._csat_cs_emails = emails
-    return emails
-
-
-def _csat_filters(tl_name):
-    """
-    Shared WHERE conditions/params for BOTH tables.
-    conds use the {a} token, replaced with the table alias via _apply().
-    """
-    start, end = _csat_date_range()
-    conds = ["{a}.performed_at_date BETWEEN %s AND %s"]
-    params = [start, end]
-
-    if tl_name:
-        conds.append("{a}.tl = %s")
-        params.append(tl_name)
-    else:
-        f_tl = request.args.get('tl')
-        if f_tl and f_tl != 'All':
-            tls = [t.strip() for t in f_tl.split(',') if t.strip() and t.strip() != 'All']
-            if tls:
-                conds.append("{a}.tl IN (" + ','.join(['%s']*len(tls)) + ")")
-                params.extend(tls)
-
-    f_batch = request.args.get('batch')
-    if f_batch and f_batch != 'All':
-        batches = [b.strip() for b in f_batch.split(',') if b.strip() and b.strip() != 'All']
-        if batches:
-            placeholders = ','.join(['%s'] * len(batches))
-            conds.append("{a}.batch IN (" + placeholders + ")")
-            params.extend(batches)
-
-    f_week = request.args.get('week')
-    if f_week and f_week != 'All':
-        weeks = [w.strip() for w in f_week.split(',') if w.strip() and w.strip() != 'All']
-        if weeks:
-            conds.append("{a}.week IN (" + ','.join(['%s']*len(weeks)) + ")")
-            params.extend(weeks)
-
-    f_month = request.args.get('month')
-    if f_month and f_month != 'All':
-        conds.append("{a}.month = %s")
-        params.append(f_month)
-
-    f_tenure = request.args.get('tenure')
-    if f_tenure and f_tenure != 'All':
-        tenures = [t.strip() for t in f_tenure.split(',') if t.strip() and t.strip() != 'All']
-        # only the two real buckets are valid; Training/#N/A/NULL are excluded by exact match
-        tenures = [t for t in tenures if t in ('Tenured', 'Non-tenured')]
-        if tenures:
-            conds.append("{a}.tenure IN (" + ','.join(['%s']*len(tenures)) + ")")
-            params.extend(tenures)
-
-    # --- CS-only (default ON). cs_only=0 to include all groups. ---
-    if request.args.get('cs_only', '1') not in ('0', 'false', 'off', 'no'):
-        cs = _cs_emails()
-        if cs:
-            conds.append("LOWER({a}.agent_email) IN (" + ','.join(['%s']*len(cs)) + ")")
-            params.extend(cs)
-        else:
-            conds.append("1=0")
-
-    # --- Active-only (default ON). active_only=0 to include separated agents. ---
-    if request.args.get('active_only', '1') not in ('0', 'false', 'off', 'no'):
-        act = _active_emails()
-        if act:
-            conds.append("LOWER({a}.agent_email) IN (" + ','.join(['%s']*len(act)) + ")")
-            params.extend(act)
-        else:
-            conds.append("1=0")
-
-    # --- single agent (exact email). Scopes the whole dashboard to one person. ---
-    f_agent = request.args.get('agent')
-    if f_agent and f_agent != 'All':
-        conds.append("LOWER({a}.agent_email) = %s")
-        params.append(f_agent.strip().lower())
-    return (conds, params)
-
-
-def _apply(conds, alias):
-    return " AND ".join(c.replace("{a}", alias) for c in conds)
-
-
-@app.route('/csat')
-@login_required
-def csat_dashboard():
-    allowed, tl_name = _csat_scope()
-    if not allowed:
-        flash('You do not have permission to access the CSAT dashboard.', 'danger')
-        return redirect(url_for('dashboard'))
-    return render_template('csat.html',
-                           user=session['user'],
-                           is_admin=session.get('is_admin', False),
-                           is_tl_view=(tl_name is not None),
-                           scoped_tl=tl_name)
-
-
-@app.route('/api/csat/filter-options')
-@login_required
-def api_csat_filter_options():
-    allowed, tl_name = _csat_scope()
-    if not allowed:
-        return jsonify({"error": "forbidden"}), 403
-    cdb = get_central_db()
-    try:
-        with cdb.cursor() as c:
-            scope = ""
-            sp = []
-            if tl_name:
-                scope = "WHERE tl = %s"
-                sp = [tl_name]
-
-            def distinct(col, cast_num=False):
-                order = f"CAST({col} AS UNSIGNED)" if cast_num else col
-                where_kw = 'AND' if scope else 'WHERE'
-                c.execute(f"""
-                    SELECT DISTINCT {col} AS v FROM resolve_counts
-                    {scope} {where_kw} {col} IS NOT NULL
-                      AND {col} NOT IN ('#N/A','NULL','')
-                    ORDER BY {order}
-                """, sp)
-                return [r['v'] for r in c.fetchall()]
-
-            # Active TLs for the filter dropdown: csat_tl_map + Mozo (SOM handling batch 42)
-            if tl_name:
-                tls = []
-            else:
-                c.execute("SELECT tl_name FROM csat_tl_map ORDER BY tl_name")
-                tls = [r['tl_name'] for r in c.fetchall()]
-                if 'Mozo' not in tls:
-                    tls.append('Mozo')
-                tls.sort()
-            batches = distinct('batch')
-            weeks = distinct('week', cast_num=True)
-
-            where_kw = 'AND' if scope else 'WHERE'
-            c.execute(f"""
-                SELECT month AS m, MIN(performed_at_date) AS lo, MAX(performed_at_date) AS hi
-                FROM resolve_counts
-                {scope} {where_kw} month IS NOT NULL
-                  AND month NOT IN ('#N/A','NULL','')
-                GROUP BY month
-            """, sp)
-            mrows = {r['m']: {"start": str(r['lo']), "end": str(r['hi'])} for r in c.fetchall()}
-            months = [{"name": m, **mrows[m]} for m in MONTH_ORDER if m in mrows]
-
-            c.execute(f"""
-                SELECT week AS w, MIN(performed_at_date) AS lo, MAX(performed_at_date) AS hi
-                FROM resolve_counts
-                {scope} {where_kw} week IS NOT NULL
-                  AND week NOT IN ('#N/A','NULL','')
-                GROUP BY week
-            """, sp)
-            wspan = {r['w']: {"start": str(r['lo']), "end": str(r['hi'])} for r in c.fetchall()}
-            weeks_obj = [{"name": w, **wspan.get(w, {})} for w in weeks]
-
-        return jsonify({
-            "tls": tls,
-            "batches": batches,
-            "weeks": weeks_obj,
-            "months": months,
-            "tenures": ["Tenured", "Non-tenured"],
-        })
-    finally:
-        cdb.close()
-
-
-def _weighted_group(c, dim, conds, params):
-    """Weighted CSAT grouped by `dim` ('tl' or 'batch')."""
-    assert dim in ('tl', 'batch')
-    c.execute(f"""
-        SELECT r.{dim} AS g,
-               COALESCE(SUM(chat_resolved),0)  AS chat_wt,
-               COALESCE(SUM(email_resolved),0) AS email_wt,
-               COALESCE(SUM(phone_resolved),0) AS phone_wt
-        FROM resolve_counts r
-        WHERE {_apply(conds,'r')}
-        GROUP BY r.{dim}
-    """, params)
-    weights = {}
-    for row in c.fetchall():
-        g = row['g']
-        if g is None or g in ('#N/A','NULL',''):
-            continue
-        weights[g] = {"chat": int(row['chat_wt']), "email": int(row['email_wt']), "phone": int(row['phone_wt'])}
-    c.execute(f"""
-        SELECT cr.{dim} AS g, cr.channel_type, AVG(cr.csat_score) AS pct
-        FROM csat_responses cr
-        WHERE {_apply(conds,'cr')}
-        GROUP BY cr.{dim}, cr.channel_type
-    """, params)
-    pct = {}
-    for row in c.fetchall():
-        pct.setdefault(row['g'], {})[row['channel_type']] = float(row['pct'] or 0)
-    out = []
-    for g, w in weights.items():
-        p = pct.get(g, {})
-        d = w['chat'] + w['email'] + w['phone']
-        val = ((p.get('Chat',0)*w['chat'] + p.get('Email',0)*w['email'] + p.get('Phone',0)*w['phone'])/d) if d else 0
-        out.append({"name": g, "weighted": round(val*100, 2), "resolved": d})
-    out.sort(key=lambda x: x['weighted'], reverse=True)
-    return out
-
-
-@app.route('/api/csat/summary')
-@login_required
-def api_csat_summary():
-    allowed, tl_name = _csat_scope()
-    if not allowed:
-        return jsonify({"error": "forbidden"}), 403
-    start, end = _csat_date_range()
-    conds, params = _csat_filters(tl_name)
-    cdb = get_central_db()
-    try:
-        with cdb.cursor() as c:
-            c.execute(f"""
-                SELECT channel_type, AVG(csat_score) AS pct, COUNT(*) AS responses
-                FROM csat_responses cr
-                WHERE {_apply(conds,'cr')}
-                GROUP BY channel_type
-            """, params)
-            pct = {}; total_resp = 0
-            for row in c.fetchall():
-                pct[row['channel_type']] = float(row['pct']) if row['pct'] is not None else 0.0
-                total_resp += int(row['responses'])
-            c.execute(f"""
-                SELECT COALESCE(SUM(chat_resolved),0) chat_wt,
-                       COALESCE(SUM(email_resolved),0) email_wt,
-                       COALESCE(SUM(phone_resolved),0) phone_wt
-                FROM resolve_counts r
-                WHERE {_apply(conds,'r')}
-            """, params)
-            w = c.fetchone()
-            chat_wt=int(w['chat_wt']); email_wt=int(w['email_wt']); phone_wt=int(w['phone_wt'])
-            chat_pct=pct.get('Chat',0.0); email_pct=pct.get('Email',0.0); phone_pct=pct.get('Phone',0.0)
-            denom = chat_wt+email_wt+phone_wt
-            weighted = ((chat_pct*chat_wt+email_pct*email_wt+phone_pct*phone_wt)/denom) if denom else 0.0
-
-            # ---- trend with selectable granularity (day/week/month/quarter) ----
-            gran = (request.args.get('gran') or 'month').lower()
-            if gran == 'day':
-                bucket_cr = "DATE_FORMAT(cr.performed_at_date,'%%Y-%%m-%%d')"
-                bucket_r  = "DATE_FORMAT(r.performed_at_date,'%%Y-%%m-%%d')"
-            elif gran == 'week':
-                # ISO year-week, e.g. 2026-W05, so weeks sort and label cleanly
-                bucket_cr = "DATE_FORMAT(cr.performed_at_date,'%%x-W%%v')"
-                bucket_r  = "DATE_FORMAT(r.performed_at_date,'%%x-W%%v')"
-            elif gran == 'quarter':
-                bucket_cr = "CONCAT(YEAR(cr.performed_at_date),'-Q',QUARTER(cr.performed_at_date))"
-                bucket_r  = "CONCAT(YEAR(r.performed_at_date),'-Q',QUARTER(r.performed_at_date))"
-            else:  # month
-                bucket_cr = "DATE_FORMAT(cr.performed_at_date,'%%Y-%%m')"
-                bucket_r  = "DATE_FORMAT(r.performed_at_date,'%%Y-%%m')"
-
-            # per-bucket channel CSAT% AND response counts (bars = response count)
-            c.execute(f"""
-                SELECT {bucket_cr} AS bk, cr.channel_type,
-                       AVG(cr.csat_score) pct, COUNT(*) n
-                FROM csat_responses cr WHERE {_apply(conds,'cr')}
-                GROUP BY bk, cr.channel_type
-            """, params)
-            bucket_pct = {}
-            bucket_resp = {}
-            for row in c.fetchall():
-                bk = row['bk']
-                bucket_pct.setdefault(bk,{})[row['channel_type']]=float(row['pct'] or 0)
-                bucket_resp[bk] = bucket_resp.get(bk,0) + int(row['n'])
-
-            # per-bucket resolved weights
-            c.execute(f"""
-                SELECT {bucket_r} AS bk,
-                       COALESCE(SUM(chat_resolved),0) chat_wt,
-                       COALESCE(SUM(email_resolved),0) email_wt,
-                       COALESCE(SUM(phone_resolved),0) phone_wt
-                FROM resolve_counts r WHERE {_apply(conds,'r')}
-                GROUP BY bk
-            """, params)
-            bucket_wt = {}
-            for row in c.fetchall():
-                bucket_wt[row['bk']] = (int(row['chat_wt']), int(row['email_wt']), int(row['phone_wt']))
-
-            # union of buckets from both sides
-            all_buckets = set(bucket_pct.keys()) | set(bucket_wt.keys()) | set(bucket_resp.keys())
-            trend=[]
-            for bk in all_buckets:
-                cwt, ewt, pwt = bucket_wt.get(bk, (0,0,0))
-                mp = bucket_pct.get(bk, {})
-                d = cwt + ewt + pwt
-                val = ((mp.get('Chat',0)*cwt + mp.get('Email',0)*ewt + mp.get('Phone',0)*pwt)/d) if d else 0
-                trend.append({
-                    "month": bk,                                  # bucket label (kept key name 'month' for frontend compat)
-                    "weighted": round(val*100, 2),
-                    "responses": bucket_resp.get(bk, 0)
-                })
-            trend.sort(key=lambda x:x['month'])
-
-            def _tenure_series(tenure_label):
-                # per bucket, per channel -> pct ; also per-bucket total response COUNT
-                c.execute(f"""
-                    SELECT {bucket_cr} AS bk, cr.channel_type, AVG(cr.csat_score) pct, COUNT(*) n
-                    FROM csat_responses cr WHERE {_apply(conds,'cr')}
-                      AND cr.tenure = %s
-                    GROUP BY bk, cr.channel_type
-                """, params + [tenure_label])
-                tpct = {}; tcount = {}
-                for row in c.fetchall():
-                    tpct.setdefault(row['bk'], {})[row['channel_type']] = float(row['pct'] or 0)
-                    tcount[row['bk']] = tcount.get(row['bk'], 0) + int(row['n'])
-                c.execute(f"""
-                    SELECT {bucket_r} AS bk,
-                           COALESCE(SUM(chat_resolved),0) chat_wt,
-                           COALESCE(SUM(email_resolved),0) email_wt,
-                           COALESCE(SUM(phone_resolved),0) phone_wt
-                    FROM resolve_counts r WHERE {_apply(conds,'r')}
-                      AND r.tenure = %s
-                    GROUP BY bk
-                """, params + [tenure_label])
-                twt = {}
-                for row in c.fetchall():
-                    twt[row['bk']] = (int(row['chat_wt']), int(row['email_wt']), int(row['phone_wt']))
-                vals = []; counts = []
-                for t in trend:
-                    bk = t['month']
-                    cwt, ewt, pwt = twt.get(bk, (0, 0, 0))
-                    mp = tpct.get(bk, {})
-                    d2 = cwt + ewt + pwt
-                    if d2:
-                        v = (mp.get('Chat',0)*cwt + mp.get('Email',0)*ewt + mp.get('Phone',0)*pwt) / d2
-                        vals.append(round(v*100, 2))
-                    else:
-                        vals.append(None)
-                    counts.append(tcount.get(bk, 0))
-                return vals, counts
-
-            _ten_vals, _ten_cnt = _tenure_series('Tenured')
-            _non_vals, _non_cnt = _tenure_series('Non-tenured')
-            tenure_trend = {
-                "buckets":         [t['month'] for t in trend],
-                "tenured":         _ten_vals,
-                "nontenured":      _non_vals,
-                "tenured_resp":    _ten_cnt,
-                "nontenured_resp": _non_cnt,
-            }
-
-            by_tl = [] if tl_name else _weighted_group(c,'tl',conds,params)
-            by_batch = _weighted_group(c,'batch',conds,params)
-
-            # ---- per-TL trend lines (same buckets & weighted formula) ----
-            tl_trend = {"buckets": [], "series": []}
-            if not tl_name:
-                c.execute(f"""
-                    SELECT {bucket_cr} AS bk, cr.tl, cr.channel_type, AVG(cr.csat_score) pct
-                    FROM csat_responses cr WHERE {_apply(conds,'cr')}
-                      AND cr.tl IS NOT NULL AND cr.tl NOT IN ('', '#N/A', 'SOM')
-                    GROUP BY bk, cr.tl, cr.channel_type
-                """, params)
-                tt_pct = {}
-                for row in c.fetchall():
-                    tt_pct.setdefault((row['bk'], row['tl']), {})[row['channel_type']] = float(row['pct'] or 0)
-                c.execute(f"""
-                    SELECT {bucket_r} AS bk, r.tl,
-                           COALESCE(SUM(chat_resolved),0) chat_wt,
-                           COALESCE(SUM(email_resolved),0) email_wt,
-                           COALESCE(SUM(phone_resolved),0) phone_wt
-                    FROM resolve_counts r WHERE {_apply(conds,'r')}
-                      AND r.tl IS NOT NULL AND r.tl NOT IN ('', '#N/A', 'SOM')
-                    GROUP BY bk, r.tl
-                """, params)
-                tt_wt = {}
-                for row in c.fetchall():
-                    tt_wt[(row['bk'], row['tl'])] = (int(row['chat_wt']), int(row['email_wt']), int(row['phone_wt']))
-                keys = set(tt_pct.keys()) | set(tt_wt.keys())
-                buckets = sorted(set(k[0] for k in keys))
-                tls = sorted(set(k[1] for k in keys))
-                series = []
-                for t in tls:
-                    data = []
-                    for bk in buckets:
-                        cwt, ewt, pwt = tt_wt.get((bk, t), (0, 0, 0))
-                        mp = tt_pct.get((bk, t), {})
-                        d2 = cwt + ewt + pwt
-                        if d2:
-                            v = (mp.get('Chat',0)*cwt + mp.get('Email',0)*ewt + mp.get('Phone',0)*pwt) / d2
-                            data.append(round(v*100, 2))
-                        else:
-                            data.append(None)
-                    series.append({"name": t, "data": data})
-                tl_trend = {"buckets": buckets, "series": series}
-
-        return jsonify({
-            "range":{"start":start,"end":end},
-            "overall":{
-                "weighted":round(weighted*100,2),
-                "total_responses":total_resp,
-                "total_resolved":denom,
-                "by_channel":{
-                    "Chat":{"pct":round(chat_pct*100,2),"resolved":chat_wt},
-                    "Email":{"pct":round(email_pct*100,2),"resolved":email_wt},
-                    "Phone":{"pct":round(phone_pct*100,2),"resolved":phone_wt},
-                }
-            },
-            "trend":trend,"by_tl":by_tl,"by_batch":by_batch,"tl_trend":tl_trend,"tenure_trend":tenure_trend,
-        })
-    finally:
-        cdb.close()
-
-
-@app.route('/api/csat/agents')
-@login_required
-def api_csat_agents():
-    allowed, tl_name = _csat_scope()
-    if not allowed:
-        return jsonify({"error": "forbidden"}), 403
-    start, end = _csat_date_range()
-    conds, params = _csat_filters(tl_name)
-    cdb = get_central_db()
-    try:
-        with cdb.cursor() as c:
-            c.execute(f"""
-                SELECT r.agent_email AS email, MAX(r.tl) AS tl, MAX(r.batch) AS batch,
-                       COALESCE(SUM(chat_resolved),0) chat_wt,
-                       COALESCE(SUM(email_resolved),0) email_wt,
-                       COALESCE(SUM(phone_resolved),0) phone_wt,
-                       COALESCE(SUM(total_resolved),0) total_wt
-                FROM resolve_counts r WHERE {_apply(conds,'r')}
-                GROUP BY r.agent_email
-            """, params)
-            agents={}
-            for row in c.fetchall():
-                agents[row['email']]={"email":row['email'],"tl":row['tl'],"batch":row['batch'],
-                    "chat_wt":int(row['chat_wt']),"email_wt":int(row['email_wt']),
-                    "phone_wt":int(row['phone_wt']),"total_resolved":int(row['total_wt']),"pct":{}}
-            c.execute(f"""
-                SELECT cr.agent_email AS email, cr.channel_type, AVG(cr.csat_score) pct, COUNT(*) n,
-                       MAX(cr.tl) AS tl, MAX(cr.batch) AS batch
-                FROM csat_responses cr WHERE {_apply(conds,'cr')}
-                GROUP BY cr.agent_email, cr.channel_type
-            """, params)
-            resp_count={}
-            for row in c.fetchall():
-                em=row['email']
-                if em not in agents:
-                    agents[em]={"email":em,"tl":None,"batch":None,"chat_wt":0,"email_wt":0,
-                                "phone_wt":0,"total_resolved":0,"pct":{}}
-                if not agents[em].get("tl") and row.get("tl"):
-                    agents[em]["tl"]=row["tl"]
-                if not agents[em].get("batch") and row.get("batch"):
-                    agents[em]["batch"]=row["batch"]
-                agents[em]["pct"][row['channel_type']]=float(row['pct'] or 0)
-                resp_count[em]=resp_count.get(em,0)+int(row['n'])
-            rows=[]
-            for em,a in agents.items():
-                d=a["chat_wt"]+a["email_wt"]+a["phone_wt"]; p=a["pct"]
-                weighted=((p.get('Chat',0)*a["chat_wt"]+p.get('Email',0)*a["email_wt"]
-                          +p.get('Phone',0)*a["phone_wt"])/d) if d else 0
-                rows.append({"email":em,"tl":a["tl"],"batch":a["batch"],
-                    "weighted":round(weighted*100,2),
-                    "chat_pct":round(p.get('Chat',0)*100,2),
-                    "email_pct":round(p.get('Email',0)*100,2),
-                    "phone_pct":round(p.get('Phone',0)*100,2),
-                    "chat_resolved":a["chat_wt"],
-                    "email_resolved":a["email_wt"],
-                    "phone_resolved":a["phone_wt"],
-                    "total_resolved":a["total_resolved"],"responses":resp_count.get(em,0)})
-            rows.sort(key=lambda x:x['weighted'],reverse=True)
-            # attach display names (schedule_name) from gsheet_employees
-            if rows:
-                emails = [r['email'] for r in rows if r.get('email')]
-                if emails:
-                    ph = ','.join(['%s']*len(emails))
-                    c.execute(
-                        "SELECT LOWER(TRIM(email)) AS em, schedule_name "
-                        "FROM gsheet_employees WHERE LOWER(TRIM(email)) IN (" + ph + ")",
-                        [e.lower().strip() for e in emails]
-                    )
-                    name_map = {row['em']: row['schedule_name'] for row in c.fetchall()}
-                    for r in rows:
-                        r['name'] = name_map.get((r.get('email') or '').lower().strip()) or r.get('email')
-        return jsonify({"range":{"start":start,"end":end},"agents":rows})
-    finally:
-        cdb.close()
-
-@app.route('/api/csat/agent-responses')
-@login_required
-def api_csat_agent_responses():
-    allowed, tl_name = _csat_scope()
-    if not allowed:
-        return jsonify({"error": "forbidden"}), 403
-
-    email = request.args.get('email', '').strip()
-    if not email:
-        return jsonify({"error": "email required"}), 400
-
-    # Reuse the shared filter conditions (date range + tl/batch/week/month),
-    # then add the specific agent.
-    conds, params = _csat_filters(tl_name)
-    conds = conds + ["{a}.agent_email = %s"]
-    params = params + [email]
-
-    cdb = get_central_db()
-    try:
-        with cdb.cursor() as c:
-            c.execute(f"""
-                SELECT performed_at_date, ticket_id, channel_type,
-                       csat_rate, csat_score, qa_comment, qa_name
-                FROM csat_responses cr
-                WHERE {_apply(conds, 'cr')}
-                ORDER BY performed_at_date DESC, ticket_id
-            """, params)
-            rows = []
-            for r in c.fetchall():
-                rows.append({
-                    "date": str(r['performed_at_date']) if r['performed_at_date'] else '',
-                    "ticket_id": r['ticket_id'] or '',
-                    "channel": r['channel_type'] or '',
-                    "rate": r['csat_rate'] or '',
-                    "score": r['csat_score'],
-                    "qa_comment": r['qa_comment'] or '',
-                    "qa_name": r['qa_name'] or '',
-                })
-        return jsonify({"email": email, "responses": rows})
-    finally:
-        cdb.close()
-
-survey_bp = Blueprint('survey', __name__, url_prefix='/survey')
-
-@survey_bp.route('/')
-@login_required
-def survey_list():
-    db = get_central_db()
-    cur = db.cursor(pymysql.cursors.DictCursor)
-    user_email = session['user'].get('email')
-    cur.execute(
-        """SELECT s.slug, s.title, s.description, s.is_active,
-                  (sr.id IS NOT NULL) AS answered
-           FROM surveys s
-           LEFT JOIN survey_responses sr
-                  ON sr.survey_id = s.id AND sr.email = %s
-           WHERE s.is_active = 1
-           ORDER BY s.created_at DESC""",
-        (user_email,)
-    )
-    surveys = cur.fetchall()
-    return render_template('survey_list.html', surveys=surveys)
-
-
-@survey_bp.route('/<slug>')
-@login_required
-def survey_form(slug):
-    db = get_central_db()
-    cur = db.cursor(pymysql.cursors.DictCursor)
-    cur.execute("SELECT * FROM surveys WHERE slug=%s AND is_active=1", (slug,))
-    survey = cur.fetchone()
-    if not survey:
-        abort(404)
-    user_email = session['user'].get('email')
-    cur.execute(
-        "SELECT id FROM survey_responses WHERE survey_id=%s AND email=%s",
-        (survey['id'], user_email)
-    )
-    already = cur.fetchone() is not None
-    survey['questions'] = json.loads(survey['questions'])
-    return render_template('survey.html', survey=survey, already_answered=already)
-
-
-@survey_bp.route('/<slug>/submit', methods=['POST'])
-@login_required
-def survey_submit(slug):
-    db = get_central_db()
-    cur = db.cursor(pymysql.cursors.DictCursor)
-    cur.execute("SELECT * FROM surveys WHERE slug=%s AND is_active=1", (slug,))
-    survey = cur.fetchone()
-    if not survey:
-        return jsonify({'ok': False, 'error': 'Survey not found'}), 404
-
-    questions = json.loads(survey['questions'])
-    payload = request.get_json(force=True)
-    answers = payload.get('answers', {})
-
-    # Server-side validation: every question answered with a valid option
-    for q in questions:
-        val = answers.get(q['id'])
-        if not val or val not in q['options']:
-            return jsonify({'ok': False, 'error': f"Invalid answer for: {q['text']}"}), 400
-
-    u = session['user']
-    emp_id_val = u.get('employee_id') or None
-    try:
-        cur.execute(
-            """INSERT INTO survey_responses
-               (survey_id, employee_id, emp_number, email, answers)
-               VALUES (%s, %s, %s, %s, %s)""",
-            (survey['id'], emp_id_val, u.get('emp_number'),
-             u.get('email'), json.dumps(answers))
-        )
-        db.commit()
-    except pymysql.err.IntegrityError:
-        return jsonify({'ok': False, 'error': 'You have already responded.'}), 409
-    return jsonify({'ok': True})
-
-@survey_bp.route('/<slug>/results')
-@login_required
-def survey_results(slug):
-    if not (session.get('is_admin') or has_permission('can_surveys')):
-        flash('Access denied.', 'danger')
-        return redirect(url_for('dashboard'))
-
-    db = get_central_db()
-    cur = db.cursor(pymysql.cursors.DictCursor)
-    cur.execute("SELECT * FROM surveys WHERE slug=%s", (slug,))
-    survey = cur.fetchone()
-    if not survey:
-        abort(404)
-
-    questions = json.loads(survey['questions'])
-
-    # Pull responses joined to employee directory for name + group
-    cur.execute("""
-        SELECT r.email, r.emp_number, r.answers, r.submitted_at,
-               g.schedule_name, g.group_name
-        FROM survey_responses r
-        LEFT JOIN gsheet_employees g
-               ON g.email = r.email COLLATE utf8mb4_unicode_ci
-        WHERE r.survey_id = %s
-        ORDER BY r.submitted_at DESC
-    """, (survey['id'],))
-    rows = cur.fetchall()
-    total = len(rows)
-
-    # Active headcount for completion rate
-    cur.execute("""SELECT COUNT(*) AS c FROM gsheet_employees
-                   WHERE status IN ('Active','Training','Pending')""")
-    headcount = cur.fetchone()['c'] or 0
-    completion = round((total / headcount) * 100, 1) if headcount else 0
-
-    # Per-question tallies (seed all options at 0)
-    breakdown = {}
-    for q in questions:
-        breakdown[q['id']] = {'text': q['text'], 'counts': {opt: 0 for opt in q['options']}}
-
-    # Build detailed response list for the table
-    responses = []
-    for r in rows:
-        a = json.loads(r['answers'])
-        for qid, val in a.items():
-            if qid in breakdown and val in breakdown[qid]['counts']:
-                breakdown[qid]['counts'][val] += 1
-        responses.append({
-            'name': r['schedule_name'] or '—',
-            'email': r['email'],
-            'group': r['group_name'] or '—',
-            'answers': a,
-            'submitted_at': r['submitted_at'].strftime('%Y-%m-%d %H:%M') if r['submitted_at'] else ''
-        })
-
-    # Cross-tab: schedule_pref x strength
-    crosstab = None
-    if any(q['id'] == 'schedule_pref' for q in questions) and any(q['id'] == 'strength' for q in questions):
-        sched_opts = next(q['options'] for q in questions if q['id'] == 'schedule_pref')
-        str_opts = next(q['options'] for q in questions if q['id'] == 'strength')
-        crosstab = {'rows': sched_opts, 'cols': str_opts,
-                    'data': {s: {st: 0 for st in str_opts} for s in sched_opts}}
-        for resp in responses:
-            s = resp['answers'].get('schedule_pref'); st = resp['answers'].get('strength')
-            if s in crosstab['data'] and st in crosstab['data'][s]:
-                crosstab['data'][s][st] += 1
-
-    return render_template('survey_results.html',
-                           survey=survey, questions=questions,
-                           breakdown=breakdown, total=total,
-                           headcount=headcount, completion=completion,
-                           crosstab=crosstab, responses=responses)
-
-
-@survey_bp.route('/<slug>/results.csv')
-@login_required
-def survey_results_csv(slug):
-    if not (session.get('is_admin') or has_permission('can_surveys')):
-        flash('Access denied.', 'danger')
-        return redirect(url_for('dashboard'))
-
-    from flask import Response
-    import csv, io
-
-    db = get_central_db()
-    cur = db.cursor(pymysql.cursors.DictCursor)
-    cur.execute("SELECT * FROM surveys WHERE slug=%s", (slug,))
-    survey = cur.fetchone()
-    if not survey:
-        abort(404)
-    questions = json.loads(survey['questions'])
-
-    cur.execute("""SELECT email, emp_number, answers, submitted_at
-                   FROM survey_responses WHERE survey_id=%s ORDER BY submitted_at""",
-                (survey['id'],))
-    rows = cur.fetchall()
-
-    out = io.StringIO()
-    w = csv.writer(out)
-    header = ['email', 'emp_number', 'submitted_at'] + [q['text'] for q in questions]
-    w.writerow(header)
-    for r in rows:
-        a = json.loads(r['answers'])
-        w.writerow([r['email'], r['emp_number'], r['submitted_at']] +
-                   [a.get(q['id'], '') for q in questions])
-
-    return Response(out.getvalue(), mimetype='text/csv',
-                    headers={'Content-Disposition': f'attachment; filename={slug}-responses.csv'})
-
-@survey_bp.route('/<int:sid>/toggle', methods=['POST'])
-@login_required
-def survey_toggle(sid):
-    if not (session.get('is_admin') or has_permission('can_surveys')):
-        return jsonify({"error": "forbidden"}), 403
-    db = get_central_db()
-    try:
-        cur = db.cursor(pymysql.cursors.DictCursor)
-        cur.execute("UPDATE surveys SET is_active = 1 - is_active WHERE id=%s", (sid,))
-        db.commit()
-        cur.execute("SELECT is_active FROM surveys WHERE id=%s", (sid,))
-        row = cur.fetchone()
-        if not row:
-            return jsonify({"error": "not found"}), 404
-        return jsonify({"id": sid, "is_active": int(row['is_active'])})
-    except Exception as e:
-        db.rollback()
-        return jsonify({"error": str(e)}), 500
-
-
-@survey_bp.route('/admin')
-@login_required
-def survey_admin_list():
-    if not (session.get('is_admin') or has_permission('can_surveys')):
-        flash('Access denied.', 'danger')
-        return redirect(url_for('dashboard'))
-
-    db = get_central_db()
-    cur = db.cursor(pymysql.cursors.DictCursor)
-    cur.execute("""
-        SELECT s.id, s.slug, s.title, s.description, s.is_active, s.created_at,
-               (SELECT COUNT(*) FROM survey_responses r WHERE r.survey_id = s.id) AS response_count
-        FROM surveys s
-        ORDER BY s.created_at DESC
-    """)
-    surveys = cur.fetchall()
-
-    cur.execute("""SELECT COUNT(*) AS c FROM gsheet_employees
-                   WHERE status IN ('Active','Training','Pending')""")
-    headcount = cur.fetchone()['c'] or 0
-
-    return render_template('survey_admin_list.html', surveys=surveys, headcount=headcount)
-
-# CSAT for individual agents (for "My CSAT" dashboard + drilldown from the main dashboard)
-
-@app.route('/api/my-csat')
-@login_required
-def api_my_csat():
-    from datetime import timedelta
-    email = (session.get('user', {}) or {}).get('email', '')
-    if not email:
-        return jsonify({"error": "no session email"}), 400
-
-    gran  = (request.args.get('range') or 'month').lower()       # day | week | month
-    qmonth = (request.args.get('month') or '').strip()           # 'YYYY-MM'
-    qweek  = (request.args.get('week') or '').strip()            # 'NN'
-
-    def chn(mp, name, resolved=0):
-        info = mp.get(name)
-        if not info:
-            return {"pct": None, "n": 0, "resolved": int(resolved or 0)}
-        return {"pct": round(info['pct']*100, 2), "n": info['n'], "resolved": int(resolved or 0)}
-
-    cdb = get_central_db()
-    try:
-        with cdb.cursor() as c:
-            c.execute("SELECT MAX(performed_at_date) AS latest FROM csat_responses WHERE agent_email=%s", [email])
-            row = c.fetchone()
-            latest = row['latest'] if row else None
-            if not latest:
-                return jsonify({"has_data": False, "range": gran})
-
-            # Resolve the working month (YYYY-MM): explicit param, else month of latest data.
-            if qmonth:
-                month_str = qmonth
-            else:
-                c.execute("SELECT DATE_FORMAT(%s,'%%Y-%%m') AS ym", [latest])
-                month_str = c.fetchone()['ym']
-            # month bounds
-            c.execute("""SELECT CONCAT(%s,'-01') AS ms,
-                                LAST_DAY(CONCAT(%s,'-01')) AS me""", [month_str, month_str])
-            mb = c.fetchone(); m_start = str(mb['ms']); m_end = str(mb['me'])
-
-            # ============ WEEKLY: all weeks of the month as a matrix ============
-            if gran == 'week':
-                # per-week per-channel pct + n, within the month
-                c.execute("""
-                    SELECT week AS wk, channel_type, AVG(csat_score) pct, COUNT(*) n
-                    FROM csat_responses
-                    WHERE agent_email=%s AND performed_at_date BETWEEN %s AND %s
-                      AND week IS NOT NULL AND week<>''
-                    GROUP BY week, channel_type
-                """, [email, m_start, m_end])
-                wp = {}; wn = {}
-                for r in c.fetchall():
-                    wk = str(r['wk'])
-                    wp.setdefault(wk, {})[r['channel_type']] = {"pct": float(r['pct'] or 0), "n": int(r['n'])}
-                    wn[wk] = wn.get(wk, 0) + int(r['n'])
-                # per-week resolved weights, within the month
-                c.execute("""
-                    SELECT week AS wk, COALESCE(SUM(chat_resolved),0) cw,
-                           COALESCE(SUM(email_resolved),0) ew, COALESCE(SUM(phone_resolved),0) pw
-                    FROM resolve_counts
-                    WHERE agent_email=%s AND performed_at_date BETWEEN %s AND %s
-                      AND week IS NOT NULL AND week<>''
-                    GROUP BY week
-                """, [email, m_start, m_end])
-                ww = {}
-                for r in c.fetchall():
-                    ww[str(r['wk'])] = (int(r['cw']), int(r['ew']), int(r['pw']))
-
-                wk_keys = sorted(set(wp) | set(ww) | set(wn), key=lambda x: int(x) if str(x).isdigit() else 0)
-                weeks = []
-                for wk in wk_keys:
-                    cw, ew, pw = ww.get(wk, (0, 0, 0))
-                    mp = wp.get(wk, {}); d2 = cw + ew + pw
-                    resp_n = wn.get(wk, 0)
-                    if resp_n > 0 and d2:
-                        v = (mp.get('Chat',{}).get('pct',0)*cw + mp.get('Email',{}).get('pct',0)*ew
-                             + mp.get('Phone',{}).get('pct',0)*pw) / d2
-                        wv = round(v*100, 2)
-                    else:
-                        wv = None
-                    weeks.append({
-                        "week": wk, "label": "W"+wk, "weighted": wv, "responses": resp_n,
-                        "resolved": d2,
-                        "chat": chn(mp,'Chat',cw), "email": chn(mp,'Email',ew), "phone": chn(mp,'Phone',pw)
-                    })
-                return jsonify({"has_data": True, "range": "week", "month": month_str, "weeks": weeks})
-
-            # ============ DAY: a chosen week's days (or latest week of month) ============
-            if gran == 'day':
-                # pick the week: explicit qweek, else the latest week in this month that has data
-                if qweek:
-                    week_val = qweek
-                else:
-                    c.execute("""
-                        SELECT week FROM csat_responses
-                        WHERE agent_email=%s AND performed_at_date BETWEEN %s AND %s
-                          AND week IS NOT NULL AND week<>''
-                        ORDER BY CAST(week AS UNSIGNED) DESC LIMIT 1
-                    """, [email, m_start, m_end])
-                    wr = c.fetchone(); week_val = str(wr['week']) if wr else None
-
-                if not week_val:
-                    return jsonify({"has_data": True, "range": "day", "month": month_str, "week": None, "days": []})
-
-                # the actual dates in that week (within the month), then build a contiguous day list
-                c.execute("""
-                    SELECT MIN(performed_at_date) AS d0, MAX(performed_at_date) AS d1
-                    FROM csat_responses
-                    WHERE agent_email=%s AND week=%s AND performed_at_date BETWEEN %s AND %s
-                """, [email, week_val, m_start, m_end])
-                bd = c.fetchone()
-                if not bd or not bd['d0']:
-                    return jsonify({"has_data": True, "range": "day", "month": month_str, "week": week_val, "days": []})
-                d0 = bd['d0']; d1 = bd['d1']
-                day_list = []
-                cur = d0
-                while cur <= d1:
-                    day_list.append(cur); cur = cur + timedelta(days=1)
-                sd = str(d0); ed = str(d1)
-
-                c.execute("""
-                    SELECT performed_at_date AS d, channel_type, AVG(csat_score) pct, COUNT(*) n
-                    FROM csat_responses
-                    WHERE agent_email=%s AND week=%s AND performed_at_date BETWEEN %s AND %s
-                    GROUP BY performed_at_date, channel_type
-                """, [email, week_val, sd, ed])
-                dp = {}; dn = {}
-                for r in c.fetchall():
-                    dk = str(r['d'])
-                    dp.setdefault(dk, {})[r['channel_type']] = {"pct": float(r['pct'] or 0), "n": int(r['n'])}
-                    dn[dk] = dn.get(dk, 0) + int(r['n'])
-                c.execute("""
-                    SELECT performed_at_date AS d, COALESCE(SUM(chat_resolved),0) cw,
-                           COALESCE(SUM(email_resolved),0) ew, COALESCE(SUM(phone_resolved),0) pw
-                    FROM resolve_counts
-                    WHERE agent_email=%s AND week=%s AND performed_at_date BETWEEN %s AND %s
-                    GROUP BY performed_at_date
-                """, [email, week_val, sd, ed])
-                dw = {}
-                for r in c.fetchall():
-                    dw[str(r['d'])] = (int(r['cw']), int(r['ew']), int(r['pw']))
-
-                c.execute("SELECT CURDATE() AS today")
-                today = str(c.fetchone()['today'])
-                days = []
-                for dt in day_list:
-                    dk = str(dt)
-                    cw, ew, pw = dw.get(dk, (0, 0, 0))
-                    mp = dp.get(dk, {}); d2 = cw + ew + pw
-                    resp_n = dn.get(dk, 0)
-                    if resp_n > 0 and d2:
-                        v = (mp.get('Chat',{}).get('pct',0)*cw + mp.get('Email',{}).get('pct',0)*ew
-                             + mp.get('Phone',{}).get('pct',0)*pw) / d2
-                        wv = round(v*100, 2)
-                    else:
-                        wv = None
-                    days.append({
-                        "date": dk, "is_today": (dk == today), "weighted": wv, "responses": resp_n,
-                        "resolved": d2,
-                        "chat": chn(mp,'Chat',cw), "email": chn(mp,'Email',ew), "phone": chn(mp,'Phone',pw)
-                    })
-                return jsonify({"has_data": True, "range": "day", "month": month_str, "week": week_val, "days": days})
-
-            # ============ MONTHLY: the month's summary ============
-            sd = m_start; ed = m_end
-            c.execute("""
-                SELECT channel_type, AVG(csat_score) pct, COUNT(*) n
-                FROM csat_responses
-                WHERE agent_email=%s AND performed_at_date BETWEEN %s AND %s
-                GROUP BY channel_type
-            """, [email, sd, ed])
-            pct = {}; cnt = {}; total_resp = 0
-            for r in c.fetchall():
-                pct[r['channel_type']] = float(r['pct'] or 0)
-                cnt[r['channel_type']] = int(r['n'])
-                total_resp += int(r['n'])
-            c.execute("""
-                SELECT COALESCE(SUM(chat_resolved),0) chat, COALESCE(SUM(email_resolved),0) email,
-                       COALESCE(SUM(phone_resolved),0) phone
-                FROM resolve_counts
-                WHERE agent_email=%s AND performed_at_date BETWEEN %s AND %s
-            """, [email, sd, ed])
-            w = c.fetchone()
-            cw, ew, pw = int(w['chat']), int(w['email']), int(w['phone'])
-            denom = cw + ew + pw
-            weighted = ((pct.get('Chat',0)*cw + pct.get('Email',0)*ew + pct.get('Phone',0)*pw)/denom) if denom else 0
-
-        return jsonify({
-            "has_data": True, "range": "month", "month": month_str,
-            "window": {"start": sd, "end": ed},
-            "weighted": round(weighted*100, 2),
-            "total_responses": total_resp, "total_resolved": denom,
-            "by_channel": {
-                "Chat":  {"pct": round(pct.get('Chat',0)*100,2),  "resolved": cw, "responses": cnt.get('Chat',0)},
-                "Email": {"pct": round(pct.get('Email',0)*100,2), "resolved": ew, "responses": cnt.get('Email',0)},
-                "Phone": {"pct": round(pct.get('Phone',0)*100,2), "resolved": pw, "responses": cnt.get('Phone',0)},
-            }
-        })
-    finally:
-        cdb.close()
-
-# ---- REPLACE api_my_csat_responses with this version ----
-# Agent-scoped. Filters by: single ?date=, OR ?start=&end= range, OR ?week=&month= (week column within a month).
-# Optional ?channel=. No qa_comment / qa_name.
-
-@app.route('/api/my-csat/responses')
-@login_required
-def api_my_csat_responses():
-    email = (session.get('user', {}) or {}).get('email', '')
-    if not email:
-        return jsonify({"error": "no session email"}), 400
- 
-    date    = (request.args.get('date') or '').strip()
-    start   = (request.args.get('start') or '').strip()
-    end     = (request.args.get('end') or '').strip()
-    week    = (request.args.get('week') or '').strip()
-    month   = (request.args.get('month') or '').strip()   # 'YYYY-MM', used with week
-    channel = (request.args.get('channel') or '').strip()
- 
-    conds = ["agent_email = %s"]
-    params = [email]
- 
-    if date:
-        conds.append("performed_at_date = %s"); params.append(date)
-    elif week and month:
-        # week column within the given calendar month
-        conds.append("week = %s"); params.append(week)
-        conds.append("DATE_FORMAT(performed_at_date,'%%Y-%%m') = %s"); params.append(month)
-    elif start and end:
-        conds.append("performed_at_date BETWEEN %s AND %s"); params += [start, end]
-    else:
-        return jsonify({"error": "date, week+month, or start+end required"}), 400
- 
-    if channel in ('Chat', 'Email', 'Phone'):
-        conds.append("channel_type = %s"); params.append(channel)
- 
-    cdb = get_central_db()
-    try:
-        with cdb.cursor() as c:
-            c.execute(f"""
-                SELECT performed_at_date, ticket_id, channel_type, csat_rate, csat_score
-                FROM csat_responses
-                WHERE {' AND '.join(conds)}
-                ORDER BY performed_at_date DESC, channel_type, ticket_id
-            """, params)
-            rows = []
-            for r in c.fetchall():
-                rows.append({
-                    "date": str(r['performed_at_date']) if r['performed_at_date'] else '',
-                    "ticket_id": r['ticket_id'] or '',
-                    "channel": r['channel_type'] or '',
-                    "rate": r['csat_rate'] or '',
-                    "score": r['csat_score'],
-                })
-        return jsonify({"responses": rows})
-    finally:
-        cdb.close()
-
-# ---- Add to app.py near api_my_csat ----
-# Agent-scoped period lists for the dashboard dropdowns. Session email only.
-# Returns the months the agent has data in, and (if ?month=YYYY-MM given) the
-# weeks within that month that have data.
-
-@app.route('/api/my-csat/periods')
-@login_required
-def api_my_csat_periods():
-    email = (session.get('user', {}) or {}).get('email', '')
-    if not email:
-        return jsonify({"error": "no session email"}), 400
-
-    month = (request.args.get('month') or '').strip()   # optional 'YYYY-MM'
-
-    cdb = get_central_db()
-    try:
-        with cdb.cursor() as c:
-            # Distinct months (YYYY-MM) the agent has responses in, newest first.
-            c.execute("""
-                SELECT DISTINCT DATE_FORMAT(performed_at_date,'%%Y-%%m') AS ym
-                FROM csat_responses
-                WHERE agent_email=%s AND performed_at_date IS NOT NULL
-                ORDER BY ym DESC
-            """, [email])
-            months = [r['ym'] for r in c.fetchall() if r['ym']]
-
-            weeks = []
-            if month:
-                # weeks (from the `week` column) that have data within that calendar month
-                c.execute("""
-                    SELECT DISTINCT week
-                    FROM csat_responses
-                    WHERE agent_email=%s
-                      AND DATE_FORMAT(performed_at_date,'%%Y-%%m')=%s
-                      AND week IS NOT NULL AND week<>''
-                    ORDER BY CAST(week AS UNSIGNED) DESC
-                """, [email, month])
-                weeks = [str(r['week']) for r in c.fetchall()]
-
-        return jsonify({"months": months, "weeks": weeks})
-    finally:
-        cdb.close()
-
-app.register_blueprint(survey_bp)
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0', port=5001)

@@ -24,6 +24,10 @@
     <option value="">All Groups</option>
     {% for g in groups %}<option value="{{ g }}" {% if group_filter==g %}selected{% endif %}>{{ g }}</option>{% endfor %}
   </select>
+  <select id="batchFilter" class="form-select form-select-sm" style="width:auto;" onchange="filterRows()">
+    <option value="">All Batches</option>
+    {% for b in batches %}<option value="{{ b }}">{{ b }}</option>{% endfor %}
+  </select>
   <select id="overrideFilter" class="form-select form-select-sm" style="width:auto;" onchange="filterRows()">
     <option value="">All</option>
     <option value="override">Has Override</option>
@@ -50,6 +54,7 @@
 
     <!-- Select All -->
     <label class="mb-0 ms-2"><input type="checkbox" id="selectAll"> Select All</label>
+    <span class="badge bg-primary ms-2" id="checkedCount">0 selected</span>
   </div>
 
   <div id="empList">
@@ -59,6 +64,7 @@
     <div class="emp-row {% if has_override %}has-override{% endif %}"
          data-name="{{ e.emp_lastname }} {{ e.emp_firstname }}"
          data-group="{{ e.group_name or '' }}"
+         data-batch="{{ e.batch or '' }}"
          data-state="{{ 'override' if has_override else ('ohrm' if has_ohrm else 'none') }}">
       
       <div style="min-width:220px;">
@@ -96,23 +102,46 @@
 function filterRows() {
   const q       = document.getElementById('empSearch').value.toLowerCase();
   const group   = document.getElementById('groupFilter').value.toLowerCase();
+  const batch   = document.getElementById('batchFilter').value.toLowerCase();
   const state   = document.getElementById('overrideFilter').value;
   document.querySelectorAll('#empList .emp-row').forEach(row => {
     const name  = row.dataset.name.toLowerCase();
     const grp   = row.dataset.group.toLowerCase();
+    const bat   = (row.dataset.batch || '').toLowerCase();
     const st    = row.dataset.state;
     const ok = (!q || name.includes(q)) &&
                (!group || grp === group) &&
+               (!batch || bat === batch) &&
                (!state || st === state);
     row.style.display = ok ? '' : 'none';
   });
 }
 
 // SELECT ALL CHECKBOX
+function updateCheckedCount() {
+  const n = document.querySelectorAll('input[name="employee_ids"]:checked').length;
+  const el = document.getElementById('checkedCount');
+  if (el) el.textContent = n + ' selected';
+}
 document.getElementById('selectAll').addEventListener('change', function() {
-  const checkboxes = document.querySelectorAll('input[name="employee_ids"]');
-  checkboxes.forEach(cb => cb.checked = this.checked);
+  const checked = this.checked;
+  document.querySelectorAll('input[name="employee_ids"]').forEach(cb => {
+    const row = cb.closest('.emp-row');
+    // Only toggle checkboxes whose row is currently visible (not filtered out)
+    if (row && row.style.display !== 'none') {
+      cb.checked = checked;
+    }
+  });
+  updateCheckedCount();
 });
+// Update count whenever any row checkbox toggles (event delegation)
+document.addEventListener('change', function(e) {
+  if (e.target && e.target.matches('input[name="employee_ids"]')) {
+    updateCheckedCount();
+  }
+});
+// Initialize on load
+document.addEventListener('DOMContentLoaded', updateCheckedCount);
 
 // Submit batch assign
 function submitBatchAssign() {
