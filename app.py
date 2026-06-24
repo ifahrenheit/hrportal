@@ -5181,10 +5181,10 @@ def file_material():
                                     payment_reason = 'Free item already claimed within the last 2 years'
                                     amount_due = float(sp['price'])
                         auto_ids = [x.strip() for x in os.getenv("AUTO_RECOMMEND_IDS","").split(",") if x.strip()]
-                    if employee_id in auto_ids:
-                        c.execute('INSERT INTO material_requests (employee_id, employee_name, request_group_id, category, item_name, quantity, reason, date_needed, status, som_name, is_special, payment_required, payment_reason, amount_due) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,"Recommended",%s,%s,%s,%s,%s)', (employee_id, emp_name, group_id, cat, iname, qty, reason, date_needed, emp_name, is_special, payment_required, payment_reason, amount_due))
-                    else:
-                        c.execute('INSERT INTO material_requests (employee_id, employee_name, request_group_id, category, item_name, quantity, reason, date_needed, status, is_special, payment_required, payment_reason, amount_due) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,"Pending",%s,%s,%s,%s)', (employee_id, emp_name, group_id, cat, iname, qty, reason, date_needed, is_special, payment_required, payment_reason, amount_due))
+                        if employee_id in auto_ids:
+                            c.execute('INSERT INTO material_requests (employee_id, employee_name, request_group_id, category, item_name, quantity, reason, date_needed, status, som_name, is_special, payment_required, payment_reason, amount_due) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,"Recommended",%s,%s,%s,%s,%s)', (employee_id, emp_name, group_id, cat, iname, qty, reason, date_needed, emp_name, is_special, payment_required, payment_reason, amount_due))
+                        else:
+                            c.execute('INSERT INTO material_requests (employee_id, employee_name, request_group_id, category, item_name, quantity, reason, date_needed, status, is_special, payment_required, payment_reason, amount_due) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,"Pending",%s,%s,%s,%s)', (employee_id, emp_name, group_id, cat, iname, qty, reason, date_needed, is_special, payment_required, payment_reason, amount_due))
                     cdb.commit()
                     grp_som_map = {}
                     for _entry in os.getenv("GROUP_SOM_OVERRIDES","").split(","):

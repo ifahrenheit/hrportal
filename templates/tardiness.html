@@ -144,15 +144,6 @@
 
     <input type="hidden" name="sort" value="{{ current_sort }}">
     <input type="hidden" name="dir" value="{{ current_dir }}">
-    <button type="submit" class="btn btn-primary btn-sm" id="viewBtn">
-      <i class="bi bi-search"></i>
-      <span class="btn-label">View</span>
-      <span class="spinner-border spinner-border-sm d-none" role="status" aria-hidden="true"></span>
-    </button>
-
-    <a href="#" id="exportBtn" class="btn btn-outline-secondary btn-sm">
-      <i class="bi bi-download"></i> Export CSV
-    </a>
 
     <button type="button" id="copyTableBtn" class="btn btn-outline-secondary btn-sm">
       <i class="bi bi-clipboard"></i> <span id="copyTableBtnLabel">Copy Table</span>
@@ -489,6 +480,12 @@ document.addEventListener('DOMContentLoaded', function () {
     form.submit();
   });
 
+  // Auto-submit whenever From, To, or Department is changed manually -
+  // no separate "View" button needed.
+  dateFromInput?.addEventListener('change', () => form.submit());
+  dateToInput?.addEventListener('change', () => form.submit());
+  document.getElementById('departmentSelect')?.addEventListener('change', () => form.submit());
+
   // Live employee name filter (client-side, no reload)
   const searchInput = document.getElementById('employeeSearch');
   const rows = Array.from(document.querySelectorAll('#tardinessTable tbody tr[data-name]'));
@@ -527,20 +524,6 @@ document.addEventListener('DOMContentLoaded', function () {
     });
   });
 
-  // Export CSV button: build the export URL from the current filters
-  document.getElementById('exportBtn')?.addEventListener('click', function (e) {
-    e.preventDefault();
-    const params = new URLSearchParams({
-      date_from: dateFromInput.value,
-      date_to: dateToInput.value,
-      view: document.querySelector('input[name="view"]').value,
-      sort: document.querySelector('input[name="sort"]').value,
-      dir: document.querySelector('input[name="dir"]').value,
-      department: document.getElementById('departmentSelect').value,
-    });
-    window.location.href = "{{ url_for('tardiness.tardiness_export') }}?" + params.toString();
-  });
-
   // Copy Table button: copies the currently VISIBLE table (header + rows
   // not hidden by the search filter) as tab-separated text, so it pastes
   // cleanly into Excel/Sheets/Slack/etc.
@@ -575,14 +558,6 @@ document.addEventListener('DOMContentLoaded', function () {
     }).catch(() => {
       alert('Could not copy to clipboard. Your browser may be blocking clipboard access on this page.');
     });
-  });
-
-  // Loading spinner on the View button while the page reloads
-  form.addEventListener('submit', function () {
-    const btn = document.getElementById('viewBtn');
-    btn?.querySelector('.btn-label')?.classList.add('d-none');
-    btn?.querySelector('.spinner-border')?.classList.remove('d-none');
-    btn.disabled = true;
   });
 });
 </script>

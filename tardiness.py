@@ -17,11 +17,9 @@ Register in app.py:
 """
 
 import re
-import csv
-import io
 from datetime import datetime, date, timedelta
 
-from flask import Blueprint, render_template, request, Response, session, redirect, url_for, flash
+from flask import Blueprint, render_template, request, session, redirect, url_for, flash
 from db_core import get_db_connection
 from orangehrm_db import get_orangehrm_connection
 
@@ -632,92 +630,4 @@ def tardiness_page():
         next_dir=next_dir,
         available_departments=available_departments,
         department_filter=department_filter,
-    )
-
-
-@tardiness_bp.route("/export", methods=["GET"])
-def tardiness_export():
-    denied = _check_tardiness_permission()
-    if denied:
-        return denied
-    """
-    Export the currently filtered/sorted view as CSV.
-    Honors the same date_from/date_to / sort / dir / department query
-    params as the page, so clicking Export downloads exactly what's on
-    screen.
-    """
-    default_period_start, default_period_end = get_default_payroll_period()
-
-    date_from_str = request.args.get("date_from", "").strip()
-    date_to_str = request.args.get("date_to", "").strip()
-
-    try:
-        date_from = datetime.strptime(date_from_str, "%Y-%m-%d").date() if date_from_str else default_period_start
-        date_to = datetime.strptime(date_to_str, "%Y-%m-%d").date() if date_to_str else default_period_end
-    except ValueError:
-        date_from, date_to = default_period_start, default_period_end
-
-    sort_by = request.args.get("sort", "DATE")
-    direction = request.args.get("dir", "asc")
-    department_filter = request.args.get("department", "").strip()
-    view = request.args.get("view", "late")
-    if view not in ("late", "triggers"):
-        view = "late"
-
-    if view == "triggers":
-        events = get_trigger_events_for_range(date_from, date_to)
-        if department_filter:
-            events = [e for e in events if (e["department"] or "") == department_filter]
-        events = _sort_trigger_events(events, sort_by, direction)
-
-        output = io.StringIO()
-        writer = csv.writer(output)
-        writer.writerow([
-            "Date", "Trigger Type", "Employee", "Team Lead", "Department", "Detail",
-        ])
-        for e in events:
-            writer.writerow([
-                e["event_date"].isoformat(),
-                "3+ Lates" if e["trigger_type"] == "COUNT" else "31+ Minutes",
-                f'{e["lname"]}, {e["fname"]}',
-                e["team_lead"] or "",
-                e["department"] or "",
-                e["detail"],
-            ])
-
-        filename = f"tardiness_memo_triggers_{date_from.isoformat()}_to_{date_to.isoformat()}.csv"
-        return Response(
-            output.getvalue(),
-            mimetype="text/csv",
-            headers={"Content-Disposition": f"attachment; filename={filename}"},
-        )
-
-    records = get_late_records_for_range(date_from, date_to)
-    if department_filter:
-        records = [r for r in records if (r["department"] or "") == department_filter]
-    records = _sort_late_records(records, sort_by, direction)
-
-    output = io.StringIO()
-    writer = csv.writer(output)
-    writer.writerow([
-        "Date", "Employee", "Team Lead", "Department", "Shift",
-        "Scheduled Start", "Time In", "Minutes Late",
-    ])
-    for r in records:
-        writer.writerow([
-            r["record_date"].isoformat(),
-            f'{r["lname"]}, {r["fname"]}',
-            r["team_lead"] or "",
-            r["department"] or "",
-            r["shift_time_raw"] or "",
-            r["shift_start"].strftime("%I:%M %p") if r["shift_start"] else "",
-            r["time_in"].strftime("%I:%M %p") if r["time_in"] else "",
-            r["minutes_late"] if r["minutes_late"] is not None else "",
-        ])
-
-    filename = f"tardiness_late_{date_from.isoformat()}_to_{date_to.isoformat()}.csv"
-    return Response(
-        output.getvalue(),
-        mimetype="text/csv",
-        headers={"Content-Disposition": f"attachment; filename={filename}"},
     )
