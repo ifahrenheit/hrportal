@@ -236,7 +236,21 @@
             </div>
           </td>
           <td>{{ e.team_lead or '—' }}</td>
-          <td>{{ e.detail }}</td>
+          <td>
+            {% if e.trigger_type == 'COUNT' %}
+            <strong>{{ e.trigger_total }} lates</strong>
+            {% else %}
+            <strong>{{ e.trigger_total }} min total</strong>
+            {% endif %}
+            <details style="margin-top:2px;">
+              <summary onclick="event.stopPropagation();" style="cursor:pointer;color:var(--accent);font-size:.8rem;">Breakdown</summary>
+              <ul style="margin:.4rem 0 0;padding-left:1.1rem;font-size:.82rem;color:var(--text-muted);">
+                {% for entry in e.breakdown %}
+                <li>{{ entry.date.strftime('%b %d, %Y') }} - {{ entry.minutes }} min{% if entry.time_in %} (Time In: {{ entry.time_in }}){% endif %}</li>
+                {% endfor %}
+              </ul>
+            </details>
+          </td>
         </tr>
         {% else %}
         <tr>

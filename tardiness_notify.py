@@ -28,9 +28,10 @@ is the expected operating mode.
 """
 
 import os
+import json
 import smtplib
 import sys
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 
@@ -140,12 +141,35 @@ def build_recipient_list(cur, companyid):
 # Email content
 # ---------------------------------------------------------------------------
 
-def build_count_email(fname, lname, companyid, period_start, period_end, total_count_in_cycle, tl_email):
+def _format_breakdown_html(breakdown):
+    """
+    breakdown is a list of dicts: {date, minutes, time_in}
+    Renders as an HTML list, e.g.:
+        June 5, 2026 - 12 min (Time In: 12:12 PM)
+        June 7, 2026 - 1 min (Time In: 12:01 PM)
+        June 12, 2026 - 18 min (Time In: 12:18 PM)
+    """
+    if not breakdown:
+        return "<p style='color:#888;'>No breakdown available.</p>"
+
+    items = ""
+    for entry in breakdown:
+        d = entry["date"]
+        d_str = d.strftime("%B %d, %Y") if hasattr(d, "strftime") else str(d)
+        time_in_str = entry.get("time_in") or "—"
+        items += f"<li>{d_str} - <strong>{entry['minutes']} min</strong> (Time In: {time_in_str})</li>"
+
+    return f"<ul style='margin:8px 0;padding-left:20px;'>{items}</ul>"
+
+
+def build_count_email(fname, lname, companyid, period_start, period_end, total_count_in_cycle, tl_email, breakdown=None):
     subject = f"Tardiness Memo: {lname}, {fname} - 3 Lates Recorded ({period_start} to {period_end})"
     body = f"""
     <p>This is an automated tardiness memo notice.</p>
     <p><strong>{lname}, {fname}</strong> ({companyid}) has reached <strong>3 late instances</strong>
     within the current payroll cycle ({period_start.strftime('%B %d')} - {period_end.strftime('%B %d, %Y')}).</p>
+    <p>Breakdown of the 3 late instances triggering this memo:</p>
+    {_format_breakdown_html(breakdown)}
     <p>Total late instances so far this cycle: <strong>{total_count_in_cycle}</strong></p>
     <p>Team Lead on file: {tl_email or 'Not found in tl_view_map'}</p>
     <hr>
@@ -154,12 +178,15 @@ def build_count_email(fname, lname, companyid, period_start, period_end, total_c
     return subject, body
 
 
-def build_minutes_email(fname, lname, companyid, period_start, period_end, total_minutes_in_cycle, tl_email):
+def build_minutes_email(fname, lname, companyid, period_start, period_end, total_minutes_in_cycle, tl_email, breakdown=None):
     subject = f"Tardiness Memo: {lname}, {fname} - 31+ Minutes Accumulated ({period_start} to {period_end})"
+    triggering_minutes = sum(entry["minutes"] for entry in (breakdown or []))
     body = f"""
     <p>This is an automated tardiness memo notice.</p>
     <p><strong>{lname}, {fname}</strong> ({companyid}) has accumulated <strong>31 or more minutes</strong>
     of total tardiness within the current payroll cycle ({period_start.strftime('%B %d')} - {period_end.strftime('%B %d, %Y')}).</p>
+    <p><strong>{triggering_minutes} minutes total</strong> - breakdown of the late instances triggering this memo:</p>
+    {_format_breakdown_html(breakdown)}
     <p>Total minutes late so far this cycle: <strong>{total_minutes_in_cycle}</strong></p>
     <p>Team Lead on file: {tl_email or 'Not found in tl_view_map'}</p>
     <hr>
@@ -179,6 +206,9 @@ def get_or_create_state(cur, personid, period_start):
     )
     row = cur.fetchone()
     if row:
+        # Deserialize breakdown JSON, converting date strings back to date objects
+        row["count_breakdown"] = _deserialize_breakdown(row.get("count_breakdown"))
+        row["minutes_breakdown"] = _deserialize_breakdown(row.get("minutes_breakdown"))
         return row
     return {
         "personid": personid,
@@ -190,7 +220,40 @@ def get_or_create_state(cur, personid, period_start):
         "last_processed_date": None,
         "count_triggers_sent": 0,
         "minutes_triggers_sent": 0,
+        "count_breakdown": [],
+        "minutes_breakdown": [],
     }
+
+
+def _serialize_breakdown(breakdown):
+    """Converts a list of {date, minutes, time_in} dicts to a JSON string for storage."""
+    serializable = []
+    for entry in breakdown:
+        d = entry["date"]
+        serializable.append({
+            "date": d.isoformat() if hasattr(d, "isoformat") else str(d),
+            "minutes": entry["minutes"],
+            "time_in": entry.get("time_in"),
+        })
+    return json.dumps(serializable)
+
+
+def _deserialize_breakdown(raw):
+    """Converts a stored JSON string back into a list of {date, minutes, time_in} dicts."""
+    if not raw:
+        return []
+    try:
+        items = json.loads(raw)
+    except (TypeError, ValueError):
+        return []
+    result = []
+    for entry in items:
+        try:
+            d = date.fromisoformat(entry["date"])
+        except (KeyError, ValueError, TypeError):
+            continue
+        result.append({"date": d, "minutes": entry.get("minutes"), "time_in": entry.get("time_in")})
+    return result
 
 
 def save_state(cur, state):
@@ -199,22 +262,25 @@ def save_state(cur, state):
         INSERT INTO tardiness_cycle_state
             (personid, period_start, count_since_reset, minutes_since_reset,
              total_count_in_cycle, total_minutes_in_cycle, last_processed_date,
-             count_triggers_sent, minutes_triggers_sent)
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+             count_triggers_sent, minutes_triggers_sent, count_breakdown, minutes_breakdown)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         ON DUPLICATE KEY UPDATE
             count_since_reset=%s, minutes_since_reset=%s,
             total_count_in_cycle=%s, total_minutes_in_cycle=%s,
-            last_processed_date=%s, count_triggers_sent=%s, minutes_triggers_sent=%s
+            last_processed_date=%s, count_triggers_sent=%s, minutes_triggers_sent=%s,
+            count_breakdown=%s, minutes_breakdown=%s
         """,
         (
             state["personid"], state["period_start"],
             state["count_since_reset"], state["minutes_since_reset"],
             state["total_count_in_cycle"], state["total_minutes_in_cycle"],
             state["last_processed_date"], state["count_triggers_sent"], state["minutes_triggers_sent"],
+            _serialize_breakdown(state["count_breakdown"]), _serialize_breakdown(state["minutes_breakdown"]),
 
             state["count_since_reset"], state["minutes_since_reset"],
             state["total_count_in_cycle"], state["total_minutes_in_cycle"],
             state["last_processed_date"], state["count_triggers_sent"], state["minutes_triggers_sent"],
+            _serialize_breakdown(state["count_breakdown"]), _serialize_breakdown(state["minutes_breakdown"]),
         ),
     )
 
@@ -243,6 +309,7 @@ def process_day(process_date: date):
         companyid = r["companyid"]
         fname, lname = r["fname"], r["lname"]
         minutes_late = r["minutes_late"] or 0
+        time_in_str = r["time_in"].strftime("%I:%M %p") if r.get("time_in") else None
 
         state = get_or_create_state(cur, personid, period_start)
 
@@ -252,11 +319,15 @@ def process_day(process_date: date):
             print(f"[tardiness_notify] {lname}, {fname} already processed for {process_date}, skipping.")
             continue
 
+        entry = {"date": process_date, "minutes": minutes_late, "time_in": time_in_str}
+
         state["count_since_reset"] += 1
         state["minutes_since_reset"] += minutes_late
         state["total_count_in_cycle"] += 1
         state["total_minutes_in_cycle"] += minutes_late
         state["last_processed_date"] = process_date
+        state["count_breakdown"].append(entry)
+        state["minutes_breakdown"].append(entry)
 
         recipients, tl_email = build_recipient_list(cur, companyid)
 
@@ -264,19 +335,23 @@ def process_day(process_date: date):
             subject, body = build_count_email(
                 fname, lname, companyid, period_start, period_end,
                 state["total_count_in_cycle"], tl_email,
+                breakdown=state["count_breakdown"],
             )
             send_email(recipients, subject, body)
             state["count_since_reset"] = 0
             state["count_triggers_sent"] += 1
+            state["count_breakdown"] = []
 
         if state["minutes_since_reset"] >= MINUTES_THRESHOLD:
             subject, body = build_minutes_email(
                 fname, lname, companyid, period_start, period_end,
                 state["total_minutes_in_cycle"], tl_email,
+                breakdown=state["minutes_breakdown"],
             )
             send_email(recipients, subject, body)
             state["minutes_since_reset"] = 0
             state["minutes_triggers_sent"] += 1
+            state["minutes_breakdown"] = []
 
         save_state(cur, state)
 
@@ -321,6 +396,7 @@ def dry_run_range(date_from: date, date_to: date):
             companyid = r["companyid"]
             fname, lname = r["fname"], r["lname"]
             minutes_late = r["minutes_late"] or 0
+            time_in_str = r["time_in"].strftime("%I:%M %p") if r.get("time_in") else None
 
             if personid not in sim_state:
                 sim_state[personid] = {
@@ -328,28 +404,36 @@ def dry_run_range(date_from: date, date_to: date):
                     "count_since_reset": 0, "minutes_since_reset": 0,
                     "total_count_in_cycle": 0, "total_minutes_in_cycle": 0,
                     "count_triggers_sent": 0, "minutes_triggers_sent": 0,
+                    "count_breakdown": [], "minutes_breakdown": [],
                 }
             s = sim_state[personid]
+            entry = {"date": current, "minutes": minutes_late, "time_in": time_in_str}
             s["count_since_reset"] += 1
             s["minutes_since_reset"] += minutes_late
             s["total_count_in_cycle"] += 1
             s["total_minutes_in_cycle"] += minutes_late
+            s["count_breakdown"].append(entry)
+            s["minutes_breakdown"].append(entry)
 
             if s["count_since_reset"] >= COUNT_THRESHOLD:
                 triggered_events.append({
                     "date": current, "type": "COUNT", "fname": fname, "lname": lname,
                     "companyid": companyid, "total_count_in_cycle": s["total_count_in_cycle"],
+                    "breakdown": list(s["count_breakdown"]),
                 })
                 s["count_since_reset"] = 0
                 s["count_triggers_sent"] += 1
+                s["count_breakdown"] = []
 
             if s["minutes_since_reset"] >= MINUTES_THRESHOLD:
                 triggered_events.append({
                     "date": current, "type": "MINUTES", "fname": fname, "lname": lname,
                     "companyid": companyid, "total_minutes_in_cycle": s["total_minutes_in_cycle"],
+                    "breakdown": list(s["minutes_breakdown"]),
                 })
                 s["minutes_since_reset"] = 0
                 s["minutes_triggers_sent"] += 1
+                s["minutes_breakdown"] = []
 
         current += timedelta(days=1)
 
@@ -363,8 +447,12 @@ def dry_run_range(date_from: date, date_to: date):
                 print(f"  [{ev['date']}] COUNT trigger: {ev['lname']}, {ev['fname']} ({ev['companyid']}) "
                       f"- {ev['total_count_in_cycle']} total lates in cycle so far")
             else:
+                triggering_minutes = sum(e["minutes"] for e in ev["breakdown"])
                 print(f"  [{ev['date']}] MINUTES trigger: {ev['lname']}, {ev['fname']} ({ev['companyid']}) "
-                      f"- {ev['total_minutes_in_cycle']} total minutes in cycle so far")
+                      f"- {triggering_minutes} minutes total - {ev['total_minutes_in_cycle']} total minutes in cycle so far")
+            for entry in ev["breakdown"]:
+                print(f"      {entry['date'].strftime('%B %d, %Y')} - {entry['minutes']}min "
+                      f"(Time In: {entry['time_in'] or '—'})")
 
     print()
     print("=== Final per-employee totals (in-memory, NOT saved) ===")

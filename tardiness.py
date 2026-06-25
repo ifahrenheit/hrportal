@@ -478,6 +478,7 @@ def get_trigger_events_for_range(date_from: date, date_to: date):
         for r in late_records:
             personid = r["personid"]
             minutes_late = r["minutes_late"] or 0
+            time_in_str = r["time_in"].strftime("%I:%M %p") if r.get("time_in") else None
 
             if personid not in sim_state:
                 sim_state[personid] = {
@@ -486,12 +487,16 @@ def get_trigger_events_for_range(date_from: date, date_to: date):
                     "batch": r.get("batch"), "account": r.get("account"), "email": r.get("email"),
                     "count_since_reset": 0, "minutes_since_reset": 0,
                     "total_count_in_cycle": 0, "total_minutes_in_cycle": 0,
+                    "count_breakdown": [], "minutes_breakdown": [],
                 }
             s = sim_state[personid]
+            entry = {"date": current, "minutes": minutes_late, "time_in": time_in_str}
             s["count_since_reset"] += 1
             s["minutes_since_reset"] += minutes_late
             s["total_count_in_cycle"] += 1
             s["total_minutes_in_cycle"] += minutes_late
+            s["count_breakdown"].append(entry)
+            s["minutes_breakdown"].append(entry)
 
             if s["count_since_reset"] >= _TRIGGER_COUNT_THRESHOLD:
                 events.append({
@@ -501,8 +506,11 @@ def get_trigger_events_for_range(date_from: date, date_to: date):
                     "batch": s["batch"], "account": s["account"], "email": s["email"],
                     "detail": f"{s['total_count_in_cycle']} lates in cycle",
                     "value": s["total_count_in_cycle"],
+                    "breakdown": list(s["count_breakdown"]),
+                    "trigger_total": len(s["count_breakdown"]),
                 })
                 s["count_since_reset"] = 0
+                s["count_breakdown"] = []
 
             if s["minutes_since_reset"] >= _TRIGGER_MINUTES_THRESHOLD:
                 events.append({
@@ -512,8 +520,11 @@ def get_trigger_events_for_range(date_from: date, date_to: date):
                     "batch": s["batch"], "account": s["account"], "email": s["email"],
                     "detail": f"{s['total_minutes_in_cycle']} min in cycle",
                     "value": s["total_minutes_in_cycle"],
+                    "breakdown": list(s["minutes_breakdown"]),
+                    "trigger_total": sum(e["minutes"] for e in s["minutes_breakdown"]),
                 })
                 s["minutes_since_reset"] = 0
+                s["minutes_breakdown"] = []
 
         current += timedelta(days=1)
 
