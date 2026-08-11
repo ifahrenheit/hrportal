@@ -16,14 +16,14 @@ from datetime import datetime
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from dotenv import load_dotenv
-load_dotenv()
+load_dotenv('/var/www/html/leavesystem/.env')
 
 # ─── Config ───────────────────────────────────────────────────────────────────
 DB = dict(host='localhost', user='root', password=os.environ.get('DB_PASSWORD'),
           database='central_db', cursorclass=pymysql.cursors.DictCursor, charset='utf8mb4')
 
 SMTP_HOST = 'cohere.ph';  SMTP_PORT = 2525
-SMTP_USER = 'send_email@cohere.ph';  SMTP_PASS = '***REMOVED***'
+SMTP_USER = 'send_email@cohere.ph';  SMTP_PASS = os.environ.get('SMTP_PASSWORD')
 SMTP_FROM = 'wfm@cohere.ph';  SMTP_FROM_NAME = 'Incident Report System'
 IR_EMAIL_TO  = 'managers@cohere.ph'
 IR_EMAIL_BCC = 'andrewvincentt@gmail.com'
@@ -141,7 +141,7 @@ def send_reminder(incidents):
         msg.attach(MIMEText(body, 'html'))
         all_rcpt = list(recipients) + [IR_EMAIL_BCC]
         with smtplib.SMTP(SMTP_HOST, SMTP_PORT) as s:
-            s.starttls(); s.login(SMTP_USER, SMTP_PASS)
+            s.login(SMTP_USER, SMTP_PASS)
             s.sendmail(SMTP_FROM, all_rcpt, msg.as_string())
         return True
     except Exception as e:
