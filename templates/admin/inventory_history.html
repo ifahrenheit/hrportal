@@ -1,0 +1,71 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="container-fluid py-4">
+  <div class="row align-items-center mb-3">
+    <div class="col-md-8">
+      <h4 class="mb-0">Inventory — Historical Snapshot</h4>
+      <small class="text-muted">Item details shown as of today; stock quantity reconstructed as of the selected date.</small>
+    </div>
+    <div class="col-md-4 text-end">
+      <a href="{{ url_for('admin_inventory') }}" class="btn btn-sm btn-outline-secondary">
+        <i class="bi bi-arrow-left me-1"></i>Back to Inventory
+      </a>
+    </div>
+  </div>
+
+  <div class="card mb-3">
+    <div class="card-body d-flex align-items-center gap-2 flex-wrap">
+      <form method="get" class="d-flex align-items-center gap-2">
+        <label class="mb-0 small text-muted">As of date:</label>
+        <input type="date" name="date" class="form-control form-control-sm" style="width:auto"
+               value="{{ target_date.strftime('%Y-%m-%d') }}" max="{{ today.strftime('%Y-%m-%d') }}">
+        <button class="btn btn-sm btn-primary">View</button>
+      </form>
+      <div class="ms-auto d-flex gap-2">
+        <a href="{{ url_for('inventory_pdf_as_of', date=target_date.strftime('%Y-%m-%d')) }}" class="btn btn-sm btn-outline-danger">
+          <i class="bi bi-file-earmark-pdf me-1"></i>Export PDF
+        </a>
+        <a href="{{ url_for('inventory_excel_as_of', date=target_date.strftime('%Y-%m-%d')) }}" class="btn btn-sm btn-outline-success">
+          <i class="bi bi-file-earmark-excel me-1"></i>Export Excel
+        </a>
+      </div>
+    </div>
+  </div>
+
+  <div class="table-responsive">
+    <table class="table table-sm table-hover align-middle">
+      <thead class="table-light">
+        <tr>
+          <th>Category</th>
+          <th>Item Name</th>
+          <th>Stock (as of {{ target_date.strftime('%b %d, %Y') }})</th>
+          <th>Unit</th>
+          <th>Min Alert</th>
+          <th>Supplier</th>
+          <th>Location</th>
+          <th>Cost</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in items %}
+        <tr class="{{ 'table-danger' if r.stock_as_of <= 0 else ('table-warning' if r.stock_as_of <= r.min_stock_alert else '') }}">
+          <td><span class="badge bg-secondary">{{ r.category }}</span></td>
+          <td>{{ r.item_name }}</td>
+          <td>
+            <span class="badge {{ 'bg-danger' if r.stock_as_of <= 0 else ('bg-warning text-dark' if r.stock_as_of <= r.min_stock_alert else 'bg-success') }}">
+              {{ r.stock_as_of }} pcs
+            </span>
+          </td>
+          <td>{{ r.unit or '' }}</td>
+          <td>{{ r.min_stock_alert }}</td>
+          <td>{{ r.supplier or '—' }}</td>
+          <td>{{ r.location or '—' }}</td>
+          <td>{{ '₱%.2f'|format(r.unit_cost) if r.unit_cost else '—' }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <p class="text-muted small">{{ items|length }} items as of {{ target_date.strftime('%B %d, %Y') }} (items created after this date are excluded). Supplier, location, and cost reflect current values — only stock quantity is historically reconstructed.</p>
+</div>
+{% endblock %}

@@ -1,0 +1,1048 @@
+{# ================================================================
+   _topnav.html - top navigation for hrportal
+   Generated from nav-spec.md. Included from base.html when
+   nav_style == 'topnav'. Rendered inside {% if session.get('user') %}.
+
+   Gate shorthand defined below; every item's effective visibility
+   equals its sidebar equivalent (wrapper AND section AND item).
+   Badge element IDs preserved: qaUpdatesBadge, pendingBadge,
+   fileRequestsBadge, materialBadge, materialAdminBadge,
+   materialFinalBadge. The refresh scripts in base.html are untouched.
+   ================================================================ #}
+
+{% set P = session.get('permissions', {}) %}
+{% set ADMIN = session.get('is_admin') %}
+{% set WRAP = ADMIN or session.get('is_sub_admin') %}
+{% set SUPER = session.get('is_supervisor') %}
+{% set TL = session.get('is_tl') %}
+{% set EP = request.endpoint or '' %}
+
+<style>
+/* topnav owns the page top; neutralise sidebar layout remnants */
+.main-content { margin-left: 0 !important; }
+
+.tn-header {
+  position: sticky; top: 0; z-index: 300;
+  background: var(--surface, #fff);
+  border-bottom: 1px solid var(--border, #e4e7ec);
+}
+.tn-inner {
+  max-width: 1560px; margin: 0 auto; height: 54px;
+  display: flex; align-items: center; gap: 4px; padding: 0 16px;
+}
+.tn-brand { display: flex; align-items: center; gap: 8px; padding-right: 12px; flex-shrink: 0; text-decoration: none; color: inherit; }
+.tn-brand-icon {
+  width: 28px; height: 28px; border-radius: 7px;
+  background: var(--accent, #3b5bdb); color: #fff;
+  display: grid; place-items: center; font-size: 14px;
+}
+.tn-brand-name { font-weight: 700; font-size: 15px; letter-spacing: -.01em; line-height: 1.1; }
+.tn-brand-name small {
+  display: block; font-size: 9.5px; font-weight: 500;
+  color: var(--text-muted, #6b7280);
+  letter-spacing: .06em; text-transform: uppercase; line-height: 1.2;
+}
+@media (max-width: 1120px) { .tn-brand-name small { display: none; } }
+
+.tn-nav { display: flex; align-items: center; gap: 2px; flex: 1; min-width: 0; }
+.tn-trigger {
+  position: relative;
+  display: flex; align-items: center; gap: 5px;
+  padding: 7px 10px; border-radius: 7px;
+  background: none; border: 0; cursor: pointer;
+  font: inherit; font-size: 13.5px; font-weight: 500;
+  color: var(--text-muted, #6b7280); white-space: nowrap;
+}
+.tn-trigger i.tn-caret { font-size: 11px; opacity: .7; transition: transform .15s; }
+.tn-trigger:hover { background: var(--surface-2, rgba(0,0,0,.04)); color: var(--text, #111); }
+.tn-trigger[aria-expanded="true"] { background: color-mix(in srgb, var(--accent, #3b5bdb) 12%, transparent); color: var(--accent, #3b5bdb); }
+.tn-trigger[aria-expanded="true"] i.tn-caret { transform: rotate(180deg); }
+.tn-trigger.is-current { color: var(--text, #111); font-weight: 600; }
+.tn-trigger.is-current::after {
+  content: ""; position: absolute; left: 10px; right: 10px; bottom: -1px;
+  height: 2px; background: var(--accent, #3b5bdb);
+}
+.tn-dot {
+  position: absolute; top: 4px; right: 4px; width: 7px; height: 7px;
+  border-radius: 50%; background: #ef4444; display: none;
+  border: 1.5px solid var(--surface, #fff);
+}
+
+.tn-right { display: flex; align-items: center; gap: 5px; flex-shrink: 0; }
+.tn-search {
+  display: flex; align-items: center; gap: 7px;
+  height: 31px; padding: 0 7px 0 10px; min-width: 170px;
+  border: 1px solid var(--border, #e4e7ec); border-radius: 7px;
+  background: var(--surface-2, rgba(0,0,0,.03));
+  color: var(--text-muted, #6b7280); font: inherit; font-size: 12.5px;
+  cursor: pointer;
+}
+.tn-search:hover { border-color: var(--accent, #3b5bdb); }
+.tn-search span { flex: 1; text-align: left; }
+.tn-kbd {
+  font-size: 10px; font-weight: 600; line-height: 1;
+  border: 1px solid var(--border, #e4e7ec); border-bottom-width: 2px;
+  border-radius: 4px; padding: 2px 4px;
+}
+.tn-iconbtn {
+  width: 31px; height: 31px; border-radius: 7px; border: 0; background: none;
+  display: grid; place-items: center; cursor: pointer;
+  color: var(--text-muted, #6b7280); font-size: 15px;
+}
+.tn-iconbtn:hover { background: var(--surface-2, rgba(0,0,0,.04)); color: var(--text, #111); }
+.tn-userpill {
+  display: flex; align-items: center; gap: 7px;
+  height: 31px; padding: 0 11px;
+  border: 1px solid var(--border, #e4e7ec); border-radius: 999px;
+  font-size: 12.5px; font-weight: 500; color: var(--text, #111);
+  white-space: nowrap;
+}
+.tn-userpill i { font-size: 14px; color: var(--text-muted, #6b7280); }
+.tn-userpill .tn-empid { font-size: 11px; color: var(--text-muted, #6b7280); }
+@media (max-width: 1240px) { .tn-userpill .tn-empid { display: none; } }
+@media (max-width: 1120px) { .tn-userpill { display: none; } }
+/* the sidebar-era topbar is fully redundant under the top nav:
+   title is duplicated by page headings, controls moved to tn-header */
+.main-content > .topbar { display: none !important; }
+.tn-burger { display: none; }
+
+/* mega panel */
+.tn-mega {
+  position: absolute; left: 0; right: 0; top: 100%;
+  background: var(--surface, #fff);
+  border-bottom: 1px solid var(--border, #e4e7ec);
+  box-shadow: 0 16px 40px -14px rgba(16,24,40,.25);
+  display: none;
+}
+.tn-mega.open { display: block; }
+.tn-panel { display: none; max-width: 1560px; margin: 0 auto; padding: 14px 16px 16px; }
+.tn-panel.active { display: block; }
+.tn-cols {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(215px, 1fr));
+  gap: 1px 8px;
+}
+.tn-item {
+  display: flex; align-items: center; gap: 9px;
+  padding: 7px 9px; border-radius: 7px;
+  font-size: 13px; color: var(--text, #111); text-decoration: none;
+}
+.tn-item i { width: 17px; text-align: center; font-size: 13.5px; color: var(--text-muted, #6b7280); flex-shrink: 0; }
+.tn-item:hover { background: var(--surface-2, rgba(0,0,0,.04)); color: var(--text, #111); }
+.tn-item.active { background: color-mix(in srgb, var(--accent, #3b5bdb) 12%, transparent); color: var(--accent, #3b5bdb); font-weight: 600; }
+.tn-item.active i { color: var(--accent, #3b5bdb); }
+.tn-group-label {
+  grid-column: 1 / -1;
+  font-size: 10.5px; font-weight: 700; letter-spacing: .07em; text-transform: uppercase;
+  color: var(--text-muted, #6b7280); padding: 9px 9px 3px;
+}
+.tn-scrim { position: fixed; inset: 54px 0 0; background: rgba(10,12,18,.25); z-index: 250; display: none; }
+.tn-scrim.open { display: block; }
+.tn-foot {
+  max-width: 1560px; margin: 0 auto;
+  padding: 9px 25px;
+  border-top: 1px solid var(--border, #e4e7ec);
+  display: flex; align-items: center; gap: 6px;
+  font-size: 12px; color: var(--text-muted, #6b7280);
+}
+
+/* badge pills inside items keep their server-side inline styles;
+   normalise their placement in the flex row */
+.tn-item > span[id$="Badge"] { margin-left: auto !important; }
+
+/* contextual sub-nav */
+.tn-subnav {
+  position: sticky; top: 54px; z-index: 200;
+  background: var(--surface, #fff);
+  border-bottom: 1px solid var(--border, #e4e7ec);
+}
+.tn-subnav-inner {
+  max-width: 1560px; margin: 0 auto; padding: 0 16px;
+  height: 42px; display: flex; align-items: center; gap: 3px;
+  overflow-x: auto; scrollbar-width: none;
+}
+.tn-subnav-inner::-webkit-scrollbar { display: none; }
+.tn-subnav-label {
+  font-size: 10.5px; font-weight: 700; letter-spacing: .07em; text-transform: uppercase;
+  color: var(--text-muted, #6b7280); padding-right: 13px; margin-right: 5px;
+  border-right: 1px solid var(--border, #e4e7ec); white-space: nowrap; flex-shrink: 0;
+}
+.tn-subtab {
+  padding: 6px 10px; border-radius: 7px;
+  font-size: 12.5px; color: var(--text-muted, #6b7280);
+  white-space: nowrap; text-decoration: none;
+}
+.tn-subtab:hover { background: var(--surface-2, rgba(0,0,0,.04)); color: var(--text, #111); }
+.tn-subtab.active { background: color-mix(in srgb, var(--accent, #3b5bdb) 12%, transparent); color: var(--accent, #3b5bdb); font-weight: 600; }
+.tn-subbadge {
+  display: none; margin-left: 5px;
+  background: #ef4444; color: #fff;
+  font-size: .62rem; font-weight: 700;
+  padding: .1rem .38rem; border-radius: 999px;
+  min-width: 16px; text-align: center; line-height: 1.3;
+  vertical-align: 1px;
+}
+
+/* login-as banner */
+.tn-loginas {
+  background: #f59e0b; color: #000; padding: .45rem 1rem;
+  font-size: .82rem; text-align: center;
+}
+
+/* command palette */
+.tn-pscrim {
+  position: fixed; inset: 0; z-index: 500; background: rgba(10,12,18,.4);
+  display: none; justify-content: center; padding-top: 11vh;
+}
+.tn-pscrim.open { display: flex; }
+.tn-palette {
+  width: min(560px, 92vw); max-height: 62vh; height: max-content;
+  background: var(--surface, #fff); border: 1px solid var(--border, #e4e7ec);
+  border-radius: 11px; box-shadow: 0 20px 50px -12px rgba(16,24,40,.35);
+  display: flex; flex-direction: column; overflow: hidden;
+}
+.tn-pinput { display: flex; align-items: center; gap: 9px; padding: 12px 14px; border-bottom: 1px solid var(--border, #e4e7ec); }
+.tn-pinput input { flex: 1; border: 0; background: none; color: var(--text, #111); font: inherit; font-size: 14.5px; outline: none; }
+.tn-plist { overflow-y: auto; padding: 5px; }
+.tn-pgroup { font-size: 10px; font-weight: 700; letter-spacing: .07em; text-transform: uppercase; color: var(--text-muted, #6b7280); padding: 8px 9px 3px; }
+.tn-pitem { display: flex; align-items: center; gap: 9px; padding: 7px 9px; border-radius: 7px; cursor: pointer; font-size: 13px; }
+.tn-pitem i { width: 17px; text-align: center; color: var(--text-muted, #6b7280); }
+.tn-pitem .sec { margin-left: auto; font-size: 11px; color: var(--text-muted, #6b7280); }
+.tn-pitem.sel { background: color-mix(in srgb, var(--accent, #3b5bdb) 12%, transparent); color: var(--accent, #3b5bdb); font-weight: 600; }
+.tn-pempty { padding: 22px; text-align: center; color: var(--text-muted, #6b7280); font-size: 13px; }
+
+/* mobile drawer */
+.tn-drawer { position: fixed; inset: 0; z-index: 600; background: var(--surface, #fff); display: none; flex-direction: column; }
+.tn-drawer.open { display: flex; }
+.tn-drawer-head { height: 54px; flex-shrink: 0; padding: 0 14px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--border, #e4e7ec); }
+.tn-drawer-body { overflow-y: auto; padding: 6px 10px 40px; }
+.tn-acc-head {
+  width: 100%; display: flex; align-items: center; justify-content: space-between;
+  padding: 12px 8px; background: none; border: 0; border-bottom: 1px solid var(--border, #e4e7ec);
+  font: inherit; font-weight: 600; font-size: 14px; color: var(--text, #111); cursor: pointer;
+}
+.tn-acc-head i { font-size: 12px; color: var(--text-muted, #6b7280); transition: transform .15s; }
+.tn-acc-head[aria-expanded="true"] i { transform: rotate(180deg); }
+.tn-acc-body { display: none; padding: 4px 0 10px; }
+.tn-acc-body.open { display: block; }
+.tn-acc-body .tn-item { font-size: 13.5px; }
+
+@media (max-width: 1120px) {
+  .tn-nav, .tn-search { display: none; }
+  .tn-burger { display: grid; }
+}
+</style>
+
+<header class="tn-header">
+  <div class="tn-inner">
+    <a class="tn-brand" href="{{ url_for('dashboard') }}">
+      <span class="tn-brand-icon"><i class="bi bi-calendar2-check"></i></span>
+      <span class="tn-brand-name">HR Portal<small>Cohere Outsourcing</small></span>
+    </a>
+
+    <nav class="tn-nav" id="tnNav">
+
+      <button class="tn-trigger" data-panel="main" aria-expanded="false">
+        Main <i class="bi bi-chevron-down tn-caret"></i><span class="tn-dot"></span>
+      </button>
+
+      <button class="tn-trigger" data-panel="requests" aria-expanded="false">
+        My Requests <i class="bi bi-chevron-down tn-caret"></i><span class="tn-dot"></span>
+      </button>
+
+      {% if SUPER or ADMIN or P.get('can_material_requests') or break_log_supervisor_access() or TL %}
+      <button class="tn-trigger" data-panel="team" aria-expanded="false">
+        My Team <i class="bi bi-chevron-down tn-caret"></i><span class="tn-dot"></span>
+      </button>
+      {% endif %}
+
+      {% if WRAP and (ADMIN or P.get('can_all_leaves') or P.get('can_all_requests')
+            or P.get('can_file_for_emp') or P.get('can_pim') or P.get('can_memos')
+            or P.get('can_onboarding') or P.get('can_wfm') or coe_can_manage()) %}
+      <button class="tn-trigger" data-panel="people" aria-expanded="false">
+        People &amp; HR <i class="bi bi-chevron-down tn-caret"></i><span class="tn-dot"></span>
+      </button>
+      {% endif %}
+
+      {% if ADMIN or P.get('can_floor_map') or ir_can_file() or ir_can_view() or qa_can_manage()
+            or (WRAP and (P.get('can_material_requests') or P.get('can_final_approval')
+                or P.get('can_view_approved_items') or P.get('can_facilities_review')
+                or P.get('can_facilities_final') or P.get('can_inventory')
+                or P.get('can_it_tickets') or P.get('can_hr_tickets')
+                or session.get('user', {}).get('email', '')|lower == (config.get('MATERIAL_FINAL_EMAIL','') or '')|lower)) %}
+      <button class="tn-trigger" data-panel="operations" aria-expanded="false">
+        Operations <i class="bi bi-chevron-down tn-caret"></i><span class="tn-dot"></span>
+      </button>
+      {% endif %}
+
+      {% if (WRAP and (ADMIN or P.get('can_reports') or P.get('can_schedules')
+            or P.get('can_view_tickets') or P.get('can_absences') or P.get('can_attrition_report')
+            or P.get('can_surveys') or P.get('can_ot_hours') or P.get('can_night_differential') or P.get('can_holiday_awol')
+            or P.get('can_overbreak') or P.get('can_tardiness')))
+            or ADMIN or SUPER or P.get('can_csat') or session.get('is_csat_tl') %}
+      <button class="tn-trigger" data-panel="analytics" aria-expanded="false">
+        Analytics <i class="bi bi-chevron-down tn-caret"></i><span class="tn-dot"></span>
+      </button>
+      {% endif %}
+
+      {% if WRAP and (ADMIN or P.get('can_settings') or P.get('can_work_mode') or P.get('can_entitlements')) %}
+      <button class="tn-trigger" data-panel="admin" aria-expanded="false">
+        Admin <i class="bi bi-chevron-down tn-caret"></i><span class="tn-dot"></span>
+      </button>
+      {% endif %}
+
+    </nav>
+
+    <div class="tn-right">
+      <button class="tn-search" id="tnOpenPalette" type="button">
+        <i class="bi bi-search" style="font-size:12px"></i>
+        <span>Jump to...</span>
+        <span class="tn-kbd">Ctrl K</span>
+      </button>
+      <div class="tn-userpill">
+        <i class="bi bi-person-circle"></i>
+        {{ session['user']['name'] }}
+        {% if session['user'].get('employee_id') %}
+        <span class="tn-empid">{{ session['user']['employee_id'] }}</span>
+        {% endif %}
+      </div>
+      <button class="tn-iconbtn" type="button" id="tnThemeBtn" onclick="toggleTheme()" title="Toggle dark/light mode">
+        <i class="bi bi-moon-stars-fill" id="tnThemeIcon"></i>
+      </button>
+      <a class="tn-iconbtn" href="{{ url_for('logout') }}" title="Logout">
+        <i class="bi bi-box-arrow-left"></i>
+      </a>
+      <button class="tn-iconbtn tn-burger" id="tnBurger" type="button"><i class="bi bi-list"></i></button>
+    </div>
+  </div>
+
+  <div class="tn-mega" id="tnMega">
+
+    {# ── MAIN ─────────────────────────────────────────────── #}
+    <div class="tn-panel" data-panel="main">
+      <div class="tn-cols">
+        <a class="tn-item {% if EP == 'dashboard' %}active{% endif %}" href="{{ url_for('dashboard') }}">
+          <i class="bi bi-speedometer2"></i> Dashboard</a>
+        <a class="tn-item {% if EP == 'history' %}active{% endif %}" href="{{ url_for('history') }}">
+          <i class="bi bi-clock-history"></i> My History</a>
+        <a class="tn-item {% if EP == 'break_log.break_log' %}active{% endif %}" href="{{ url_for('break_log.break_log') }}">
+          <i class="bi bi-stopwatch"></i> Break Log</a>
+        <a class="tn-item {% if EP == 'survey.survey_list' %}active{% endif %}" href="{{ url_for('survey.survey_list') }}">
+          <i class="bi bi-card-checklist"></i> Survey</a>
+        <a class="tn-item {% if EP == 'qa_updates.bulletin' %}active{% endif %}" href="{{ url_for('qa_updates.bulletin') }}">
+          <i class="bi bi-megaphone"></i> QA Updates
+          <span id="qaUpdatesBadge" style="display:none;margin-left:auto;background:#ef4444;color:#fff;font-size:.65rem;font-weight:700;padding:.15rem .45rem;border-radius:999px;min-width:18px;text-align:center;"></span></a>
+        {% if qa_can_view_data() %}
+        <a class="tn-item {% if EP == 'qa_updates.data_dashboard' %}active{% endif %}" href="{{ url_for('qa_updates.data_dashboard') }}">
+          <i class="bi bi-bar-chart-line"></i> QA Updates Data</a>
+        {% endif %}
+      </div>
+    </div>
+
+    {# ── MY REQUESTS ──────────────────────────────────────── #}
+    <div class="tn-panel" data-panel="requests">
+      <div class="tn-cols">
+        <a class="tn-item {% if EP == 'file_requests_hub' %}active{% endif %}" href="{{ url_for('file_requests_hub') }}">
+          <i class="bi bi-grid-3x2-gap"></i> All Requests</a>
+        <a class="tn-item {% if EP == 'file_leave' %}active{% endif %}" href="{{ url_for('file_leave') }}">
+          <i class="bi bi-calendar-plus"></i> File Leave</a>
+        <a class="tn-item {% if EP == 'file_fts' %}active{% endif %}" href="{{ url_for('file_fts') }}">
+          <i class="bi bi-clock"></i> Failure to Swipe</a>
+        <a class="tn-item {% if EP in ['file_ot', 'file_rdw'] %}active{% endif %}" href="{{ url_for('file_ot') }}">
+          <i class="bi bi-hourglass-bottom"></i> OT / Rest Day Work</a>
+        <a class="tn-item {% if EP == 'file_cws' %}active{% endif %}" href="{{ url_for('file_cws') }}">
+          <i class="bi bi-arrow-left-right"></i> Change Work Schedule</a>
+        <a class="tn-item {% if EP == 'magic_cws_form' %}active{% endif %}" href="{{ url_for('magic_cws_form') }}">
+          <i class="bi bi-lightning-charge-fill" style="color:#a78bfa"></i> Magic CWS</a>
+        <a class="tn-item {% if EP == 'file_material' %}active{% endif %}" href="{{ url_for('file_material') }}">
+          <i class="bi bi-box-seam"></i> Material Request</a>
+        <a class="tn-item {% if EP == 'facilities_request' %}active{% endif %}" href="{{ url_for('facilities_request') }}">
+          <i class="bi bi-tools"></i> Facilities &amp; Repair</a>
+        <a class="tn-item {% if EP in ['tickets_index', 'ticket_detail', 'ticket_add_comment'] %}active{% endif %}" href="{{ url_for('tickets_index') }}">
+          <i class="bi bi-headset"></i> My Tickets</a>
+        <a class="tn-item {% if EP == 'coe.request_coe' %}active{% endif %}" href="{{ url_for('coe.request_coe') }}">
+          <i class="bi bi-file-earmark-text"></i> Request CoE</a>
+        <a class="tn-item {% if EP == 'my_records.records' %}active{% endif %}" href="{{ url_for('my_records.records') }}">
+          <i class="bi bi-clipboard-check"></i> My Records</a>
+      </div>
+    </div>
+
+    {# ── MY TEAM ──────────────────────────────────────────── #}
+    {% if SUPER or ADMIN or P.get('can_material_requests') or break_log_supervisor_access() or TL %}
+    <div class="tn-panel" data-panel="team">
+      <div class="tn-cols">
+        {% if SUPER or ADMIN %}
+        <a class="tn-item {% if EP == 'supervisor_active_leaves' %}active{% endif %}" href="{{ url_for('supervisor_active_leaves') }}">
+          <i class="bi bi-calendar-check"></i> All Team Leaves</a>
+        <a class="tn-item {% if EP == 'supervisor_pending' %}active{% endif %}" href="{{ url_for('supervisor_pending') }}">
+          <i class="bi bi-hourglass-split"></i> Leave Approvals
+          <span id="pendingBadge" style="display:none;margin-left:auto;background:#ef4444;color:#fff;font-size:.65rem;font-weight:700;padding:.15rem .45rem;border-radius:999px;min-width:18px;text-align:center;"></span></a>
+        <a class="tn-item {% if EP == 'file_requests_approvals' %}active{% endif %}" href="{{ url_for('file_requests_approvals') }}">
+          <i class="bi bi-check2-square"></i> OT / CWS / FTS / RDW
+          <span id="fileRequestsBadge" style="display:none;margin-left:auto;background:#ef4444;color:#fff;font-size:.65rem;font-weight:700;padding:.15rem .45rem;border-radius:999px;min-width:18px;text-align:center;"></span></a>
+        <a class="tn-item {% if EP == 'supervisor_team_calendar' %}active{% endif %}" href="{{ url_for('supervisor_team_calendar') }}">
+          <i class="bi bi-calendar3"></i> Team Calendar</a>
+        {% endif %}
+        {% if SUPER or ADMIN or P.get('can_material_requests') %}
+        <a class="tn-item {% if EP == 'material_som_approvals' %}active{% endif %}" href="{{ url_for('material_som_approvals') }}">
+          <i class="bi bi-box-seam"></i> Material Approvals
+          <span id="materialBadge" style="display:none;margin-left:auto;background:#ef4444;color:#fff;font-size:.65rem;font-weight:700;padding:.15rem .45rem;border-radius:999px;min-width:18px;text-align:center;"></span></a>
+        {% endif %}
+        {% if break_log_supervisor_access() %}
+        <a class="tn-item {% if EP == 'break_log.supervisor_break_logs' %}active{% endif %}" href="{{ url_for('break_log.supervisor_break_logs') }}">
+          <i class="bi bi-clipboard2-pulse"></i> Break Monitoring</a>
+        {% endif %}
+        {% if TL or ADMIN %}
+        <div class="tn-group-label">View My Team (Read-Only)</div>
+        <a class="tn-item {% if EP == 'tl_view.tl_view_leave' %}active{% endif %}" href="{{ url_for('tl_view.tl_view_leave') }}">
+          <i class="bi bi-eye"></i> Leave</a>
+        <a class="tn-item {% if EP == 'tl_view.tl_view_requests' %}active{% endif %}" href="{{ url_for('tl_view.tl_view_requests') }}">
+          <i class="bi bi-eye"></i> Requests</a>
+        {% endif %}
+      </div>
+    </div>
+    {% endif %}
+
+    {# ── PEOPLE & HR ──────────────────────────────────────── #}
+    {% if WRAP and (ADMIN or P.get('can_all_leaves') or P.get('can_all_requests')
+          or P.get('can_file_for_emp') or P.get('can_pim') or P.get('can_memos')
+          or P.get('can_onboarding') or P.get('can_wfm') or coe_can_manage()) %}
+    <div class="tn-panel" data-panel="people">
+      <div class="tn-cols">
+        {% if ADMIN or P.get('can_all_leaves') %}
+        <a class="tn-item {% if EP == 'admin_all_leaves' %}active{% endif %}" href="{{ url_for('admin_all_leaves') }}">
+          <i class="bi bi-calendar2-week"></i> All Leaves</a>
+        {% endif %}
+        {% if ADMIN or P.get('can_all_requests') %}
+        <a class="tn-item {% if EP == 'file_requests_hub' %}active{% endif %}" href="{{ url_for('file_requests_hub') }}">
+          <i class="bi bi-inbox"></i> All Requests</a>
+        {% endif %}
+        {% if ADMIN or P.get('can_file_for_emp') %}
+        <a class="tn-item {% if EP == 'admin_file_leave' %}active{% endif %}" href="{{ url_for('admin_file_leave') }}">
+          <i class="bi bi-person-plus"></i> File for Employee</a>
+        {% endif %}
+        {% if ADMIN or P.get('can_pim') %}
+        <a class="tn-item {% if EP in ['pim_index', 'pim_profile'] %}active{% endif %}" href="{{ url_for('pim_index') }}">
+          <i class="bi bi-people"></i> Employee Database</a>
+        {% endif %}
+        {% if ADMIN or P.get('can_memos') %}
+        <a class="tn-item {% if EP == 'memos.memos_list' %}active{% endif %}" href="{{ url_for('memos.memos_list') }}">
+          <i class="bi bi-file-earmark-text"></i> Employee Memos</a>
+        {% endif %}
+        {% if ADMIN or P.get('can_wfm') or P.get('can_onboarding') or coe_can_manage() %}
+        <div class="tn-group-label">Onboarding &amp; CoE</div>
+        {% endif %}
+        {% if ADMIN or P.get('can_wfm') %}
+        <a class="tn-item {% if EP == 'hrportal_wfm_onboarding' %}active{% endif %}" href="{{ url_for('hrportal_wfm_onboarding') }}">
+          <i class="bi bi-cloud-upload"></i> WFM Onboarding</a>
+        {% endif %}
+        {% if ADMIN or P.get('can_onboarding') %}
+        <a class="tn-item {% if EP == 'hrportal_onboarding' %}active{% endif %}" href="{{ url_for('hrportal_onboarding') }}">
+          <i class="bi bi-person-plus-fill"></i> Onboarding</a>
+        <a class="tn-item {% if EP == 'hrportal_offboarding' %}active{% endif %}" href="{{ url_for('hrportal_offboarding') }}">
+          <i class="bi bi-person-dash-fill"></i> Offboarding</a>
+        {% endif %}
+        {% if coe_can_manage() %}
+        <a class="tn-item {% if EP == 'coe.manage_queue' %}active{% endif %}" href="{{ url_for('coe.manage_queue') }}">
+          <i class="bi bi-clipboard2-check"></i> Manage CoE Requests</a>
+        {% endif %}
+      </div>
+    </div>
+    {% endif %}
+
+    {# ── OPERATIONS ───────────────────────────────────────── #}
+    {% if ADMIN or P.get('can_floor_map') or ir_can_file() or ir_can_view() or qa_can_manage()
+          or (WRAP and (P.get('can_material_requests') or P.get('can_final_approval')
+              or P.get('can_view_approved_items') or P.get('can_facilities_review')
+              or P.get('can_facilities_final') or P.get('can_inventory')
+              or P.get('can_it_tickets') or P.get('can_hr_tickets')
+              or session.get('user', {}).get('email', '')|lower == (config.get('MATERIAL_FINAL_EMAIL','') or '')|lower)) %}
+    <div class="tn-panel" data-panel="operations">
+      <div class="tn-cols">
+        {% if WRAP and (ADMIN or P.get('can_material_requests') or P.get('can_inventory')) %}
+        <a class="tn-item {% if EP == 'admin_inventory' %}active{% endif %}" href="{{ url_for('admin_inventory') }}">
+          <i class="bi bi-boxes"></i> Inventory</a>
+        {% endif %}
+        {% if ADMIN %}
+        <a class="tn-item {% if EP == 'inventory_history' %}active{% endif %}" href="{{ url_for('inventory_history') }}">
+          <i class="bi bi-clock-history"></i> Inventory History</a>
+        {% endif %}
+        {% if WRAP and (ADMIN or P.get('can_material_requests')) %}
+        <a class="tn-item {% if EP == 'material_admin_review' %}active{% endif %}" href="{{ url_for('material_admin_review') }}">
+          <i class="bi bi-clipboard-check"></i> Material Review
+          <span id="materialAdminBadge" style="display:none;margin-left:auto;background:#ef4444;color:#fff;font-size:.65rem;font-weight:700;padding:.15rem .45rem;border-radius:999px;min-width:18px;text-align:center;"></span></a>
+        {% endif %}
+        {% if WRAP and (session.get('user', {}).get('email', '')|lower == (config.get('MATERIAL_FINAL_EMAIL','') or '')|lower or ADMIN or P.get('can_final_approval')) %}
+        <a class="tn-item {% if EP == 'material_final_approval' %}active{% endif %}" href="{{ url_for('material_final_approval') }}">
+          <i class="bi bi-patch-check"></i> Material Final Approval
+          <span id="materialFinalBadge" style="display:none;margin-left:auto;background:#ef4444;color:#fff;font-size:.65rem;font-weight:700;padding:.15rem .45rem;border-radius:999px;min-width:18px;text-align:center;"></span></a>
+        {% endif %}
+        {% if WRAP and (ADMIN or P.get('can_view_approved_items')) %}
+        <a class="tn-item {% if EP == 'material_purchaser_view' %}active{% endif %}" href="{{ url_for('material_purchaser_view') }}">
+          <i class="bi bi-bag-check"></i> Purchaser View</a>
+        {% endif %}
+        {% if WRAP and (ADMIN or P.get('can_facilities_review')) %}
+        <a class="tn-item {% if EP == 'facilities_review' %}active{% endif %}" href="{{ url_for('facilities_review') }}">
+          <i class="bi bi-tools"></i> Facilities Review</a>
+        {% endif %}
+        {% if WRAP and (ADMIN or P.get('can_facilities_final')) %}
+        <a class="tn-item {% if EP == 'facilities_final' %}active{% endif %}" href="{{ url_for('facilities_final') }}">
+          <i class="bi bi-wrench-adjustable-circle"></i> Facilities Final Approval</a>
+        {% endif %}
+        {% if WRAP and (ADMIN or P.get('can_it_tickets') or P.get('can_hr_tickets')) %}
+        <a class="tn-item {% if EP == 'admin_tickets' %}active{% endif %}" href="{{ url_for('admin_tickets') }}">
+          <i class="bi bi-headset"></i> Ticket Queue</a>
+        {% endif %}
+        {% if ADMIN or P.get('can_floor_map') or ir_can_file() or ir_can_view() or qa_can_manage() %}
+        <div class="tn-group-label">Floor &amp; Reporting</div>
+        {% endif %}
+        {% if ADMIN or P.get('can_floor_map') %}
+        <a class="tn-item {% if 'floor_map' in EP and 'admin' not in EP %}active{% endif %}" href="{{ url_for('floor_map.index') }}">
+          <i class="bi bi-geo-alt"></i> Floor Map</a>
+        {% endif %}
+        {% if ADMIN %}
+        <a class="tn-item {% if 'floor_map' in EP and 'admin' in EP %}active{% endif %}" href="{{ url_for('floor_map.admin') }}">
+          <i class="bi bi-pencil-square"></i> Seat Setup</a>
+        {% endif %}
+        {% if ir_can_file() %}
+        <a class="tn-item {% if 'incident_reports' in EP and EP != 'incident_reports.dashboard' %}active{% endif %}" href="{{ url_for('incident_reports.new_report') }}">
+          <i class="bi bi-file-earmark-plus"></i> File Incident Report</a>
+        {% endif %}
+        {% if ir_can_view() %}
+        <a class="tn-item {% if EP == 'incident_reports.dashboard' %}active{% endif %}" href="{{ url_for('incident_reports.dashboard') }}">
+          <i class="bi bi-clipboard2-pulse"></i> Incident Dashboard</a>
+        {% endif %}
+        {% if qa_can_manage() %}
+        <a class="tn-item {% if EP == 'qa_updates.admin' %}active{% endif %}" href="{{ url_for('qa_updates.admin') }}">
+          <i class="bi bi-clipboard2-pulse"></i> Manage QA Updates</a>
+        {% endif %}
+      </div>
+    </div>
+    {% endif %}
+
+    {# ── ANALYTICS ────────────────────────────────────────── #}
+    {% if (WRAP and (ADMIN or P.get('can_reports') or P.get('can_schedules')
+          or P.get('can_view_tickets') or P.get('can_absences') or P.get('can_attrition_report')
+          or P.get('can_surveys') or P.get('can_ot_hours') or P.get('can_night_differential')
+          or P.get('can_overbreak') or P.get('can_tardiness')))
+          or ADMIN or SUPER or P.get('can_csat') or session.get('is_csat_tl') %}
+    <div class="tn-panel" data-panel="analytics">
+      <div class="tn-cols">
+        {% if WRAP and (ADMIN or P.get('can_reports')) %}
+        <a class="tn-item {% if EP == 'admin_analytics' %}active{% endif %}" href="{{ url_for('admin_analytics') }}">
+          <i class="bi bi-graph-up-arrow"></i> Analytics</a>
+        <a class="tn-item {% if EP == 'admin_reports' %}active{% endif %}" href="{{ url_for('admin_reports') }}">
+          <i class="bi bi-bar-chart-line"></i> Reports</a>
+        {% endif %}
+        {% if WRAP and (ADMIN or P.get('can_onboarding') or P.get('can_reports')) %}
+        <a class="tn-item {% if EP == 'admin_onboarding_report' %}active{% endif %}" href="{{ url_for('admin_onboarding_report') }}">
+          <i class="bi bi-person-lines-fill"></i> Onboarding / Offboarding</a>
+        {% endif %}
+        {% if WRAP and (ADMIN or P.get('can_schedules')) %}
+        <a class="tn-item {% if EP == 'admin_schedules' %}active{% endif %}" href="{{ url_for('admin_schedules') }}">
+          <i class="bi bi-calendar3-week"></i> Schedules</a>
+        {% endif %}
+        {% if WRAP and (ADMIN or P.get('can_absences')) %}
+        <a class="tn-item {% if EP == 'admin_absences' %}active{% endif %}" href="{{ url_for('admin_absences') }}">
+          <i class="bi bi-person-x"></i> Attendance</a>
+        {% endif %}
+        {% if WRAP and (ADMIN or P.get('can_tardiness')) %}
+        <a class="tn-item {% if EP == 'tardiness.tardiness_page' %}active{% endif %}" href="{{ url_for('tardiness.tardiness_page') }}">
+          <i class="bi bi-clock-history"></i> Tardiness Report</a>
+        {% endif %}
+        {% if WRAP and (ADMIN or P.get('can_night_differential')) %}
+        <a class="tn-item {% if EP == 'admin_night_diff' %}active{% endif %}" href="{{ url_for('admin_night_diff') }}">
+          <i class="bi bi-moon-stars"></i> Night Differential</a>
+        {% endif %}
+        {% if WRAP and (ADMIN or P.get('can_holiday_awol')) %}
+        <a class="tn-item {% if EP == 'admin_holiday_awol' %}active{% endif %}" href="{{ url_for('admin_holiday_awol') }}">
+          <i class="bi bi-calendar-x"></i> Holiday AWOL</a>
+        {% endif %}
+        {% if WRAP and (ADMIN or P.get('can_overbreak')) %}
+        <a class="tn-item {% if EP == 'admin_overbreak' %}active{% endif %}" href="{{ url_for('admin_overbreak') }}">
+          <i class="bi bi-cup-straw"></i> Overbreak Report</a>
+        {% endif %}
+        {% if WRAP and (ADMIN or P.get('can_ot_hours')) %}
+        <a class="tn-item {% if EP == 'admin_ot_hours' %}active{% endif %}" href="{{ url_for('admin_ot_hours') }}">
+          <i class="bi bi-stopwatch"></i> OT Hours</a>
+        {% endif %}
+        {% if WRAP and (ADMIN or P.get('can_attrition_report')) %}
+        <a class="tn-item {% if EP == 'admin_attrition' %}active{% endif %}" href="{{ url_for('admin_attrition') }}">
+          <i class="bi bi-person-dash"></i> Attrition Report</a>
+        {% endif %}
+        {% if WRAP and (ADMIN or P.get('can_surveys')) %}
+        <a class="tn-item {% if EP in ['survey.survey_admin_list', 'survey.survey_results'] %}active{% endif %}" href="{{ url_for('survey.survey_admin_list') }}">
+          <i class="bi bi-clipboard-data"></i> Surveys</a>
+        {% endif %}
+        {% if WRAP and (ADMIN or P.get('can_view_tickets')) %}
+        <a class="tn-item {% if EP == 'admin_ot_tickets' %}active{% endif %}" href="{{ url_for('admin_ot_tickets') }}">
+          <i class="bi bi-ticket-perforated"></i> OT/RDW Tickets</a>
+        {% endif %}
+        {% if ADMIN or SUPER or P.get('can_csat') or session.get('is_csat_tl') %}
+        <div class="tn-group-label">CSAT</div>
+        <a class="tn-item {% if EP == 'csat_dashboard' %}active{% endif %}" href="{{ url_for('csat_dashboard') }}">
+          <i class="bi bi-emoji-smile"></i> CSAT Dashboard</a>
+        <a class="tn-item {% if EP == 'csr.page' %}active{% endif %}" href="{{ url_for('csr.page') }}">
+          <i class="bi bi-person-exclamation"></i> CSR Percentage</a>
+        {% endif %}
+      </div>
+    </div>
+    {% endif %}
+
+    {# ── ADMIN ────────────────────────────────────────────── #}
+    {% if WRAP and (ADMIN or P.get('can_settings') or P.get('can_work_mode') or P.get('can_entitlements')) %}
+    <div class="tn-panel" data-panel="admin">
+      <div class="tn-cols">
+        {% if ADMIN or P.get('can_settings') %}
+        <a class="tn-item {% if EP == 'admin_settings' %}active{% endif %}" href="{{ url_for('admin_settings') }}">
+          <i class="bi bi-gear"></i> Settings</a>
+        <a class="tn-item {% if EP == 'admin_holidays' %}active{% endif %}" href="{{ url_for('admin_holidays') }}">
+          <i class="bi bi-calendar2-x"></i> Holidays</a>
+        {% endif %}
+        {% if ADMIN or P.get('can_work_mode') %}
+        <a class="tn-item {% if EP == 'admin_emp_settings' %}active{% endif %}" href="{{ url_for('admin_emp_settings') }}">
+          <i class="bi bi-people-fill"></i> Work Mode per Employee</a>
+        {% endif %}
+        {% if ADMIN or P.get('can_entitlements') %}
+        <a class="tn-item {% if EP == 'admin_leave_types' %}active{% endif %}" href="{{ url_for('admin_leave_types') }}">
+          <i class="bi bi-tag"></i> Leave Types</a>
+        <a class="tn-item {% if EP == 'admin_entitlements' %}active{% endif %}" href="{{ url_for('admin_entitlements') }}">
+          <i class="bi bi-credit-card"></i> Entitlements</a>
+        {% endif %}
+        {% if ADMIN %}
+        <a class="tn-item {% if EP == 'admin_quick_links' %}active{% endif %}" href="{{ url_for('admin_quick_links') }}">
+          <i class="bi bi-grid-1x2"></i> Quick Links</a>
+        <a class="tn-item {% if EP == 'admin_supervisors' %}active{% endif %}" href="{{ url_for('admin_supervisors') }}">
+          <i class="bi bi-person-lines-fill"></i> Supervisor Assignments</a>
+        <a class="tn-item {% if EP == 'admin_sub_admins' %}active{% endif %}" href="{{ url_for('admin_sub_admins') }}">
+          <i class="bi bi-shield-check"></i> Sub-Admins</a>
+        <a class="tn-item {% if EP == 'magic_cws_balance_admin' %}active{% endif %}" href="{{ url_for('magic_cws_balance_admin') }}">
+          <i class="bi bi-lightning-charge-fill" style="color:#a78bfa"></i> Magic CWS Balance</a>
+        {% endif %}
+      </div>
+    </div>
+    {% endif %}
+
+    <div class="tn-foot">
+      <i class="bi bi-command"></i> Press <span class="tn-kbd">Ctrl K</span> to jump to any page directly
+    </div>
+  </div>
+</header>
+<div class="tn-scrim" id="tnScrim"></div>
+
+{# ── CONTEXTUAL SUB-NAV ─ every page belongs to exactly one
+     cluster; the row always renders. Tabs reuse mega-item gates. #}
+{% if EP in ['dashboard', 'history', 'break_log.break_log', 'survey.survey_list', 'qa_updates.bulletin', 'qa_updates.data_dashboard'] %}
+<div class="tn-subnav"><div class="tn-subnav-inner">
+  <span class="tn-subnav-label">Main</span>
+  <a class="tn-subtab {% if EP == 'dashboard' %}active{% endif %}" href="{{ url_for('dashboard') }}">Dashboard</a>
+  <a class="tn-subtab {% if EP == 'history' %}active{% endif %}" href="{{ url_for('history') }}">My History</a>
+  <a class="tn-subtab {% if EP == 'break_log.break_log' %}active{% endif %}" href="{{ url_for('break_log.break_log') }}">Break Log</a>
+  <a class="tn-subtab {% if EP == 'survey.survey_list' %}active{% endif %}" href="{{ url_for('survey.survey_list') }}">Survey</a>
+  <a class="tn-subtab {% if EP == 'qa_updates.bulletin' %}active{% endif %}" href="{{ url_for('qa_updates.bulletin') }}">QA Updates<span class="tn-subbadge" data-src="qaUpdatesBadge"></span></a>
+  {% if qa_can_view_data() %}
+  <a class="tn-subtab {% if EP == 'qa_updates.data_dashboard' %}active{% endif %}" href="{{ url_for('qa_updates.data_dashboard') }}">QA Data</a>
+  {% endif %}
+</div></div>
+{% elif EP in ['file_requests_hub', 'file_leave', 'file_fts', 'file_ot', 'file_rdw', 'file_cws', 'magic_cws_form', 'file_material', 'facilities_request', 'tickets_index', 'ticket_detail', 'ticket_add_comment', 'coe.request_coe'] %}
+<div class="tn-subnav"><div class="tn-subnav-inner">
+  <span class="tn-subnav-label">File a Request</span>
+  <a class="tn-subtab {% if EP == 'file_requests_hub' %}active{% endif %}" href="{{ url_for('file_requests_hub') }}">All Requests</a>
+  <a class="tn-subtab {% if EP == 'file_leave' %}active{% endif %}" href="{{ url_for('file_leave') }}">Leave</a>
+  <a class="tn-subtab {% if EP == 'file_fts' %}active{% endif %}" href="{{ url_for('file_fts') }}">FTS</a>
+  <a class="tn-subtab {% if EP in ['file_ot', 'file_rdw'] %}active{% endif %}" href="{{ url_for('file_ot') }}">OT / RDW</a>
+  <a class="tn-subtab {% if EP == 'file_cws' %}active{% endif %}" href="{{ url_for('file_cws') }}">CWS</a>
+  <a class="tn-subtab {% if EP == 'magic_cws_form' %}active{% endif %}" href="{{ url_for('magic_cws_form') }}">Magic CWS</a>
+  <a class="tn-subtab {% if EP == 'file_material' %}active{% endif %}" href="{{ url_for('file_material') }}">Material</a>
+  <a class="tn-subtab {% if EP == 'facilities_request' %}active{% endif %}" href="{{ url_for('facilities_request') }}">Facilities</a>
+  <a class="tn-subtab {% if EP in ['tickets_index', 'ticket_detail', 'ticket_add_comment'] %}active{% endif %}" href="{{ url_for('tickets_index') }}">My Tickets</a>
+  <a class="tn-subtab {% if EP == 'coe.request_coe' %}active{% endif %}" href="{{ url_for('coe.request_coe') }}">CoE</a>
+  <a class="tn-subtab {% if EP == 'my_records.records' %}active{% endif %}" href="{{ url_for('my_records.records') }}">My Records</a>
+</div></div>
+{% elif EP in ['supervisor_active_leaves', 'supervisor_pending', 'file_requests_approvals', 'supervisor_team_calendar', 'material_som_approvals', 'break_log.supervisor_break_logs', 'tl_view.tl_view_leave', 'tl_view.tl_view_requests'] %}
+<div class="tn-subnav"><div class="tn-subnav-inner">
+  <span class="tn-subnav-label">My Team</span>
+  {% if SUPER or ADMIN %}
+  <a class="tn-subtab {% if EP == 'supervisor_active_leaves' %}active{% endif %}" href="{{ url_for('supervisor_active_leaves') }}">Team Leaves</a>
+  <a class="tn-subtab {% if EP == 'supervisor_pending' %}active{% endif %}" href="{{ url_for('supervisor_pending') }}">Leave Approvals<span class="tn-subbadge" data-src="pendingBadge"></span></a>
+  <a class="tn-subtab {% if EP == 'file_requests_approvals' %}active{% endif %}" href="{{ url_for('file_requests_approvals') }}">OT/CWS/FTS/RDW<span class="tn-subbadge" data-src="fileRequestsBadge"></span></a>
+  <a class="tn-subtab {% if EP == 'supervisor_team_calendar' %}active{% endif %}" href="{{ url_for('supervisor_team_calendar') }}">Calendar</a>
+  {% endif %}
+  {% if SUPER or ADMIN or P.get('can_material_requests') %}
+  <a class="tn-subtab {% if EP == 'material_som_approvals' %}active{% endif %}" href="{{ url_for('material_som_approvals') }}">Material Approvals<span class="tn-subbadge" data-src="materialBadge"></span></a>
+  {% endif %}
+  {% if break_log_supervisor_access() %}
+  <a class="tn-subtab {% if EP == 'break_log.supervisor_break_logs' %}active{% endif %}" href="{{ url_for('break_log.supervisor_break_logs') }}">Break Monitoring</a>
+  <a class="tn-subtab {% if EP == 'break_log.overbreak_review' %}active{% endif %}" href="{{ url_for('break_log.overbreak_review') }}">Overbreak Review</a>
+  {% endif %}
+  {% if TL or ADMIN %}
+  <a class="tn-subtab {% if EP == 'tl_view.tl_view_leave' %}active{% endif %}" href="{{ url_for('tl_view.tl_view_leave') }}">TL: Leave</a>
+  <a class="tn-subtab {% if EP == 'tl_view.tl_view_requests' %}active{% endif %}" href="{{ url_for('tl_view.tl_view_requests') }}">TL: Requests</a>
+  {% endif %}
+</div></div>
+{% elif EP in ['admin_all_leaves', 'admin_file_leave', 'pim_index', 'pim_profile', 'memos.memos_list'] %}
+<div class="tn-subnav"><div class="tn-subnav-inner">
+  <span class="tn-subnav-label">People</span>
+  {% if ADMIN or P.get('can_all_leaves') %}
+  <a class="tn-subtab {% if EP == 'admin_all_leaves' %}active{% endif %}" href="{{ url_for('admin_all_leaves') }}">All Leaves</a>
+  {% endif %}
+  {% if ADMIN or P.get('can_file_for_emp') %}
+  <a class="tn-subtab {% if EP == 'admin_file_leave' %}active{% endif %}" href="{{ url_for('admin_file_leave') }}">File for Employee</a>
+  {% endif %}
+  {% if ADMIN or P.get('can_pim') %}
+  <a class="tn-subtab {% if EP in ['pim_index', 'pim_profile'] %}active{% endif %}" href="{{ url_for('pim_index') }}">Employee Database</a>
+  {% endif %}
+  {% if ADMIN or P.get('can_memos') %}
+  <a class="tn-subtab {% if EP == 'memos.memos_list' %}active{% endif %}" href="{{ url_for('memos.memos_list') }}">Memos</a>
+  {% endif %}
+</div></div>
+{% elif EP in ['admin_absences', 'tardiness.tardiness_page', 'admin_night_diff', 'admin_overbreak', 'admin_ot_hours'] %}
+<div class="tn-subnav"><div class="tn-subnav-inner">
+  <span class="tn-subnav-label">Attendance</span>
+  {% if WRAP and (ADMIN or P.get('can_absences')) %}
+  <a class="tn-subtab {% if EP == 'admin_absences' %}active{% endif %}" href="{{ url_for('admin_absences') }}">Attendance</a>
+  {% endif %}
+  {% if WRAP and (ADMIN or P.get('can_tardiness')) %}
+  <a class="tn-subtab {% if EP == 'tardiness.tardiness_page' %}active{% endif %}" href="{{ url_for('tardiness.tardiness_page') }}">Tardiness</a>
+  {% endif %}
+  {% if WRAP and (ADMIN or P.get('can_night_differential')) %}
+  <a class="tn-subtab {% if EP == 'admin_night_diff' %}active{% endif %}" href="{{ url_for('admin_night_diff') }}">Night Differential</a>
+  {% endif %}
+  {% if WRAP and (ADMIN or P.get('can_holiday_awol')) %}
+  <a class="tn-subtab {% if EP == 'admin_holiday_awol' %}active{% endif %}" href="{{ url_for('admin_holiday_awol') }}">Holiday AWOL</a>
+  {% endif %}
+  {% if WRAP and (ADMIN or P.get('can_overbreak')) %}
+  <a class="tn-subtab {% if EP == 'admin_overbreak' %}active{% endif %}" href="{{ url_for('admin_overbreak') }}">Overbreak</a>
+  {% endif %}
+  {% if WRAP and (ADMIN or P.get('can_ot_hours')) %}
+  <a class="tn-subtab {% if EP == 'admin_ot_hours' %}active{% endif %}" href="{{ url_for('admin_ot_hours') }}">OT Hours</a>
+  {% endif %}
+</div></div>
+{% elif EP in ['admin_analytics', 'admin_reports', 'admin_schedules', 'admin_attrition', 'survey.survey_admin_list', 'survey.survey_results', 'admin_ot_tickets'] %}
+<div class="tn-subnav"><div class="tn-subnav-inner">
+  <span class="tn-subnav-label">Reports</span>
+  {% if WRAP and (ADMIN or P.get('can_reports')) %}
+  <a class="tn-subtab {% if EP == 'admin_analytics' %}active{% endif %}" href="{{ url_for('admin_analytics') }}">Analytics</a>
+  <a class="tn-subtab {% if EP == 'admin_reports' %}active{% endif %}" href="{{ url_for('admin_reports') }}">Reports</a>
+  {% endif %}
+  {% if WRAP and (ADMIN or P.get('can_schedules')) %}
+  <a class="tn-subtab {% if EP == 'admin_schedules' %}active{% endif %}" href="{{ url_for('admin_schedules') }}">Schedules</a>
+  {% endif %}
+  {% if WRAP and (ADMIN or P.get('can_attrition_report')) %}
+  <a class="tn-subtab {% if EP == 'admin_attrition' %}active{% endif %}" href="{{ url_for('admin_attrition') }}">Attrition</a>
+  {% endif %}
+  {% if WRAP and (ADMIN or P.get('can_surveys')) %}
+  <a class="tn-subtab {% if EP in ['survey.survey_admin_list', 'survey.survey_results'] %}active{% endif %}" href="{{ url_for('survey.survey_admin_list') }}">Surveys</a>
+  {% endif %}
+  {% if WRAP and (ADMIN or P.get('can_view_tickets')) %}
+  <a class="tn-subtab {% if EP == 'admin_ot_tickets' %}active{% endif %}" href="{{ url_for('admin_ot_tickets') }}">OT/RDW Tickets</a>
+  {% endif %}
+</div></div>
+{% elif EP in ['material_admin_review', 'material_final_approval', 'material_purchaser_view', 'admin_inventory', 'inventory_history'] %}
+<div class="tn-subnav"><div class="tn-subnav-inner">
+  <span class="tn-subnav-label">Materials</span>
+  {% if WRAP and (ADMIN or P.get('can_material_requests')) %}
+  <a class="tn-subtab {% if EP == 'material_admin_review' %}active{% endif %}" href="{{ url_for('material_admin_review') }}">Material Review<span class="tn-subbadge" data-src="materialAdminBadge"></span></a>
+  {% endif %}
+  {% if WRAP and (session.get('user', {}).get('email', '')|lower == (config.get('MATERIAL_FINAL_EMAIL','') or '')|lower or ADMIN or P.get('can_final_approval')) %}
+  <a class="tn-subtab {% if EP == 'material_final_approval' %}active{% endif %}" href="{{ url_for('material_final_approval') }}">Final Approval<span class="tn-subbadge" data-src="materialFinalBadge"></span></a>
+  {% endif %}
+  {% if WRAP and (ADMIN or P.get('can_view_approved_items')) %}
+  <a class="tn-subtab {% if EP == 'material_purchaser_view' %}active{% endif %}" href="{{ url_for('material_purchaser_view') }}">Purchaser View</a>
+  {% endif %}
+  {% if WRAP and (ADMIN or P.get('can_material_requests') or P.get('can_inventory')) %}
+  <a class="tn-subtab {% if EP == 'admin_inventory' %}active{% endif %}" href="{{ url_for('admin_inventory') }}">Inventory</a>
+  {% endif %}
+  {% if ADMIN %}
+  <a class="tn-subtab {% if EP == 'inventory_history' %}active{% endif %}" href="{{ url_for('inventory_history') }}">Inventory History</a>
+  {% endif %}
+</div></div>
+{% elif EP in ['facilities_review', 'facilities_final'] %}
+<div class="tn-subnav"><div class="tn-subnav-inner">
+  <span class="tn-subnav-label">Facilities</span>
+  {% if WRAP and (ADMIN or P.get('can_facilities_review')) %}
+  <a class="tn-subtab {% if EP == 'facilities_review' %}active{% endif %}" href="{{ url_for('facilities_review') }}">Review</a>
+  {% endif %}
+  {% if WRAP and (ADMIN or P.get('can_facilities_final')) %}
+  <a class="tn-subtab {% if EP == 'facilities_final' %}active{% endif %}" href="{{ url_for('facilities_final') }}">Final Approval</a>
+  {% endif %}
+</div></div>
+{% elif EP in ['hrportal_wfm_onboarding', 'hrportal_onboarding', 'hrportal_offboarding', 'admin_onboarding_report'] %}
+<div class="tn-subnav"><div class="tn-subnav-inner">
+  <span class="tn-subnav-label">Onboarding</span>
+  {% if WRAP and (ADMIN or P.get('can_wfm')) %}
+  <a class="tn-subtab {% if EP == 'hrportal_wfm_onboarding' %}active{% endif %}" href="{{ url_for('hrportal_wfm_onboarding') }}">WFM Onboarding</a>
+  {% endif %}
+  {% if WRAP and (ADMIN or P.get('can_onboarding')) %}
+  <a class="tn-subtab {% if EP == 'hrportal_onboarding' %}active{% endif %}" href="{{ url_for('hrportal_onboarding') }}">Onboarding</a>
+  <a class="tn-subtab {% if EP == 'hrportal_offboarding' %}active{% endif %}" href="{{ url_for('hrportal_offboarding') }}">Offboarding</a>
+  {% endif %}
+  {% if WRAP and (ADMIN or P.get('can_onboarding') or P.get('can_reports')) %}
+  <a class="tn-subtab {% if EP == 'admin_onboarding_report' %}active{% endif %}" href="{{ url_for('admin_onboarding_report') }}">Onb/Offb Report</a>
+  {% endif %}
+</div></div>
+{% elif EP in ['csat_dashboard', 'csr.page'] %}
+<div class="tn-subnav"><div class="tn-subnav-inner">
+  <span class="tn-subnav-label">CSAT</span>
+  <a class="tn-subtab {% if EP == 'csat_dashboard' %}active{% endif %}" href="{{ url_for('csat_dashboard') }}">Dashboard</a>
+  <a class="tn-subtab {% if EP == 'csr.page' %}active{% endif %}" href="{{ url_for('csr.page') }}">CSR Percentage</a>
+</div></div>
+{% elif 'floor_map' in EP or 'incident_reports' in EP or EP in ['qa_updates.admin', 'admin_tickets'] %}
+<div class="tn-subnav"><div class="tn-subnav-inner">
+  <span class="tn-subnav-label">Workspace</span>
+  {% if ADMIN or P.get('can_floor_map') %}
+  <a class="tn-subtab {% if 'floor_map' in EP and 'admin' not in EP %}active{% endif %}" href="{{ url_for('floor_map.index') }}">Floor Map</a>
+  {% endif %}
+  {% if ADMIN %}
+  <a class="tn-subtab {% if 'floor_map' in EP and 'admin' in EP %}active{% endif %}" href="{{ url_for('floor_map.admin') }}">Seat Setup</a>
+  {% endif %}
+  {% if ir_can_file() %}
+  <a class="tn-subtab {% if 'incident_reports' in EP and EP != 'incident_reports.dashboard' %}active{% endif %}" href="{{ url_for('incident_reports.new_report') }}">File IR</a>
+  {% endif %}
+  {% if ir_can_view() %}
+  <a class="tn-subtab {% if EP == 'incident_reports.dashboard' %}active{% endif %}" href="{{ url_for('incident_reports.dashboard') }}">IR Dashboard</a>
+  {% endif %}
+  {% if qa_can_manage() %}
+  <a class="tn-subtab {% if EP == 'qa_updates.admin' %}active{% endif %}" href="{{ url_for('qa_updates.admin') }}">Manage QA</a>
+  {% endif %}
+  {% if WRAP and (ADMIN or P.get('can_it_tickets') or P.get('can_hr_tickets')) %}
+  <a class="tn-subtab {% if EP == 'admin_tickets' %}active{% endif %}" href="{{ url_for('admin_tickets') }}">Ticket Queue</a>
+  {% endif %}
+</div></div>
+{% elif EP in ['admin_settings', 'admin_holidays', 'admin_leave_types', 'admin_entitlements', 'admin_emp_settings'] %}
+<div class="tn-subnav"><div class="tn-subnav-inner">
+  <span class="tn-subnav-label">Settings</span>
+  {% if ADMIN or P.get('can_settings') %}
+  <a class="tn-subtab {% if EP == 'admin_settings' %}active{% endif %}" href="{{ url_for('admin_settings') }}">Settings</a>
+  <a class="tn-subtab {% if EP == 'admin_holidays' %}active{% endif %}" href="{{ url_for('admin_holidays') }}">Holidays</a>
+  {% endif %}
+  {% if ADMIN or P.get('can_entitlements') %}
+  <a class="tn-subtab {% if EP == 'admin_leave_types' %}active{% endif %}" href="{{ url_for('admin_leave_types') }}">Leave Types</a>
+  <a class="tn-subtab {% if EP == 'admin_entitlements' %}active{% endif %}" href="{{ url_for('admin_entitlements') }}">Entitlements</a>
+  {% endif %}
+  {% if ADMIN or P.get('can_work_mode') %}
+  <a class="tn-subtab {% if EP == 'admin_emp_settings' %}active{% endif %}" href="{{ url_for('admin_emp_settings') }}">Work Mode</a>
+  {% endif %}
+</div></div>
+{% elif EP in ['admin_quick_links', 'admin_supervisors', 'admin_sub_admins', 'magic_cws_balance_admin'] %}
+<div class="tn-subnav"><div class="tn-subnav-inner">
+  <span class="tn-subnav-label">Admin Tools</span>
+  {% if ADMIN %}
+  <a class="tn-subtab {% if EP == 'admin_quick_links' %}active{% endif %}" href="{{ url_for('admin_quick_links') }}">Quick Links</a>
+  <a class="tn-subtab {% if EP == 'admin_supervisors' %}active{% endif %}" href="{{ url_for('admin_supervisors') }}">Supervisor Assignments</a>
+  <a class="tn-subtab {% if EP == 'admin_sub_admins' %}active{% endif %}" href="{{ url_for('admin_sub_admins') }}">Sub-Admins</a>
+  <a class="tn-subtab {% if EP == 'magic_cws_balance_admin' %}active{% endif %}" href="{{ url_for('magic_cws_balance_admin') }}">Magic CWS Balance</a>
+  {% endif %}
+</div></div>
+{% endif %}
+
+{% if session.get('original_admin') %}
+<div class="tn-loginas">
+  <i class="bi bi-person-fill-gear me-1"></i>
+  Viewing as <strong>{{ session['user']['name'] }}</strong>
+  <a href="{{ url_for('login_as_back') }}" class="ms-2 fw-bold" style="color:#000;text-decoration:underline;">
+    Switch Back
+  </a>
+</div>
+{% endif %}
+
+<div class="tn-pscrim" id="tnPScrim">
+  <div class="tn-palette" role="dialog" aria-modal="true" aria-label="Jump to page">
+    <div class="tn-pinput">
+      <i class="bi bi-search"></i>
+      <input type="text" id="tnPInput" placeholder="Search pages..." autocomplete="off">
+      <span class="tn-kbd">Esc</span>
+    </div>
+    <div class="tn-plist" id="tnPList"></div>
+  </div>
+</div>
+
+<div class="tn-drawer" id="tnDrawer">
+  <div class="tn-drawer-head">
+    <span class="tn-brand"><span class="tn-brand-icon"><i class="bi bi-calendar2-check"></i></span>
+      <span class="tn-brand-name">HR Portal<small>Cohere Outsourcing</small></span></span>
+    <button class="tn-iconbtn" id="tnDrawerClose" type="button"><i class="bi bi-x-lg"></i></button>
+  </div>
+  <div class="tn-drawer-body" id="tnDrawerBody"></div>
+</div>
+
+<script>
+(function(){
+  var mega = document.getElementById('tnMega');
+  var scrim = document.getElementById('tnScrim');
+  var triggers = document.querySelectorAll('.tn-trigger');
+  var panels = document.querySelectorAll('.tn-panel');
+
+  function closeMega(){
+    mega.classList.remove('open');
+    scrim.classList.remove('open');
+    triggers.forEach(function(b){ b.setAttribute('aria-expanded','false'); });
+  }
+  function openMega(name, btn){
+    panels.forEach(function(p){ p.classList.toggle('active', p.dataset.panel === name); });
+    mega.classList.add('open');
+    scrim.classList.add('open');
+    triggers.forEach(function(b){ b.setAttribute('aria-expanded', String(b === btn)); });
+  }
+  triggers.forEach(function(btn){
+    btn.addEventListener('click', function(e){
+      e.stopPropagation();
+      if (btn.getAttribute('aria-expanded') === 'true') closeMega();
+      else openMega(btn.dataset.panel, btn);
+    });
+    btn.addEventListener('mouseenter', function(){
+      if (mega.classList.contains('open')) openMega(btn.dataset.panel, btn);
+    });
+  });
+  scrim.addEventListener('click', closeMega);
+  mega.addEventListener('click', function(e){ e.stopPropagation(); });
+  document.addEventListener('click', closeMega);
+
+  /* highlight the trigger owning the current page */
+  var activeItem = document.querySelector('.tn-item.active');
+  if (activeItem){
+    var panel = activeItem.closest('.tn-panel');
+    if (panel){
+      var t = document.querySelector('.tn-trigger[data-panel="' + panel.dataset.panel + '"]');
+      if (t) t.classList.add('is-current');
+    }
+  }
+
+  /* roll badge visibility up to trigger dots (badges are refreshed
+     by scripts in base.html on 60s intervals) */
+  function rollupBadges(){
+    panels.forEach(function(p){
+      var t = document.querySelector('.tn-trigger[data-panel="' + p.dataset.panel + '"]');
+      if (!t) return;
+      var dot = t.querySelector('.tn-dot');
+      if (!dot) return;
+      var any = false;
+      p.querySelectorAll('span[id$="Badge"]').forEach(function(b){
+        if (b.style.display !== 'none' && b.textContent !== '' && b.textContent !== '0') any = true;
+      });
+      dot.style.display = any ? 'block' : 'none';
+    });
+  }
+  setInterval(rollupBadges, 5000);
+  setTimeout(rollupBadges, 1500);
+
+  /* mirror mega-panel badge counts onto sub-nav tabs */
+  function mirrorSubBadges(){
+    document.querySelectorAll('.tn-subbadge').forEach(function(m){
+      var src = document.getElementById(m.dataset.src);
+      if (!src) return;
+      m.textContent = src.textContent;
+      m.style.display = (src.style.display !== 'none' && src.textContent !== '' && src.textContent !== '0')
+        ? 'inline-block' : 'none';
+    });
+  }
+  setInterval(mirrorSubBadges, 5000);
+  setTimeout(mirrorSubBadges, 1600);
+
+  /* search index from rendered items only (permission-filtered by Jinja) */
+  var INDEX = [];
+  panels.forEach(function(p){
+    var t = document.querySelector('.tn-trigger[data-panel="' + p.dataset.panel + '"]');
+    var section = t ? t.textContent.trim() : '';
+    p.querySelectorAll('.tn-item').forEach(function(a){
+      INDEX.push({
+        title: a.textContent.trim(),
+        icon: a.querySelector('i') ? a.querySelector('i').className : 'bi bi-link',
+        section: section,
+        href: a.getAttribute('href')
+      });
+    });
+  });
+
+  var pScrim = document.getElementById('tnPScrim');
+  var pInput = document.getElementById('tnPInput');
+  var pList = document.getElementById('tnPList');
+  var results = [], sel = 0;
+
+  function render(){
+    var q = pInput.value.trim().toLowerCase();
+    results = q
+      ? INDEX.filter(function(i){ return i.title.toLowerCase().indexOf(q) > -1 || i.section.toLowerCase().indexOf(q) > -1; })
+      : INDEX.slice();
+    sel = 0;
+    if (!results.length){
+      pList.innerHTML = '<div class="tn-pempty">No page matches that.</div>';
+      return;
+    }
+    var html = '', last = null;
+    results.forEach(function(it, idx){
+      if (!q && it.section !== last){
+        html += '<div class="tn-pgroup">' + it.section + '</div>';
+        last = it.section;
+      }
+      html += '<div class="tn-pitem' + (idx === 0 ? ' sel' : '') + '" data-idx="' + idx + '">'
+            + '<i class="' + it.icon + '"></i>' + it.title
+            + '<span class="sec">' + it.section + '</span></div>';
+    });
+    pList.innerHTML = html;
+  }
+  function move(d){
+    var items = pList.querySelectorAll('.tn-pitem');
+    if (!items.length) return;
+    items[sel].classList.remove('sel');
+    sel = (sel + d + items.length) % items.length;
+    items[sel].classList.add('sel');
+    items[sel].scrollIntoView({block:'nearest'});
+  }
+  function openPalette(){ closeMega(); pScrim.classList.add('open'); pInput.value=''; render(); pInput.focus(); }
+  function closePalette(){ pScrim.classList.remove('open'); }
+  function go(){ if (results[sel]) window.location = results[sel].href; }
+
+  document.getElementById('tnOpenPalette').addEventListener('click', openPalette);
+  pInput.addEventListener('input', render);
+  pScrim.addEventListener('click', function(e){ if (e.target === pScrim) closePalette(); });
+  pList.addEventListener('click', function(e){
+    var row = e.target.closest('.tn-pitem');
+    if (row){ sel = +row.dataset.idx; go(); }
+  });
+  document.addEventListener('keydown', function(e){
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k'){ e.preventDefault(); openPalette(); return; }
+    if (e.key === 'Escape'){ closePalette(); closeMega(); closeDrawer(); return; }
+    if (!pScrim.classList.contains('open')) return;
+    if (e.key === 'ArrowDown'){ e.preventDefault(); move(1); }
+    if (e.key === 'ArrowUp'){ e.preventDefault(); move(-1); }
+    if (e.key === 'Enter'){ e.preventDefault(); go(); }
+  });
+
+  /* mobile drawer from the same index */
+  var drawer = document.getElementById('tnDrawer');
+  var dbody = document.getElementById('tnDrawerBody');
+  var sections = [];
+  INDEX.forEach(function(i){ if (sections.indexOf(i.section) === -1) sections.push(i.section); });
+  dbody.innerHTML = sections.map(function(s, n){
+    var links = INDEX.filter(function(i){ return i.section === s; }).map(function(i){
+      return '<a class="tn-item" href="' + i.href + '"><i class="' + i.icon + '"></i>' + i.title + '</a>';
+    }).join('');
+    return '<button class="tn-acc-head" data-acc="' + n + '" aria-expanded="false" type="button">' + s
+         + ' <i class="bi bi-chevron-down"></i></button>'
+         + '<div class="tn-acc-body" id="tnAcc' + n + '">' + links + '</div>';
+  }).join('');
+  dbody.addEventListener('click', function(e){
+    var h = e.target.closest('.tn-acc-head');
+    if (!h) return;
+    var open = h.getAttribute('aria-expanded') === 'true';
+    h.setAttribute('aria-expanded', String(!open));
+    document.getElementById('tnAcc' + h.dataset.acc).classList.toggle('open', !open);
+  });
+  function closeDrawer(){ drawer.classList.remove('open'); document.body.style.overflow=''; }
+  document.getElementById('tnBurger').addEventListener('click', function(){
+    drawer.classList.add('open'); document.body.style.overflow='hidden';
+  });
+  document.getElementById('tnDrawerClose').addEventListener('click', closeDrawer);
+
+  /* mirror theme state from the hidden base.html icon */
+  function syncThemeIcon(){
+    var src = document.getElementById('theme-icon');
+    var dst = document.getElementById('tnThemeIcon');
+    if (src && dst) dst.className = src.className;
+  }
+  setTimeout(syncThemeIcon, 200);
+  document.getElementById('tnThemeBtn').addEventListener('click', function(){
+    setTimeout(syncThemeIcon, 50);
+  });
+})();
+</script>

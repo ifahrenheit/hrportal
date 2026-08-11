@@ -86,7 +86,7 @@
   </a>
   <a href="{{ url_for('tardiness.tardiness_page', date_from=date_from, date_to=date_to, view='triggers') }}"
      class="btn {% if view == 'triggers' %}btn-primary{% else %}btn-outline-secondary{% endif %}">
-    <i class="bi bi-envelope-exclamation"></i> Memo Triggers
+    <i class="bi bi-envelope-exclamation"></i> IR Triggers
   </a>
 </div>
 
@@ -256,7 +256,7 @@
         <tr>
           <td colspan="5" class="text-center text-muted py-5">
             <i class="bi bi-envelope-check" style="font-size:2rem;"></i>
-            <div class="mt-2">No memo triggers in this date range.</div>
+            <div class="mt-2">No IR triggers in this date range.</div>
           </td>
         </tr>
         {% endfor %}
@@ -485,14 +485,33 @@ document.addEventListener('DOMContentLoaded', function () {
     shiftPeriod(-1);  // step back once more + submits
   });
 
-  // Today button: set both From and To to today's date (effectively a
-  // single-day view, just expressed as a one-day range).
-  document.getElementById('todayBtn')?.addEventListener('click', () => {
-    const today = new Date().toISOString().slice(0, 10);
-    dateFromInput.value = today;
-    dateToInput.value = today;
-    form.submit();
-  });
+  // Today button: defaults to the last day whose shifts have fully
+  // completed (per TODAY_CUTOFF_HOUR), to avoid showing incomplete
+  // FTS/Absent/Late counts for a day still in progress. The date inputs
+  // can still be manually set to the actual current date if needed.
+  const TODAY_CUTOFF_HOUR = 13; // matches the 1 PM absence-report cron
+document.getElementById('todayBtn')?.addEventListener('click', () => {
+  const now = new Date();
+  const todayCutoff = new Date(now);
+  todayCutoff.setHours(TODAY_CUTOFF_HOUR, 0, 0, 0);
+
+  let target = new Date(now);
+  if (now < todayCutoff) {
+    // Yesterday's overnight shifts haven't hit their completion deadline yet
+    // (today's 1 PM cutoff), so the last SAFE day is two days back.
+    target.setDate(target.getDate() - 2);
+  } else {
+    target.setDate(target.getDate() - 1);
+  }
+
+  const y = target.getFullYear();
+  const m = String(target.getMonth() + 1).padStart(2, '0');
+  const d = String(target.getDate()).padStart(2, '0');
+  const safeDate = `${y}-${m}-${d}`;
+  dateFromInput.value = safeDate;
+  dateToInput.value = safeDate;
+  form.submit();
+});
 
   // Auto-submit whenever From, To, or Department is changed manually -
   // no separate "View" button needed.

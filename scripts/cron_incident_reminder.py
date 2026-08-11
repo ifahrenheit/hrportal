@@ -1,3 +1,4 @@
+import os
 #!/usr/bin/env python3
 """
 cron_incident_reminder.py
@@ -14,9 +15,11 @@ import logging
 from datetime import datetime
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
+from dotenv import load_dotenv
+load_dotenv()
 
 # ─── Config ───────────────────────────────────────────────────────────────────
-DB = dict(host='localhost', user='root', password='Rootpass123!@#',
+DB = dict(host='localhost', user='root', password=os.environ.get('DB_PASSWORD'),
           database='central_db', cursorclass=pymysql.cursors.DictCursor, charset='utf8mb4')
 
 SMTP_HOST = 'cohere.ph';  SMTP_PORT = 2525

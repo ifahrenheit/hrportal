@@ -1,34 +1,5 @@
 {% extends 'base.html' %}
-{% block title %}Incident Reports
-<script>
-async function markRweServed(reportNumber, btn){
-  if(!confirm('Mark ' + reportNumber + ' as RWE Served?')) return;
-  btn.disabled = true;
-  btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span>';
-  try {
-    const fd = new FormData();
-    fd.append('report_number', reportNumber);
-    fd.append('comment', 'RWE has been served.');
-    fd.append('status_action', 'rwe_served');
-    const r = await fetch('/incident-reports/add-comment', {method:'POST', body:fd});
-    const d = await r.json();
-    if(d.success){
-      btn.closest('.rwe-card').style.opacity='0.5';
-      btn.innerHTML='✅ Done';
-      setTimeout(()=>location.reload(), 800);
-    } else {
-      alert('Error: '+d.message);
-      btn.disabled=false;
-      btn.innerHTML='✅ Mark RWE Served';
-    }
-  } catch(e){
-    alert('Error: '+e.message);
-    btn.disabled=false;
-    btn.innerHTML='✅ Mark RWE Served';
-  }
-}
-</script>
-{% endblock %}
+{% block title %}Incident Reports{% endblock %}
 
 {% block content %}
 <style>
@@ -80,10 +51,11 @@ async function markRweServed(reportNumber, btn){
   .ir-badge-pending     { background:#fef3c7; color:#92400e; }
   .ir-badge-reviewed    { background:#dbeafe; color:#1e40af; }
   .ir-badge-resolved    { background:#d1fae5; color:#065f46; }
-  .ir-badge-pending_hr  { background:#f3e8ff; color:#6b21a8; }
-  .ir-badge-resolved_hr { background:#f3f4f6; color:#374151; }
   .ir-badge-rwe_request { background:#fee2e2; color:#991b1b; font-weight:800; }
   .ir-badge-rwe_served  { background:#d1fae5; color:#065f46; }
+  .ir-badge-rwe_for_signature { background:#fef3c7; color:#92400e; font-weight:800; }
+  .ir-badge-rwe_for_service   { background:#ffedd5; color:#9a3412; font-weight:800; }
+  .ir-badge-waived      { background:#ede9fe; color:#5b21b6; }
 
   /* Table */
   .ir-table-wrap { background:var(--surface); border-radius:12px; padding:16px; box-shadow:var(--card-shadow); overflow-x:auto; }
@@ -123,6 +95,15 @@ async function markRweServed(reportNumber, btn){
   .rwe-empty { background:var(--surface); border-radius:12px; padding:36px; text-align:center;
                box-shadow:var(--card-shadow); color:var(--text-muted); }
   .rwe-empty i { font-size:40px; color:#10b981; opacity:.5; display:block; margin-bottom:10px; }
+  .rwe-pill { --pill-color: var(--accent); border:1.5px solid var(--border); background:var(--surface);
+              color:var(--text-muted); border-radius:20px; padding:6px 14px; font-size:12px;
+              font-weight:700; cursor:pointer; transition:all .15s; display:inline-flex;
+              align-items:center; gap:6px; }
+  .rwe-pill:hover { border-color:var(--pill-color); color:var(--pill-color); }
+  .rwe-pill.active { background:var(--pill-color); border-color:var(--pill-color); color:#fff; }
+  .rwe-pill.active[data-stage="all"] { background:var(--accent); border-color:var(--accent); }
+  .rwe-pill-count { background:rgba(0,0,0,.15); border-radius:10px; padding:1px 7px; font-size:10px; }
+  .rwe-pill:not(.active) .rwe-pill-count { background:var(--bg); }
   .sla-ok      { background:#d1fae5; color:#065f46; padding:3px 10px; border-radius:20px; font-size:11px; font-weight:700; }
   .sla-warning { background:#fef3c7; color:#92400e; padding:3px 10px; border-radius:20px; font-size:11px; font-weight:700; }
   .sla-overdue { background:#fee2e2; color:#991b1b; padding:3px 10px; border-radius:20px; font-size:11px; font-weight:700; }
@@ -143,15 +124,19 @@ async function markRweServed(reportNumber, btn){
 </div>
 
 {# Stats #}
-{% set rwe_req_count = stats.rwe_request or 0 %}
+{% if user.is_admin or user.is_hr or user.is_sga %}
+  {% set rwe_req_count = rwe_reports | list | length %}
+{% else %}
+  {% set rwe_req_count = rwe_reports | selectattr('status','in',['rwe_for_signature','forwarded']) | list | length %}
+{% endif %}
 {% set stat_items = [
   ('Total',      stats.total,       '#1e5fd4','bi-clipboard2'),
   ('Pending',    stats.pending,     '#d97706','bi-hourglass-split'),
-  ('Reviewed',   stats.reviewed,    '#1e5fd4','bi-eye'),
+  ('IR Reviewed', stats.reviewed,    '#1e5fd4','bi-eye'),
   ('Resolved',   stats.resolved,    '#10b981','bi-check-circle'),
   ('RWE Queue',  stats.rwe_request, '#ef4444','bi-person-exclamation'),
   ('RWE Served', stats.rwe_served,  '#10b981','bi-person-check'),
-  ('Resolved HR',stats.resolved_hr, '#6b7280','bi-archive'),
+  ('Waived',     stats.waived,      '#8b5cf6','bi-slash-circle'),
 ] %}
 <div class="ir-stat-grid">
   {% for label,val,color,icon in stat_items %}
@@ -167,13 +152,15 @@ async function markRweServed(reportNumber, btn){
 {# Filters #}
 <div class="ir-filter-card">
   <form method="GET" class="row g-2 align-items-end">
+    <input type="hidden" name="tab" id="activeTab" value="{{ request.args.get('tab', 'cards-view') }}">
     <div class="col-6 col-md-2">
       <label>Status</label>
       <select name="status" class="form-select form-select-sm">
         {% for v,l in [
-          ('all','All Status'),('pending','Pending'),('reviewed','Reviewed'),
+          ('all','All Status'),('pending','Pending'),('reviewed','IR Reviewed'),
           ('resolved','Resolved'),('rwe_request','🔴 RWE Queue'),
-          ('rwe_served','RWE Served'),('pending_hr','Pending HR'),('resolved_hr','Resolved HR')
+          ('rwe_for_signature','🟡 For Signature'),('rwe_for_service','🟠 For Service'),
+          ('rwe_served','RWE Served'),('waived','⚪ Waived')
         ] %}
         <option value="{{ v }}" {{ 'selected' if status_filter==v }}>{{ l }}</option>
         {% endfor %}
@@ -220,7 +207,7 @@ async function markRweServed(reportNumber, btn){
       <i class="bi bi-table me-1"></i>Table
     </button>
   </li>
-  {% if user.is_admin or user.is_hr or user.is_sga %}
+  {% if user.is_admin or user.is_hr or user.is_sga or user.is_supervisor %}
   <li class="nav-item">
     <button class="nav-link rwe-tab" data-bs-toggle="tab" data-bs-target="#rwe-queue">
       <i class="bi bi-person-exclamation me-1"></i>RWE Queue
@@ -234,6 +221,11 @@ async function markRweServed(reportNumber, btn){
   <li class="nav-item">
     <button class="nav-link" data-bs-toggle="tab" data-bs-target="#rwe-report">
       <i class="bi bi-bar-chart-line me-1"></i>RWE Report
+    </button>
+  </li>
+  <li class="nav-item">
+    <button class="nav-link" data-bs-toggle="tab" data-bs-target="#ir-timeline">
+      <i class="bi bi-clock-history me-1"></i>IR Timeline
     </button>
   </li>
   {% endif %}
@@ -254,9 +246,10 @@ async function markRweServed(reportNumber, btn){
           <div class="d-flex align-items-center gap-2 flex-wrap mb-1">
             <span class="ir-card-num">{{ r.report_number }}</span>
             <span class="ir-badge ir-badge-{{ r.status }}">
-              {{ {'rwe_request':'🔴 RWE Queue','rwe_served':'✅ RWE Served',
-                  'pending':'Pending','reviewed':'Reviewed','resolved':'Resolved',
-                  'pending_hr':'Pending HR','resolved_hr':'Resolved HR'}.get(r.status, r.status.upper()) }}
+              {{ {'rwe_request':'🔴 RWE Queue','rwe_for_signature':'🟡 For Signature','rwe_for_service':'🟠 For Service','rwe_served':'✅ RWE Served',
+                  'pending':'Pending','reviewed':'IR Reviewed','resolved':'Resolved',
+                  'waived':'⚪ Waived',
+}.get(r.status, r.status.upper()) }}
             </span>
           </div>
           <div class="ir-card-meta">
@@ -308,7 +301,7 @@ async function markRweServed(reportNumber, btn){
           <td>{{ r.submitted_by_name or 'N/A' }}</td>
           <td>
             <span class="ir-badge ir-badge-{{ r.status }}">
-              {{ {'rwe_request':'RWE Queue','rwe_served':'RWE Served'}.get(r.status, r.status.replace('_',' ').upper()) }}
+              {{ {'rwe_request':'RWE Queue','rwe_for_signature':'For Signature','rwe_for_service':'For Service','rwe_served':'RWE Served','waived':'Waived'}.get(r.status, r.status.replace('_',' ').upper()) }}
             </span>
           </td>
           <td>
@@ -326,7 +319,7 @@ async function markRweServed(reportNumber, btn){
   </div>
 
   {# HR / RWE Queue Tab #}
-  {% if user.is_admin or user.is_hr or user.is_sga %}
+  {% if user.is_admin or user.is_hr or user.is_sga or user.is_supervisor %}
   <div class="tab-pane fade" id="rwe-queue">
 
     {# Alert banner #}
@@ -338,48 +331,106 @@ async function markRweServed(reportNumber, btn){
     </div>
     {% endif %}
 
-    {% if not rwe_reports %}
+    {% if user.is_admin or user.is_hr or user.is_sga %}
+      {% set visible_rwe = rwe_reports %}
+    {% else %}
+      {% set visible_rwe = rwe_reports | selectattr('status','in',['rwe_for_signature','forwarded']) | list %}
+    {% endif %}
+    {% if not visible_rwe %}
     <div class="rwe-empty">
       <i class="bi bi-check-circle-fill"></i>
-      No pending RWE requests — all clear!
+      No pending RWE items — all clear!
     </div>
     {% else %}
-    {% for r in rwe_reports %}
-    <div class="rwe-card">
-      <div class="rwe-card-header">
-        <div class="flex-grow-1">
-          <div class="d-flex align-items-center gap-2 flex-wrap">
-            <span style="font-family:'Outfit',sans-serif;font-weight:700;color:var(--accent);font-size:15px;">
-              {{ r.report_number }}
-            </span>
-            <span class="ir-badge ir-badge-rwe_request">🔴 RWE Queue</span>
+
+    {% set stage_defs = [
+      ('rwe_request',       '🔴 Awaiting Document',  'HR',  '#ef4444', 'Create the RWE document', 'rwe_for_signature', '🖊 Doc Created',  5),
+      ('rwe_for_signature', '🟡 Awaiting Signature', 'TL',  '#f59e0b', 'TL must sign the RWE document', 'rwe_for_service', '✍ Signed', 5),
+      ('rwe_for_service',   '🟠 Awaiting Service',   'HR',  '#f97316', 'Serve the signed RWE to the agent', 'forwarded', '📧 RWE Served', 5),
+      ('forwarded',         '🟣 SOM/TL Decision',    'TL',  '#8b5cf6', 'Waive or proceed with disciplinary action', 'for_memo', '⚖️ Proceed w/ Action', 5),
+      ('for_memo',          '🔵 Awaiting Memo',      'HR',  '#3b82f6', 'Create the memo, then resolve', 'resolved', '✅ Resolve (memo)', 5),
+    ] %}
+
+    {# Pill filter bar #}
+    <div id="rweStagePills" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px;">
+      <button class="rwe-pill active" data-stage="all"
+              onclick="filterRweStage('all', this)">All</button>
+      {% for sk, sl, ow, cl, h, na, nl, sd in stage_defs %}
+      {% if user.is_admin or user.is_hr or user.is_sga or ow == 'TL' %}
+      {% set cnt = rwe_reports | selectattr('status','equalto',sk) | list | length %}
+      <button class="rwe-pill" data-stage="{{ sk }}" style="--pill-color:{{ cl }};"
+              onclick="filterRweStage('{{ sk }}', this)">
+        {{ sl }} <span class="rwe-pill-count">{{ cnt }}</span>
+      </button>
+      {% endif %}
+      {% endfor %}
+    </div>
+
+    {% for stage_key, stage_label, owner, color, hint, next_action, next_label, sla_days in stage_defs %}
+    {% if user.is_admin or user.is_hr or user.is_sga or owner == 'TL' %}
+    {% set stage_items = rwe_reports | selectattr('status','equalto',stage_key) | list %}
+    <div style="margin-bottom:22px;" class="rwe-stage-section" data-stage="{{ stage_key }}">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;">
+        <span style="font-family:'Outfit',sans-serif;font-weight:700;font-size:14px;color:{{ color }};">
+          {{ stage_label }}
+        </span>
+        <span style="background:{{ color }}1a;color:{{ color }};border-radius:12px;padding:2px 10px;
+                     font-size:11px;font-weight:700;">{{ stage_items | length }}</span>
+        <span style="font-size:11px;color:var(--text-muted);">
+          Owner: <strong>{{ owner }}</strong> · {{ hint }} · SLA {{ sla_days }}d
+        </span>
+      </div>
+
+      {% if not stage_items %}
+      <div style="font-size:12px;color:var(--text-muted);padding:8px 14px;background:var(--surface);
+                  border-radius:8px;border-left:3px solid {{ color }}40;">Nothing waiting here.</div>
+      {% else %}
+      {% for r in stage_items %}
+      {% set overdue = (r.days_in_stage or 0) > sla_days %}
+      <div class="rwe-card" style="border-left-color:{{ color }};">
+        <div class="rwe-card-header">
+          <div class="flex-grow-1">
+            <div class="d-flex align-items-center gap-2 flex-wrap">
+              <span style="font-family:'Outfit',sans-serif;font-weight:700;color:var(--accent);font-size:15px;">
+                {{ r.report_number }}
+              </span>
+              <span class="ir-badge" style="background:{{ color }}1a;color:{{ color }};">{{ stage_label }}</span>
+              {% if r.responsible_tl %}
+              <span class="ir-badge" style="background:var(--surface);border:1px solid var(--border);color:var(--text);">
+                <i class="bi bi-person-badge me-1"></i>TL: {{ r.responsible_tl }}
+              </span>
+              {% endif %}
+              <span style="font-size:11px;font-weight:700;
+                           color:{{ '#ef4444' if overdue else 'var(--text-muted)' }};">
+                <i class="bi bi-hourglass-split me-1"></i>{{ r.days_in_stage or 0 }}d in stage{{ ' — OVERDUE' if overdue }}
+              </span>
+            </div>
+            <div class="rwe-meta mt-1">
+              <i class="bi bi-person me-1"></i>{{ r.employee_name }}
+              &nbsp;·&nbsp;<i class="bi bi-calendar3 me-1"></i>
+              {{ r.incident_date.strftime('%b %d, %Y') if r.incident_date else '—' }}
+              &nbsp;·&nbsp;Filed by {{ r.submitted_by_name or 'N/A' }}
+            </div>
+            <div class="rwe-summary">{{ r.summary }}</div>
           </div>
-          <div class="rwe-meta mt-1">
-            <i class="bi bi-person me-1"></i>{{ r.employee_name }}
-            &nbsp;·&nbsp;<i class="bi bi-calendar3 me-1"></i>
-            {{ r.incident_date.strftime('%b %d, %Y') if r.incident_date else '—' }}
-            &nbsp;·&nbsp;Filed by {{ r.submitted_by_name or 'N/A' }}
+          <div class="rwe-actions">
+            <a href="{{ url_for('incident_reports.view_report', report_number=r.report_number) }}"
+               class="btn-ir-sm" style="justify-content:center;">
+              <i class="bi bi-eye"></i>View
+            </a>
+            {% if user.is_admin or (owner == 'HR' and (user.is_hr or user.is_sga)) or (owner == 'TL' and user.is_supervisor) %}
+            <button class="btn-ir-success" style="background:{{ color }};"
+                    onclick="markRweStage('{{ r.report_number }}', '{{ next_action }}', this)">
+              {{ next_label }}
+            </button>
+            {% endif %}
           </div>
-          <div class="rwe-summary">{{ r.summary }}</div>
-          <div class="rwe-since">
-            <i class="bi bi-clock me-1"></i>
-            Requested {{ r.updated_at.strftime('%b %d, %Y %I:%M %p') if r.updated_at else '' }}
-          </div>
-        </div>
-        <div class="rwe-actions">
-          <a href="{{ url_for('incident_reports.view_report', report_number=r.report_number) }}"
-             class="btn-ir-sm" style="justify-content:center;">
-            <i class="bi bi-eye"></i>View
-          </a>
-          {% if user.is_admin or user.is_hr or user.is_sga %}
-          <button class="btn-ir-success"
-                  onclick="markRweServed('{{ r.report_number }}', this)">
-            <i class="bi bi-check-lg"></i>Mark RWE Served
-          </button>
-          {% endif %}
         </div>
       </div>
+      {% endfor %}
+      {% endif %}
     </div>
+    {% endif %}
     {% endfor %}
     {% endif %}
 
@@ -428,7 +479,13 @@ async function markRweServed(reportNumber, btn){
       <table class="table report-table mb-0" id="rweReportTable">
         <thead><tr>
           <th>IR Number</th><th>Agent</th><th>Filed By</th>
-          <th>RWE Requested</th><th>RWE Served</th><th>Days</th><th>SLA</th><th></th>
+          <th>RWE Requested</th>
+          <th title="HR: request → doc created">Doc (HR)</th>
+          <th title="TL: doc → signed">Sign (TL)</th>
+          <th title="HR: signed → served">Serve (HR)</th>
+          <th title="SOM/TL: served → decision">Decision (TL)</th>
+          <th title="HR: memo → resolved">Memo (HR)</th>
+          <th>Total</th><th>SLA</th><th></th>
         </tr></thead>
         <tbody>
         {% for r in rwe_report_data %}
@@ -444,12 +501,20 @@ async function markRweServed(reportNumber, btn){
           <td style="font-size:12px;white-space:nowrap;">
             {{ r.rwe_requested_at.strftime('%b %d, %Y %I:%M %p') if r.rwe_requested_at else '—' }}
           </td>
-          <td style="font-size:12px;white-space:nowrap;">
-            {{ r.rwe_served_at.strftime('%b %d, %Y %I:%M %p') if r.rwe_served_at else '—' }}
+          {% for stage_days in [r.doc_days, r.sign_days, r.serve_days, r.decision_days, r.memo_days] %}
+          <td style="text-align:center;font-weight:700;">
+            {% if r.legacy %}
+              <span style="color:var(--text-muted);font-weight:400;" title="Pre-workflow ticket — stage data unavailable">n/a</span>
+            {% elif stage_days is not none %}
+              <span style="color:{{ '#ef4444' if stage_days > 5 else '#d97706' if stage_days >= 4 else '#10b981' }};">
+                {{ stage_days }}d
+              </span>
+            {% else %}—{% endif %}
           </td>
+          {% endfor %}
           <td style="text-align:center;font-weight:700;">
             {% if r.days_open is not none %}
-            <span style="color:{{ '#ef4444' if r.days_open > 5 else '#d97706' if r.days_open >= 3 else '#10b981' }};">
+            <span style="color:{{ '#ef4444' if r.days_open > 15 else '#d97706' if r.days_open >= 10 else '#10b981' }};">
               {{ r.days_open }}d
             </span>
             {% else %}—{% endif %}
@@ -481,6 +546,89 @@ async function markRweServed(reportNumber, btn){
 
 </div>
 
+
+  {# IR Timeline Tab #}
+  {% if user.is_admin %}
+  <div class="tab-pane fade" id="ir-timeline">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+      <div style="font-family:'Outfit',sans-serif;font-size:15px;font-weight:700;color:var(--text);">
+        <i class="bi bi-clock-history me-2" style="color:var(--accent);"></i>IR Timeline Report
+        <span style="font-size:12px;font-weight:400;color:var(--text-muted);margin-left:8px;">Full movement history for all IRs</span>
+      </div>
+      <a href="{{ url_for('incident_reports.timeline_csv') }}"
+         class="btn-ir-sm" style="text-decoration:none;">
+        <i class="bi bi-download"></i>Download CSV
+      </a>
+    </div>
+
+    <div class="ir-table-wrap">
+      <table class="table report-table mb-0" id="irTimelineTable" style="font-size:12px;">
+        <thead><tr>
+          <th>IR Number</th>
+          <th>Agent</th>
+          <th>Filed By</th>
+          <th>Filed Date</th>
+          <th>Incident Date</th>
+          <th>Status</th>
+          <th>RWE Requested</th>
+          <th>For Signature</th>
+          <th>For Service</th>
+          <th>RWE Served</th>
+          <th>Waived By</th>
+          <th>Memo Category</th>
+          <th>Disciplinary Action</th>
+          <th>Comment Timeline</th>
+        </tr></thead>
+        <tbody>
+        {% for r in ir_timeline_data %}
+        <tr>
+          <td>
+            <a href="{{ url_for('incident_reports.view_report', report_number=r.report_number) }}"
+               style="color:var(--accent);font-weight:600;text-decoration:none;">
+              {{ r.report_number }}
+            </a>
+          </td>
+          <td style="white-space:nowrap;">{{ r.employee_name }}</td>
+          <td style="white-space:nowrap;">{{ r.submitted_by_name or 'System' }}</td>
+          <td style="white-space:nowrap;">{{ r.filed_at.strftime('%b %d, %Y %I:%M %p') if r.filed_at else '—' }}</td>
+          <td style="white-space:nowrap;">{{ r.incident_date }}</td>
+          <td>
+            <span class="ir-badge ir-badge-{{ r.status }}">
+              {{ {'rwe_request':'RWE Queue','rwe_for_signature':'For Signature','rwe_for_service':'For Service','rwe_served':'RWE Served','waived':'Waived',
+                  'resolved':'Resolved','pending':'Pending','reviewed':'IR Reviewed'
+                  }.get(r.status, r.status.upper()) }}
+            </span>
+          </td>
+          <td style="white-space:nowrap;font-size:11px;">
+            {{ r.rwe_requested_at.strftime('%b %d, %Y %I:%M %p') if r.rwe_requested_at else '—' }}
+          </td>
+          <td style="white-space:nowrap;font-size:11px;">
+            {{ r.rwe_for_signature_at.strftime('%b %d, %Y %I:%M %p') if r.rwe_for_signature_at else '—' }}
+          </td>
+          <td style="white-space:nowrap;font-size:11px;">
+            {{ r.rwe_for_service_at.strftime('%b %d, %Y %I:%M %p') if r.rwe_for_service_at else '—' }}
+          </td>
+          <td style="white-space:nowrap;font-size:11px;">
+            {{ r.rwe_served_at.strftime('%b %d, %Y %I:%M %p') if r.rwe_served_at else '—' }}
+          </td>
+          <td style="white-space:nowrap;">{{ r.waived_by or '—' }}</td>
+          <td>{{ r.memo_category or '—' }}</td>
+          <td>{{ r.disciplinary_action or '—' }}</td>
+          <td style="max-width:300px;font-size:11px;color:var(--text-muted);">
+            {% if r.comment_timeline %}
+              {% for entry in r.comment_timeline.split(' || ') %}
+                <div style="border-bottom:1px solid var(--border);padding:2px 0;">{{ entry }}</div>
+              {% endfor %}
+            {% else %}—{% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  {% endif %}
+
 <script>
 function copyRweTable(){
   const t=document.getElementById('rweReportTable');
@@ -507,18 +655,26 @@ function copyTable(){
 
 function filterByClick(label){
   const map = {
+    'IR Reviewed': 'reviewed',
+    'Resolved': 'resolved',
     'RWE Queue': 'rwe_request',
+    'For Signature': 'rwe_for_signature',
+    'For Service': 'rwe_for_service',
     'RWE Served': 'rwe_served',
+    'Waived': 'waived',
     'Pending': 'pending',
     'Reviewed': 'reviewed',
     'Resolved': 'resolved',
   };
   const status = map[label];
+  const url = new URL(window.location.href);
   if(status){
-    const url = new URL(window.location.href);
     url.searchParams.set('status', status);
-    window.location.href = url.toString();
+  } else if(label === 'Total'){
+    url.searchParams.set('status', 'all');
+    url.searchParams.set('sort', 'created');
   }
+  window.location.href = url.toString();
 }
 
 async function markRweServed(reportNumber, btn){
@@ -548,6 +704,86 @@ async function markRweServed(reportNumber, btn){
     alert('Error: ' + e.message);
     btn.disabled = false;
     btn.innerHTML = '<i class="bi bi-check-lg"></i>Mark RWE Served';
+  }
+}
+
+// Track active tab when switching
+document.querySelectorAll('.ir-tabs .nav-link').forEach(tabBtn => {
+    tabBtn.addEventListener('shown.bs.tab', function(e) {
+        const tabId = e.target.getAttribute('data-bs-target').replace('#', '');
+        document.getElementById('activeTab').value = tabId;
+    });
+});
+
+// Restore active tab on page load
+document.addEventListener('DOMContentLoaded', function() {
+    const urlParams = new URLSearchParams(window.location.search);
+    const activeTab = urlParams.get('tab');
+    
+    if (activeTab) {
+        const tabButton = document.querySelector(`[data-bs-target="#${activeTab}"]`);
+        if (tabButton) {
+            const bsTab = new bootstrap.Tab(tabButton);
+            bsTab.show();
+        }
+    }
+});
+</script>
+<script>
+function filterRweStage(stage, btn){
+  document.querySelectorAll('#rweStagePills .rwe-pill').forEach(p=>p.classList.remove('active'));
+  btn.classList.add('active');
+  document.querySelectorAll('.rwe-stage-section').forEach(s=>{
+    s.style.display = (stage === 'all' || s.dataset.stage === stage) ? '' : 'none';
+  });
+}
+
+// Role-based default: TL -> signature section, HR -> document section
+document.addEventListener('DOMContentLoaded', function(){
+  const queueTab = document.querySelector('[data-bs-target="#rwe-queue"]');
+  if(!queueTab) return;
+  queueTab.addEventListener('shown.bs.tab', function(){
+    if(window._rweDefaultApplied) return;
+    window._rweDefaultApplied = true;
+    {% if user.is_admin %}
+      /* admin: keep All */
+    {% elif user.is_hr or user.is_sga %}
+      const p = document.querySelector('.rwe-pill[data-stage="rwe_request"]');
+      if(p) filterRweStage('rwe_request', p);
+    {% elif user.is_supervisor %}
+      const p = document.querySelector('.rwe-pill[data-stage="rwe_for_signature"]');
+      if(p) filterRweStage('rwe_for_signature', p);
+    {% endif %}
+  });
+});
+
+async function markRweStage(reportNumber, action, btn){
+  const labels = {
+    'rwe_for_signature': 'RWE document created — for TL signature.',
+    'rwe_for_service':   'RWE signed — for service to agent.',
+    'rwe_served':        'RWE has been served.'
+  };
+  if(!confirm('Move ' + reportNumber + ' to next stage?')) return;
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span>';
+  try {
+    const fd = new FormData();
+    fd.append('report_number', reportNumber);
+    fd.append('comment', labels[action] || 'Status updated.');
+    fd.append('status_action', action);
+    const r = await fetch('/incident-reports/add-comment', {method:'POST', body:fd});
+    const d = await r.json();
+    if(d.success){
+      btn.closest('.rwe-card').style.opacity='0.5';
+      btn.innerHTML='✅ Done';
+      setTimeout(()=>location.reload(), 800);
+    } else {
+      alert('Error: '+d.message);
+      btn.disabled=false; btn.innerHTML='Retry';
+    }
+  } catch(e){
+    alert('Error: '+e.message);
+    btn.disabled=false; btn.innerHTML='Retry';
   }
 }
 </script>

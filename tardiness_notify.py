@@ -15,8 +15,11 @@ What it does, once per run:
      counters in tardiness_cycle_state:
        - count_since_reset   (resets to 0 after every 3rd late)
        - minutes_since_reset (resets to 0 after crossing 31+ minutes)
-  3. If a counter crosses its threshold, sends a memo email and resets
-     that counter (independently of the other counter).
+  3. If a counter crosses its threshold: auto-files a real Incident
+     Report (via ir_autofile.py -- status='pending', filed by
+     HR, submitted_by_name='System'), then sends a memo email that
+     references the filed IR, and resets that counter (independently of
+     the other counter).
   4. State is keyed by (personid, period_start), so a new payroll period
      starts both counters fresh automatically — no explicit cycle-end
      cleanup needed.
@@ -40,6 +43,7 @@ from dotenv import load_dotenv
 from db_core import get_db_connection
 from payroll_period import get_current_payroll_period
 from tardiness import get_tardiness_for_date
+from ir_autofile import file_incident_report, ir_notice_html
 
 load_dotenv()
 
@@ -79,32 +83,54 @@ PROCESS_DATE = date.today() - timedelta(days=1)
 # Email sending
 # ---------------------------------------------------------------------------
 
-def send_email(to_addresses, subject, body_html):
-    if not to_addresses:
-        print(f"[tardiness_notify] No recipients for '{subject}', skipping send.")
-        return
+def send_email(to_address, subject, body_html, cc_addresses=None):
+    """
+    to_address: single string (the immediate supervisor/TL), or None if no
+                TL was found on file -- in that case the static CC list is
+                promoted to "To" instead, so the email still has a visible
+                recipient.
+    cc_addresses: list of strings (the static CC list, e.g. wfm/som/jericho)
+    BCC is always added from BCC_RECIPIENTS, regardless of the above, and
+    never appears in any visible header.
+    """
+    cc_addresses = cc_addresses or []
+
+    if to_address:
+        to_list = [to_address]
+        cc_list = [c for c in cc_addresses if c != to_address]
+    else:
+        # No TL on file -- fall back to the static list as the visible "To"
+        if not cc_addresses:
+            print(f"[tardiness_notify] No recipients at all for '{subject}', skipping send.")
+            return
+        to_list = cc_addresses
+        cc_list = []
 
     msg = MIMEMultipart("alternative")
     msg["Subject"] = subject
     msg["From"] = f"{TARDINESS_SENDER_NAME} <{SMTP_USER}>"
-    msg["To"] = ", ".join(to_addresses)
+    msg["To"] = ", ".join(to_list)
+    if cc_list:
+        msg["Cc"] = ", ".join(cc_list)
     # Intentionally NOT setting a "Bcc" header -- that would defeat the
     # purpose. BCC recipients are added only to the actual SMTP envelope
-    # recipient list below, invisible to everyone in "To".
+    # recipient list below, invisible to everyone in "To"/"Cc".
     msg.attach(MIMEText(body_html, "html"))
 
-    envelope_recipients = list(to_addresses) + [b for b in BCC_RECIPIENTS if b not in to_addresses]
+    envelope_recipients = list(to_list) + [c for c in cc_list if c not in to_list] \
+        + [b for b in BCC_RECIPIENTS if b not in to_list and b not in cc_list]
 
     with smtplib.SMTP(SMTP_SERVER, SMTP_PORT) as server:
         server.starttls()
         server.login(SMTP_USER, SMTP_PASSWORD)
         server.sendmail(SMTP_USER, envelope_recipients, msg.as_string())
 
-    print(f"[tardiness_notify] Sent '{subject}' to {to_addresses} (bcc: {BCC_RECIPIENTS})")
+    print(f"[tardiness_notify] Sent '{subject}' - To: {to_list}, Cc: {cc_list}, Bcc: {BCC_RECIPIENTS}")
 
 
 # ---------------------------------------------------------------------------
-# Recipient lookup (static list + the employee's direct Team Lead)
+# Recipient lookup (the employee's direct Team Lead = "To"; the static
+# list = "Cc")
 # ---------------------------------------------------------------------------
 
 def get_team_lead_email(cur, companyid):
@@ -130,11 +156,14 @@ def get_team_lead_email(cur, companyid):
 
 
 def build_recipient_list(cur, companyid):
-    recipients = list(STATIC_RECIPIENTS)
+    """
+    Returns (to_address, cc_addresses, tl_email):
+        to_address    -> the TL's email (same as tl_email), or None
+        cc_addresses  -> the static list (wfm/som/jericho etc.)
+        tl_email      -> kept separately too, for use in the email body text
+    """
     tl_email = get_team_lead_email(cur, companyid)
-    if tl_email and tl_email not in recipients:
-        recipients.append(tl_email)
-    return recipients, tl_email
+    return tl_email, list(STATIC_RECIPIENTS), tl_email
 
 
 # ---------------------------------------------------------------------------
@@ -162,12 +191,49 @@ def _format_breakdown_html(breakdown):
     return f"<ul style='margin:8px 0;padding-left:20px;'>{items}</ul>"
 
 
-def build_count_email(fname, lname, companyid, period_start, period_end, total_count_in_cycle, tl_email, breakdown=None):
+# ---------------------------------------------------------------------------
+# Incident Report summary text (matches the "RWE request" first-person
+# style used for manually-filed tardiness IRs)
+# ---------------------------------------------------------------------------
+
+def build_ir_summary_count(fname, lname, breakdown):
+    lines = [
+        f"{entry['date'].strftime('%B %d')} - {entry.get('time_in') or '—'}"
+        for entry in breakdown
+    ]
+    details = "\n".join(lines)
+    return (
+        f"I would like to file an attendance incident report and request the issuance of a "
+        f"Request for Written Explanation for agent {fname} {lname}. Per company policy, "
+        f"accumulating three instances of tardiness within a single payroll cycle requires "
+        f"formal intervention. {fname} has reached this threshold during the current cycle.\n\n"
+        f"Incident Details:\n{details}"
+    )
+
+
+def build_ir_summary_minutes(fname, lname, total_minutes_in_cycle, breakdown):
+    lines = [
+        f"{entry['date'].strftime('%B %d')} - {entry['minutes']} min (Time In: {entry.get('time_in') or '—'})"
+        for entry in breakdown
+    ]
+    details = "\n".join(lines)
+    return (
+        f"I would like to file an attendance incident report and request the issuance of a "
+        f"Request for Written Explanation for agent {fname} {lname}. Per company policy, "
+        f"accumulating 31 or more minutes of tardiness within a single payroll cycle requires "
+        f"formal intervention. {fname} has reached this threshold during the current cycle, "
+        f"with {total_minutes_in_cycle} minutes total.\n\n"
+        f"Incident Details:\n{details}"
+    )
+
+
+def build_count_email(fname, lname, companyid, period_start, period_end, total_count_in_cycle, tl_email, breakdown=None, report_number=None):
     subject = f"Tardiness Memo: {lname}, {fname} - 3 Lates Recorded ({period_start} to {period_end})"
     body = f"""
     <p>This is an automated tardiness memo notice.</p>
     <p><strong>{lname}, {fname}</strong> ({companyid}) has reached <strong>3 late instances</strong>
     within the current payroll cycle ({period_start.strftime('%B %d')} - {period_end.strftime('%B %d, %Y')}).</p>
+    {ir_notice_html(report_number) if report_number else ''}
     <p>Breakdown of the 3 late instances triggering this memo:</p>
     {_format_breakdown_html(breakdown)}
     <p>Total late instances so far this cycle: <strong>{total_count_in_cycle}</strong></p>
@@ -178,13 +244,14 @@ def build_count_email(fname, lname, companyid, period_start, period_end, total_c
     return subject, body
 
 
-def build_minutes_email(fname, lname, companyid, period_start, period_end, total_minutes_in_cycle, tl_email, breakdown=None):
+def build_minutes_email(fname, lname, companyid, period_start, period_end, total_minutes_in_cycle, tl_email, breakdown=None, report_number=None):
     subject = f"Tardiness Memo: {lname}, {fname} - 31+ Minutes Accumulated ({period_start} to {period_end})"
     triggering_minutes = sum(entry["minutes"] for entry in (breakdown or []))
     body = f"""
     <p>This is an automated tardiness memo notice.</p>
     <p><strong>{lname}, {fname}</strong> ({companyid}) has accumulated <strong>31 or more minutes</strong>
     of total tardiness within the current payroll cycle ({period_start.strftime('%B %d')} - {period_end.strftime('%B %d, %Y')}).</p>
+    {ir_notice_html(report_number) if report_number else ''}
     <p><strong>{triggering_minutes} minutes total</strong> - breakdown of the late instances triggering this memo:</p>
     {_format_breakdown_html(breakdown)}
     <p>Total minutes late so far this cycle: <strong>{total_minutes_in_cycle}</strong></p>
@@ -329,26 +396,38 @@ def process_day(process_date: date):
         state["count_breakdown"].append(entry)
         state["minutes_breakdown"].append(entry)
 
-        recipients, tl_email = build_recipient_list(cur, companyid)
+        to_address, cc_addresses, tl_email = build_recipient_list(cur, companyid)
+        report_number_today = None  # reused if both rules fire same day, so only 1 IR gets filed
 
         if state["count_since_reset"] >= COUNT_THRESHOLD:
+            summary = build_ir_summary_count(fname, lname, state["count_breakdown"])
+            report_number_today = file_incident_report(
+                cur, companyid, f"{fname} {lname}", process_date, summary,
+                log_prefix="[tardiness_notify]",
+            )
             subject, body = build_count_email(
                 fname, lname, companyid, period_start, period_end,
                 state["total_count_in_cycle"], tl_email,
-                breakdown=state["count_breakdown"],
+                breakdown=state["count_breakdown"], report_number=report_number_today,
             )
-            send_email(recipients, subject, body)
+            send_email(to_address, subject, body, cc_addresses=cc_addresses)
             state["count_since_reset"] = 0
             state["count_triggers_sent"] += 1
             state["count_breakdown"] = []
 
         if state["minutes_since_reset"] >= MINUTES_THRESHOLD:
+            if report_number_today is None:
+                summary = build_ir_summary_minutes(fname, lname, state["total_minutes_in_cycle"], state["minutes_breakdown"])
+                report_number_today = file_incident_report(
+                    cur, companyid, f"{fname} {lname}", process_date, summary,
+                    log_prefix="[tardiness_notify]",
+                )
             subject, body = build_minutes_email(
                 fname, lname, companyid, period_start, period_end,
                 state["total_minutes_in_cycle"], tl_email,
-                breakdown=state["minutes_breakdown"],
+                breakdown=state["minutes_breakdown"], report_number=report_number_today,
             )
-            send_email(recipients, subject, body)
+            send_email(to_address, subject, body, cc_addresses=cc_addresses)
             state["minutes_since_reset"] = 0
             state["minutes_triggers_sent"] += 1
             state["minutes_breakdown"] = []
@@ -363,15 +442,17 @@ def process_day(process_date: date):
 def dry_run_range(date_from: date, date_to: date):
     """
     Simulates processing every day in [date_from, date_to] WITHOUT touching
-    tardiness_cycle_state and WITHOUT sending any real email. State is kept
-    purely in-memory for this run, then discarded. Use this to check who
-    would have triggered in an already-completed payroll cycle, e.g.:
+    tardiness_cycle_state, WITHOUT filing any real Incident Report, and
+    WITHOUT sending any real email. State is kept purely in-memory for this
+    run, then discarded. Use this to check who would have triggered in an
+    already-completed payroll cycle, e.g.:
 
         python3 tardiness_notify.py --dry-run 2026-05-23 2026-06-07
 
     Still opens a real DB connection (read-only: get_tardiness_for_date,
-    and the TL lookup in build_recipient_list), but never writes to
-    tardiness_cycle_state and never calls smtplib.
+    and the TL lookup in build_recipient_list, and get_agent_full_name for
+    the IR preview line), but never writes to tardiness_cycle_state or
+    incident_reports, and never calls smtplib.
     """
     if date_to < date_from:
         date_from, date_to = date_to, date_from
@@ -415,7 +496,14 @@ def dry_run_range(date_from: date, date_to: date):
             s["count_breakdown"].append(entry)
             s["minutes_breakdown"].append(entry)
 
+            report_number_today = None  # reused if both rules fire same day, so only 1 IR gets previewed
+
             if s["count_since_reset"] >= COUNT_THRESHOLD:
+                summary = build_ir_summary_count(fname, lname, s["count_breakdown"])
+                report_number_today = file_incident_report(
+                    cur, companyid, f"{fname} {lname}", current, summary,
+                    dry_run=True, log_prefix="[tardiness_notify]",
+                )
                 triggered_events.append({
                     "date": current, "type": "COUNT", "fname": fname, "lname": lname,
                     "companyid": companyid, "total_count_in_cycle": s["total_count_in_cycle"],
@@ -426,6 +514,12 @@ def dry_run_range(date_from: date, date_to: date):
                 s["count_breakdown"] = []
 
             if s["minutes_since_reset"] >= MINUTES_THRESHOLD:
+                if report_number_today is None:
+                    summary = build_ir_summary_minutes(fname, lname, s["total_minutes_in_cycle"], s["minutes_breakdown"])
+                    file_incident_report(
+                        cur, companyid, f"{fname} {lname}", current, summary,
+                        dry_run=True, log_prefix="[tardiness_notify]",
+                    )
                 triggered_events.append({
                     "date": current, "type": "MINUTES", "fname": fname, "lname": lname,
                     "companyid": companyid, "total_minutes_in_cycle": s["total_minutes_in_cycle"],
@@ -465,10 +559,54 @@ def dry_run_range(date_from: date, date_to: date):
     conn.close()
 
 
+def send_test_email(to_address="andrewvincentt@gmail.com"):
+    """
+    Sends one sample COUNT email and one sample MINUTES email, using dummy
+    data, directly to to_address only (no Cc, no real DB lookups, no real
+    IR filed). Purely to verify SMTP delivery + template rendering
+    end-to-end.
+    """
+    sample_period_start = date(2026, 6, 23)
+    sample_period_end = date(2026, 7, 7)
+
+    sample_breakdown_count = [
+        {"date": date(2026, 6, 10), "minutes": 11, "time_in": "08:11 PM"},
+        {"date": date(2026, 6, 11), "minutes": 5, "time_in": "08:05 PM"},
+        {"date": date(2026, 6, 19), "minutes": 1, "time_in": "08:01 PM"},
+    ]
+    subject, body = build_count_email(
+        "Test", "Employee", "000000-00", sample_period_start, sample_period_end,
+        total_count_in_cycle=3, tl_email="test.tl@cohere.ph",
+        breakdown=sample_breakdown_count, report_number="IR-TEST-000000",
+    )
+    subject = "[TEST] " + subject
+    send_email(to_address, subject, body, cc_addresses=[])
+
+    sample_breakdown_minutes = [
+        {"date": date(2026, 6, 5), "minutes": 12, "time_in": "12:12 PM"},
+        {"date": date(2026, 6, 7), "minutes": 1, "time_in": "12:01 PM"},
+        {"date": date(2026, 6, 12), "minutes": 18, "time_in": "12:18 PM"},
+    ]
+    subject, body = build_minutes_email(
+        "Test", "Employee", "000000-00", sample_period_start, sample_period_end,
+        total_minutes_in_cycle=31, tl_email="test.tl@cohere.ph",
+        breakdown=sample_breakdown_minutes, report_number="IR-TEST-000000",
+    )
+    subject = "[TEST] " + subject
+    send_email(to_address, subject, body, cc_addresses=[])
+
+    print(f"[tardiness_notify] Test emails sent to {to_address} only (no Cc, no DB lookups, no real IR filed).")
+
+
 if __name__ == "__main__":
     args = sys.argv[1:]
 
-    if args and args[0] == "--dry-run":
+    if args and args[0] == "--test-email":
+        # python3 tardiness_notify.py --test-email
+        # python3 tardiness_notify.py --test-email someone@else.com
+        to_address = args[1] if len(args) > 1 else "andrewvincentt@gmail.com"
+        send_test_email(to_address)
+    elif args and args[0] == "--dry-run":
         # python3 tardiness_notify.py --dry-run 2026-05-23 2026-06-07
         if len(args) != 3:
             print("Usage: python3 tardiness_notify.py --dry-run YYYY-MM-DD YYYY-MM-DD")

@@ -225,8 +225,8 @@ function RequestCard({ item, bulkMode, selected, onToggle, onAction, loading, re
                   <div>{r.start_time} → {r.end_time}</div>
                 </>)}
                 {rtype === 'CWS' && (<>
-                  <div className="text-muted">{r.original_date} {r.original_time}</div>
-                  <div className="fw-bold text-body">→ {r.new_date} {r.new_time}</div>
+                  <div className="fw-bold text-body">{r.new_date} {r.new_time}</div>
+                  <div className="fr-meta">from {r.original_date} {r.original_time}</div>
                 </>)}
                 {rtype === 'RDW' && (<>
                   <div className="fw-bold text-body">{r.rd_date}</div>

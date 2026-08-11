@@ -18,8 +18,9 @@
   .ir-badge-pending     { background:#fef3c7; color:#92400e; }
   .ir-badge-reviewed    { background:#dbeafe; color:#1e40af; }
   .ir-badge-resolved    { background:#d1fae5; color:#065f46; }
-  .ir-badge-pending_hr  { background:#fee2e2; color:#991b1b; }
-  .ir-badge-resolved_hr { background:#f3f4f6; color:#374151; }
+  .ir-badge-waived      { background:#ede9fe; color:#5b21b6; }
+  .ir-badge-rwe_request { background:#fee2e2; color:#991b1b; font-weight:800; }
+  .ir-badge-rwe_served  { background:#d1fae5; color:#065f46; }
   .ir-section {
     background:var(--surface); border-radius:14px; padding:24px 28px;
     box-shadow:var(--card-shadow); margin-bottom:16px;
@@ -325,33 +326,132 @@
 
             {% if user.is_admin %}
               {# Admin sees everything #}
-              <option value="reviewed">👁 Mark as Reviewed</option>
-              <option value="resolved">✅ Mark as Resolved</option>
+              <option value="reviewed">👁 Mark as IR Reviewed</option>
               <option value="rwe_request">⚠️ Request RWE (Send to HR)</option>
-              <option value="rwe_served">📧 Mark as RWE Served</option>
-
-            {% elif user.is_hr or user.is_sga %}
-              {# HR/SGA — RWE actions only #}
-              <option value="rwe_served">📧 Mark as RWE Served</option>
+              <option value="rwe_for_signature">🖊 RWE for Signature (Doc created)</option>
+              <option value="rwe_for_service">📨 RWE for Service (Signed)</option>
+              <option value="forwarded">📧 RWE Served (Forward to SOM/TL)</option>
+              <option value="for_memo">⚖️ Proceed with Disciplinary Action</option>
               <option value="resolved">✅ Mark as Resolved</option>
+              <option value="waived">⚪ Mark as Waived</option>
+
+            {% elif (user.is_hr or user.is_sga) %}
+              {# HR/SGA workflow — next valid step depends on current status #}
+              {% if report.status == 'rwe_request' %}
+                <option value="rwe_for_signature">🖊 RWE for Signature (Doc created)</option>
+                <option value="reviewed">👁 Mark as IR Reviewed (investigating)</option>
+              {% elif report.status == 'rwe_for_service' %}
+                <option value="forwarded">📧 RWE Served (Forward to SOM/TL)</option>
+              {% elif report.status == 'for_memo' %}
+                <option value="resolved">✅ Mark as Resolved (file memo)</option>
+              {% elif report.status == 'reviewed' %}
+                <option value="resolved">✅ Resolve with note</option>
+              {% else %}
+                {# Fallback for legacy/edge statuses #}
+                <option value="rwe_for_signature">🖊 RWE for Signature (Doc created)</option>
+                <option value="forwarded">📧 RWE Served (Forward to SOM/TL)</option>
+                <option value="resolved">✅ Mark as Resolved</option>
+              {% endif %}
 
             {% elif user.is_supervisor or ir_can_view() %}
-              {# TL/SOM/Overhead — resolve or escalate #}
-              <option value="resolved">✅ Mark as Resolved</option>
-              <option value="rwe_request">⚠️ Request RWE (Send to HR)</option>
+              {# TL/SOM — next valid step depends on current status #}
+              {% if report.status == 'rwe_for_signature' %}
+                <option value="rwe_for_service">📨 RWE for Service (I have signed)</option>
+              {% elif report.status == 'forwarded' %}
+                <option value="for_memo">⚖️ Proceed with Disciplinary Action</option>
+                <option value="waived">⚪ Waive IR</option>
+              {% elif report.status in ['rwe_request', 'rwe_for_service', 'for_memo', 'reviewed'] %}
+                {# Waiting on HR — no TL transition #}
+              {% else %}
+                <option value="resolved">✅ Mark as Resolved</option>
+                <option value="waived">⚪ Mark as Waived</option>
+                <option value="rwe_request">⚠️ Request RWE (Send to HR)</option>
+              {% endif %}
             {% endif %}
-
           </select>
           <div style="font-size:11px;color:var(--text-muted);margin-top:4px;">
-            {% if user.is_hr or user.is_sga %}
-              Select "Mark as RWE Served" once the written explanation has been received.
-            {% elif user.is_admin %}
+            {% if user.is_admin %}
               As admin you can perform any status action.
+            {% elif user.is_hr or user.is_sga %}
+              {% if report.status == 'rwe_request' %}
+                Create the RWE document, then mark "RWE for Signature". If investigating (e.g. termination), mark "IR Reviewed".
+              {% elif report.status == 'rwe_for_service' %}
+                Serve the signed RWE to the agent, then mark "RWE Served" to forward to the SOM/TL.
+              {% elif report.status == 'for_memo' %}
+                The SOM/TL chose disciplinary action. Create the memo, then Resolve.
+              {% elif report.status == 'reviewed' %}
+                When the investigation concludes, Resolve with a note.
+              {% else %}
+                Move the ticket to the next stage.
+              {% endif %}
             {% else %}
-              "Request RWE" escalates this to HR — they will be notified by email.
+              {% if report.status == 'rwe_for_signature' %}
+                Sign the RWE document, then mark "RWE for Service" to return it to HR.
+              {% elif report.status == 'forwarded' %}
+                RWE has been served. Decide: proceed with disciplinary action (back to HR for memo) or waive.
+              {% elif report.status == 'rwe_request' %}
+                HR is preparing the RWE document. No action needed from you yet.
+              {% elif report.status == 'rwe_for_service' %}
+                HR is serving the RWE to the agent. No action needed from you yet.
+              {% elif report.status == 'for_memo' %}
+                HR is preparing the memo. No action needed from you yet.
+              {% elif report.status == 'reviewed' %}
+                HR is investigating this incident. No action needed from you yet.
+              {% else %}
+                "Request RWE" escalates this to HR — they will be notified by email.
+              {% endif %}
             {% endif %}
           </div>
         </div>
+
+        {# Resolution fields — shown when Mark as Resolved is selected (HR/SGA only) #}
+        {% if user.is_hr or user.is_sga %}
+        <div class="mb-3" id="resolveFields" style="display:none;">
+          <div class="mb-2">
+            <label style="font-size:12px;font-weight:600;color:var(--text-muted);">
+              <i class="bi bi-folder me-1"></i>Memo Category <span style="color:var(--danger);">*</span>
+            </label>
+            <select class="form-select form-select-sm mt-1" name="memo_category" id="memoCategory">
+              <option value="">— Select category —</option>
+              <option value="Attendance Policy">Attendance Policy</option>
+              <option value="COPI PCI">COPI PCI</option>
+              <option value="Employee Guidelines">Employee Guidelines</option>
+              <option value="House Rules">House Rules</option>
+              <option value="IT Policy">IT Policy</option>
+            </select>
+          </div>
+          <div>
+            <label style="font-size:12px;font-weight:600;color:var(--text-muted);">
+              <i class="bi bi-shield-exclamation me-1"></i>Disciplinary Action <span style="color:var(--danger);">*</span>
+            </label>
+            <select class="form-select form-select-sm mt-1" name="disciplinary_action" id="disciplinaryAction">
+              <option value="">— Select action —</option>
+              <option value="Verbal Warning">Verbal Warning</option>
+              <option value="Written Warning">Written Warning</option>
+              <option value="Final Warning">Final Warning</option>
+              <option value="Suspension 1 day">Suspension 1 day</option>
+              <option value="Suspension 3 days">Suspension 3 days</option>
+              <option value="Suspension 5 days">Suspension 5 days</option>
+              <option value="Suspension 10 days">Suspension 10 days</option>
+              <option value="Termination">Termination</option>
+            </select>
+          </div>
+        </div>
+        {% endif %}
+
+        {# Waived by field — shown only when Mark as Waived is selected #}
+        <div class="mb-3" id="waivedByField" style="display:none;">
+          <label style="font-size:12px;font-weight:600;color:var(--text-muted);">
+            <i class="bi bi-person-check me-1"></i>Waived By (for documentation)
+          </label>
+          <input type="text" class="form-control form-control-sm mt-1"
+                 name="waived_by_name" id="waivedByName"
+                 placeholder="e.g. Maria Ana Angon" title="Enter the FULL NAME of the person who authorized the waiver (not the reason).>
+          <div style="font-size:11px;color:var(--text-muted);margin-top:3px;">
+            Enter the FULL NAME of the person who authorized the waiver (not the reason).
+          </div>
+        </div>
+
         {% endif %}
         <div class="d-flex justify-content-end">
           <button type="submit" class="btn-ir-submit" id="commentBtn">
@@ -531,6 +631,29 @@ function renderCPreviews(){
     div.append(img,rm); wrap.appendChild(div);
   });
 }
+
+// Show/hide fields based on status selection
+document.addEventListener('change', function(e) {
+  if(e.target && e.target.name === 'status_action') {
+    const val = e.target.value;
+    const waivedField  = document.getElementById('waivedByField');
+    const resolveFields = document.getElementById('resolveFields');
+    if(waivedField)   waivedField.style.display   = val === 'waived'   ? '' : 'none';
+    if(resolveFields) resolveFields.style.display  = val === 'resolved' ? '' : 'none';
+
+    // Clear fields when hidden
+    if(val !== 'resolved') {
+      const mc = document.getElementById('memoCategory');
+      const da = document.getElementById('disciplinaryAction');
+      if(mc) mc.value = '';
+      if(da) da.value = '';
+    }
+    if(val !== 'waived') {
+      const wb = document.getElementById('waivedByName');
+      if(wb) wb.value = '';
+    }
+  }
+});
 
 // Submit comment
 document.getElementById('commentForm').addEventListener('submit',async function(e){

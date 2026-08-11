@@ -1,0 +1,226 @@
+{% extends 'base.html' %}
+{% block title %}WFM Onboarding{% endblock %}
+{% block page_title %}<i class="bi bi-cloud-upload me-2" style="color:var(--accent)"></i>WFM Onboarding{% endblock %}
+{% block content %}
+
+<div class="d-flex align-items-center gap-3 mb-4 flex-wrap">
+  <div class="btn-group">
+    <button class="btn btn-sm btn-outline-secondary active" id="filterPending" onclick="setFilter('pending')">Pending</button>
+    <button class="btn btn-sm btn-outline-secondary" id="filterDone" onclick="setFilter('done')">Done</button>
+  </div>
+  <input type="text" id="searchInput" class="form-control form-control-sm" placeholder="Search name, email, account..." style="max-width:260px" oninput="filterTable()">
+  <button class="btn btn-sm btn-outline-primary ms-auto" id="bulkCopyBtn" onclick="bulkCopy()" style="display:none">
+    <i class="bi bi-clipboard me-1"></i>Copy Selected (<span id="selectedCount">0</span>)
+  </button>
+  <button class="btn btn-sm btn-success" id="bulkMarkBtn" onclick="bulkMarkOnboarded()" style="display:none">
+    <i class="bi bi-check-lg me-1"></i>Mark All Onboarded (<span id="selectedCount2">0</span>)
+  </button>
+  <span class="text-muted small" id="countLabel"></span>
+</div>
+
+<div class="card border-0 shadow-sm">
+  <div class="card-body p-0">
+    <div class="table-responsive">
+      <table class="table table-sm table-hover align-middle mb-0" id="wfmTable">
+        <thead class="table-light">
+          <tr>
+            <th><input type="checkbox" id="selectAll" onclick="toggleAll(this)"></th>
+            <th>ID Number</th>
+            <th>First Name</th>
+            <th>Last Name</th>
+            <th>Email</th>
+            <th>Role</th>
+            <th>Training Start</th>
+            <th>Operational Start</th>
+            <th>Account</th>
+            <th>Status</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody id="wfmTbody">
+          <tr><td colspan="10" class="text-center py-3 text-muted">Loading...</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- Copy Toast -->
+<div class="position-fixed bottom-0 end-0 p-3" style="z-index:9999">
+  <div id="copyToast" class="toast align-items-center text-bg-success border-0" role="alert">
+    <div class="d-flex">
+      <div class="toast-body">Copied to clipboard!</div>
+      <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button>
+    </div>
+  </div>
+</div>
+
+{% endblock %}
+{% block scripts %}
+<script>
+let allRows = [];
+let currentFilter = 'pending';
+
+function toggleAll(cb) {
+  document.querySelectorAll('.row-check').forEach(c => c.checked = cb.checked);
+  updateBulkBtn();
+}
+
+function updateBulkBtn() {
+  const checked = document.querySelectorAll('.row-check:checked').length;
+  const btn = document.getElementById('bulkCopyBtn');
+  document.getElementById('selectedCount').textContent = checked;
+  document.getElementById('selectedCount2').textContent = checked;
+  btn.style.display = checked > 0 ? '' : 'none';
+  document.getElementById('bulkMarkBtn').style.display = checked > 0 ? '' : 'none';
+  document.getElementById('selectAll').indeterminate =
+    checked > 0 && checked < document.querySelectorAll('.row-check').length;
+}
+
+function bulkCopy() {
+  const selected = [...document.querySelectorAll('.row-check:checked')];
+  const text = selected.map(c => c.dataset.copy).join('\n');
+  navigator.clipboard.writeText(text).then(() => {
+    const toast = new bootstrap.Toast(document.getElementById('copyToast'));
+    toast.show();
+  });
+}
+
+async function bulkMarkOnboarded() {
+  const selected = [...document.querySelectorAll('.row-check:checked')];
+  if (!selected.length) return;
+  const btn = document.getElementById('bulkMarkBtn');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Marking...';
+  const ids = selected.map(c => c.dataset.empid);
+  console.log('Bulk mark IDs:', ids);
+  await Promise.all(ids.map(id =>
+    fetch('/hrportal/api/wfm-mark-onboarded/' + id, { method: 'POST' })
+  ));
+  btn.disabled = false;
+  btn.innerHTML = '<i class="bi bi-check-lg me-1"></i>Mark All Onboarded (<span id="selectedCount2">0</span>)';
+  document.getElementById('bulkMarkBtn').style.display = 'none';
+  document.getElementById('bulkCopyBtn').style.display = 'none';
+  try { await loadWHM(); } catch(e) { console.error('loadWHM after bulk mark failed:', e); }
+}
+
+async function loadWHM() {
+  const tbody = document.getElementById('wfmTbody');
+  try {
+    const res = await fetch('/hrportal/api/wfm-onboarding-list');
+    allRows = await res.json();
+    renderTable();
+  } catch(e) {
+    tbody.innerHTML = '<tr><td colspan="10" class="text-center py-3 text-danger">Failed to load.</td></tr>';
+  }
+}
+
+function setFilter(f) {
+  currentFilter = f;
+  document.querySelectorAll('.btn-group .btn').forEach(b => b.classList.remove('active'));
+  const btnId = 'filter' + f.charAt(0).toUpperCase() + f.slice(1);
+  const btn = document.getElementById(btnId);
+  if (btn) btn.classList.add('active');
+  renderTable();
+}
+
+function filterTable() { renderTable(); }
+
+function renderTable() {
+  const tbody = document.getElementById('wfmTbody');
+  const q = document.getElementById('searchInput').value.toLowerCase();
+  let rows = allRows;
+
+  if (currentFilter === 'pending') rows = rows.filter(r => !r.wfm_onboarded);
+  if (currentFilter === 'done')    rows = rows.filter(r => r.wfm_onboarded);
+  if (q) rows = rows.filter(r =>
+    (r.schedule_name||'').toLowerCase().includes(q) ||
+    (r.email||'').toLowerCase().includes(q) ||
+    (r.account||'').toLowerCase().includes(q) ||
+    (r.employee_id||'').toLowerCase().includes(q)
+  );
+
+  document.getElementById('countLabel').textContent = `${rows.length} employee${rows.length !== 1 ? 's' : ''}`;
+
+  if (!rows.length) {
+    tbody.innerHTML = '<tr><td colspan="10" class="text-center py-3 text-muted">No records found.</td></tr>';
+    return;
+  }
+
+  // Split name into first/last
+  function splitName(full) {
+    if (!full) return ['—', '—'];
+    const parts = full.trim().split(' ');
+    if (parts.length === 1) return [parts[0], ''];
+    return [parts.slice(0, -1).join(' '), parts[parts.length - 1]];
+  }
+
+  document.getElementById("selectAll").checked = false;
+  updateBulkBtn();
+  tbody.innerHTML = rows.map(r => {
+    const [firstName, lastName] = splitName(r.schedule_name);
+    const done = r.wfm_onboarded;
+    const fields = [
+      r.employee_id || '—',
+      firstName,
+      lastName,
+      r.email || '—',
+      r.group_name || '—',
+      r.start_date || '—',
+      r.operational_date || '—',
+      r.account || '—'
+    ];
+    const copyData = `${fields[0]}\t${fields[1]}\t${fields[2]}\t${fields[3]}\t${fields[4]}\t${fields[5]}\t${fields[6]}\t${fields[7]}`;
+
+    return `<tr class="${done ? 'table-success' : ''}">
+      <td><input type="checkbox" class="row-check" data-copy="${esc(copyData)}" data-empid="${esc(r.employee_id)}" onchange="updateBulkBtn()"></td>
+      <td style="font-family:monospace;font-size:.82rem">${esc(r.employee_id)}</td>
+      <td style="font-size:.87rem">${esc(firstName)}</td>
+      <td style="font-size:.87rem">${esc(lastName)}</td>
+      <td style="font-size:.82rem;color:var(--text-muted)">${esc(r.email||'')}</td>
+      <td style="font-size:.82rem">${esc(r.group_name||'—')}</td>
+      <td style="font-size:.82rem">${r.start_date||'—'}</td>
+      <td style="font-size:.82rem">${r.operational_date||'—'}</td>
+      <td style="font-size:.82rem">${esc(r.account||'—')}</td>
+      <td>
+        ${done
+          ? `<span class="badge bg-success">Onboarded</span><div class="text-muted" style="font-size:.7rem">${esc(r.wfm_onboarded_by||'')} ${r.wfm_onboarded_at ? r.wfm_onboarded_at.substring(0,10) : ''}</div>`
+          : '<span class="badge bg-warning text-dark">Pending</span>'}
+      </td>
+      <td class="text-end">
+        ${!done ? `<button class="btn btn-sm btn-success py-0 px-2" onclick="markDone('${esc(r.employee_id)}', this)">
+          <i class="bi bi-check-lg me-1"></i>Mark Onboarded
+        </button>` : ''}
+      </td>
+    </tr>`;
+  }).join('');
+}
+
+async function markDone(employeeId, btn) {
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span>';
+  try {
+    const res = await fetch('/hrportal/api/wfm-mark-onboarded/' + employeeId, { method: 'POST' });
+    if (res.ok) { loadWHM(); }
+    else { btn.disabled = false; btn.innerHTML = '<i class="bi bi-check-lg me-1"></i>Mark Onboarded'; }
+  } catch(e) {
+    btn.disabled = false;
+    btn.innerHTML = '<i class="bi bi-check-lg me-1"></i>Mark Onboarded';
+  }
+}
+
+function copyInfo(btn, text) {
+  navigator.clipboard.writeText(text).then(() => {
+    const toast = new bootstrap.Toast(document.getElementById('copyToast'));
+    toast.show();
+  });
+}
+
+function esc(s) {
+  if (!s) return '';
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+loadWHM();
+</script>
+{% endblock %}

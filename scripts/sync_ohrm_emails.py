@@ -1,8 +1,11 @@
+import os
 #!/var/www/html/leavesystem/venv/bin/python3
 import mysql.connector
 from datetime import datetime
+from dotenv import load_dotenv
+load_dotenv()
 
-DB_CONFIG = dict(host='localhost', user='root', password='Rootpass123!@#', database='orangehrm2')
+DB_CONFIG = dict(host='localhost', user='root', password=os.environ.get('DB_PASSWORD'), database='orangehrm2')
 
 def sync_emails():
     conn = mysql.connector.connect(**DB_CONFIG)

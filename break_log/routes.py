@@ -561,3 +561,224 @@ def supervisor_api():
             'avg_duration':  avg,
         }
     })
+
+# ─────────────────────────────────────────────────────────────────────────────
+# OVERBREAK REVIEW
+# ─────────────────────────────────────────────────────────────────────────────
+OVERBREAK_LIMIT_MIN = 90
+OVERBREAK_LIMIT_SEC = OVERBREAK_LIMIT_MIN * 60   # duration column is stored in SECONDS
+OVERBREAK_ACCOUNTS = ('Numa', 'Arctic')
+
+
+@break_log_bp.route('/overbreak-review')
+@supervisor_required
+def overbreak_review():
+    return render_template('break_log/overbreak_review.html')
+
+
+@break_log_bp.route('/api/supervisor/overbreaks')
+@supervisor_required
+def overbreaks_api():
+    from app import get_central_db
+
+    def _cycle_start(d):
+        return d.replace(day=16 if d.day > 15 else 1)
+
+    def _cycle_end(d):
+        if d.day <= 15:
+            return d.replace(day=15)
+        nxt = (d.replace(day=28) + timedelta(days=4)).replace(day=1)
+        return nxt - timedelta(days=1)          # last day of month
+
+    today = date.today()
+    try:
+        start = datetime.strptime(request.args.get('start', ''), '%Y-%m-%d').date()
+    except ValueError:
+        start = today.replace(day=1)            # default: 1st of current month
+    try:
+        end = datetime.strptime(request.args.get('end', ''), '%Y-%m-%d').date()
+    except ValueError:
+        end = today                             # default: today
+    if end < start:
+        start, end = end, start
+
+    # Snap the DATA window outward to full cycles so 3-per-cycle
+    # counts are never truncated; display filters to exact start/end.
+    data_start = _cycle_start(start).strftime('%Y-%m-%d')
+    data_end   = _cycle_end(end).strftime('%Y-%m-%d')
+    disp_start = start.strftime('%Y-%m-%d')
+    disp_end   = end.strftime('%Y-%m-%d')
+
+    db = get_central_db()
+    try:
+        with db.cursor() as c:
+            c.execute("""
+                SELECT p.employee_id, p.employee_name, p.account_type, p.shift_date,
+                       p.total_break_minutes, p.overbreak_minutes, p.has_auto_closed,
+                       p.period_key, p.cycle_days, p.nth_in_cycle
+                FROM (
+                    SELECT d.*,
+                           COUNT(*)     OVER (PARTITION BY d.employee_id, d.period_key) AS cycle_days,
+                           ROW_NUMBER() OVER (PARTITION BY d.employee_id, d.period_key
+                                              ORDER BY d.shift_date) AS nth_in_cycle
+                    FROM (
+                        SELECT bl.employee_id, bl.employee_name, bl.account_type,
+                               bl.shift_date,
+                               CONCAT(DATE_FORMAT(bl.shift_date, '%%M %%Y'), '-',
+                                      IF(DAY(bl.shift_date) <= 15, '1st', '2nd')) AS period_key,
+                               CAST(ROUND(SUM(bl.duration)/60) AS SIGNED) AS total_break_minutes,
+                               CAST(ROUND(SUM(bl.duration)/60) - %s AS SIGNED) AS overbreak_minutes,
+                               MAX(bl.auto_closed) AS has_auto_closed
+                        FROM break_logs bl
+                        WHERE bl.account_type IN %s
+                          AND bl.break_end IS NOT NULL
+                          AND bl.shift_date BETWEEN %s AND %s
+                        GROUP BY bl.employee_id, bl.employee_name, bl.account_type, bl.shift_date
+                        HAVING SUM(bl.duration) > %s
+                    ) d
+                ) p
+                LEFT JOIN overbreak_reviews orv
+                  ON orv.employee_id = p.employee_id
+                 AND orv.shift_date  = p.shift_date
+                WHERE orv.id IS NULL
+                  AND p.shift_date BETWEEN %s AND %s
+                  AND (p.overbreak_minutes >= 31 OR p.cycle_days >= 3)
+                ORDER BY p.shift_date DESC, p.employee_name
+            """, (OVERBREAK_LIMIT_MIN, OVERBREAK_ACCOUNTS,
+                  data_start, data_end, OVERBREAK_LIMIT_SEC,
+                  disp_start, disp_end))
+            pending = [_serialize_row(r) for r in c.fetchall()]
+
+            c.execute("""
+                SELECT employee_id, employee_name, account_type, shift_date,
+                       total_break_minutes, overbreak_minutes, status,
+                       incident_report_number, waive_reason,
+                       reviewed_by_name, reviewed_at
+                FROM overbreak_reviews
+                WHERE shift_date BETWEEN %s AND %s
+                ORDER BY reviewed_at DESC
+                LIMIT 100
+            """, (disp_start, disp_end))
+            reviewed = [_serialize_row(r) for r in c.fetchall()]
+        return jsonify(success=True, pending=pending, reviewed=reviewed,
+                       limit=OVERBREAK_LIMIT_MIN, start=disp_start, end=disp_end)
+    except Exception:
+        _logger.exception("overbreaks_api failed")
+        return jsonify(success=False, error='Server error'), 500
+    finally:
+        db.close()
+
+
+@break_log_bp.route('/api/supervisor/overbreaks/detail')
+@supervisor_required
+def overbreak_detail():
+    from app import get_central_db
+    employee_id = (request.args.get('employee_id') or '').strip()
+    shift_date = (request.args.get('shift_date') or '').strip()
+    if not employee_id or not shift_date:
+        return jsonify(success=False, error='Missing params'), 400
+
+    db = get_central_db()
+    try:
+        with db.cursor() as c:
+            c.execute("""
+                SELECT break_start, break_end, duration, auto_closed
+                FROM break_logs
+                WHERE employee_id = %s AND shift_date = %s
+                  AND break_end IS NOT NULL
+                ORDER BY break_start
+            """, (employee_id, shift_date))
+            return jsonify(success=True,
+                           breaks=[_serialize_row(r) for r in c.fetchall()])
+    except Exception:
+        _logger.exception("overbreak_detail failed")
+        return jsonify(success=False, error='Server error'), 500
+    finally:
+        db.close()
+
+
+@break_log_bp.route('/api/supervisor/overbreaks/review', methods=['POST'])
+@supervisor_required
+def overbreak_review_action():
+    from app import get_central_db
+    from ir_autofile import file_incident_report
+
+    data = request.get_json(silent=True) or {}
+    employee_id = (data.get('employee_id') or '').strip()
+    shift_date = (data.get('shift_date') or '').strip()
+    action = data.get('action')
+    waive_reason = (data.get('waive_reason') or '').strip()
+
+    if action not in ('create_ir', 'waive'):
+        return jsonify(success=False, error='Invalid action'), 400
+    if not employee_id or not shift_date:
+        return jsonify(success=False, error='Missing employee_id or shift_date'), 400
+    if action == 'waive' and not waive_reason:
+        return jsonify(success=False, error='Waive reason is required'), 400
+
+    email = session['user'].get('email', '')
+    reviewer = _get_employee_id(email)
+    reviewer_id = str(reviewer['employee_id']) if reviewer else email
+    reviewer_name = session['user'].get('name', email)
+
+    db = get_central_db()
+    try:
+        with db.cursor() as c:
+            # Server-side recompute — never trust client totals
+            c.execute("""
+                SELECT employee_name, account_type,
+                       CAST(ROUND(SUM(duration)/60) AS SIGNED) AS total_min
+                FROM break_logs
+                WHERE employee_id = %s AND shift_date = %s
+                  AND break_end IS NOT NULL
+                GROUP BY employee_name, account_type
+                LIMIT 1
+            """, (employee_id, shift_date))
+            row = c.fetchone()
+            if not row or (row['total_min'] or 0) <= OVERBREAK_LIMIT_MIN:
+                return jsonify(success=False,
+                               error='No qualifying overbreak found for this employee/shift'), 404
+
+            total_min = int(row['total_min'])
+            over_min = total_min - OVERBREAK_LIMIT_MIN
+
+            ir_id, ir_number = None, None
+            if action == 'create_ir':
+                summary = (f"Overbreak on {shift_date}: {total_min} total break minutes "
+                           f"({over_min} minutes over the {OVERBREAK_LIMIT_MIN}-minute allowance).")
+                ir_number = file_incident_report(
+                    c, employee_id, row['employee_name'], shift_date, summary,
+                    log_prefix="[overbreak_review]",
+                    submitted_by_id=reviewer_id, submitted_by_name=reviewer_name)
+                c.execute("SELECT id FROM incident_reports WHERE report_number = %s",
+                          (ir_number,))
+                r2 = c.fetchone()
+                ir_id = r2['id'] if r2 else None
+
+            c.execute("""
+                INSERT INTO overbreak_reviews
+                    (employee_id, employee_name, account_type, shift_date,
+                     total_break_minutes, overbreak_minutes, status,
+                     incident_report_id, incident_report_number, waive_reason,
+                     reviewed_by_id, reviewed_by_name)
+                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+            """, (employee_id, row['employee_name'], row['account_type'], shift_date,
+                  total_min, over_min,
+                  'ir_created' if action == 'create_ir' else 'waived',
+                  ir_id, ir_number, waive_reason or None,
+                  reviewer_id, reviewer_name))
+        db.commit()
+        _logger.info("Overbreak %s: %s %s by %s (IR: %s)",
+                     action, employee_id, shift_date, reviewer_name, ir_number)
+        return jsonify(success=True,
+                       status='ir_created' if action == 'create_ir' else 'waived',
+                       report_number=ir_number)
+    except Exception as e:
+        db.rollback()
+        if 'Duplicate entry' in str(e):
+            return jsonify(success=False,
+                           error='This overbreak was already reviewed by someone else.'), 409
+        _logger.exception("overbreak_review_action failed")
+        return jsonify(success=False, error='Server error'), 500
+    finally:
+        db.close()

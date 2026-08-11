@@ -3,15 +3,26 @@
 {% block page_title %}Sub-Admin Management{% endblock %}
 {% block content %}
 <style>
-  .perm-toggle { display:flex; align-items:center; gap:.5rem; padding:.4rem .75rem; border-radius:8px; border:1px solid var(--border); background:var(--bg); cursor:pointer; font-size:.82rem; user-select:none; }
+  /* ── Permission toggles ── */
+  .perm-toggle { display:flex; align-items:center; gap:.4rem; padding:.28rem .55rem; border-radius:6px; border:1px solid var(--border); background:var(--surface); cursor:pointer; font-size:.78rem; user-select:none; transition:border-color .15s, background .15s; white-space:nowrap; }
+  .perm-toggle:hover { border-color:var(--accent); background:var(--bg); }
   .perm-toggle input { display:none; }
-  .perm-toggle .pill { width:34px; height:18px; border-radius:9px; background:var(--border); position:relative; transition:background .2s; flex-shrink:0; }
-  .perm-toggle .pill::after { content:''; position:absolute; width:14px; height:14px; border-radius:50%; background:#fff; top:2px; left:2px; transition:left .2s; }
+  .perm-toggle .pill { width:28px; height:15px; border-radius:8px; background:var(--border); position:relative; transition:background .18s; flex-shrink:0; }
+  .perm-toggle .pill::after { content:''; position:absolute; width:11px; height:11px; border-radius:50%; background:#fff; top:2px; left:2px; transition:left .18s; }
   .perm-toggle input:checked ~ .pill { background:var(--accent); }
-  .perm-toggle input:checked ~ .pill::after { left:18px; }
-  .emp-card { border:1px solid var(--border); border-radius:12px; background:var(--surface); padding:1.25rem; margin-bottom:1rem; }
-  .emp-card.is-subadmin { border-color:var(--accent); }
-  .perms-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(200px,1fr)); gap:.5rem; margin-top:.75rem; }
+  .perm-toggle input:checked ~ .pill::after { left:15px; }
+  .perm-toggle input:checked ~ .pill + i,
+  .perm-toggle input:checked ~ i { color:var(--accent); }
+  /* ── Employee card ── */
+  .emp-card { border:1px solid var(--border); border-radius:12px; background:var(--surface); padding:1.1rem 1.25rem; margin-bottom:.85rem; box-shadow:0 1px 4px rgba(0,0,0,.04); }
+  .emp-card.is-subadmin { border-left:3px solid var(--accent); }
+  /* ── Permission groups layout ── */
+  .perms-grouped { display:grid; grid-template-columns:1fr 1fr; gap:.6rem; margin-top:.85rem; }
+  .perm-group { background:var(--bg); border-radius:8px; padding:.55rem .7rem; border:1px solid var(--border); }
+  .perm-group-label { font-size:.6rem; font-weight:700; text-transform:uppercase; letter-spacing:.09em; color:var(--accent); margin-bottom:.45rem; padding-bottom:.3rem; border-bottom:1px solid var(--border); display:flex; align-items:center; gap:.3rem; }
+  .perm-group-label::before { content:''; display:inline-block; width:3px; height:10px; border-radius:2px; background:var(--accent); }
+  .perms-grid { display:flex; flex-wrap:wrap; gap:.3rem; }
+  @media(max-width:900px) { .perms-grouped { grid-template-columns:1fr; } }
 </style>
 
 <div class="card mb-4 p-3">
@@ -31,11 +42,14 @@
       <div class="col-md-9">
         <label class="form-label small mb-1">Permissions to assign</label>
         <div class="d-flex flex-wrap gap-2">
-          {% for key, icon, label in perm_labels %}
+          {% for group_name, group_perms in perm_groups %}
+          <div class="w-100 mt-1 mb-1" style="font-size:.65rem;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--text-muted);">{{ group_name }}</div>
+          {% for key, icon, label in group_perms %}
           <div class="form-check form-check-inline">
             <input class="form-check-input" type="checkbox" name="{{ key }}" id="bulk_{{ key }}">
             <label class="form-check-label small" for="bulk_{{ key }}">{{ label }}</label>
           </div>
+          {% endfor %}
           {% endfor %}
         </div>
       </div>
@@ -70,35 +84,52 @@
   <span class="text-muted small ms-auto" id="empCount"></span>
 </div>
 
-{% set perm_labels = [
-  ('can_all_leaves',   'bi-people',         'All Leaves'),
-  ('can_all_requests',  'bi-inbox',          'All Requests'),
-  ('can_approve',      'bi-check-circle',   'Approve/Reject'),
-  ('can_file_for_emp', 'bi-person-plus',    'File for Employee'),
-  ('can_schedules',    'bi-table',          'Schedules'),
-  ('can_reports',      'bi-bar-chart-line', 'Reports'),
-  ('can_work_mode',    'bi-people-fill',    'Work Mode'),
-  ('can_settings',     'bi-gear',           'Settings'),
-  ('can_entitlements', 'bi-credit-card',    'Entitlements'),
-  ('can_file_requests','bi-file-earmark-text','File Requests'),
-  ('can_material_requests','bi-box-seam','Material Requests'),
-  ('can_final_approval','bi-patch-check','Final Approval'),
-  ('can_view_tickets','bi-ticket-perforated','View OT/RDW Tickets'),
-  ('can_facilities_review','bi-tools','Facilities Reviewer'),
-  ('can_facilities_final','bi-patch-check-fill','Facilities Final Approver'),
-  ('can_view_approved_items','bi-bag-check','Purchaser View (Materials)'),
-  ('can_onboarding','bi-person-check','Onboarding / Offboarding'),
-  ('can_inventory','bi-boxes','Inventory Management'),
-  ('can_absences','bi-person-x','Absence Report'),
-  ('can_tardiness','bi-clock-history','Tardiness Report'),
-  ('can_attrition_report','bi-person-dash','Attrition Report'),
-  ('can_csat','bi-emoji-smile','CSAT Dashboard'),
-  ('can_surveys','bi-clipboard-data','Survey Results'),
-  ('can_floor_map','bi-geo-alt','Floor Map'),
-  ('can_pim', 'bi-person-bounding-box', 'Employee Database (PIM)'),
-  ('can_qa_updates','bi-megaphone','QA Updates'),
-  ('can_it_tickets','bi-headset','IT Ticket Queue'),
-  ('can_hr_tickets','bi-person-badge','HR Ticket Queue'),
+{% set perm_groups = [
+  ('Leave & Requests', [
+    ('can_all_leaves',        'bi-people',              'All Leaves'),
+    ('can_all_requests',      'bi-inbox',               'All Requests'),
+    ('can_approve',           'bi-check-circle',        'Approve / Reject'),
+    ('can_file_for_emp',      'bi-person-plus',         'File for Employee'),
+    ('can_file_requests',     'bi-file-earmark-text',   'File Requests'),
+    ('can_view_tickets',      'bi-ticket-perforated',   'View OT/RDW Tickets'),
+  ]),
+  ('People & HR', [
+    ('can_pim',               'bi-person-bounding-box', 'Employee Database (PIM)'),
+    ('can_requirements',      'bi-clipboard-check',     'Requirements'),
+    ('can_memos',             'bi-file-earmark-text',   'Employee Memos'),
+    ('can_work_mode',         'bi-people-fill',         'Work Mode'),
+    ('can_onboarding',        'bi-person-check',        'Onboarding / Offboarding'),
+    ('can_wfm',               'bi-cloud-upload',        'WFM Onboarding'),
+    ('can_schedules',         'bi-table',               'Schedules'),
+    ('can_settings',          'bi-gear',                'Settings'),
+  ]),
+  ('Analytics & Reports', [
+    ('can_reports',           'bi-bar-chart-line',      'Reports'),
+    ('can_absences',          'bi-person-x',            'Absence Report'),
+    ('can_tardiness',         'bi-clock-history',       'Tardiness Report'),
+    ('can_attrition_report',  'bi-person-dash',         'Attrition Report'),
+    ('can_night_differential','bi-moon-stars',          'Night Differential'),
+    ('can_holiday_awol',      'bi-calendar-x',          'Holiday AWOL'),
+    ('can_overbreak',         'bi-cup-straw',           'Overbreak Report'),
+    ('can_qa_updates',        'bi-megaphone',           'QA Updates'),
+    ('can_ot_hours',          'bi-stopwatch',           'OT Hours Report'),
+  ]),
+  ('Finance & Operations', [
+    ('can_entitlements',      'bi-credit-card',         'Entitlements'),
+    ('can_material_requests', 'bi-box-seam',            'Material Requests'),
+    ('can_final_approval',    'bi-patch-check',         'Final Approval'),
+    ('can_view_approved_items','bi-bag-check',          'Purchaser View (Materials)'),
+    ('can_facilities_review', 'bi-tools',               'Facilities Reviewer'),
+    ('can_facilities_final',  'bi-patch-check-fill',    'Facilities Final Approver'),
+    ('can_inventory',         'bi-boxes',               'Inventory Management'),
+  ]),
+  ('Tools & Access', [
+    ('can_csat',              'bi-emoji-smile',         'CSAT Dashboard'),
+    ('can_surveys',           'bi-clipboard-data',      'Survey Results'),
+    ('can_floor_map',         'bi-geo-alt',             'Floor Map'),
+    ('can_it_tickets',        'bi-headset',             'IT Ticket Queue'),
+    ('can_hr_tickets',        'bi-person-badge',        'HR Ticket Queue'),
+  ]),
 ] %}
 
 <div id="empList">
@@ -137,13 +168,20 @@
         {% endif %}
       </div>
     </div>
-    <div class="perms-grid">
-      {% for perm, icon, label in perm_labels %}
-      <label class="perm-toggle">
-        <input type="checkbox" name="{{ perm }}" {% if e[perm] %}checked{% endif %}>
-        <span class="pill"></span>
-        <i class="bi {{ icon }}"></i> {{ label }}
-      </label>
+    <div class="perms-grouped">
+      {% for group_name, group_perms in perm_groups %}
+      <div class="perm-group">
+        <div class="perm-group-label">{{ group_name }}</div>
+        <div class="perms-grid">
+          {% for perm, icon, label in group_perms %}
+          <label class="perm-toggle">
+            <input type="checkbox" name="{{ perm }}" {% if e[perm] %}checked{% endif %}>
+            <span class="pill"></span>
+            <i class="bi {{ icon }}"></i> {{ label }}
+          </label>
+          {% endfor %}
+        </div>
+      </div>
       {% endfor %}
     </div>
   </form>

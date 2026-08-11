@@ -6,15 +6,17 @@ from flask import Blueprint, render_template, request, jsonify, session, redirec
 from datetime import datetime
 from functools import wraps
 import os, uuid, smtplib, logging
+from dotenv import load_dotenv
+load_dotenv()
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 
 ir_bp = Blueprint('incident_reports', __name__)
 
 # ─── Constants ────────────────────────────────────────────────────────────────
-HR_EMAILS   = ['jed.sagardui@cohere.ph', 'honey.cortes@cohere.ph', 'anamarie.munez@cohere.ph']
-SGA_EMAILS  = ['anamarie.munez@cohere.ph', 'honey.cortes@cohere.ph']
-IR_EMAIL_TO = 'managers@cohere.ph'
+HR_EMAILS  = [e.strip() for e in os.getenv('IR_HR_EMAILS', '').split(',') if e.strip()]
+SGA_EMAILS = [e.strip() for e in os.getenv('IR_SGA_EMAILS', '').split(',') if e.strip()]
+IR_EMAIL_TO = ['managers@cohere.ph', 'jovin.lumapat@cohere.ph']
 IR_EMAIL_BCC = 'andrewvincentt@gmail.com'
 
 UPLOAD_DIR  = '/var/www/html/cohere_dashboard/incident_report/uploads'
@@ -46,17 +48,27 @@ def ir_user():
     """Return a flat dict of current user info from Flask session."""
     from app import IR_ALL_ACCESS
     email = session['user']['email']
+    # Check if TL via supervisor_mapping
+    is_tl_sup = False
+    try:
+        conn = get_db()
+        with conn.cursor() as cur:
+            cur.execute("SELECT COUNT(*) as cnt FROM supervisor_mapping WHERE supervisor_email=%s",
+                        (email,))
+            is_tl_sup = (cur.fetchone()['cnt'] or 0) > 0
+        conn.close()
+    except Exception:
+        pass
     return {
-        'email':       email,
-        'employee_id': session['user']['employee_id'],
-        'name':        session['user']['name'],
-        'is_admin':    session.get('is_admin', False) or email in IR_ALL_ACCESS,
-        'is_supervisor': session.get('is_supervisor', False),
-        'is_hr':       email in HR_EMAILS,
-        'is_sga':      email in SGA_EMAILS,
+        'email':         email,
+        'employee_id':   session['user']['employee_id'],
+        'name':          session['user']['name'],
+        'is_admin':      session.get('is_admin', False) or email in IR_ALL_ACCESS,
+        'is_supervisor': session.get('is_supervisor', False) or is_tl_sup,
+        'is_hr':         email in HR_EMAILS,
+        'is_sga':        email in SGA_EMAILS,
     }
 
-# ─── Helpers ──────────────────────────────────────────────────────────────────
 def generate_report_number():
     return 'IR-' + datetime.now().strftime('%Y%m%d') + '-' + str(uuid.uuid4())[:6].upper()
 
@@ -89,13 +101,14 @@ def get_supervisor_email(employee_id, conn):
             cur.execute("""
                 SELECT sm.supervisor_email
                 FROM supervisor_mapping sm
-                INNER JOIN gsheet_employees g ON sm.agent_email = g.email
+                INNER JOIN gsheet_employees g ON sm.agent_email COLLATE utf8mb4_unicode_ci = g.email
                 WHERE g.employee_id = %s
                 LIMIT 1
             """, (employee_id,))
             row = cur.fetchone()
             return row['supervisor_email'] if row else None
-    except Exception:
+    except Exception as e:
+        print(f"[IR] get_supervisor_email failed for {employee_id}: {e}", flush=True)
         return None
 
 def get_group_emails(employee_id, conn):
@@ -179,7 +192,7 @@ def send_incident_email(report_number, incident_date, agent_eid, employee_name,
                         submitter_eid, summary, attachment_count):
     conn = get_db()
     try:
-        recipients = [IR_EMAIL_TO]
+        recipients = list(IR_EMAIL_TO)
         sup = get_supervisor_email(agent_eid, conn)
         if sup: recipients.append(sup)
         recipients += get_group_emails(submitter_eid, conn)
@@ -222,9 +235,6 @@ def send_hr_notification(report_number, commenter_name, comment, agent_eid, stat
         elif status_action == 'rwe_served':
             status_text = 'RWE SERVED — AWAITING AGENT EXPLANATION'
             bg_color = '#17a2b8' # Teal info banner
-        elif status_action == 'resolved_hr':
-            status_text = 'RESOLVED HR — COMPLETED'
-            bg_color = '#28a745' # Green success
         else:
             status_text = 'PENDING HR — ATTENTION REQUIRED'
             bg_color = '#ffc107' # Yellow warning
@@ -305,7 +315,7 @@ def send_rwe_served_to_tl(report_number, served_by, comment, agent_eid):
         if not sup_email:
             return
 
-        recipients = [IR_EMAIL_TO, sup_email]
+        recipients = list(IR_EMAIL_TO) + [sup_email]
 
         body = f"""
         <html><body style="font-family:Arial,sans-serif;">
@@ -357,7 +367,7 @@ def send_comment_notification(report_number, commenter_name, comment,
                                agent_eid, submitter_eid, status_action):
     conn = get_db()
     try:
-        recipients = [IR_EMAIL_TO]
+        recipients = list(IR_EMAIL_TO)
         sup = get_supervisor_email(agent_eid, conn)
         if sup: recipients.append(sup)
         recipients += get_group_emails(submitter_eid, conn)
@@ -367,8 +377,6 @@ def send_comment_notification(report_number, commenter_name, comment,
             'rwe_served':  ('#d1fae5','#065f46','✅ RWE Served'),
             'resolved':    ('#d1fae5','#065f46','✅ Resolved'),
             'reviewed':    ('#dbeafe','#1e40af','👁 Reviewed'),
-            'pending_hr':  ('#f3e8ff','#6b21a8','📋 Pending HR'),
-            'resolved_hr': ('#f3f4f6','#374151','✅ Resolved HR'),
         }
         status_badge = ''
         if status_action and status_action in status_colors:
@@ -465,7 +473,7 @@ def dashboard():
                     WHERE group_name=%s AND status='Active')""")
                 params.append(user_group)
             elif u['is_hr']:
-                conds.append("ir.status IN ('pending_hr','resolved_hr','rwe_request','rwe_served')")
+                conds.append("ir.status IN ('rwe_request','rwe_served')")
             # SGA sees all reports (no filter)
 
         if status_filter != 'all':
@@ -474,9 +482,9 @@ def dashboard():
             conds.append("(ir.report_number LIKE %s OR ir.employee_name LIKE %s OR ir.summary LIKE %s)")
             params += [f'%{search}%', f'%{search}%', f'%{search}%']
         if start_date:
-            conds.append("ir.incident_date >= %s"); params.append(start_date)
+            conds.append("DATE(ir.rwe_requested_at) >= %s"); params.append(start_date)
         if end_date:
-            conds.append("ir.incident_date <= %s"); params.append(end_date)
+            conds.append("DATE(ir.rwe_requested_at) <= %s"); params.append(end_date)
 
         order = {'incident': 'ir.incident_date DESC, ir.created_at DESC',
                  'created':  'ir.created_at DESC',
@@ -500,10 +508,13 @@ def dashboard():
                 SUM(CASE WHEN ir.status='pending'     THEN 1 ELSE 0 END) as pending,
                 SUM(CASE WHEN ir.status='reviewed'    THEN 1 ELSE 0 END) as reviewed,
                 SUM(CASE WHEN ir.status='resolved'    THEN 1 ELSE 0 END) as resolved,
-                SUM(CASE WHEN ir.status='pending_hr'  THEN 1 ELSE 0 END) as pending_hr,
-                SUM(CASE WHEN ir.status='resolved_hr' THEN 1 ELSE 0 END) as resolved_hr,
                 SUM(CASE WHEN ir.status='rwe_request'  THEN 1 ELSE 0 END) as rwe_request,
-                SUM(CASE WHEN ir.status='rwe_served'   THEN 1 ELSE 0 END) as rwe_served
+                SUM(CASE WHEN ir.status='rwe_for_signature' THEN 1 ELSE 0 END) as rwe_for_signature,
+                SUM(CASE WHEN ir.status='rwe_for_service'   THEN 1 ELSE 0 END) as rwe_for_service,
+                SUM(CASE WHEN ir.status='forwarded'         THEN 1 ELSE 0 END) as forwarded,
+                SUM(CASE WHEN ir.status='for_memo'          THEN 1 ELSE 0 END) as for_memo,
+                SUM(CASE WHEN ir.status='rwe_served'   THEN 1 ELSE 0 END) as rwe_served,
+                SUM(CASE WHEN ir.status='waived'        THEN 1 ELSE 0 END) as waived
                 FROM incident_reports ir WHERE {' AND '.join(s_conds)}""", s_params)
             stats = cur.fetchone()
 
@@ -523,39 +534,225 @@ def dashboard():
                 stats['sla_breaches'] = breach_data['sla_breaches'] if breach_data else 0
             # -------------------------------------
         rwe_reports = []
-        if u['is_admin'] or u['is_hr'] or u['is_sga']:
+        if u['is_admin'] or u['is_hr'] or u['is_sga'] or u['is_supervisor']:
+            # Full view for admin/HR/SGA; TL/SOM scoped to their own agents.
+            full_view = u['is_admin'] or u['is_hr'] or u['is_sga']
+            scope_sql = ""
+            scope_params = []
+            if not full_view:
+                scope_sql = """
+                    AND employee_id COLLATE utf8mb4_unicode_ci IN (
+                        SELECT g.employee_id
+                        FROM supervisor_mapping sm
+                        INNER JOIN gsheet_employees g
+                            ON sm.agent_email COLLATE utf8mb4_unicode_ci = g.email
+                        WHERE sm.supervisor_email = %s
+                    )
+                """
+                scope_params.append(u['email'])
             with conn.cursor() as cur:
-                cur.execute("""
-                    SELECT * FROM incident_reports
-                    WHERE status = 'rwe_request'
-                    ORDER BY updated_at DESC
-                """)
+                cur.execute(f"""
+                    SELECT incident_reports.*,
+                        CASE status
+                          WHEN 'rwe_request'       THEN DATEDIFF(NOW(), COALESCE(rwe_requested_at, updated_at))
+                          WHEN 'rwe_for_signature' THEN DATEDIFF(NOW(), COALESCE(rwe_for_signature_at, updated_at))
+                          WHEN 'rwe_for_service'   THEN DATEDIFF(NOW(), COALESCE(rwe_for_service_at, updated_at))
+                          WHEN 'forwarded'         THEN DATEDIFF(NOW(), COALESCE(forwarded_at, updated_at))
+                          WHEN 'for_memo'          THEN DATEDIFF(NOW(), COALESCE(for_memo_at, updated_at))
+                        END as days_in_stage,
+                        (SELECT tl_g.schedule_name
+                           FROM supervisor_mapping sm2
+                           INNER JOIN gsheet_employees ag
+                               ON sm2.agent_email COLLATE utf8mb4_unicode_ci = ag.email
+                           INNER JOIN gsheet_employees tl_g
+                               ON sm2.supervisor_email COLLATE utf8mb4_unicode_ci = tl_g.email
+                           WHERE ag.employee_id COLLATE utf8mb4_unicode_ci = incident_reports.employee_id COLLATE utf8mb4_unicode_ci
+                           LIMIT 1) as responsible_tl
+                    FROM incident_reports
+                    WHERE status IN ('rwe_request','rwe_for_signature','rwe_for_service','forwarded','for_memo')
+                    {scope_sql}
+                    ORDER BY FIELD(status,'rwe_request','rwe_for_signature','rwe_for_service','forwarded','for_memo'),
+                             updated_at ASC
+                """, scope_params)
                 rwe_reports = cur.fetchall()
-            
-            # Then add rwe_reports=rwe_reports to the render_template() call:
+
         # RWE Report data (admin only)
         rwe_report_data = []
         if u['is_admin']:
             with conn.cursor() as cur:
-                cur.execute("""
+                hr_emails = HR_EMAILS + SGA_EMAILS
+                hr_emails_sql = ','.join([f"'{e}'" for e in set(hr_emails)])
+                
+                # Build date filter conditions
+                rwe_conds = ["ir.rwe_requested_at IS NOT NULL"]
+                rwe_params = []
+                
+                if start_date:
+                    rwe_conds.append("DATE(ir.rwe_requested_at) >= %s")
+                    rwe_params.append(start_date)
+                if end_date:
+                    rwe_conds.append("DATE(ir.rwe_requested_at) <= %s")
+                    rwe_params.append(end_date)
+                
+                rwe_where = ' AND '.join(rwe_conds)
+                
+                cur.execute(f"""
                     SELECT ir.report_number, ir.employee_name, ir.submitted_by_name,
-                           ir.status, ir.rwe_requested_at, ir.rwe_served_at,
-                           DATEDIFF(COALESCE(ir.rwe_served_at, NOW()), ir.rwe_requested_at) as days_open,
+                           ir.status, ir.rwe_requested_at, ir.rwe_for_signature_at,
+                           ir.rwe_for_service_at, ir.rwe_served_at,
+                           ir.forwarded_at, ir.for_memo_at, ir.waived_at, ir.resolved_at,
+                           MIN(ic.created_at) as first_hr_reply,
+                           /* legacy = pre-workflow ticket OR clock-reset migration ticket */
+                           CASE WHEN (ir.rwe_for_signature_at IS NULL
+                                       AND ir.rwe_for_service_at IS NULL
+                                       AND ir.status != 'rwe_request')
+                                  OR (ir.sla_baseline_at IS NOT NULL
+                                       AND ir.rwe_requested_at IS NOT NULL
+                                       AND ABS(TIMESTAMPDIFF(MINUTE, ir.sla_baseline_at, ir.rwe_requested_at)) > 1)
+                                  OR (ir.sla_baseline_at IS NOT NULL AND ir.rwe_requested_at IS NULL)
+                                THEN 1 ELSE 0 END as legacy,
+                           /* Stage 1: HR creates doc (requested -> for_signature) */
+                           CASE WHEN ir.rwe_for_signature_at IS NOT NULL
+                                THEN DATEDIFF(ir.rwe_for_signature_at, ir.rwe_requested_at)
+                                WHEN ir.status = 'rwe_request'
+                                THEN DATEDIFF(NOW(), ir.rwe_requested_at)
+                           END as doc_days,
+                           /* Stage 2: TL signs (for_signature -> for_service) */
+                           CASE WHEN ir.rwe_for_service_at IS NOT NULL AND ir.rwe_for_signature_at IS NOT NULL
+                                THEN DATEDIFF(ir.rwe_for_service_at, ir.rwe_for_signature_at)
+                                WHEN ir.status = 'rwe_for_signature'
+                                THEN DATEDIFF(NOW(), ir.rwe_for_signature_at)
+                           END as sign_days,
+                           /* Stage 3: HR serves (for_service -> served) */
+                           CASE WHEN ir.rwe_served_at IS NOT NULL AND ir.rwe_for_service_at IS NOT NULL
+                                THEN DATEDIFF(ir.rwe_served_at, ir.rwe_for_service_at)
+                                WHEN ir.status = 'rwe_for_service'
+                                THEN DATEDIFF(NOW(), ir.rwe_for_service_at)
+                           END as serve_days,
+                           /* Stage 4: SOM/TL decision (forwarded -> for_memo OR waived) */
+                           CASE WHEN ir.for_memo_at IS NOT NULL AND ir.forwarded_at IS NOT NULL
+                                THEN DATEDIFF(ir.for_memo_at, ir.forwarded_at)
+                                WHEN ir.waived_at IS NOT NULL AND ir.forwarded_at IS NOT NULL
+                                THEN DATEDIFF(ir.waived_at, ir.forwarded_at)
+                                WHEN ir.status = 'forwarded'
+                                THEN DATEDIFF(NOW(), ir.forwarded_at)
+                           END as decision_days,
+                           /* Stage 5: HR memo (for_memo -> resolved) */
+                           CASE WHEN ir.resolved_at IS NOT NULL AND ir.for_memo_at IS NOT NULL
+                                THEN DATEDIFF(ir.resolved_at, ir.for_memo_at)
+                                WHEN ir.status = 'for_memo'
+                                THEN DATEDIFF(NOW(), ir.for_memo_at)
+                           END as memo_days,
+                           /* Total: to resolved/waived if present, else served/first-reply, else live.
+                              Counts from sla_baseline_at (fair reset) falling back to rwe_requested_at. */
+                           GREATEST(0, DATEDIFF(
+                               COALESCE(ir.resolved_at, ir.waived_at, NOW()),
+                               COALESCE(ir.sla_baseline_at, ir.rwe_requested_at)
+                           )) as days_open,
                            CASE
+                             WHEN (ir.sla_baseline_at IS NOT NULL
+                                   AND ir.rwe_requested_at IS NOT NULL
+                                   AND ABS(TIMESTAMPDIFF(MINUTE, ir.sla_baseline_at, ir.rwe_requested_at)) > 1)
+                                  THEN 'migrated'
                              WHEN ir.rwe_served_at IS NOT NULL THEN 'served'
-                             WHEN DATEDIFF(NOW(), ir.rwe_requested_at) > 5 THEN 'overdue'
-                             WHEN DATEDIFF(NOW(), ir.rwe_requested_at) >= 3 THEN 'warning'
+                             WHEN ir.rwe_for_signature_at IS NULL
+                                  AND ir.rwe_for_service_at IS NULL
+                                  AND ir.status != 'rwe_request'
+                                  AND MIN(ic.created_at) IS NOT NULL THEN 'served'
+                             WHEN ir.status = 'rwe_request'
+                                  AND DATEDIFF(NOW(), ir.rwe_requested_at) > 5 THEN 'overdue'
+                             WHEN ir.status = 'rwe_for_signature'
+                                  AND DATEDIFF(NOW(), ir.rwe_for_signature_at) > 5 THEN 'overdue'
+                             WHEN ir.status = 'rwe_for_service'
+                                  AND DATEDIFF(NOW(), ir.rwe_for_service_at) > 5 THEN 'overdue'
+                             WHEN ir.status = 'rwe_request'
+                                  AND DATEDIFF(NOW(), ir.rwe_requested_at) >= 4 THEN 'warning'
+                             WHEN ir.status = 'rwe_for_signature'
+                                  AND DATEDIFF(NOW(), ir.rwe_for_signature_at) >= 4 THEN 'warning'
+                             WHEN ir.status = 'rwe_for_service'
+                                  AND DATEDIFF(NOW(), ir.rwe_for_service_at) >= 4 THEN 'warning'
+                             WHEN ir.status = 'forwarded'
+                                  AND DATEDIFF(NOW(), ir.forwarded_at) > 5 THEN 'overdue'
+                             WHEN ir.status = 'for_memo'
+                                  AND DATEDIFF(NOW(), ir.for_memo_at) > 5 THEN 'overdue'
+                             WHEN ir.status = 'forwarded'
+                                  AND DATEDIFF(NOW(), ir.forwarded_at) >= 4 THEN 'warning'
+                             WHEN ir.status = 'for_memo'
+                                  AND DATEDIFF(NOW(), ir.for_memo_at) >= 4 THEN 'warning'
                              ELSE 'ok'
                            END as sla_status
                     FROM incident_reports ir
-                    WHERE ir.rwe_requested_at IS NOT NULL
+                    LEFT JOIN incident_comments ic ON ir.id = ic.report_id
+                        AND ic.employee_id COLLATE utf8mb4_unicode_ci IN (
+                            SELECT employee_id FROM gsheet_employees
+                            WHERE email IN ({hr_emails_sql})
+                        )
+                        AND ic.created_at >= ir.rwe_requested_at
+                    WHERE {rwe_where}
+                    GROUP BY ir.id
                     ORDER BY ir.rwe_requested_at DESC
-                """)
+                """, rwe_params)
                 rwe_report_data = cur.fetchall()
+
+        # IR Timeline data (admin only)
+        ir_timeline_data = []
+        if u['is_admin']:
+            tl_conds = ["1=1"]
+            tl_params = []
+            if status_filter != 'all':
+                tl_conds.append("ir.status = %s")
+                tl_params.append(status_filter)
+            if search:
+                tl_conds.append("(ir.report_number LIKE %s OR ir.employee_name LIKE %s)")
+                tl_params += [f'%{search}%', f'%{search}%']
+            if start_date:
+                tl_conds.append("ir.incident_date >= %s")
+                tl_params.append(start_date)
+            if end_date:
+                tl_conds.append("ir.incident_date <= %s")
+                tl_params.append(end_date)
+            tl_where = ' AND '.join(tl_conds)
+            with conn.cursor() as cur:
+                cur.execute(f"""
+                    SELECT
+                        ir.report_number,
+                        ir.employee_name,
+                        ir.employee_id,
+                        ir.submitted_by_name,
+                        ir.created_at as filed_at,
+                        ir.incident_date,
+                        ir.status,
+                        ir.rwe_requested_at,
+                        ir.rwe_for_signature_at,
+                        ir.rwe_for_service_at,
+                        ir.rwe_served_at,
+                        ir.forwarded_at,
+                        ir.for_memo_at,
+                        ir.waived_by,
+                        ir.waived_at,
+                        ir.memo_category,
+                        ir.disciplinary_action,
+                        GROUP_CONCAT(
+                            CONCAT(
+                                DATE_FORMAT(ic.created_at, '%%Y-%%m-%%d %%H:%%i'),
+                                ' | ', ic.employee_name,
+                                ': ', LEFT(ic.comment, 100)
+                            )
+                            ORDER BY ic.created_at ASC
+                            SEPARATOR ' || '
+                        ) as comment_timeline
+                    FROM incident_reports ir
+                    LEFT JOIN incident_comments ic ON ir.id = ic.report_id
+                    WHERE {tl_where}
+                    GROUP BY ir.id
+                    ORDER BY ir.created_at DESC
+                """, tl_params)
+                ir_timeline_data = cur.fetchall()
 
         return render_template('incident_dashboard.html',
             reports=reports, stats=stats, user=u,
             rwe_reports=rwe_reports, rwe_report_data=rwe_report_data,
+            ir_timeline_data=ir_timeline_data,
             status_filter=status_filter, search=search,
             start_date=start_date, end_date=end_date, sort_by=sort_by)
     finally:
@@ -563,6 +760,8 @@ def dashboard():
             conn.close()
         except Exception:
             pass
+
+
 
 
 @ir_bp.route('/new')
@@ -671,6 +870,18 @@ def submit_report():
             pass
 
 
+@ir_bp.route('/debug-ir')
+@login_required
+def debug_ir():
+    u = ir_user()
+    conn2 = get_db()
+    with conn2.cursor() as cur2:
+        cur2.execute("SELECT group_name FROM gsheet_employees WHERE email=%s LIMIT 1", (u["email"],))
+        grp = cur2.fetchone()
+    conn2.close()
+    grp_name = grp["group_name"] if grp else "None"
+    return f"<pre>email: {u['email']}\nis_admin: {u['is_admin']}\nis_supervisor: {u['is_supervisor']}\ngroup_name: {grp_name}</pre>"
+
 @ir_bp.route('/<report_number>')
 @login_required
 def view_report(report_number):
@@ -702,7 +913,7 @@ def view_report(report_number):
 
         can_edit_report = u['is_admin'] or (report['submitted_by_id'] == u['employee_id'])
 
-        return render_template('incident_view_test.html',
+        return render_template('incident_view.html',
             report=report, attachments=attachments,
             comments=comments, comment_attachments=comment_attachments,
             can_edit_report=can_edit_report,
@@ -830,7 +1041,7 @@ def add_comment():
         if not report_number or not comment_text:
             return jsonify({'success': False, 'message': 'Comment cannot be empty'})
 
-        valid = ['reviewed', 'resolved', 'pending_hr', 'resolved_hr', 'rwe_request', 'rwe_served']
+        valid = ['reviewed', 'resolved', 'rwe_request', 'rwe_for_signature', 'rwe_for_service', 'rwe_served', 'forwarded', 'for_memo', 'waived']
         if status_action and status_action not in valid:
             return jsonify({'success': False, 'message': 'Invalid status'})
 
@@ -869,11 +1080,48 @@ def add_comment():
                                    SET status=%s, rwe_requested_at=NOW()
                                    WHERE report_number=%s""",
                                 (status_action, report_number))
+                elif status_action == 'rwe_for_signature':
+                    cur.execute("""UPDATE incident_reports
+                                   SET status=%s, rwe_for_signature_at=NOW()
+                                   WHERE report_number=%s""",
+                                (status_action, report_number))
+                elif status_action == 'rwe_for_service':
+                    cur.execute("""UPDATE incident_reports
+                                   SET status=%s, rwe_for_service_at=NOW()
+                                   WHERE report_number=%s""",
+                                (status_action, report_number))
+                elif status_action == 'forwarded':
+                    # HR served the RWE -> forwarded to SOM/TL for decision.
+                    # Stamp both served and forwarded (same moment).
+                    cur.execute("""UPDATE incident_reports
+                                   SET status=%s, rwe_served_at=NOW(), forwarded_at=NOW()
+                                   WHERE report_number=%s""",
+                                (status_action, report_number))
+                elif status_action == 'for_memo':
+                    # SOM/TL chose to proceed with disciplinary action -> back to HR for memo.
+                    cur.execute("""UPDATE incident_reports
+                                   SET status=%s, for_memo_at=NOW()
+                                   WHERE report_number=%s""",
+                                (status_action, report_number))
                 elif status_action == 'rwe_served':
+                    # Legacy/admin direct action -> stamp served only.
                     cur.execute("""UPDATE incident_reports
                                    SET status=%s, rwe_served_at=NOW()
                                    WHERE report_number=%s""",
                                 (status_action, report_number))
+                elif status_action == 'resolved':
+                    memo_cat  = request.form.get('memo_category', '').strip()
+                    disc_act  = request.form.get('disciplinary_action', '').strip()
+                    cur.execute("""UPDATE incident_reports
+                                   SET status=%s, memo_category=%s, disciplinary_action=%s, resolved_at=NOW()
+                                   WHERE report_number=%s""",
+                                (status_action, memo_cat or None, disc_act or None, report_number))
+                elif status_action == 'waived':
+                    waived_by_name = request.form.get('waived_by_name', '').strip() or u['name']
+                    cur.execute("""UPDATE incident_reports
+                                   SET status=%s, waived_by=%s, waived_at=NOW()
+                                   WHERE report_number=%s""",
+                                (status_action, waived_by_name, report_number))
                 else:
                     cur.execute("UPDATE incident_reports SET status=%s WHERE report_number=%s",
                                 (status_action, report_number))
@@ -896,9 +1144,6 @@ def add_comment():
                                       report['employee_id'])
                                      
             # Fallback legacy compatibility
-            elif status_action in ['pending_hr', 'resolved_hr']:
-                send_hr_notification(report_number, u['name'], comment_text,
-                                     report['employee_id'], status_action)
         except Exception as e:
             logging.error(f"Comment email error: {e}")
 
@@ -966,7 +1211,7 @@ def update_status():
     new_status    = data.get('status', '')
 
     # Update this array to allow your two new workflow steps!
-    valid = ['pending', 'reviewed', 'resolved', 'pending_hr', 'resolved_hr', 'rwe_request', 'rwe_served']
+    valid = ['pending', 'reviewed', 'resolved', 'rwe_request', 'rwe_for_signature', 'rwe_for_service', 'rwe_served', 'forwarded', 'for_memo', 'waived']
     if not report_number or new_status not in valid:
         return jsonify({'success': False, 'message': 'Invalid status'})
 
@@ -993,3 +1238,88 @@ def serve_upload(filename):
         '/var/www/html/cohere_dashboard/incident_report/uploads',
         filename
     )
+
+@ir_bp.route('/timeline-csv')
+@login_required
+def timeline_csv():
+    u = ir_user()
+    if not u['is_admin']:
+        return "Unauthorized", 403
+    import csv, io
+    from flask import Response
+    conn = get_db()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT
+                    ir.report_number,
+                    ir.employee_name,
+                    ir.employee_id,
+                    ir.submitted_by_name,
+                    ir.created_at as filed_at,
+                    ir.incident_date,
+                    ir.status,
+                    ir.rwe_requested_at,
+                    ir.rwe_for_signature_at,
+                    ir.rwe_for_service_at,
+                    ir.rwe_served_at,
+                    ir.waived_by,
+                    ir.waived_at,
+                    ir.memo_category,
+                    ir.disciplinary_action,
+                    ic.employee_name as commenter,
+                    ic.comment,
+                    ic.created_at as comment_date,
+                    ROW_NUMBER() OVER (PARTITION BY ir.id ORDER BY ic.created_at ASC) as comment_num
+                FROM incident_reports ir
+                LEFT JOIN incident_comments ic ON ir.id = ic.report_id
+                ORDER BY ir.created_at DESC, ic.created_at ASC
+            """)
+            rows = cur.fetchall()
+
+        output = io.StringIO()
+        writer = csv.writer(output)
+        writer.writerow([
+            'IR Number', 'Agent', 'Employee ID', 'Filed By',
+            'Filed Date', 'Incident Date', 'Status',
+            'RWE Requested', 'RWE For Signature', 'RWE For Service', 'RWE Served', 'Forwarded At', 'For Memo At', 'Waived By', 'Waived At',
+            'Memo Category', 'Disciplinary Action',
+            'Comment #', 'Comment Date', 'Commenter', 'Comment'
+        ])
+        for r in rows:
+            writer.writerow([
+                r['report_number'],
+                r['employee_name'],
+                r['employee_id'],
+                r['submitted_by_name'] or '',
+                r['filed_at'].strftime('%Y-%m-%d %H:%M') if r['filed_at'] else '',
+                str(r['incident_date']) if r['incident_date'] else '',
+                r['status'],
+                r['rwe_requested_at'].strftime('%Y-%m-%d %H:%M') if r['rwe_requested_at'] else '',
+                r['rwe_for_signature_at'].strftime('%Y-%m-%d %H:%M') if r.get('rwe_for_signature_at') else '',
+                r['rwe_for_service_at'].strftime('%Y-%m-%d %H:%M') if r.get('rwe_for_service_at') else '',
+                r['rwe_served_at'].strftime('%Y-%m-%d %H:%M') if r['rwe_served_at'] else '',
+                r['forwarded_at'].strftime('%Y-%m-%d %H:%M') if r.get('forwarded_at') else '',
+                r['for_memo_at'].strftime('%Y-%m-%d %H:%M') if r.get('for_memo_at') else '',
+                r['waived_by'] or '',
+                r['waived_at'].strftime('%Y-%m-%d %H:%M') if r['waived_at'] else '',
+                r['memo_category'] or '',
+                r['disciplinary_action'] or '',
+                r['comment_num'] or '',
+                r['comment_date'].strftime('%Y-%m-%d %H:%M') if r['comment_date'] else '',
+                r['commenter'] or '',
+                r['comment'] or '',
+            ])
+
+        output.seek(0)
+        filename = f"IR_Timeline_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+        return Response(
+            output.getvalue(),
+            mimetype='text/csv',
+            headers={'Content-Disposition': f'attachment;filename={filename}'}
+        )
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass

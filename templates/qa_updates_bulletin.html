@@ -31,6 +31,14 @@
   .qa-empty { text-align: center; padding: 60px 20px; color: var(--text-muted); }
   .qa-empty i { font-size: 2.5rem; opacity: 0.4; display: block; margin-bottom: 10px; }
 
+  .qa-audience-tab {
+    background: none; border: none; border-bottom: 2px solid transparent;
+    padding: 8px 14px; font-size: 0.9rem; font-weight: 500;
+    color: var(--text-muted); cursor: pointer; font-family: 'DM Sans', sans-serif;
+  }
+  .qa-audience-tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+  .qa-audience-tab:hover { color: var(--accent); }
+
   .qa-attachment-link {
     display: block;
     margin-top: 8px;
@@ -111,6 +119,8 @@
   <span id="qaUnackBadge" style="display:none;background:#fde8e8;color:#c0392b;font-size:0.8rem;font-weight:700;padding:4px 12px;border-radius:20px;"></span>
 </div>
 
+<div id="qaAudienceTabs" style="display:flex;gap:6px;margin-bottom:16px;border-bottom:1px solid var(--border);flex-wrap:wrap;"></div>
+
 <div class="qa-filters">
   <input type="text" id="qaSearch" placeholder="Search updates...">
   <select id="qaCategoryFilter">
@@ -136,7 +146,7 @@
 </div>
 
 <script>
-const qaState = { category: '', q: '' };
+const qaState = { category: '', q: '', audience: '' };
 let qaSearchTimeout;
 
 const IMAGE_EXTENSIONS = ['png', 'jpg', 'jpeg', 'gif', 'webp'];
@@ -246,6 +256,7 @@ function qaRenderCard(u) {
             ${pin}
             <span class="qa-title">${qaEscape(u.title)}</span>
             ${u.category ? `<span class="qa-badge-category">${qaEscape(u.category)}</span>` : ''}
+            ${(u.audience && u.audience !== 'All' && u.audience !== 'CS') ? `<span class="qa-badge-category" style="background:#fff0e0;color:#b8580b;"><i class="bi bi-people-fill"></i> ${qaEscape(u.audience)} only</span>` : ''}
           </div>
           <div style="margin-top: 5px;">${implDate}</div>
           <div class="qa-meta">Posted by ${qaEscape(u.author_name || 'Unknown')} &middot; ${qaTimeAgo(u.created_at)}</div>
@@ -302,9 +313,11 @@ function qaAcknowledge(id, btn) {
 }
 
 function qaLoad() {
+  if (!qaState.audience) return; // wait until tabs are initialized
   const params = new URLSearchParams();
   if (qaState.category) params.set('category', qaState.category);
   if (qaState.q) params.set('q', qaState.q);
+  params.set('audience', qaState.audience);
   const qs = params.toString();
 
   fetch('/qa-updates/api/list' + (qs ? '?' + qs : ''))
@@ -323,13 +336,43 @@ function qaLoad() {
     });
 }
 
+function qaAudienceTabLabel(a) {
+  return a;
+}
+
+function qaSwitchAudienceTab(audience) {
+  qaState.audience = audience;
+  document.querySelectorAll('.qa-audience-tab').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.audience === audience);
+  });
+  qaLoad();
+}
+
+function qaInitAudienceTabs() {
+  fetch('/qa-updates/api/my-audiences')
+    .then(r => r.json())
+    .then(data => {
+      const audiences = data.audiences || ['All'];
+      const container = document.getElementById('qaAudienceTabs');
+
+      // Force the container to be visible regardless of length
+      container.style.display = 'flex'; 
+
+      container.innerHTML = audiences.map((a, i) =>
+        `<button class="qa-audience-tab${i === 0 ? ' active' : ''}" data-audience="${a}" onclick="qaSwitchAudienceTab('${a}')">${qaAudienceTabLabel(a)}</button>`
+      ).join('');
+      qaState.audience = audiences[0];
+      qaLoad();
+    });
+}
+
 document.getElementById('qaCategoryFilter').addEventListener('change', e => { qaState.category = e.target.value; qaLoad(); });
 document.getElementById('qaSearch').addEventListener('input', e => {
   clearTimeout(qaSearchTimeout);
   qaSearchTimeout = setTimeout(() => { qaState.q = e.target.value; qaLoad(); }, 350);
 });
 
-qaLoad();
+qaInitAudienceTabs();
 qaRefreshUnackBadge();
 
 // ---------------------------------------------------------------------------

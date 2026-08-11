@@ -12,8 +12,9 @@
           <select class="form-select" name="leave_type_id" id="leaveTypeId" required>
             <option value="">— Select —</option>
             {% for b in balances %}
-            <option value="{{ b.leave_type_id }}" data-hrs="{{ b.remaining_hours }}" data-days="{{ b.remaining_days }}">
-              {{ b.leave_type_name }} ({{ "%.1f"|format(b.remaining_hours) }} hrs left)
+            <option value="{{ b.leave_type_id }}" data-hrs="{{ b.remaining_hours }}" data-days="{{ b.remaining_days }}"
+                    {% if b.is_awol %}data-awol="1"{% endif %}>
+              {{ b.leave_type_name }}{% if not b.is_awol %} ({{ "%.1f"|format(b.remaining_hours) }} hrs left){% else %} (holidays only){% endif %}
             </option>
             {% endfor %}
             {% for b in portal_balances %}
@@ -136,5 +137,64 @@ function updateRemainingOption() {
 document.getElementById('leaveTypeId').addEventListener('change', checkForm);
 document.getElementById('startDate').addEventListener('change', checkForm);
 document.getElementById('endDate').addEventListener('change', checkForm);
+
+// --- AWOL_TPL --- holiday-aware AWOL toggle
+const _sel = document.getElementById('leaveTypeId');
+const _start = document.getElementById('startDate');
+const _end = document.getElementById('endDate');
+const _endWrap = document.getElementById('endDateWrap');
+function _awolOption() {
+  return Array.from(_sel.options).find(o => o.getAttribute('data-awol') === '1');
+}
+function _applyAwolUI(isHoliday) {
+  const awol = _awolOption();
+  Array.from(_sel.options).forEach(o => {
+    if (!o.value) return; // keep placeholder
+    const isAwol = o.getAttribute('data-awol') === '1';
+    if (isHoliday) {
+      // holiday: only AWOL selectable
+      o.disabled = !isAwol;
+    } else {
+      // normal day: AWOL not selectable
+      o.disabled = isAwol;
+    }
+  });
+  // If current selection became disabled, reset it
+  if (_sel.selectedIndex >= 0 && _sel.options[_sel.selectedIndex].disabled) {
+    _sel.value = '';
+  }
+  // AWOL is single-day: mirror end date to start and hide end field
+  const cur = _sel.options[_sel.selectedIndex];
+  const awolSelected = cur && cur.getAttribute('data-awol') === '1';
+  if (awolSelected) {
+    _end.value = _start.value;
+    if (_endWrap) _endWrap.style.display = 'none';
+  } else if (_endWrap) {
+    _endWrap.style.display = '';
+  }
+}
+async function _checkHolidayAndToggle() {
+  if (!_start.value) { _applyAwolUI(false); return; }
+  try {
+    const r = await fetch('/api/is-holiday?start=' + encodeURIComponent(_start.value));
+    const j = await r.json();
+    _applyAwolUI(!!j.holiday);
+  } catch (e) {
+    _applyAwolUI(false);
+  }
+}
+_start.addEventListener('change', _checkHolidayAndToggle);
+_sel.addEventListener('change', function() {
+  const cur = _sel.options[_sel.selectedIndex];
+  if (cur && cur.getAttribute('data-awol') === '1') {
+    _end.value = _start.value;
+    if (_endWrap) _endWrap.style.display = 'none';
+  } else if (_endWrap) {
+    _endWrap.style.display = '';
+  }
+  checkForm();
+});
+// initialize on load
+_checkHolidayAndToggle();
 </script>
 {% endblock %}

@@ -1,0 +1,104 @@
+{% extends "base.html" %}
+
+{% block title %}Holiday AWOL Report{% endblock %}
+{% block page_title %}Holiday AWOL Report{% endblock %}
+
+{% block content %}
+  <div class="awol-intro">
+    <div class="awol-topbar">
+      <p class="text-muted mb-0">
+        Agents scheduled to work on a holiday (year-to-date) who had
+        <strong>no time-in and no time-out</strong> and filed
+        <strong>no Change Work Schedule</strong> moving that holiday.
+        <span class="awol-total">Total flagged: {{ total }}</span>
+      </p>
+      <a href="{{ url_for('admin_holiday_awol_xlsx') }}" class="btn btn-light awol-export">
+        <i class="bi bi-file-earmark-excel me-1"></i> Export Excel
+      </a>
+    </div>
+    <input type="text" id="awolSearch" class="search-input"
+           placeholder="Search name or employee ID across all holidays…">
+  </div>
+
+  {% if grouped %}
+    {% for g in grouped %}
+      <div class="card awol-holiday" data-holiday="{{ g.date }}">
+        <div class="card-header awol-holiday-head">
+          <span class="awol-holiday-title">
+            {{ g.date }}{% if g.name %} — {{ g.name }}{% endif %}
+          </span>
+          <span class="badge awol-count-badge">{{ g.count }} AWOL</span>
+        </div>
+        <div class="card-body p-0">
+          <table class="data-table awol-table">
+            <thead>
+              <tr>
+                <th>Employee ID</th>
+                <th>Name</th>
+                <th>Scheduled Shift</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for a in g.agents %}
+                <tr class="awol-row" data-search="{{ (a.name ~ ' ' ~ a.employee_id) | lower }}">
+                  <td>{{ a.employee_id }}</td>
+                  <td>{{ a.name }}</td>
+                  <td>{{ a.shift_time }}</td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    {% endfor %}
+  {% else %}
+    <div class="card">
+      <div class="card-body empty">
+        No AWOL cases found for holidays year-to-date. 🎉
+      </div>
+    </div>
+  {% endif %}
+
+  <style>
+    .awol-intro { margin-bottom: 1rem; }
+    .awol-topbar { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; }
+    .awol-export { white-space: nowrap; }
+    .awol-total { margin-left: .5rem; font-weight: 600; color: var(--accent, #1F3A5F); }
+    .awol-holiday { margin-bottom: 1rem; }
+    .awol-holiday-head {
+      display: flex; align-items: center; justify-content: space-between;
+    }
+    .awol-holiday-title { font-weight: 600; }
+    .awol-count-badge {
+      background: #b23a48; color: #fff; padding: .25rem .6rem;
+      border-radius: 999px; font-size: .8rem;
+    }
+    .awol-table { width: 100%; }
+    #awolSearch {
+      width: 100%; padding: .5rem .75rem; border: 1px solid #ccc;
+      border-radius: 6px; margin-top: .25rem;
+    }
+    .awol-holiday.hidden { display: none; }
+  </style>
+
+  <script>
+    (function () {
+      var box = document.getElementById('awolSearch');
+      if (!box) return;
+      box.addEventListener('input', function () {
+        var q = this.value.trim().toLowerCase();
+        document.querySelectorAll('.awol-holiday').forEach(function (card) {
+          var anyVisible = false;
+          card.querySelectorAll('.awol-row').forEach(function (row) {
+            var hay = row.getAttribute('data-search') || '';
+            var show = !q || hay.indexOf(q) !== -1;
+            row.style.display = show ? '' : 'none';
+            if (show) anyVisible = true;
+          });
+          // hide the whole holiday card if nothing matches
+          card.classList.toggle('hidden', q && !anyVisible);
+        });
+      });
+    })();
+  </script>
+{% endblock %}

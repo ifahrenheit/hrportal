@@ -170,6 +170,7 @@
             <th>Status</th>
             <th>Biometric</th>
             <th>Processed By</th>
+            <th>Processed At</th>
           </tr>
         </thead>
         <tbody id="recentOffTbody">
@@ -368,9 +369,9 @@ async function loadRecentOff() {
   const tbody = document.getElementById('recentOffTbody');
   try {
     const res  = await fetch('/hrportal/api/recent-offboardings');
-    if (!res.ok) { tbody.innerHTML = noRows(12, 'Could not load recent offboardings'); return; }
+    if (!res.ok) { tbody.innerHTML = noRows(13, 'Could not load recent offboardings'); return; }
     const rows = await res.json();
-    if (!rows.length) { tbody.innerHTML = noRows(12, 'No offboardings yet'); return; }
+    if (!rows.length) { tbody.innerHTML = noRows(13, 'No offboardings yet'); return; }
 
     const tick = v => v
       ? '<i class="bi bi-check-circle-fill" style="color:var(--success)"></i>'
@@ -390,9 +391,10 @@ async function loadRecentOff() {
         <td class="text-center">${tick(r.status_updated)}</td>
         <td class="text-center">${tick(r.biometric_deactivated)}</td>
         <td style="font-size:.82rem;color:var(--text-muted)">${esc(r.processed_by||'—')}</td>
+        <td style="font-size:.82rem;color:var(--text-muted)">${r.processed_at||'—'}</td>
       </tr>`).join('');
   } catch(e) {
-    tbody.innerHTML = noRows(12, 'Could not load recent offboardings');
+    tbody.innerHTML = noRows(13, 'Could not load recent offboardings');
   }
 }
 

@@ -1,0 +1,105 @@
+{% extends "base.html" %}
+{% block title %}My CoE Requests{% endblock %}
+
+{% block content %}
+<div class="container py-4">
+  <div class="d-flex justify-content-between align-items-center mb-3">
+    <h4 style="color: var(--text);">My CoE Requests</h4>
+    <a href="{{ url_for('coe.request_coe') }}" class="btn btn-sm" style="background: var(--accent); color: #fff;">
+      + New Request
+    </a>
+  </div>
+
+  {% if not requests %}
+  <p class="text-muted">You haven't requested a Certificate of Employment yet.</p>
+  {% else %}
+  <div class="table-responsive">
+    <table class="table align-middle">
+      <thead>
+        <tr>
+          <th>Date Requested</th>
+          <th>Purpose</th>
+          <th>Addressee</th>
+          <th>Notes</th>
+          <th>Status</th>
+          <th>Last Updated</th>
+          <th>Action</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in requests %}
+        <tr>
+          <td>{{ r.requested_at.strftime('%b %d, %Y %I:%M %p') }}</td>
+          <td>
+            {{ r.purpose }}
+            {% if r.purpose_other %}<div class="text-muted small">{{ r.purpose_other }}</div>{% endif %}
+          </td>
+          <td>{{ r.addressee }}</td>
+          <td class="text-muted small">{{ r.additional_notes or '-' }}</td>
+          <td>
+            <span class="badge
+              {% if r.status == 'released' %}bg-success
+              {% elif r.status == 'cancelled' %}bg-secondary
+              {% elif r.status == 'ready_for_release' %}bg-info text-dark
+              {% elif r.status == 'processing' %}bg-warning text-dark
+              {% else %}bg-light text-dark border{% endif %}">
+              {{ status_labels[r.status] }}
+            </span>
+          </td>
+          <td>{{ r.processed_at.strftime('%b %d, %Y %I:%M %p') if r.processed_at else '-' }}</td>
+          <td>
+            {% if r.status == 'ready_for_release' %}
+            <button class="btn btn-sm btn-success confirm-received-btn" data-id="{{ r.id }}">
+              Mark as Received
+            </button>
+            {% elif r.status == 'released' %}
+              {% if r.released_via == 'auto' %}
+              <span class="text-muted small">Auto-released</span>
+              {% elif r.released_via == 'employee_confirmed' %}
+              <span class="text-success small">Confirmed by you</span>
+              {% else %}
+              <span class="text-muted small">Released by HR</span>
+              {% endif %}
+            {% else %}
+            <span class="text-muted">-</span>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+</div>
+
+<script>
+document.querySelectorAll('.confirm-received-btn').forEach(btn => {
+  btn.addEventListener('click', async () => {
+    if (!confirm('Confirm that you have received your Certificate of Employment?')) return;
+
+    const id = btn.dataset.id;
+    btn.disabled = true;
+    btn.textContent = 'Confirming...';
+
+    try {
+      const res = await fetch(`/coe/my-requests/${id}/confirm-received`, {
+        method: 'POST',
+        headers: { 'X-Requested-With': 'XMLHttpRequest' }
+      });
+      const data = await res.json();
+      if (data.success) {
+        window.location.reload();
+      } else {
+        alert(data.error || 'Failed to confirm.');
+        btn.disabled = false;
+        btn.textContent = 'Mark as Received';
+      }
+    } catch (e) {
+      alert('Something went wrong. Please try again.');
+      btn.disabled = false;
+      btn.textContent = 'Mark as Received';
+    }
+  });
+});
+</script>
+{% endblock %}

@@ -1,0 +1,643 @@
+{% extends "base.html" %}
+{% block title %}Overbreak Report{% endblock %}
+{% block page_title %}Overbreak Report{% endblock %}
+{% block content %}
+<style>
+  /* Shared with tardiness.html - kept in sync deliberately so both report
+     pages present the same summary-card / filter-bar layout. */
+  .summary-row { display: flex; gap: 1rem; margin-bottom: 1.5rem; flex-wrap: wrap; }
+  .summary-card {
+    flex: 1; min-width: 140px; background: var(--surface); border: 1px solid var(--border);
+    border-radius: 14px; box-shadow: var(--card-shadow); padding: 1rem 1.25rem;
+    display: flex; align-items: center; gap: .75rem;
+  }
+  .summary-card .icon {
+    width: 40px; height: 40px; border-radius: 10px; display: flex; align-items: center;
+    justify-content: center; font-size: 1.1rem; flex-shrink: 0;
+  }
+  .summary-card .num { font-family: 'Outfit', sans-serif; font-weight: 700; font-size: 1.4rem; line-height: 1; }
+  .summary-card .lbl { font-size: .78rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: .05em; }
+  .summary-card.rule1 .icon { background: #fef3c7; color: #92400e; }
+  .summary-card.rule2 .icon { background: #ffedd5; color: #9a3412; }
+  .summary-card.rule3 .icon { background: #fee2e2; color: #b91c1c; }
+  [data-theme="dark"] .summary-card.rule1 .icon { background: #422006; color: #fcd34d; }
+  [data-theme="dark"] .summary-card.rule2 .icon { background: #431407; color: #fdba74; }
+  [data-theme="dark"] .summary-card.rule3 .icon { background: #450a0a; color: #fca5a5; }
+  .filter-bar {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 14px;
+    box-shadow: var(--card-shadow); padding: 1rem 1.25rem; margin-bottom: 1.5rem;
+    display: flex; align-items: center; gap: .75rem; flex-wrap: wrap;
+  }
+  .filter-bar label { font-size: .82rem; color: var(--text-muted); font-weight: 500; margin-right: -.25rem; }
+  .table-responsive { max-height: 70vh; overflow-y: auto; }
+  .table thead th { position: sticky; top: 0; z-index: 5; box-shadow: 0 1px 0 var(--border); }
+  .search-wrap { position: relative; flex: 1; min-width: 200px; }
+  .search-wrap i { position: absolute; left: .7rem; top: 50%; transform: translateY(-50%); color: var(--text-muted); font-size: .85rem; }
+  .search-wrap input { padding-left: 2rem; }
+  .date-nav { display: flex; align-items: center; gap: .25rem; }
+  .date-nav .btn-icon {
+    width: 32px; height: 32px; display: flex; align-items: center; justify-content: center;
+    border: 1px solid var(--border); border-radius: 8px; background: var(--bg); color: var(--text-muted);
+  }
+  .date-nav .btn-icon:hover { background: var(--accent); color: #fff; border-color: var(--accent); }
+  tr.no-match { display: none; }
+</style>
+<div class="btn-group btn-group-sm mb-3" role="group">
+  <a href="{{ url_for('admin_overbreak') }}"
+     class="btn {% if view != 'triggers' %}btn-primary{% else %}btn-outline-secondary{% endif %}">
+    <i class="bi bi-table"></i> Records
+  </a>
+  <a href="{{ url_for('admin_overbreak', view='triggers') }}"
+     class="btn {% if view == 'triggers' %}btn-primary{% else %}btn-outline-secondary{% endif %}">
+    <i class="bi bi-exclamation-triangle"></i> IR Triggers
+  </a>
+</div>
+
+  {% if view == 'triggers' %}
+
+  <div class="summary-row">
+    <div class="summary-card rule1" title="Rule 1 - 3 or more overbreak instances in a payroll cycle">
+      <div class="icon"><i class="bi bi-arrow-repeat"></i></div>
+      <div>
+        <div class="num">{{ rule1_total }}</div>
+        <div class="lbl">Rule 1</div>
+      </div>
+    </div>
+    <div class="summary-card rule2" title="Rule 2 - 2 instances totalling more than 3.5 hours">
+      <div class="icon"><i class="bi bi-hourglass-split"></i></div>
+      <div>
+        <div class="num">{{ rule2_total }}</div>
+        <div class="lbl">Rule 2</div>
+      </div>
+    </div>
+    <div class="summary-card rule3" title="Rule 3 - a single instance longer than 2 hours">
+      <div class="icon"><i class="bi bi-exclamation-octagon"></i></div>
+      <div>
+        <div class="num">{{ rule3_total }}</div>
+        <div class="lbl">Rule 3</div>
+      </div>
+    </div>
+  </div>
+  <div class="filter-bar">
+    <div class="w-100">
+      <form method="get" id="triggerFilterForm" class="d-flex align-items-center flex-wrap gap-2">
+        <input type="hidden" name="view" value="triggers">
+        <div class="d-flex align-items-center gap-2">
+          <button type="button" class="btn btn-outline-secondary btn-sm" id="prevPeriodBtn" title="Previous payroll period">
+            <i class="bi bi-chevron-left"></i>
+          </button>
+          <label for="date_from" class="form-label small text-muted mb-0">From</label>
+          <input type="date" id="date_from" name="date_from" value="{{ date_from }}" class="form-control form-control-sm" style="width:auto;">
+          <label for="date_to" class="form-label small text-muted mb-0">To</label>
+          <input type="date" id="date_to" name="date_to" value="{{ date_to }}" class="form-control form-control-sm" style="width:auto;">
+          <button type="button" class="btn btn-outline-secondary btn-sm" id="nextPeriodBtn" title="Next payroll period">
+            <i class="bi bi-chevron-right"></i>
+          </button>
+          <button type="button" class="btn btn-outline-secondary btn-sm" id="currentPeriodBtn">Current Period</button>
+          <button type="button" class="btn btn-outline-secondary btn-sm" id="todayBtn">Today</button>
+        </div>
+        <label class="form-label small text-muted mb-0 ms-2">TL</label>
+        <select name="tl" class="form-select form-select-sm" onchange="this.form.submit()" style="width:auto;">
+          <option value="">All</option>
+          {% for t in tl_options %}
+          <option value="{{ t }}" {% if filters.tl == t %}selected{% endif %}>{{ t }}</option>
+          {% endfor %}
+        </select>
+        <select name="batch" class="form-select form-select-sm" onchange="this.form.submit()" style="width:auto;">
+          <option value="">All Batches</option>
+          {% for b in batch_options %}
+          <option value="{{ b }}" {% if filters.batch == b %}selected{% endif %}>{{ b }}</option>
+          {% endfor %}
+        </select>
+        <button type="button" id="copyTableBtn" class="btn btn-outline-secondary btn-sm">
+          <i class="bi bi-clipboard"></i> <span id="copyTableBtnLabel">Copy Table</span>
+        </button>
+        <div class="ms-auto" style="position:relative;">
+          <input type="text" id="employeeSearch" class="form-control form-control-sm"
+                 placeholder="Filter by employee or TL name..." style="min-width:240px;">
+        </div>
+      </form>
+    </div>
+  </div>
+
+
+  <div class="card" style="border-radius:14px;">
+    <div class="card-body p-0">
+      <div class="table-responsive">
+        <table class="table table-hover table-sm mb-0" id="triggersTable">
+          <thead class="table-light">
+            <tr>
+              <th class="sortable" data-type="date" onclick="sortTriggersTable(0, this)">Date <i class="bi bi-arrow-down-up small"></i></th>
+              <th class="sortable" data-type="text" onclick="sortTriggersTable(1, this)">Agent Name <i class="bi bi-arrow-down-up small"></i></th>
+              <th class="sortable" data-type="text" onclick="sortTriggersTable(2, this)">Employee ID <i class="bi bi-arrow-down-up small"></i></th>
+              <th class="sortable" data-type="text" onclick="sortTriggersTable(3, this)">TL <i class="bi bi-arrow-down-up small"></i></th>
+              <th class="sortable" data-type="text" onclick="sortTriggersTable(4, this)">Batch <i class="bi bi-arrow-down-up small"></i></th>
+              <th class="sortable" data-type="text" onclick="sortTriggersTable(5, this)">Rule <i class="bi bi-arrow-down-up small"></i></th>
+              <th>Detail</th>
+              <th class="sortable" data-type="text" onclick="sortTriggersTable(7, this)">Excess <i class="bi bi-arrow-down-up small"></i></th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for e in events %}
+            <tr data-name="{{ (e.agent_name or '')|lower }} {{ (e.tl or '')|lower }} {{ (e.employee_id or '')|lower }}">
+              <td>{{ e.event_date }}</td>
+              <td>{{ e.agent_name }}</td>
+              <td>{{ e.employee_id }}</td>
+              <td>{{ e.tl or '' }}</td>
+              <td>{{ e.batch or '' }}</td>
+              <td>
+                {% if e.trigger_type == 'RULE1' %}<span class="badge bg-warning text-dark">Rule 1</span>
+                {% elif e.trigger_type == 'RULE2' %}<span class="badge bg-orange text-white" style="background-color:#fd7e14;">Rule 2</span>
+                {% else %}<span class="badge bg-danger">Rule 3</span>
+                {% endif %}
+              </td>
+              <td>
+                {{ e.detail }}
+                {% if e.breakdown and e.breakdown|length > 1 %}
+                <details style="margin-top:2px;">
+                  <summary style="cursor:pointer;color:var(--accent);font-size:.8rem;">Breakdown</summary>
+                  <ul style="margin:.4rem 0 0;padding-left:1.1rem;font-size:.82rem;color:var(--text-muted);">
+                    {% for entry in e.breakdown %}
+                    {% set entry_excess = entry.minutes - 90 %}
+                    <li>{{ entry.date }} - {% if entry_excess > 0 %}+{{ entry_excess }}m{% else %}{{ entry.minutes }} min{% endif %}</li>
+                    {% endfor %}
+                  </ul>
+                </details>
+                {% endif %}
+              </td>
+              <td>{% if e.excess_minutes %}<span class="text-danger fw-semibold">+{{ e.excess_minutes }}m</span>{% else %}—{% endif %}</td>
+            </tr>
+            {% else %}
+            <tr>
+              <td colspan="8" class="text-center text-muted py-4">No IR triggers for this payroll cycle.</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+  <div class="text-muted small mt-2">{{ events|length }} trigger(s) shown for this cycle.</div>
+
+  {% else %}
+
+  <div class="filter-bar">
+    <form method="get" id="recordsFilterForm" class="d-flex align-items-center flex-wrap gap-2 w-100">
+      <div class="date-nav">
+        <button type="button" class="btn-icon" id="recPrevPeriodBtn" title="Previous payroll period">
+          <i class="bi bi-chevron-left"></i>
+        </button>
+      </div>
+      <label for="rec_date_from">From</label>
+      <input type="date" id="rec_date_from" name="date_from" value="{{ filters.date_from }}"
+             class="form-control form-control-sm" style="width:auto;">
+      <label for="rec_date_to">To</label>
+      <input type="date" id="rec_date_to" name="date_to" value="{{ filters.date_to }}"
+             class="form-control form-control-sm" style="width:auto;">
+      <div class="date-nav">
+        <button type="button" class="btn-icon" id="recNextPeriodBtn" title="Next payroll period">
+          <i class="bi bi-chevron-right"></i>
+        </button>
+      </div>
+      <button type="button" class="btn btn-outline-secondary btn-sm" id="recCurrentPeriodBtn">Current Period</button>
+      <button type="button" class="btn btn-outline-secondary btn-sm" id="recTodayBtn">Today</button>
+      <select name="tl" class="form-select form-select-sm" onchange="this.form.submit()" style="width:auto;">
+        <option value="">All TLs</option>
+        {% for t in tl_options %}
+        <option value="{{ t }}" {% if filters.tl == t %}selected{% endif %}>{{ t }}</option>
+        {% endfor %}
+      </select>
+      <select name="batch" class="form-select form-select-sm" onchange="this.form.submit()" style="width:auto;">
+        <option value="">All Batches</option>
+        {% for b in batch_options %}
+        <option value="{{ b }}" {% if filters.batch == b %}selected{% endif %}>{{ b }}</option>
+        {% endfor %}
+      </select>
+      <button type="button" id="recCopyTableBtn" class="btn btn-outline-secondary btn-sm">
+        <i class="bi bi-clipboard"></i> <span id="recCopyTableBtnLabel">Copy Table</span>
+      </button>
+      <div class="search-wrap ms-auto">
+        <i class="bi bi-search"></i>
+        <input type="text" name="search" value="{{ filters.search }}"
+               class="form-control form-control-sm" placeholder="Filter by agent or employee ID...">
+      </div>
+    </form>
+  </div>
+
+  <div class="card" style="border-radius:14px;">
+    <div class="card-body p-0">
+      <div class="table-responsive">
+        <table class="table table-hover table-sm mb-0" id="overbreakTable">
+          <thead class="table-light">
+            <tr>
+              <th class="sortable" data-type="date" onclick="sortTable(0, this)">Date <i class="bi bi-arrow-down-up small"></i></th>
+              <th class="sortable" data-type="text" onclick="sortTable(1, this)">Agent Name <i class="bi bi-arrow-down-up small"></i></th>
+              <th class="sortable" data-type="text" onclick="sortTable(2, this)">Employee ID <i class="bi bi-arrow-down-up small"></i></th>
+              <th class="sortable" data-type="time" onclick="sortTable(3, this)">Break Duration <i class="bi bi-arrow-down-up small"></i></th>
+              <th class="sortable" data-type="time" onclick="sortTable(4, this)">Excess <i class="bi bi-arrow-down-up small"></i></th>
+              <th class="sortable" data-type="text" onclick="sortTable(5, this)">Submitted <i class="bi bi-arrow-down-up small"></i></th>
+              <th class="sortable" data-type="text" onclick="sortTable(6, this)">Payroll Month <i class="bi bi-arrow-down-up small"></i></th>
+              <th class="sortable" data-type="text" onclick="sortTable(7, this)">Cycle <i class="bi bi-arrow-down-up small"></i></th>
+              <th class="sortable" data-type="text" onclick="sortTable(8, this)">TL <i class="bi bi-arrow-down-up small"></i></th>
+              <th class="sortable" data-type="text" onclick="sortTable(9, this)">Batch <i class="bi bi-arrow-down-up small"></i></th>
+              <th>Incident Report Info</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for r in records %}
+            <tr>
+              <td>{{ r.record_date }}</td>
+              <td>{{ r.agent_name }}</td>
+              <td>{{ r.employee_id or '' }}</td>
+              <td>{{ r.break_duration or '' }}</td>
+              <td>{% if r.excess_minutes and r.excess_minutes > 0 %}<span class="text-danger fw-semibold">+{{ r.excess_hm }}</span>{% else %}—{% endif %}</td>
+              <td>{{ r.submitted or '' }}</td>
+              <td>{{ r.payroll_month or '' }}</td>
+              <td>{{ r.payroll_cycle or '' }}</td>
+              <td>{{ r.tl or '' }}</td>
+              <td>{{ r.batch or '' }}</td>
+              <td>{{ r.incident_report_info or '' }}</td>
+            </tr>
+            {% else %}
+            <tr>
+              <td colspan="11" class="text-center text-muted py-4">No records found for the selected filters.</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+  <div class="text-muted small mt-2">{{ records|length }} record(s) shown. All rows are pre-filtered to Validity = Valid.</div>
+
+  {% endif %}
+
+<style>
+.sortable { cursor: pointer; user-select: none; }
+.sortable:hover { background-color: rgba(0,0,0,0.03); }
+.sortable.sorted-asc i, .sortable.sorted-desc i { color: var(--accent, #0d6efd); }
+</style>
+<script>
+let sortState = {};
+
+function sortTable(colIndex, th) {
+  const table = document.getElementById('overbreakTable');
+  const tbody = table.querySelector('tbody');
+  const rows = Array.from(tbody.querySelectorAll('tr')).filter(r => r.cells.length > 1);
+  const type = th.dataset.type;
+
+  const currentDir = sortState[colIndex] === 'asc' ? 'desc' : 'asc';
+  sortState = {};
+  sortState[colIndex] = currentDir;
+
+  table.querySelectorAll('th.sortable').forEach(h => h.classList.remove('sorted-asc', 'sorted-desc'));
+  th.classList.add(currentDir === 'asc' ? 'sorted-asc' : 'sorted-desc');
+
+  rows.sort((a, b) => {
+    let valA = a.cells[colIndex].textContent.trim();
+    let valB = b.cells[colIndex].textContent.trim();
+
+    if (type === 'date') {
+      valA = new Date(valA);
+      valB = new Date(valB);
+    } else if (type === 'time') {
+      valA = valA || '00:00:00';
+      valB = valB || '00:00:00';
+    } else {
+      valA = valA.toLowerCase();
+      valB = valB.toLowerCase();
+    }
+
+    if (valA < valB) return currentDir === 'asc' ? -1 : 1;
+    if (valA > valB) return currentDir === 'asc' ? 1 : -1;
+    return 0;
+  });
+
+  rows.forEach(r => tbody.appendChild(r));
+}
+
+let sortStateTriggers = {};
+
+function sortTriggersTable(colIndex, th) {
+  const table = document.getElementById('triggersTable');
+  const tbody = table.querySelector('tbody');
+  const rows = Array.from(tbody.querySelectorAll('tr')).filter(r => r.cells.length > 1);
+  const type = th.dataset.type;
+
+  const currentDir = sortStateTriggers[colIndex] === 'asc' ? 'desc' : 'asc';
+  sortStateTriggers = {};
+  sortStateTriggers[colIndex] = currentDir;
+
+  table.querySelectorAll('th.sortable').forEach(h => h.classList.remove('sorted-asc', 'sorted-desc'));
+  th.classList.add(currentDir === 'asc' ? 'sorted-asc' : 'sorted-desc');
+
+  rows.sort((a, b) => {
+    let valA = a.cells[colIndex].textContent.trim();
+    let valB = b.cells[colIndex].textContent.trim();
+
+    if (type === 'date') {
+      valA = new Date(valA);
+      valB = new Date(valB);
+    } else {
+      valA = valA.toLowerCase();
+      valB = valB.toLowerCase();
+    }
+
+    if (valA < valB) return currentDir === 'asc' ? -1 : 1;
+    if (valA > valB) return currentDir === 'asc' ? 1 : -1;
+    return 0;
+  });
+
+  rows.forEach(r => tbody.appendChild(r));
+}
+
+function copyTable() {
+  const table = document.getElementById('overbreakTable');
+  const range = document.createRange();
+  range.selectNode(table);
+  window.getSelection().removeAllRanges();
+  window.getSelection().addRange(range);
+  try {
+    document.execCommand('copy');
+    window.getSelection().removeAllRanges();
+    const btn = event.target.closest('button');
+    const original = btn.innerHTML;
+    btn.innerHTML = '<i class="bi bi-check2"></i> Copied!';
+    setTimeout(() => { btn.innerHTML = original; }, 1500);
+  } catch (err) {
+    alert('Copy failed. Please select and copy manually.');
+  }
+}
+
+// ── Triggers filter bar ──
+// Payroll-period arithmetic mirrors tardiness.html deliberately: both pages
+// must agree on cycle boundaries (8th-22nd, and 23rd-7th of next month).
+document.addEventListener('DOMContentLoaded', function () {
+  const form = document.getElementById('triggerFilterForm');
+  if (!form) return;  // Records view, nothing to wire up
+
+  const dateFromInput = document.getElementById('date_from');
+  const dateToInput = document.getElementById('date_to');
+
+  function ymd(y, m, d) {
+    return new Date(Date.UTC(y, m - 1, d));
+  }
+  function fmt(dt) {
+    return dt.toISOString().slice(0, 10);
+  }
+
+  function shiftPeriod(direction) {
+    const [fy, fm, fd] = dateFromInput.value.split('-').map(Number);
+    let newStart, newEnd;
+    if (fd === 8) {
+      if (direction === -1) {
+        let pm = fm - 1, py = fy;
+        if (pm === 0) { pm = 12; py = fy - 1; }
+        newStart = ymd(py, pm, 23);
+        newEnd = ymd(fy, fm, 7);
+      } else {
+        let nm = fm + 1, ny = fy;
+        if (nm === 13) { nm = 1; ny = fy + 1; }
+        newStart = ymd(fy, fm, 23);
+        newEnd = ymd(ny, nm, 7);
+      }
+    } else if (fd === 23) {
+      if (direction === -1) {
+        newStart = ymd(fy, fm, 8);
+        newEnd = ymd(fy, fm, 22);
+      } else {
+        let nm = fm + 1, ny = fy;
+        if (nm === 13) { nm = 1; ny = fy + 1; }
+        newStart = ymd(ny, nm, 8);
+        newEnd = ymd(ny, nm, 22);
+      }
+    } else {
+      // Custom range: shift both dates by the range length
+      const [ty, tm, td] = dateToInput.value.split('-').map(Number);
+      const start = ymd(fy, fm, fd);
+      const end = ymd(ty, tm, td);
+      const rangeDays = Math.round((end - start) / 86400000) + 1;
+      const shiftMs = direction * rangeDays * 86400000;
+      newStart = new Date(start.getTime() + shiftMs);
+      newEnd = new Date(end.getTime() + shiftMs);
+    }
+    dateFromInput.value = fmt(newStart);
+    dateToInput.value = fmt(newEnd);
+    form.submit();
+  }
+
+  document.getElementById('prevPeriodBtn')?.addEventListener('click', () => shiftPeriod(-1));
+  document.getElementById('nextPeriodBtn')?.addEventListener('click', () => shiftPeriod(1));
+
+  document.getElementById('currentPeriodBtn')?.addEventListener('click', () => {
+    // Reset to the default (most recently completed) payroll period,
+    // matching get_default_payroll_period() server-side.
+    const today = new Date();
+    const y = today.getUTCFullYear(), m = today.getUTCMonth() + 1, d = today.getUTCDate();
+    let periodStart, periodEnd;
+    if (d >= 8 && d <= 22) {
+      periodStart = ymd(y, m, 8);
+      periodEnd = ymd(y, m, 22);
+    } else if (d >= 23) {
+      let nm = m + 1, ny = y;
+      if (nm === 13) { nm = 1; ny = y + 1; }
+      periodStart = ymd(y, m, 23);
+      periodEnd = ymd(ny, nm, 7);
+    } else {
+      let pm = m - 1, py = y;
+      if (pm === 0) { pm = 12; py = y - 1; }
+      periodStart = ymd(py, pm, 23);
+      periodEnd = ymd(y, m, 7);
+    }
+    dateFromInput.value = fmt(periodStart);
+    dateToInput.value = fmt(periodEnd);
+    form.submit();
+  });
+
+  // Today: defaults to the last day whose shifts have fully completed,
+  // matching the 1 PM cron cutoff used elsewhere.
+  const TODAY_CUTOFF_HOUR = 13;
+  document.getElementById('todayBtn')?.addEventListener('click', () => {
+    const now = new Date();
+    const todayCutoff = new Date(now);
+    todayCutoff.setHours(TODAY_CUTOFF_HOUR, 0, 0, 0);
+    let target = new Date(now);
+    if (now < todayCutoff) {
+      target.setDate(target.getDate() - 2);
+    } else {
+      target.setDate(target.getDate() - 1);
+    }
+    const y = target.getFullYear();
+    const m = String(target.getMonth() + 1).padStart(2, '0');
+    const d = String(target.getDate()).padStart(2, '0');
+    const safeDate = y + '-' + m + '-' + d;
+    dateFromInput.value = safeDate;
+    dateToInput.value = safeDate;
+    form.submit();
+  });
+
+  // Auto-submit on manual date change
+  dateFromInput?.addEventListener('change', () => form.submit());
+  dateToInput?.addEventListener('change', () => form.submit());
+
+  // Live client-side filter on agent / TL / employee id
+  const searchInput = document.getElementById('employeeSearch');
+  const triggerRows = Array.from(document.querySelectorAll('#triggersTable tbody tr[data-name]'));
+  searchInput?.addEventListener('input', function () {
+    const q = this.value.trim().toLowerCase();
+    triggerRows.forEach(row => {
+      const hay = row.getAttribute('data-name') || '';
+      row.style.display = (!q || hay.includes(q)) ? '' : 'none';
+    });
+  });
+
+  // Copy the currently visible rows as TSV
+  document.getElementById('copyTableBtn')?.addEventListener('click', function () {
+    const table = document.getElementById('triggersTable');
+    if (!table) return;
+    const headerCells = Array.from(table.querySelectorAll('thead th'))
+      .map(th => th.textContent.trim().replace(/\s+/g, ' '));
+    const visibleRows = Array.from(table.querySelectorAll('tbody tr'))
+      .filter(tr => tr.style.display !== 'none');
+    const rowLines = visibleRows.map(tr =>
+      Array.from(tr.querySelectorAll('td'))
+        .map(td => td.textContent.trim().replace(/\s+/g, ' '))
+        .join('\t')
+    );
+    const hasRealData = visibleRows.length > 0 && visibleRows[0].querySelectorAll('td').length > 1;
+    const lines = hasRealData ? [headerCells.join('\t'), ...rowLines] : [headerCells.join('\t')];
+    navigator.clipboard.writeText(lines.join('\n')).then(() => {
+      const label = document.getElementById('copyTableBtnLabel');
+      const original = label.textContent;
+      label.textContent = 'Copied!';
+      setTimeout(() => { label.textContent = original; }, 1500);
+    }).catch(() => {
+      alert('Could not copy to clipboard. Your browser may be blocking clipboard access on this page.');
+    });
+  });
+});
+
+// -- Records filter bar --
+// Same payroll-period arithmetic as the Triggers bar and tardiness.html;
+// scoped to #recordsFilterForm so the two bars do not interfere.
+document.addEventListener('DOMContentLoaded', function () {
+  const form = document.getElementById('recordsFilterForm');
+  if (!form) return;  // Triggers view, nothing to wire up
+
+  const fromInput = document.getElementById('rec_date_from');
+  const toInput = document.getElementById('rec_date_to');
+
+  function ymd(y, m, d) { return new Date(Date.UTC(y, m - 1, d)); }
+  function fmt(dt) { return dt.toISOString().slice(0, 10); }
+
+  function shiftPeriod(direction) {
+    if (!fromInput.value) return;
+    const [fy, fm, fd] = fromInput.value.split('-').map(Number);
+    let newStart, newEnd;
+    if (fd === 8) {
+      if (direction === -1) {
+        let pm = fm - 1, py = fy;
+        if (pm === 0) { pm = 12; py = fy - 1; }
+        newStart = ymd(py, pm, 23);
+        newEnd = ymd(fy, fm, 7);
+      } else {
+        let nm = fm + 1, ny = fy;
+        if (nm === 13) { nm = 1; ny = fy + 1; }
+        newStart = ymd(fy, fm, 23);
+        newEnd = ymd(ny, nm, 7);
+      }
+    } else if (fd === 23) {
+      if (direction === -1) {
+        newStart = ymd(fy, fm, 8);
+        newEnd = ymd(fy, fm, 22);
+      } else {
+        let nm = fm + 1, ny = fy;
+        if (nm === 13) { nm = 1; ny = fy + 1; }
+        newStart = ymd(ny, nm, 8);
+        newEnd = ymd(ny, nm, 22);
+      }
+    } else {
+      const [ty, tm, td] = toInput.value.split('-').map(Number);
+      const start = ymd(fy, fm, fd);
+      const end = ymd(ty, tm, td);
+      const rangeDays = Math.round((end - start) / 86400000) + 1;
+      const shiftMs = direction * rangeDays * 86400000;
+      newStart = new Date(start.getTime() + shiftMs);
+      newEnd = new Date(end.getTime() + shiftMs);
+    }
+    fromInput.value = fmt(newStart);
+    toInput.value = fmt(newEnd);
+    form.submit();
+  }
+
+  document.getElementById('recPrevPeriodBtn')?.addEventListener('click', () => shiftPeriod(-1));
+  document.getElementById('recNextPeriodBtn')?.addEventListener('click', () => shiftPeriod(1));
+
+  document.getElementById('recCurrentPeriodBtn')?.addEventListener('click', () => {
+    const today = new Date();
+    const y = today.getUTCFullYear(), m = today.getUTCMonth() + 1, d = today.getUTCDate();
+    let periodStart, periodEnd;
+    if (d >= 8 && d <= 22) {
+      periodStart = ymd(y, m, 8);
+      periodEnd = ymd(y, m, 22);
+    } else if (d >= 23) {
+      let nm = m + 1, ny = y;
+      if (nm === 13) { nm = 1; ny = y + 1; }
+      periodStart = ymd(y, m, 23);
+      periodEnd = ymd(ny, nm, 7);
+    } else {
+      let pm = m - 1, py = y;
+      if (pm === 0) { pm = 12; py = y - 1; }
+      periodStart = ymd(py, pm, 23);
+      periodEnd = ymd(y, m, 7);
+    }
+    fromInput.value = fmt(periodStart);
+    toInput.value = fmt(periodEnd);
+    form.submit();
+  });
+
+  const TODAY_CUTOFF_HOUR = 13;
+  document.getElementById('recTodayBtn')?.addEventListener('click', () => {
+    const now = new Date();
+    const cutoff = new Date(now);
+    cutoff.setHours(TODAY_CUTOFF_HOUR, 0, 0, 0);
+    let target = new Date(now);
+    target.setDate(target.getDate() - (now < cutoff ? 2 : 1));
+    const y = target.getFullYear();
+    const m = String(target.getMonth() + 1).padStart(2, '0');
+    const d = String(target.getDate()).padStart(2, '0');
+    const safeDate = y + '-' + m + '-' + d;
+    fromInput.value = safeDate;
+    toInput.value = safeDate;
+    form.submit();
+  });
+
+  fromInput?.addEventListener('change', () => form.submit());
+  toInput?.addEventListener('change', () => form.submit());
+
+  document.getElementById('recCopyTableBtn')?.addEventListener('click', function () {
+    const table = document.getElementById('overbreakTable');
+    if (!table) return;
+    const headerCells = Array.from(table.querySelectorAll('thead th'))
+      .map(th => th.textContent.trim().replace(/\s+/g, ' '));
+    const visibleRows = Array.from(table.querySelectorAll('tbody tr'))
+      .filter(tr => tr.style.display !== 'none');
+    const rowLines = visibleRows.map(tr =>
+      Array.from(tr.querySelectorAll('td'))
+        .map(td => td.textContent.trim().replace(/\s+/g, ' '))
+        .join('\t')
+    );
+    const hasRealData = visibleRows.length > 0 && visibleRows[0].querySelectorAll('td').length > 1;
+    const lines = hasRealData ? [headerCells.join('\t'), ...rowLines] : [headerCells.join('\t')];
+    navigator.clipboard.writeText(lines.join('\n')).then(() => {
+      const label = document.getElementById('recCopyTableBtnLabel');
+      const original = label.textContent;
+      label.textContent = 'Copied!';
+      setTimeout(() => { label.textContent = original; }, 1500);
+    }).catch(() => {
+      alert('Could not copy to clipboard. Your browser may be blocking clipboard access on this page.');
+    });
+  });
+});
+</script>
+{% endblock %}

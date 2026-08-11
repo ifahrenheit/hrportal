@@ -1,0 +1,907 @@
+{% extends 'base.html' %}
+{% block title %}Attendance Grid{% endblock %}
+{% block page_title %}Attendance Grid{% endblock %}
+{% block content %}
+
+{# ── Page Tabs ───────────────────────────────────────────── #}
+<ul class="nav nav-tabs mb-3">
+  <li class="nav-item">
+    <a class="nav-link" href="{{ url_for('admin_absences') }}">
+      <i class="bi bi-person-x me-1"></i>Absence Report
+    </a>
+  </li>
+  <li class="nav-item">
+    <a class="nav-link active" href="{{ url_for('admin_attendance_grid') }}">
+      <i class="bi bi-grid-3x3 me-1"></i>Attendance Grid
+    </a>
+  </li>
+</ul>
+
+{# ── Filters ─────────────────────────────────────────────── #}
+<div class="card mb-3">
+  <div class="card-body pb-2">
+    <form method="GET" class="row g-2 align-items-end">
+      <div class="col-6 col-md-2">
+        <label class="form-label small mb-1">Month</label>
+        <input type="month" name="month" class="form-control form-control-sm"
+               value="{{ month_filter }}" onchange="this.form.submit()">
+      </div>
+      <div class="col-6 col-md-2">
+        <label class="form-label small mb-1">Group</label>
+        <select name="group" class="form-select form-select-sm" onchange="this.form.submit()">
+          <option value="">All Groups</option>
+          {% for g in groups %}
+          <option value="{{ g }}" {% if g == group_filter %}selected{% endif %}>{{ g }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-6 col-md-2">
+        <label class="form-label small mb-1">Team Lead</label>
+        <select name="tl" class="form-select form-select-sm" onchange="this.form.submit()">
+          <option value="">All TLs</option>
+          {% for t in tls %}
+          <option value="{{ t }}" {% if t == tl_filter %}selected{% endif %}>{{ t }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-6 col-md-2">
+        <label class="form-label small mb-1">Employee</label>
+        <input type="text" name="emp_search" class="form-control form-control-sm"
+               placeholder="Name or ID..." value="{{ emp_search }}">
+      </div>
+      <div class="col-12 col-md-4 d-flex gap-2">
+        <button type="submit" class="btn btn-primary btn-sm">
+          <i class="bi bi-search me-1"></i>Apply
+        </button>
+        <a href="{{ url_for('admin_attendance_grid') }}" class="btn btn-outline-secondary btn-sm">
+          <i class="bi bi-x-circle me-1"></i>Clear
+        </a>
+        {% if employees %}
+        <button class="btn btn-outline-secondary btn-sm" id="copyReportBtn" onclick="copyReport()">
+          <i class="bi bi-clipboard-data me-1"></i>Copy Report
+        </button>
+        <button type="button" class="btn btn-outline-primary btn-sm" data-bs-toggle="modal" data-bs-target="#summaryModal">
+          <i class="bi bi-table me-1"></i>Summary Report
+        </button>
+        {% endif %}
+        <span class="ms-auto text-muted small align-self-center">
+          {{ employees|length }} employee{{ 's' if employees|length != 1 }}
+        </span>
+      </div>
+    </form>
+  </div>
+</div>
+
+{# ── Legend + Team Rate ──────────────────────────────────── #}
+<div class="d-flex gap-3 mb-3 align-items-start flex-wrap">
+
+  {# ── Team Rate + Forecast cards ──────────────────────────── #}
+{% if team_rate is not none %}
+<div class="d-flex gap-3 mb-3 flex-wrap">
+
+  {# Team Attendance Rate #}
+  <div class="card p-3 flex-shrink-0" style="background:var(--surface);border:1px solid var(--border);min-width:200px;">
+    <div class="d-flex align-items-center gap-2 mb-1">
+      <i class="bi bi-people-fill" style="color:var(--accent);"></i>
+      <span class="text-muted" style="font-size:.75rem;">
+        Team Attendance Rate{% if tl_filter %} — {{ tl_filter }}{% elif group_filter %} — {{ group_filter }}{% endif %}
+      </span>
+    </div>
+    <div class="fw-bold" style="font-size:1.4rem;
+      {% if team_rate >= 90 %}color:#15803d;
+      {% elif team_rate >= 75 %}color:#b45309;
+      {% else %}color:#b91c1c;{% endif %}">
+      {{ team_rate }}%
+    </div>
+    <div class="text-muted" style="font-size:.78rem;">{{ team_present }}/{{ team_scheduled }} days</div>
+    <div class="text-muted mt-1" style="font-size:.7rem;">{{ employees|length }} employee{{ 's' if employees|length != 1 }}</div>
+  </div>
+
+  {# Forecasted Achievement — current month only #}
+  {% if is_current_month and team_forecast_rate is not none %}
+  <div class="card p-3 flex-shrink-0" style="background:var(--surface);border:1px dashed var(--border);min-width:200px;">
+    <div class="d-flex align-items-center gap-2 mb-1">
+      <i class="bi bi-graph-up" style="color:#0369a1;"></i>
+      <span class="text-muted" style="font-size:.75rem;">Forecasted Achievement</span>
+    </div>
+    <div class="fw-bold" style="font-size:1.4rem;
+      {% if team_forecast_rate >= 90 %}color:#15803d;
+      {% elif team_forecast_rate >= 75 %}color:#b45309;
+      {% else %}color:#b91c1c;{% endif %}">
+      {{ team_forecast_rate }}%
+    </div>
+    <div class="text-muted" style="font-size:.78rem;">+{{ team_remaining }} days remaining</div>
+    <div class="text-muted mt-1" style="font-size:.7rem;">Best case: all remaining days present</div>
+  </div>
+  {% endif %}
+
+</div>
+{% endif %}
+
+  {# Legend — right #}
+  <div style="font-size:.75rem;flex:1;min-width:0;">
+    <div class="d-flex gap-2 flex-wrap align-items-center mb-1">
+      <span class="text-muted fw-semibold me-1">Attendance:</span>
+      <span style="background:#d1fae5;color:#065f46;padding:.15rem .45rem;border-radius:4px;font-size:.7rem;">P — Present</span>
+      <span style="background:#fee2e2;color:#b91c1c;padding:.15rem .45rem;border-radius:4px;font-size:.7rem;">A — Absent</span>
+      <span style="background:#fff7ed;color:#9a3412;padding:.15rem .45rem;border-radius:4px;font-size:.7rem;">FI — FTS IN</span>
+      <span style="background:#faf5ff;color:#6b21a8;padding:.15rem .45rem;border-radius:4px;font-size:.7rem;">FO — FTS OUT</span>
+      <span style="background:#1a1a1a;color:#fff;padding:.15rem .45rem;border-radius:4px;font-size:.7rem;">RD — Rest Day</span>
+      <span style="background:#e0f2fe;color:#0369a1;padding:.15rem .45rem;border-radius:4px;font-size:.7rem;">🇵🇭 — Public Holiday</span>
+    </div>
+    <div class="d-flex gap-2 flex-wrap align-items-center mb-1">
+      <span class="text-muted fw-semibold me-1">Leaves (Approved):</span>
+      <span style="background:#eff6ff;color:#1d4ed8;padding:.15rem .45rem;border-radius:4px;font-size:.7rem;">VL — Vacation Leave</span>
+      <span style="background:#eff6ff;color:#1d4ed8;padding:.15rem .45rem;border-radius:4px;font-size:.7rem;">SL — Sick Leave</span>
+      <span style="background:#eff6ff;color:#1d4ed8;padding:.15rem .45rem;border-radius:4px;font-size:.7rem;">LWOP — Leave Without Pay</span>
+      <span style="background:#eff6ff;color:#1d4ed8;padding:.15rem .45rem;border-radius:4px;font-size:.7rem;">PL — Parental Leave</span>
+      <span style="background:#eff6ff;color:#1d4ed8;padding:.15rem .45rem;border-radius:4px;font-size:.7rem;">COL — Carry-Over Leave</span>
+      <span style="background:#eff6ff;color:#1d4ed8;padding:.15rem .45rem;border-radius:4px;font-size:.7rem;">ML — Magic Leave</span>
+    </div>
+    <div class="d-flex gap-2 flex-wrap align-items-center mb-1">
+      <span class="text-muted fw-semibold me-1">Leaves (Pending):</span>
+      <span style="background:#fef9c3;color:#854d0e;padding:.15rem .45rem;border-radius:4px;font-size:.7rem;">VL* — Vacation Leave</span>
+      <span style="background:#fef9c3;color:#854d0e;padding:.15rem .45rem;border-radius:4px;font-size:.7rem;">SL* — Sick Leave</span>
+      <span style="background:#fef9c3;color:#854d0e;padding:.15rem .45rem;border-radius:4px;font-size:.7rem;">LWOP* — Leave Without Pay</span>
+      <span style="background:#fef9c3;color:#854d0e;padding:.15rem .45rem;border-radius:4px;font-size:.7rem;">PL* — Parental Leave</span>
+      <span style="background:#fef9c3;color:#854d0e;padding:.15rem .45rem;border-radius:4px;font-size:.7rem;">COL* — Carry-Over Leave</span>
+      <span style="background:#fef9c3;color:#854d0e;padding:.15rem .45rem;border-radius:4px;font-size:.7rem;">ML* — Magic Leave</span>
+    </div>
+    <div class="d-flex gap-2 flex-wrap align-items-center">
+      <span class="text-muted fw-semibold me-1">Notes:</span>
+      <span class="text-muted" style="font-size:.7rem;"><i class="bi bi-chat-square-text me-1"></i>Click any cell to add/view a note</span>
+      <span class="text-muted" style="font-size:.7rem;"><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#1d4ed8;margin-right:3px;"></span>Blue dot = note exists</span>
+      <span class="text-muted" style="font-size:.7rem;"><i class="bi bi-info-circle me-1"></i>PL and ML days excluded from Attendance Rate</span>
+    </div>
+  </div>
+
+</div>
+
+{# ── Attendance Table ────────────────────────────────────── #}
+{% if employees %}
+<div class="card">
+  <div id="topScroll" style="overflow-x:auto;overflow-y:hidden;height:14px;background:var(--border);border-radius:4px;margin-bottom:4px;" onscroll="document.getElementById('tableScroll').scrollLeft=this.scrollLeft;">
+    <div id="topScrollInner" style="height:1px;"></div>
+  </div>
+  <div class="table-responsive" id="tableScroll" onscroll="document.getElementById('topScroll').scrollLeft=this.scrollLeft;" style="max-height:calc(100vh - 260px);overflow:auto;">
+    <table class="table table-bordered mb-0" style="font-size:.72rem;min-width:900px;border-collapse:collapse;">
+      <thead>
+        <tr style="background:var(--surface);color:var(--text-muted);text-transform:uppercase;font-size:.7rem;position:sticky;top:0;z-index:3;">
+          <th style="min-width:140px;position:sticky;left:0;background:var(--surface);z-index:4;">Employee</th>
+          <th style="min-width:80px;">TL</th>
+          <th style="min-width:90px;" class="text-center" id="sortRateBtn" title="Click to sort by Attendance Rate">
+            Attendance Rate <span id="rateSortIcon" style="font-size:.65rem;opacity:.7;"></span>
+          </th>
+                    
+          {% for h in date_headers %}
+          {% set is_holiday = h.date in holiday_map %}
+          <th class="text-center" data-col-date="{{ h.date }}"
+              style="min-width:42px;padding:.25rem .15rem;user-select:none;
+              {% if is_holiday %}background:#e0f2fe;color:#0369a1;{% endif %}">
+            <div>{{ h.day }}</div>
+            <div style="font-size:.63rem;opacity:.7;">{{ h.weekday }}</div>
+            {% if is_holiday %}
+            <div style="font-size:.55rem;opacity:.85;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:40px;" title="{{ holiday_map[h.date] }}">{{ holiday_map[h.date] }}</div>
+            {% endif %}
+          </th>
+          {% endfor %}
+        </tr>
+      </thead>
+      <tbody>
+        {% set ns = namespace(current_group=None) %}
+        {% for e in employees %}
+          {% if e.group_name != ns.current_group %}
+            {% set ns.current_group = e.group_name %}
+            <tr class="table-secondary">
+              <td colspan="{{ date_headers|length + 4 }}" class="py-1 ps-3">
+                <i class="bi bi-people-fill me-1 text-primary"></i>
+                <strong>{{ e.group_name }}</strong>
+              </td>
+            </tr>
+          {% endif %}
+          <tr>
+            <td style="position:sticky;left:0;background:var(--surface);z-index:1;padding:.2rem .4rem;white-space:nowrap;max-width:130px;overflow:hidden;">
+              <div class="fw-semibold" style="font-size:.73rem;line-height:1.2;overflow:hidden;text-overflow:ellipsis;">{{ e.name }}</div>
+              <div class="text-muted" style="font-size:.62rem;">{{ e.employee_id }}</div>
+            </td>
+            <td class="text-muted" style="font-size:.7rem;padding:.2rem .3rem;white-space:nowrap;">{{ e.tl }}</td>
+            <td class="text-center" style="padding:.2rem .3rem;white-space:nowrap;">
+              {% if e.absence_rate is not none %}
+                {% if e.absence_rate >= 90 %}
+                  <span class="fw-semibold" style="color:#15803d;font-size:.75rem;">{{ e.absence_rate }}%</span>
+                {% elif e.absence_rate >= 75 %}
+                  <span class="fw-semibold" style="color:#b45309;font-size:.75rem;">{{ e.absence_rate }}%</span>
+                {% else %}
+                  <span class="fw-semibold" style="color:#b91c1c;font-size:.75rem;">{{ e.absence_rate }}%</span>
+                {% endif %}
+                <div class="text-muted" style="font-size:.6rem;">{{ e.present_count }}/{{ e.scheduled_count }}</div>
+              {% else %}
+                <span class="text-muted">&mdash;</span>
+              {% endif %}
+            </td>
+            {% for h in date_headers %}{% set d = h.date %}
+              {% set day = e.days.get(d) %}
+              {% if day and day.status is not none %}
+                {% set status = day.status %}
+                {% set has_note = day.note is not none %}
+                {% if status == 'RD' %}
+                <td class="text-center grid-cell" data-emp="{{ e.employee_id }}" data-date="{{ d }}"
+                    style="background:#1a1a1a;color:#fff;font-size:.65rem;padding:.15rem .1rem;cursor:pointer;position:relative;">RD</td>
+                {% elif status == 'P' %}
+                <td class="text-center grid-cell" data-emp="{{ e.employee_id }}" data-date="{{ d }}"
+                    data-note="{{ day.note.note if day.note else '' }}"
+                    data-note-by="{{ day.note.created_by if day.note else '' }}"
+                    data-note-updated="{{ day.note.updated_at if day.note else '' }}"
+                    style="background:#d1fae5;color:#065f46;font-size:.65rem;padding:.15rem .1rem;cursor:pointer;position:relative;font-weight:600;">
+                  P{% if has_note %}<span class="note-dot"></span>{% endif %}
+                </td>
+                {% elif status == 'A' %}
+                <td class="text-center grid-cell" data-emp="{{ e.employee_id }}" data-date="{{ d }}"
+                    data-note="{{ day.note.note if day.note else '' }}"
+                    data-note-by="{{ day.note.created_by if day.note else '' }}"
+                    data-note-updated="{{ day.note.updated_at if day.note else '' }}"
+                    style="background:#fee2e2;color:#b91c1c;font-size:.65rem;padding:.15rem .1rem;cursor:pointer;position:relative;font-weight:600;">
+                  A{% if has_note %}<span class="note-dot"></span>{% endif %}
+                </td>
+                {% elif status == 'SUS' %}
+                <td class="text-center grid-cell" data-emp="{{ e.employee_id }}" data-date="{{ d }}"
+                    data-note="{{ day.note.note if day.note else '' }}"
+                    data-note-by="{{ day.note.created_by if day.note else '' }}"
+                    data-note-updated="{{ day.note.updated_at if day.note else '' }}"
+                    style="background:#fef3c7;color:#92400e;font-size:.65rem;padding:.15rem .1rem;cursor:pointer;position:relative;font-weight:600;">
+                  SUS{% if has_note %}<span class="note-dot"></span>{% endif %}
+                </td>
+                {% elif status in ['VL','SL','LWOP','PL','COL','ML'] %}
+                <td class="text-center grid-cell" data-emp="{{ e.employee_id }}" data-date="{{ d }}"
+                    data-note="{{ day.note.note if day.note else '' }}"
+                    data-note-by="{{ day.note.created_by if day.note else '' }}"
+                    data-note-updated="{{ day.note.updated_at if day.note else '' }}"
+                    style="background:#eff6ff;color:#1d4ed8;font-size:.65rem;padding:.15rem .1rem;cursor:pointer;position:relative;font-weight:600;">
+                  {{ status }}{% if has_note %}<span class="note-dot"></span>{% endif %}
+                </td>
+                {% elif status in ['VL*','SL*','LWOP*','PL*','COL*','ML*'] %}
+                <td class="text-center grid-cell" data-emp="{{ e.employee_id }}" data-date="{{ d }}"
+                    data-note="{{ day.note.note if day.note else '' }}"
+                    data-note-by="{{ day.note.created_by if day.note else '' }}"
+                    data-note-updated="{{ day.note.updated_at if day.note else '' }}"
+                    style="background:#fef9c3;color:#854d0e;font-size:.65rem;padding:.15rem .1rem;cursor:pointer;position:relative;font-weight:600;">
+                  {{ status }}{% if has_note %}<span class="note-dot"></span>{% endif %}
+                </td>
+                {% elif status == 'FI' %}
+                <td class="text-center grid-cell" data-emp="{{ e.employee_id }}" data-date="{{ d }}"
+                    data-note="{{ day.note.note if day.note else '' }}"
+                    data-note-by="{{ day.note.created_by if day.note else '' }}"
+                    data-note-updated="{{ day.note.updated_at if day.note else '' }}"
+                    style="background:#fff7ed;color:#9a3412;font-size:.65rem;padding:.15rem .1rem;cursor:pointer;position:relative;font-weight:600;">
+                  FI{% if has_note %}<span class="note-dot"></span>{% endif %}
+                </td>
+                {% elif status == 'FO' %}
+                <td class="text-center grid-cell" data-emp="{{ e.employee_id }}" data-date="{{ d }}"
+                    data-note="{{ day.note.note if day.note else '' }}"
+                    data-note-by="{{ day.note.created_by if day.note else '' }}"
+                    data-note-updated="{{ day.note.updated_at if day.note else '' }}"
+                    style="background:#faf5ff;color:#6b21a8;font-size:.65rem;padding:.15rem .1rem;cursor:pointer;position:relative;font-weight:600;">
+                  FO{% if has_note %}<span class="note-dot"></span>{% endif %}
+                </td>
+                {% endif %}
+              {% else %}
+                <td class="text-center text-muted" style="font-size:.65rem;padding:.15rem .1rem;">&mdash;</td>
+              {% endif %}
+            {% endfor %}
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% else %}
+<div class="card p-4 text-center text-muted">
+  <i class="bi bi-calendar-x" style="font-size:2rem;display:block;margin-bottom:.5rem;"></i>
+  No attendance data found for {{ month_filter }}.
+</div>
+{% endif %}
+
+{# ── Summary Report Modal ────────────────────────────────── #}
+<div class="modal fade" id="summaryModal" tabindex="-1">
+  <div class="modal-dialog modal-dialog-centered modal-xl">
+    <div class="modal-content">
+      <div class="modal-header py-2">
+        <h6 class="modal-title mb-0">
+          <i class="bi bi-table me-2"></i>Status Breakdown Report
+          {% if tl_filter %} — {{ tl_filter }}
+          {% elif group_filter %} — {{ group_filter }}
+          {% endif %}
+          <span class="text-muted" style="font-size:.8rem;font-weight:400;"> · {{ month_filter }}</span>
+        </h6>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body p-0">
+        <div class="table-responsive" style="max-height:65vh;">
+          <table class="table table-bordered table-hover mb-0 small" id="summaryTable" style="font-size:.78rem;">
+            <thead style="position:sticky;top:0;z-index:2;background:var(--surface);">
+              <tr>
+                <th style="min-width:140px;">Employee</th>
+                <th style="min-width:80px;">TL</th>
+                <th class="text-center" style="background:#d1fae5;color:#065f46;">P</th>
+                <th class="text-center" style="background:#fee2e2;color:#b91c1c;">A</th>
+                <th class="text-center" style="background:#fff7ed;color:#9a3412;">FI</th>
+                <th class="text-center" style="background:#faf5ff;color:#6b21a8;">FO</th>
+                <th class="text-center" style="background:#eff6ff;color:#1d4ed8;">VL</th>
+                <th class="text-center" style="background:#eff6ff;color:#1d4ed8;">SL</th>
+                <th class="text-center" style="background:#eff6ff;color:#1d4ed8;">LWOP</th>
+                <th class="text-center" style="background:#eff6ff;color:#1d4ed8;">PL</th>
+                <th class="text-center" style="background:#eff6ff;color:#1d4ed8;">COL</th>
+                <th class="text-center" style="background:#eff6ff;color:#1d4ed8;">ML</th>
+                <th class="text-center" style="background:#fef9c3;color:#854d0e;">VL*</th>
+                <th class="text-center" style="background:#fef9c3;color:#854d0e;">SL*</th>
+                <th class="text-center" style="background:#fef9c3;color:#854d0e;">LWOP*</th>
+                <th class="text-center" style="background:#fef9c3;color:#854d0e;">PL*</th>
+                <th class="text-center" style="background:#fef9c3;color:#854d0e;">COL*</th>
+                <th class="text-center" style="background:#fef9c3;color:#854d0e;">ML*</th>
+                <th class="text-center" style="background:#1a1a1a;color:#fff;">RD</th>
+                <th class="text-center fw-semibold">Attendance Rate</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% set ns = namespace(current_group=None) %}
+              {% set totals = {'P':0,'A':0,'FI':0,'FO':0,'VL':0,'SL':0,'LWOP':0,'PL':0,'COL':0,'ML':0,'VL*':0,'SL*':0,'LWOP*':0,'PL*':0,'COL*':0,'ML*':0,'RD':0} %}
+              {% for e in employees %}
+                {% if e.group_name != ns.current_group %}
+                  {% set ns.current_group = e.group_name %}
+                  <tr style="background:var(--bg);">
+                    <td colspan="20" class="py-1 ps-2 fw-semibold" style="font-size:.75rem;">
+                      <i class="bi bi-people-fill me-1 text-primary"></i>{{ e.group_name }}
+                    </td>
+                  </tr>
+                {% endif %}
+                <tr>
+                  <td>
+                    <div class="fw-semibold" style="font-size:.78rem;">{{ e.name }}</div>
+                    <div class="text-muted" style="font-size:.65rem;">{{ e.employee_id }}</div>
+                  </td>
+                  <td class="text-muted" style="font-size:.75rem;">{{ e.tl }}</td>
+                  {% for s in ['P','A','FI','FO','VL','SL','LWOP','PL','COL','ML','VL*','SL*','LWOP*','PL*','COL*','ML*','RD'] %}
+                    {% set cnt = e.status_counts.get(s, 0) %}
+                    {% if totals.update({s: totals[s] + cnt}) %}{% endif %}
+                    <td class="text-center">
+                      {% if cnt > 0 %}
+                        <span class="fw-semibold">{{ cnt }}</span>
+                      {% else %}
+                        <span class="text-muted" style="opacity:.3;">—</span>
+                      {% endif %}
+                    </td>
+                  {% endfor %}
+                  <td class="text-center">
+                    {% if e.absence_rate is not none %}
+                      <span class="fw-semibold" style="
+                        {% if e.absence_rate >= 90 %}color:#15803d;
+                        {% elif e.absence_rate >= 75 %}color:#b45309;
+                        {% else %}color:#b91c1c;{% endif %}">
+                        {{ e.absence_rate }}%
+                      </span>
+                      <div class="text-muted" style="font-size:.65rem;">{{ e.present_count }}/{{ e.scheduled_count }}</div>
+                    {% else %}
+                      <span class="text-muted">—</span>
+                    {% endif %}
+                  </td>
+                </tr>
+              {% endfor %}
+            </tbody>
+            <tfoot style="position:sticky;bottom:0;z-index:2;background:var(--surface);">
+              <tr class="fw-semibold" style="background:var(--surface);border-top:2px solid var(--border);">
+                <td colspan="2">TOTAL ({{ employees|length }} employees)</td>
+                {% for s in ['P','A','FI','FO','VL','SL','LWOP','PL','COL','ML','VL*','SL*','LWOP*','PL*','COL*','ML*','RD'] %}
+                  <td class="text-center">{{ totals[s] }}</td>
+                {% endfor %}
+                <td class="text-center">
+                  {% if team_rate is not none %}
+                    <span style="{% if team_rate >= 90 %}color:#15803d;{% elif team_rate >= 75 %}color:#b45309;{% else %}color:#b91c1c;{% endif %}">
+                      {{ team_rate }}%
+                    </span>
+                  {% endif %}
+                </td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      </div>
+      <div class="modal-footer py-2">
+        <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal">Close</button>
+        <button type="button" class="btn btn-primary btn-sm" onclick="copySummaryReport()">
+          <i class="bi bi-clipboard-data me-1"></i>Copy to Clipboard
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+{# ── Note Modal ──────────────────────────────────────────── #}
+<div class="modal fade" id="noteModal" tabindex="-1">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header py-2">
+        <h6 class="modal-title mb-0" id="noteModalTitle">Note</h6>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div class="text-muted mb-2" style="font-size:.8rem;" id="noteModalMeta"></div>
+        <textarea id="noteModalText" class="form-control" rows="3" placeholder="e.g. advised to rest, medcert provided"></textarea>
+        <div class="mt-3" id="noteHistorySection" style="display:none;">
+          <div class="fw-semibold mb-1" style="font-size:.78rem;">Edit History</div>
+          <div id="noteHistoryList" style="max-height:180px;overflow-y:auto;"></div>
+        </div>
+        <div id="noteHistoryLoading" class="text-muted mt-2" style="font-size:.75rem;display:none;">
+          Loading history...
+        </div>
+      </div>
+      <div class="modal-footer py-2">
+        <button type="button" class="btn btn-outline-danger btn-sm" id="noteDeleteBtn" style="display:none;">
+          <i class="bi bi-trash me-1"></i>Clear Note
+        </button>
+        <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
+        <button type="button" class="btn btn-primary btn-sm" id="noteSaveBtn">
+          <i class="bi bi-check2 me-1"></i>Save
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<style>
+.grid-cell { padding: .18rem .12rem !important; line-height: 1.1; }
+.grid-cell:hover { outline: 2px solid var(--accent); outline-offset: -2px; }
+#tableScroll table td, #tableScroll table th { vertical-align: middle; }
+#tableScroll tbody tr { height: 32px; }
+.note-dot {
+  position: absolute; top: 2px; right: 2px; width: 5px; height: 5px;
+  border-radius: 50%; background: #1d4ed8;
+}
+#topScroll::-webkit-scrollbar,
+#tableScroll::-webkit-scrollbar { height: 10px; }
+#topScroll::-webkit-scrollbar-track,
+#tableScroll::-webkit-scrollbar-track { background: var(--border); border-radius: 4px; }
+#topScroll::-webkit-scrollbar-thumb,
+#tableScroll::-webkit-scrollbar-thumb { background: var(--text-muted); border-radius: 4px; }
+#topScroll::-webkit-scrollbar-thumb:hover,
+#tableScroll::-webkit-scrollbar-thumb:hover { background: var(--text); }
+</style>
+<script>
+document.addEventListener("DOMContentLoaded", function() {
+  var table = document.querySelector("#tableScroll table");
+  var inner = document.getElementById("topScrollInner");
+  if (table && inner) {
+    inner.style.width = table.offsetWidth + "px";
+  }
+
+  let activeCell = null;
+  const noteModalEl = document.getElementById('noteModal');
+  const noteModal = new bootstrap.Modal(noteModalEl);
+  const noteText = document.getElementById('noteModalText');
+  const noteTitle = document.getElementById('noteModalTitle');
+  const noteMeta = document.getElementById('noteModalMeta');
+  const noteHistory = document.getElementById('noteModalHistory');
+  const deleteBtn = document.getElementById('noteDeleteBtn');
+  const saveBtn = document.getElementById('noteSaveBtn');
+
+  document.querySelectorAll('.grid-cell').forEach(cell => {
+    cell.addEventListener('click', function () {
+      activeCell = cell;
+      const empId = cell.dataset.emp;
+      const date = cell.dataset.date;
+      const empNameEl = cell.closest('tr').querySelector('td .fw-semibold');
+      const empName = empNameEl ? empNameEl.textContent.trim() : empId;
+
+      noteTitle.textContent = empName + ' — ' + date;
+      noteMeta.textContent = 'Employee ID: ' + empId;
+      noteText.value = cell.dataset.note || '';
+      deleteBtn.style.display = cell.dataset.note ? 'inline-block' : 'none';
+
+      // Reset history section
+      document.getElementById('noteHistorySection').style.display = 'none';
+      document.getElementById('noteHistoryList').innerHTML = '';
+      document.getElementById('noteHistoryLoading').style.display = 'block';
+
+      noteModal.show();
+
+      // Fetch edit history
+      fetch(`{{ url_for("get_attendance_note_logs") }}?employee_id=${empId}&note_date=${date}`)
+        .then(r => r.json())
+        .then(logs => {
+          document.getElementById('noteHistoryLoading').style.display = 'none';
+          if (logs.length > 0) {
+            const section = document.getElementById('noteHistorySection');
+            const list = document.getElementById('noteHistoryList');
+            list.innerHTML = logs.map(l => `
+              <div style="border-left:3px solid var(--border);padding:.35rem .6rem;margin-bottom:.4rem;font-size:.75rem;">
+                <div class="d-flex justify-content-between align-items-center mb-1">
+                  <span class="fw-semibold">${l.changed_by}</span>
+                  <span class="text-muted" style="font-size:.7rem;">${l.changed_at}</span>
+                  <span class="badge rounded-pill ms-1" style="font-size:.65rem;
+                    ${l.action === 'created' ? 'background:#d1fae5;color:#065f46;' :
+                      l.action === 'deleted' ? 'background:#fee2e2;color:#b91c1c;' :
+                      'background:#e0f2fe;color:#0369a1;'}">
+                    ${l.action}
+                  </span>
+                </div>
+                <div class="text-muted" style="font-size:.73rem;white-space:pre-wrap;">${l.note}</div>
+              </div>
+            `).join('');
+            section.style.display = 'block';
+          }
+        })
+        .catch(() => {
+          document.getElementById('noteHistoryLoading').style.display = 'none';
+        });
+    });
+  });
+
+  function saveNote(clear) {
+    if (!activeCell) return;
+    const payload = {
+      employee_id: activeCell.dataset.emp,
+      note_date: activeCell.dataset.date,
+      note: clear ? '' : noteText.value.trim()
+    };
+    saveBtn.disabled = true;
+    fetch('{{ url_for("save_attendance_note") }}', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    })
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      saveBtn.disabled = false;
+      if (data.success) {
+        const hasNote = !!payload.note;
+        activeCell.dataset.note = payload.note;
+        let dot = activeCell.querySelector('.note-dot');
+        if (hasNote && !dot) {
+          dot = document.createElement('span');
+          dot.className = 'note-dot';
+          activeCell.appendChild(dot);
+        } else if (!hasNote && dot) {
+          dot.remove();
+        }
+        noteModal.hide();
+      } else {
+        alert('Failed to save note: ' + (data.error || 'Unknown error'));
+        saveBtn.disabled = false;
+      }
+    })
+    .catch(function(err) {
+      saveBtn.disabled = false;
+      alert('Network error saving note.');
+    });
+  }
+
+  saveBtn.addEventListener('click', function() { saveNote(false); });
+  deleteBtn.addEventListener('click', function() {
+    if (confirm('Clear this note?')) saveNote(true);
+  });
+});
+
+// ── Column sort by day ──
+(function() {
+  const STATUS_ORDER = {
+    'A': 0, 'SUS': 0, 'FI': 1, 'FO': 2,
+    'VL': 3, 'SL': 3, 'LWOP': 3, 'PL': 3, 'COL': 3, 'ML': 3,
+    'VL*': 3, 'SL*': 3, 'LWOP*': 3, 'PL*': 3, 'COL*': 3, 'ML*': 3,
+    'P': 4, 'RD': 5, '—': 6, '': 7
+  };
+
+  let sortState = {};  // { colIndex: 'asc' | 'desc' | null }
+
+  document.querySelectorAll('#tableScroll thead th[data-col-date]').forEach(th => {
+    th.style.cursor = 'pointer';
+    th.title = 'Click to sort by this day';
+
+    th.addEventListener('click', function() {
+      const colDate = th.dataset.colDate;
+      const current = sortState[colDate] || null;
+
+      // Cycle: null → asc (A first) → desc (P first) → null
+      const next = current === null ? 'asc' : current === 'asc' ? 'desc' : null;
+      sortState = {};  // reset all others
+      sortState[colDate] = next;
+
+      // Update all header indicators
+      document.querySelectorAll('#tableScroll thead th[data-col-date]').forEach(h => {
+        h.querySelector('.sort-indicator')?.remove();
+      });
+
+      if (next) {
+        const ind = document.createElement('div');
+        ind.className = 'sort-indicator';
+        ind.style.cssText = 'font-size:.6rem;opacity:.8;line-height:1;';
+        ind.textContent = next === 'asc' ? '▲ A first' : '▼ P first';
+        th.appendChild(ind);
+      }
+
+      // Sort all tbody rows per group, preserving group header rows
+      const tbody = document.querySelector('#tableScroll tbody');
+      if (!tbody) return;
+
+      const allRows = Array.from(tbody.querySelectorAll('tr'));
+
+      if (next === null) {
+        // Restore original order
+        allRows.forEach(r => {
+          if (r.dataset.origIndex !== undefined) {
+            r.style.order = r.dataset.origIndex;
+          }
+        });
+        // Re-append in original order
+        const sorted = allRows.slice().sort((a, b) =>
+          parseInt(a.dataset.origIndex || 0) - parseInt(b.dataset.origIndex || 0)
+        );
+        sorted.forEach(r => tbody.appendChild(r));
+        return;
+      }
+
+      // Save original order on first sort
+      allRows.forEach((r, i) => {
+        if (r.dataset.origIndex === undefined) r.dataset.origIndex = i;
+      });
+
+      // Group rows: collect sequences of [groupHeader, ...dataRows]
+      const groups = [];
+      let currentGroup = null;
+      allRows.forEach(r => {
+        if (r.querySelector('td[colspan]')) {
+          currentGroup = { header: r, rows: [] };
+          groups.push(currentGroup);
+        } else if (currentGroup) {
+          currentGroup.rows.push(r);
+        }
+      });
+
+      // Sort data rows within each group by the clicked column
+      const colIndex = Array.from(
+        document.querySelectorAll('#tableScroll thead th')
+      ).findIndex(h => h.dataset.colDate === colDate);
+
+      groups.forEach(g => {
+        g.rows.sort((a, b) => {
+          const aCell = a.querySelectorAll('td')[colIndex];
+          const bCell = b.querySelectorAll('td')[colIndex];
+          const aVal = (aCell?.textContent || '').trim().replace(/\s+/g, '');
+          const bVal = (bCell?.textContent || '').trim().replace(/\s+/g, '');
+          const aOrder = STATUS_ORDER[aVal] ?? 3;
+          const bOrder = STATUS_ORDER[bVal] ?? 3;
+          return next === 'asc' ? aOrder - bOrder : bOrder - aOrder;
+        });
+
+        // Re-append: group header first, then sorted rows
+        tbody.appendChild(g.header);
+        g.rows.forEach(r => tbody.appendChild(r));
+      });
+    });
+  });
+})();
+
+// ── Attendance Rate column sort ──
+(function() {
+  let rateDir = null; // null | 'asc' | 'desc'
+  const th = document.getElementById('sortRateBtn');
+  const icon = document.getElementById('rateSortIcon');
+  if (!th) return;
+
+  th.style.cursor = 'pointer';
+  th.style.userSelect = 'none';
+
+  th.addEventListener('click', function() {
+    rateDir = rateDir === null ? 'asc' : rateDir === 'asc' ? 'desc' : null;
+    icon.textContent = rateDir === 'asc' ? ' ▲' : rateDir === 'desc' ? ' ▼' : '';
+
+    const tbody = document.querySelector('#tableScroll tbody');
+    if (!tbody) return;
+
+    const allRows = Array.from(tbody.querySelectorAll('tr'));
+
+    if (rateDir === null) {
+      // Restore original order
+      allRows.slice().sort((a, b) =>
+        parseInt(a.dataset.origIndex || 0) - parseInt(b.dataset.origIndex || 0)
+      ).forEach(r => tbody.appendChild(r));
+      return;
+    }
+
+    // Save original order on first sort
+    allRows.forEach((r, i) => {
+      if (r.dataset.origIndex === undefined) r.dataset.origIndex = i;
+    });
+
+    // Group rows preserving group headers
+    const groups = [];
+    let currentGroup = null;
+    allRows.forEach(r => {
+      if (r.querySelector('td[colspan]')) {
+        currentGroup = { header: r, rows: [] };
+        groups.push(currentGroup);
+      } else if (currentGroup) {
+        currentGroup.rows.push(r);
+      }
+    });
+
+    // Rate is in the 3rd <td> (index 2)
+    groups.forEach(g => {
+      g.rows.sort((a, b) => {
+        const aText = (a.querySelectorAll('td')[2]?.textContent || '').replace('%','').trim();
+        const bText = (b.querySelectorAll('td')[2]?.textContent || '').replace('%','').trim();
+        const aVal = parseFloat(aText) || -1;
+        const bVal = parseFloat(bText) || -1;
+        return rateDir === 'asc' ? aVal - bVal : bVal - aVal;
+      });
+      tbody.appendChild(g.header);
+      g.rows.forEach(r => tbody.appendChild(r));
+    });
+  });
+})();
+
+function copyReport() {
+  const headers = ['Employee', 'Employee ID', 'TL', 'Group', 'Attendance Rate %', 'Days Present', 'Days Scheduled'
+    {% if is_current_month %}, 'Forecast %', 'Remaining Days'{% endif %}
+  ].join('\t');
+
+  const rows = [headers];
+
+  document.querySelectorAll('#tableScroll tbody tr').forEach(tr => {
+    // Skip group header rows
+    if (tr.querySelector('td[colspan]')) return;
+
+    const tds = tr.querySelectorAll('td');
+    if (tds.length < 3) return;
+
+    const nameEl = tds[0].querySelector('.fw-semibold');
+    const idEl   = tds[0].querySelector('.text-muted');
+    const name   = nameEl ? nameEl.textContent.trim() : '';
+    const empId  = idEl   ? idEl.textContent.trim()   : '';
+    const tl     = tds[1].textContent.trim();
+
+    // Get group from nearest preceding group header row
+    let group = '';
+    let prev = tr.previousElementSibling;
+    while (prev) {
+      const colspan = prev.querySelector('td[colspan]');
+      if (colspan) {
+        group = colspan.querySelector('.fw-semibold')?.textContent.trim() || '';
+        break;
+      }
+      prev = prev.previousElementSibling;
+    }
+
+    // Rate cell (td index 2)
+    const rateCell = tds[2];
+    const ratePct  = rateCell.querySelector('span.fw-semibold')?.textContent.replace('%','').trim() || '';
+    const rateRaw  = rateCell.querySelector('div.text-muted')?.textContent.trim() || '';
+    const [present, scheduled] = rateRaw.split('/').map(s => s.trim());
+
+    {% if is_current_month %}
+    // Forecast — not in the table anymore, skip
+    const row = [name, empId, tl, group, ratePct, present || '', scheduled || ''].join('\t');
+    {% else %}
+    const row = [name, empId, tl, group, ratePct, present || '', scheduled || ''].join('\t');
+    {% endif %}
+
+    if (name) rows.push(row);
+  });
+
+  navigator.clipboard.writeText(rows.join('\n')).then(() => {
+    const btn = document.getElementById('copyReportBtn');
+    const orig = btn.innerHTML;
+    btn.innerHTML = '<i class="bi bi-check2 me-1"></i>Copied!';
+    btn.classList.replace('btn-outline-secondary', 'btn-success');
+    setTimeout(() => {
+      btn.innerHTML = orig;
+      btn.classList.replace('btn-success', 'btn-outline-secondary');
+    }, 2000);
+  }).catch(() => alert('Copy failed — please select manually.'));
+}
+
+function copySummaryReport() {
+  const headers = ['Employee', 'Employee ID', 'TL', 'Group',
+    'P', 'A', 'FI', 'FO', 'VL', 'SL', 'LWOP', 'PL', 'COL', 'ML',
+    'VL*', 'SL*', 'LWOP*', 'PL*', 'COL*', 'ML*', 'RD', 'Attendance Rate %',
+    'Days Present', 'Days Scheduled'].join('\t');
+
+  const rows = [headers];
+  let currentGroup = '';
+
+  document.querySelectorAll('#summaryTable tbody tr').forEach(tr => {
+    // Skip group header rows
+    if (tr.querySelector('td[colspan]')) {
+      currentGroup = tr.querySelector('td')?.textContent.trim()
+        .replace(/\s+/g, ' ').replace('CS ', 'CS').trim() || '';
+      return;
+    }
+
+    const tds = tr.querySelectorAll('td');
+    if (tds.length < 19) return;
+
+    const nameEl = tds[0].querySelector('.fw-semibold');
+    const idEl   = tds[0].querySelector('.text-muted');
+    const name   = nameEl?.textContent.trim() || '';
+    const empId  = idEl?.textContent.trim() || '';
+    const tl     = tds[1].textContent.trim();
+
+    // Status counts (tds 2-18)
+    const counts = Array.from(tds).slice(2, 19).map(td => {
+      const val = td.textContent.trim();
+      return val === '—' ? '0' : val;
+    });
+
+    // Rate cell (td 19)
+    const rateEl = tds[19].querySelector('.fw-semibold');
+    const ratePct = rateEl?.textContent.replace('%','').trim() || '';
+    const rateRaw = tds[19].querySelector('.text-muted')?.textContent.trim() || '';
+    const [present, scheduled] = rateRaw.split('/').map(s => s.trim());
+
+    if (name) {
+      rows.push([name, empId, tl, currentGroup, ...counts,
+                 ratePct, present || '', scheduled || ''].join('\t'));
+    }
+  });
+
+  // Add totals row
+  const footTds = document.querySelectorAll('#summaryTable tfoot td');
+  if (footTds.length > 0) {
+    const totalCounts = Array.from(footTds).slice(1, 18)
+      .map(td => td.textContent.trim());
+    const totalRate = footTds[18]?.textContent.trim() || '';
+    rows.push(['TOTAL', '', '', '', ...totalCounts, totalRate, '', ''].join('\t'));
+  }
+
+  const text = rows.join('\n');
+  const btn = event.target.closest('button');
+  const orig = btn.innerHTML;
+
+  function onSuccess() {
+    btn.innerHTML = '<i class="bi bi-check2 me-1"></i>Copied!';
+    btn.classList.replace('btn-primary', 'btn-success');
+    setTimeout(() => {
+      btn.innerHTML = orig;
+      btn.classList.replace('btn-success', 'btn-primary');
+    }, 2000);
+  }
+
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).then(onSuccess).catch(() => {
+      // Fallback to execCommand
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      ta.style.position = 'fixed';
+      ta.style.opacity = '0';
+      document.body.appendChild(ta);
+      ta.focus();
+      ta.select();
+      try {
+        document.execCommand('copy');
+        onSuccess();
+      } catch (e) {
+        alert('Copy failed — please select the table manually.');
+      }
+      document.body.removeChild(ta);
+    });
+  } else {
+    // Direct fallback
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.position = 'fixed';
+    ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.focus();
+    ta.select();
+    try {
+      document.execCommand('copy');
+      onSuccess();
+    } catch (e) {
+      alert('Copy failed — please select the table manually.');
+    }
+    document.body.removeChild(ta);
+  }
+}
+</script>
+{% endblock %}

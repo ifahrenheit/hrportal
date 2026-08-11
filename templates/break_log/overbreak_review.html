@@ -1,0 +1,265 @@
+{% extends "base.html" %}
+{% block title %}Overbreak Review{% endblock %}
+{% block page_title %}Overbreak Review{% endblock %}
+{% block content %}
+<style>
+  .obr-stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:16px;margin-bottom:20px}
+  .obr-stat{background:#fff;border:1px solid #e7eaf0;border-radius:12px;padding:18px 22px}
+  .obr-stat .lbl{font-size:12px;font-weight:700;letter-spacing:.06em;color:#6b7280;text-transform:uppercase}
+  .obr-stat .val{font-size:30px;font-weight:800;color:#2563eb;margin:6px 0 2px}
+  .obr-stat .sub{font-size:13px;color:#6b7280}
+
+  .obr-panel{background:#fff;border:1px solid #e7eaf0;border-radius:12px;padding:18px 22px;margin-bottom:20px}
+  .obr-panel-title{display:flex;align-items:center;gap:8px;font-weight:700;font-size:15px;margin-bottom:14px}
+  .dot{width:12px;height:12px;border-radius:50%;display:inline-block}
+  .dot-y{background:#f4b400}.dot-g{background:#22a06b}
+
+  .obr-toolbar{display:flex;align-items:center;gap:12px;margin-bottom:16px}
+  .obr-toolbar select{border:1px solid #d7dbe3;border-radius:8px;padding:8px 12px;background:#fff;font-size:14px}
+
+  table.obr{width:100%;border-collapse:collapse;font-size:14px}
+  table.obr th{background:#f1f3f7;color:#6b7280;font-size:12px;font-weight:700;
+               letter-spacing:.05em;text-transform:uppercase;text-align:left;padding:10px 14px}
+  table.obr td{padding:12px 14px;border-bottom:1px solid #eef0f4;vertical-align:middle}
+  table.obr tr:last-child td{border-bottom:0}
+
+  .pill{display:inline-block;font-size:12px;font-weight:700;padding:3px 12px;border-radius:8px}
+  .pill-acct{background:#e8f0fe;color:#2563eb;border:1px solid #c7dafc;text-transform:uppercase}
+  .pill-dur{background:#fff7e8;color:#b45309;border:1.5px solid #f4b400}
+  .pill-over{background:#fdecec;color:#c0392b;border:1.5px solid #f1998e}
+  .pill-cycle{background:#fdecec;color:#c0392b}
+  .pill-auto{background:#fff3cd;color:#8a6d00}
+  .pill-ir{background:#fdecec;color:#c0392b}
+  .pill-waived{background:#e6f4ea;color:#1e7e34}
+
+  .obr-btn{border:0;border-radius:8px;padding:7px 16px;font-weight:600;font-size:13px;cursor:pointer}
+  .btn-ir{background:#dc3545;color:#fff}
+  .btn-waive{background:#6c757d;color:#fff}
+  .btn-detail{background:#eef1f5;color:#374151}
+
+  .obr-empty{color:#8a919e;padding:28px;text-align:center}
+  tr.detail-row>td{background:#fafbfc;padding:8px 14px 16px}
+  .detail-inner table{width:100%;border-collapse:collapse;font-size:13px}
+  .detail-inner th{color:#6b7280;font-size:11px;text-transform:uppercase;text-align:left;padding:6px 10px}
+  .detail-inner td{padding:6px 10px;border-bottom:1px solid #eef0f4}
+  #obr-msg{margin-bottom:14px;padding:11px 16px;border-radius:10px;display:none;font-weight:600}
+
+  .obr-toolbar select,.obr-toolbar input[type=date]{border:1px solid #d7dbe3;border-radius:8px;padding:8px 12px;background:#fff;font-size:14px}
+  .btn-detail{background:#eef1f5;color:#374151;font-size:16px;font-weight:700;line-height:1;padding:7px 12px;transition:transform .15s}
+
+  /* ── Dark mode ── */
+  [data-theme="dark"] .obr-stat,
+  [data-theme="dark"] .obr-panel { background: var(--surface); border-color: var(--border); }
+  [data-theme="dark"] .obr-stat .lbl,
+  [data-theme="dark"] .obr-stat .sub { color: var(--text-muted); }
+  [data-theme="dark"] .obr-stat .val { color: var(--accent); }
+  [data-theme="dark"] .obr-panel-title { color: var(--text); }
+  [data-theme="dark"] table.obr td { color: var(--text); border-color: var(--border); }
+  [data-theme="dark"] table.obr th { background: rgba(255,255,255,.04); color: var(--text-muted); }
+  [data-theme="dark"] tr.detail-row > td { background: rgba(255,255,255,.03); }
+  [data-theme="dark"] .detail-inner td { border-color: var(--border); color: var(--text); }
+  [data-theme="dark"] .detail-inner th { color: var(--text-muted); }
+  [data-theme="dark"] .obr-empty { color: var(--text-muted); }
+  [data-theme="dark"] .obr-toolbar label { color: var(--text-muted); }
+  [data-theme="dark"] .obr-toolbar input[type=date],
+  [data-theme="dark"] .obr-toolbar select { background: var(--input-bg); color: var(--text); border-color: var(--border); }
+  [data-theme="dark"] .btn-detail { background: #1e2a44; color: #cbd5e1; }
+
+  /* pills */
+  [data-theme="dark"] .pill-acct   { background: #1e3a5f; color: #93c5fd; border-color: #1e4ed8; }
+  [data-theme="dark"] .pill-dur    { background: #422006; color: #fbbf24; border-color: #78350f; }
+  [data-theme="dark"] .pill-over,
+  [data-theme="dark"] .pill-cycle,
+  [data-theme="dark"] .pill-ir     { background: #3b1219; color: #fca5a5; }
+  [data-theme="dark"] .pill-auto   { background: #422006; color: #fbbf24; }
+  [data-theme="dark"] .pill-waived { background: #022c22; color: #34d399; }
+</style>
+
+<div class="obr-stats">
+  <div class="obr-stat"><div class="lbl">Pending Review</div>
+    <div class="val" id="stat-pending">–</div><div class="sub">Awaiting decision</div></div>
+  <div class="obr-stat"><div class="lbl">IRs Created</div>
+    <div class="val" id="stat-ir">–</div><div class="sub">Recent decisions</div></div>
+  <div class="obr-stat"><div class="lbl">Waived</div>
+    <div class="val" id="stat-waived">–</div><div class="sub">Recent decisions</div></div>
+</div>
+
+<div id="obr-msg"></div>
+
+<div class="obr-panel">
+  <div class="obr-panel-title"><span class="dot dot-y"></span> Pending Review</div>
+  <div class="obr-toolbar">
+    <label style="font-size:13px;color:#6b7280">From
+      <input type="date" id="obr-start"></label>
+    <label style="font-size:13px;color:#6b7280">To
+      <input type="date" id="obr-end"></label>
+    <button class="obr-btn btn-detail" id="obr-apply">Apply</button>
+    <button class="obr-btn btn-detail" id="obr-thiscycle">This Cycle</button>
+  </div>
+  <table class="obr">
+    <thead><tr>
+      <th>Date</th><th>Agent</th><th>Account</th><th>Total Break</th>
+      <th>Overbreak</th><th>Flags</th><th style="text-align:right">Actions</th>
+    </tr></thead>
+    <tbody id="obr-pending">
+      <tr><td colspan="7" class="obr-empty">Loading…</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<div class="obr-panel">
+  <div class="obr-panel-title"><span class="dot dot-g"></span> Recent Decisions</div>
+  <table class="obr">
+    <thead><tr>
+      <th>Date</th><th>Agent</th><th>Account</th><th>Total Break</th>
+      <th>Decision</th><th>Reviewed By</th><th>When</th>
+    </tr></thead>
+    <tbody id="obr-reviewed">
+      <tr><td colspan="7" class="obr-empty">Loading…</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<script>
+const fmt = m => `${Math.floor(m/60)}h ${String(m%60).padStart(2,'0')}m`;
+const nth = n => `${n}${['st','nd','rd'][n-1]||'th'}`;
+
+function showMsg(text, ok) {
+  const el = document.getElementById('obr-msg');
+  el.textContent = text;
+  el.style.display = 'block';
+  el.style.background = ok ? '#e6f4ea' : '#fdecec';
+  el.style.color = ok ? '#1e7e34' : '#c0392b';
+  setTimeout(() => el.style.display = 'none', 6000);
+}
+
+function monthToDate(d = new Date()) {
+  const y = d.getFullYear(), p = n => String(n).padStart(2, '0');
+  const m = p(d.getMonth() + 1);
+  return [`${y}-${m}-01`, `${y}-${m}-${p(d.getDate())}`];
+}
+
+function setDefaults() {
+  const [s, e] = monthToDate();
+  document.getElementById('obr-start').value = s;
+  document.getElementById('obr-end').value = e;
+}
+
+async function loadData() {
+  const s = document.getElementById('obr-start').value;
+  const e = document.getElementById('obr-end').value;
+  const res = await fetch(`/api/supervisor/overbreaks?start=${s}&end=${e}`);
+  const data = await res.json();
+  if (!data.success) { showMsg(data.error || 'Failed to load', false); return; }
+  renderPending(data.pending);
+  renderReviewed(data.reviewed);
+  document.getElementById('stat-pending').textContent = data.pending.length;
+  document.getElementById('stat-ir').textContent =
+    data.reviewed.filter(r => r.status === 'ir_created').length;
+  document.getElementById('stat-waived').textContent =
+    data.reviewed.filter(r => r.status === 'waived').length;
+}
+
+function renderPending(rows) {
+  const box = document.getElementById('obr-pending');
+  if (!rows.length) {
+    box.innerHTML = '<tr><td colspan="7" class="obr-empty">✅ No pending overbreaks</td></tr>';
+    return;
+  }
+  box.innerHTML = rows.map(r => `
+    <tr id="row-${r.employee_id}-${r.shift_date}">
+      <td>${r.shift_date}</td>
+      <td style="font-weight:600">${r.employee_name}</td>
+      <td><span class="pill pill-acct">${r.account_type}</span></td>
+      <td><span class="pill pill-dur">${fmt(r.total_break_minutes)}</span></td>
+      <td><span class="pill pill-over">+${r.overbreak_minutes}m</span></td>
+      <td>
+        ${r.cycle_days >= 3 ? `<span class="pill pill-cycle">🔁 ${nth(r.nth_in_cycle)} this cycle</span> ` : ''}
+        ${r.has_auto_closed ? '<span class="pill pill-auto">⚠️ auto-closed</span>' : ''}
+      </td>
+      <td style="text-align:right;white-space:nowrap">
+        <button class="obr-btn btn-detail" id="chev-${r.employee_id}-${r.shift_date}" onclick="toggleDetail('${r.employee_id}','${r.shift_date}')" title="Show breaks">›</button>
+        <button class="obr-btn btn-waive" onclick="review('${r.employee_id}','${r.shift_date}','waive')">Waive</button>
+        <button class="obr-btn btn-ir" onclick="review('${r.employee_id}','${r.shift_date}','create_ir')">Create IR</button>
+      </td>
+    </tr>`).join('');
+}
+
+function renderReviewed(rows) {
+  const box = document.getElementById('obr-reviewed');
+  if (!rows.length) {
+    box.innerHTML = '<tr><td colspan="7" class="obr-empty">No decisions yet</td></tr>';
+    return;
+  }
+  box.innerHTML = rows.map(r => `
+    <tr>
+      <td>${r.shift_date}</td>
+      <td style="font-weight:600">${r.employee_name}</td>
+      <td><span class="pill pill-acct">${r.account_type}</span></td>
+      <td><span class="pill pill-dur">${fmt(r.total_break_minutes)}</span> <span style="color:#c0392b;font-size:12px">+${r.overbreak_minutes}m</span></td>
+      <td>${r.status === 'ir_created'
+          ? `<span class="pill pill-ir">IR Created</span>
+             ${r.incident_report_number ? `<a href="/incident-reports/${r.incident_report_number}" target="_blank" style="font-size:12px">${r.incident_report_number}</a>` : ''}`
+          : `<span class="pill pill-waived">Waived</span>
+             <span style="color:#6b7280;font-size:12px">${r.waive_reason || ''}</span>`}</td>
+      <td>${r.reviewed_by_name}</td>
+      <td style="color:#8a919e;font-size:12px">${r.reviewed_at}</td>
+    </tr>`).join('');
+}
+
+async function toggleDetail(eid, sdate) {
+  const rowId = `row-${eid}-${sdate}`;
+  const chev = document.getElementById(`chev-${eid}-${sdate}`);
+  const existing = document.getElementById(`detail-${rowId}`);
+  if (existing) { existing.remove(); if (chev) chev.style.transform = ''; return; }
+  if (chev) chev.style.transform = 'rotate(90deg)';
+  const anchor = document.getElementById(rowId);
+  const tr = document.createElement('tr');
+  tr.id = `detail-${rowId}`;
+  tr.className = 'detail-row';
+  tr.innerHTML = '<td colspan="7">Loading…</td>';
+  anchor.after(tr);
+  const res = await fetch(`/api/supervisor/overbreaks/detail?employee_id=${encodeURIComponent(eid)}&shift_date=${encodeURIComponent(sdate)}`);
+  const data = await res.json();
+  if (!data.success) { tr.innerHTML = '<td colspan="7">Failed to load</td>'; return; }
+  tr.innerHTML = `<td colspan="7"><div class="detail-inner"><table>
+    <tr><th>Start</th><th>End</th><th>Duration</th><th></th></tr>
+    ${data.breaks.map(b => `<tr>
+      <td>${b.break_start}</td><td>${b.break_end}</td>
+      <td>${Math.floor(b.duration/60)}m ${b.duration%60}s</td>
+      <td>${b.auto_closed ? '<span class="pill pill-auto">auto-closed</span>' : ''}</td>
+    </tr>`).join('')}</table></div></td>`;
+}
+
+async function review(eid, sdate, action) {
+  let reason = '';
+  if (action === 'waive') {
+    reason = prompt('Waive reason (e.g. "Posted on Slack, forgot to end on web"):');
+    if (reason === null) return;
+    if (!reason.trim()) { showMsg('Waive reason is required', false); return; }
+  } else {
+    if (!confirm('Create an Incident Report for this overbreak?\nThis will notify HR.')) return;
+  }
+  const res = await fetch('/api/supervisor/overbreaks/review', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({employee_id: eid, shift_date: sdate, action, waive_reason: reason})
+  });
+  const data = await res.json();
+  if (data.success) {
+    showMsg(action === 'create_ir'
+      ? `IR ${data.report_number} created and HR notified.`
+      : 'Overbreak waived.', true);
+    loadData();
+  } else {
+    showMsg(data.error || 'Action failed', false);
+    if (res.status === 409) loadData();
+  }
+}
+
+document.getElementById('obr-apply').addEventListener('click', loadData);
+document.getElementById('obr-thiscycle').addEventListener('click', () => { setDefaults(); loadData(); });
+setDefaults();
+loadData();
+</script>
+{% endblock %}

@@ -3,6 +3,20 @@
 {% block page_title %}<i class="bi bi-person-plus-fill me-2" style="color:var(--accent)"></i>Employee Onboarding{% endblock %}
 
 {% block content %}
+<ul class="nav nav-tabs mb-4" id="onboardTabs">
+  <li class="nav-item">
+    <a class="nav-link active" id="tab-single" data-bs-toggle="tab" href="#singleTab">
+      <i class="bi bi-person-plus me-1"></i>Single
+    </a>
+  </li>
+  <li class="nav-item">
+    <a class="nav-link" id="tab-bulk" data-bs-toggle="tab" href="#bulkTab">
+      <i class="bi bi-people me-1"></i>Bulk
+    </a>
+  </li>
+</ul>
+<div class="tab-content">
+<div class="tab-pane fade show active" id="singleTab">
 <div class="row g-4">
 
   {# ── LEFT: Form ──────────────────────────────────────── #}
@@ -169,6 +183,119 @@
     </div>
   </div>
 </div>
+
+<!-- Task Checklist Modal -->
+<div class="modal fade" id="taskModal" tabindex="-1">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h6 class="modal-title fw-semibold">
+          <i class="bi bi-list-check me-2"></i>Onboarding Tasks
+          <span id="taskModalName" class="text-muted fw-normal ms-1"></span>
+        </h6>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body p-0">
+        <div id="taskModalBody" class="p-3">
+          <div class="text-center py-3 text-muted">Loading...</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+</div><!-- end singleTab -->
+
+<div class="tab-pane fade" id="bulkTab">
+  <div class="d-flex align-items-center gap-2 mb-3 flex-wrap">
+    <button class="btn btn-sm btn-outline-secondary" onclick="addBulkRow()">
+      <i class="bi bi-plus-lg me-1"></i>Add Row
+    </button>
+    <label class="btn btn-sm btn-outline-secondary mb-0">
+      <i class="bi bi-filetype-csv me-1"></i>Upload CSV
+      <input type="file" id="csvUpload" accept=".csv" style="display:none" onchange="parseCSV(this)">
+    </label>
+    <a href="#" onclick="downloadCSVTemplate(event)" class="btn btn-sm btn-outline-secondary">
+      <i class="bi bi-download me-1"></i>CSV Template
+    </a>
+    <button class="btn btn-sm btn-danger ms-auto" onclick="clearBulkRows()">
+      <i class="bi bi-trash me-1"></i>Clear All
+    </button>
+  </div>
+
+  <div class="card mb-3 border-0" style="background:var(--bg)">
+    <div class="card-body py-2 px-3">
+      <div class="row g-2 align-items-end">
+        <div class="col-auto"><span class="text-muted small fw-semibold">Apply to all rows:</span></div>
+        <div class="col-md-2">
+          <label class="form-label mb-0" style="font-size:.75rem">Training Date</label>
+          <input type="date" class="form-control form-control-sm" id="bulk_training_date">
+        </div>
+        <div class="col-md-2">
+          <label class="form-label mb-0" style="font-size:.75rem">Operational Date</label>
+          <input type="date" class="form-control form-control-sm" id="bulk_operational_date">
+        </div>
+        <div class="col-md-2">
+          <label class="form-label mb-0" style="font-size:.75rem">Account</label>
+          <input type="text" class="form-control form-control-sm" id="bulk_account" placeholder="GYG">
+        </div>
+        <div class="col-md-2">
+          <label class="form-label mb-0" style="font-size:.75rem">Group</label>
+          <input type="text" class="form-control form-control-sm" id="bulk_group_name" placeholder="CS">
+        </div>
+        <div class="col-md-2">
+          <label class="form-label mb-0" style="font-size:.75rem">Batch</label>
+          <input type="text" class="form-control form-control-sm" id="bulk_batch" placeholder="Batch 43">
+        </div>
+        <div class="col-auto">
+          <button class="btn btn-sm btn-outline-primary" onclick="applySharedFields()">Apply</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="table-responsive mb-3" style="max-height:400px;overflow-y:auto">
+    <table class="table table-sm table-bordered align-middle mb-0" id="bulkTable" style="font-size:.81rem;min-width:1500px">
+      <thead class="table-light sticky-top">
+        <tr>
+          <th style="width:28px">#</th>
+          <th style="width:100px">Emp ID <span class="text-danger">*</span></th>
+          <th style="width:120px">First Name <span class="text-danger">*</span></th>
+          <th style="width:100px">Middle Name</th>
+          <th style="width:110px">Last Name <span class="text-danger">*</span></th>
+          <th style="width:60px">Suffix</th>
+          <th style="width:200px">Email <span class="text-danger">*</span></th>
+          <th style="width:105px">Birthdate</th>
+          <th style="width:105px">Training Date</th>
+          <th style="width:105px">Operational Date</th>
+          <th style="width:60px">Account</th>
+          <th style="width:100px">TL</th>
+          <th style="width:55px">Group</th>
+          <th style="width:90px">Batch</th>
+          <th style="width:80px">AD Target</th>
+          <th style="width:36px"></th>
+        </tr>
+      </thead>
+      <tbody id="bulkTbody"></tbody>
+    </table>
+  </div>
+
+  <div class="d-flex align-items-center gap-3 mb-4">
+    <span class="text-muted small" id="bulkRowCount">0 rows</span>
+    <button class="btn btn-primary ms-auto px-4" id="bulkOnboardBtn" onclick="runBulkOnboarding()">
+      <i class="bi bi-play-fill me-1"></i>Onboard All
+    </button>
+  </div>
+
+  <div id="bulkResultsPanel" style="display:none">
+    <h6 class="fw-semibold mb-3">
+      <i class="bi bi-list-check me-2" style="color:var(--accent)"></i>Bulk Onboarding Results
+    </h6>
+    <div id="bulkResultsList"></div>
+  </div>
+</div><!-- end bulkTab -->
+</div><!-- end tab-content -->
 {% endblock %}
 
 {% block scripts %}
@@ -183,6 +310,7 @@ const STEPS = [
 ];
 const MANUAL = [
   { icon: 'bi-fingerprint', label: 'Biometrics', note: 'Enroll fingerprints on day 1' },
+
   { icon: 'bi-slack',       label: 'Slack',      note: 'Invite manually (free plan)' },
 ];
 
@@ -333,17 +461,72 @@ async function loadRecent() {
     const rows = await res.json();
     if (!rows.length) { tbody.innerHTML = noRows(6, 'No recent onboardings'); return; }
     tbody.innerHTML = rows.map(r => `
-      <tr>
-        <td><span class="emp-id-copy fw-500" style="font-size:.83rem;font-family:monospace"
-                  onclick="copyEmpId(this,'${esc(r.employee_id)}')">${esc(r.employee_id)}</span></td>
+      <tr style="cursor:pointer" onclick="openTasks('${esc(r.employee_id)}','${esc(r.schedule_name||r.employee_id)}')">
+        <td><span class="fw-500" style="font-size:.83rem;font-family:monospace">${esc(r.employee_id)}</span></td>
         <td style="font-size:.87rem">${esc(r.schedule_name||'')}</td>
         <td style="font-size:.83rem;color:var(--text-muted)">${esc(r.email||'')}</td>
-        <td style="font-size:.83rem">${r.training_date||'—'}</td>
-        <td><span class="badge" style="background:#dbeafe;color:#1e40af;font-size:.72rem">${esc(r.onboarding_status||'In Progress')}</span></td>
+        <td style="font-size:.83rem">${r.training_date ? new Date(r.training_date).toLocaleDateString('en-US',{month:'short',day:'2-digit',year:'numeric'}) : '—'}</td>
+        <td>
+          <div style="font-size:.75rem;color:var(--text-muted);margin-bottom:2px">${r.done_tasks||0}/${r.total_tasks||7} tasks</div>
+          <div style="background:#e5e7eb;border-radius:4px;height:6px;width:100px">
+            <div style="background:${(r.done_tasks||0)===(r.total_tasks||7)?'#16a34a':'#3b82f6'};height:6px;border-radius:4px;width:${Math.round(((r.done_tasks||0)/(r.total_tasks||7))*100)}%"></div>
+          </div>
+        </td>
         <td style="font-size:.83rem">${esc(r.account||'—')}</td>
       </tr>`).join('');
   } catch(e) {
     tbody.innerHTML = noRows(6, 'Could not load recent onboardings');
+  }
+}
+
+async function openTasks(employeeId, name) {
+  document.getElementById('taskModalName').textContent = '— ' + name;
+  document.getElementById('taskModalBody').innerHTML = '<div class="text-center py-3 text-muted">Loading...</div>';
+  const modalEl = document.getElementById('taskModal');
+  const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
+  modal.show();
+  try {
+    const res = await fetch('/hrportal/api/onboarding-tasks/' + employeeId);
+    const tasks = await res.json();
+    const icons = {
+      'Keycloak Account Created': 'bi-key-fill',
+      'OrangeHRM Account Created': 'bi-people-fill',
+      'Email Created': 'bi-envelope-fill',
+      'Dashboard Access Granted': 'bi-speedometer2',
+      'AD Account Created': 'bi-hdd-network-fill',
+      'Biometrics Registered': 'bi-fingerprint',
+      'Slack Account Created': 'bi-slack',
+    };
+    const rows = tasks.map(t => {
+      const done = t.status === 'Completed';
+      const icon = icons[t.task_name] || 'bi-check2-circle';
+      const btn = done
+        ? '<span class="badge bg-success">Done</span>'
+        : '<button class="btn btn-sm btn-outline-primary py-0 px-2" onclick="completeTask(' + t.id + ',\'' + esc(employeeId) + '\',\'' + esc(name) + '\')">Mark Done</button>';
+      return '<div class="d-flex align-items-center gap-3 py-2 border-bottom">'
+        + '<i class="bi ' + icon + ' fs-5 ' + (done?'text-success':'text-muted') + '"></i>'
+        + '<div class="flex-grow-1">'
+        + '<div class="fw-semibold" style="font-size:.88rem">' + esc(t.task_name) + '</div>'
+        + (t.completed_by ? '<div class="text-muted" style="font-size:.75rem">By ' + esc(t.completed_by) + '</div>' : '')
+        + '</div>'
+        + btn
+        + '</div>';
+    }).join('');
+    document.getElementById('taskModalBody').innerHTML = rows || '<div class="text-muted text-center py-3">No tasks found.</div>';
+  } catch(e) {
+    document.getElementById('taskModalBody').innerHTML = '<div class="text-danger text-center py-3">Failed to load tasks.</div>';
+  }
+}
+
+async function completeTask(taskId, employeeId, name) {
+  try {
+    const res = await fetch('/hrportal/api/onboarding-tasks/' + taskId + '/complete', { method: 'POST' });
+    if (res.ok) {
+      openTasks(employeeId, name);
+      loadRecent();
+    }
+  } catch(e) {
+    alert('Failed to complete task.');
   }
 }
 
@@ -369,7 +552,235 @@ function toast(msg, type) {
 
 document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('training_date').value = new Date().toISOString().split('T')[0];
+  document.getElementById('taskModal').addEventListener('hidden.bs.modal', () => { loadRecent(); });
   loadRecent();
 });
+
+// ── BULK ONBOARDING JS ──────────────────────────────────
+let bulkRowId = 0;
+
+function addBulkRow(data={}) {
+  bulkRowId++;
+  const id = bulkRowId;
+  const tr = document.createElement('tr');
+  tr.id = 'brow_' + id;
+  tr.innerHTML = `
+    <td class="text-muted" style="font-size:.75rem">${id}</td>
+    <td><input type="text" class="form-control form-control-sm" placeholder="260707-01" data-field="employee_id" value="${esc(data.employee_id||'')}"></td>
+    <td><input type="text" class="form-control form-control-sm" placeholder="Juan" data-field="first_name" value="${esc(data.first_name||'')}"></td>
+    <td><input type="text" class="form-control form-control-sm" placeholder="Cruz" data-field="middle_name" value="${esc(data.middle_name||'')}"></td>
+    <td><input type="text" class="form-control form-control-sm" placeholder="Dela Cruz" data-field="last_name" value="${esc(data.last_name||'')}"></td>
+    <td><input type="text" class="form-control form-control-sm" placeholder="Jr" data-field="suffix" value="${esc(data.suffix||'')}"></td>
+    <td><input type="text" class="form-control form-control-sm" placeholder="juan.delacruz@cohere.ph" data-field="email" value="${esc(data.email||'')}"></td>
+    <td><input type="date" class="form-control form-control-sm" data-field="birthdate" value="${esc(data.birthdate||'')}"></td>
+    <td><input type="date" class="form-control form-control-sm" data-field="training_date" value="${esc(data.training_date||'')}"></td>
+    <td><input type="date" class="form-control form-control-sm" data-field="operational_date" value="${esc(data.operational_date||'')}"></td>
+    <td><input type="text" class="form-control form-control-sm" placeholder="GYG" data-field="account" value="${esc(data.account||'')}"></td>
+    <td><input type="text" class="form-control form-control-sm" placeholder="TL Name" data-field="tl" value="${esc(data.tl||'')}"></td>
+    <td><input type="text" class="form-control form-control-sm" placeholder="CS" data-field="group_name" value="${esc(data.group_name||'')}"></td>
+    <td><input type="text" class="form-control form-control-sm" placeholder="Batch 43" data-field="batch" value="${esc(data.batch||'')}"></td>
+    <td>
+      <select class="form-select form-select-sm" data-field="ad_target">
+        <option value="COHERE" ${(data.ad_target||'COHERE')==='COHERE'?'selected':''}>COHERE</option>
+        <option value="NUMA" ${data.ad_target==='NUMA'?'selected':''}>NUMA</option>
+        <option value="BOTH" ${data.ad_target==='BOTH'?'selected':''}>BOTH</option>
+      </select>
+    </td>
+    <td><button class="btn btn-sm btn-outline-danger py-0 px-1" onclick="removeBulkRow(${id})"><i class="bi bi-x"></i></button></td>
+  `;
+  document.getElementById('bulkTbody').appendChild(tr);
+  updateBulkRowCount();
+}
+
+function removeBulkRow(id) {
+  const row = document.getElementById('brow_' + id);
+  if (row) row.remove();
+  updateBulkRowCount();
+}
+
+function clearBulkRows() {
+  document.getElementById('bulkTbody').innerHTML = '';
+  document.getElementById('bulkResultsPanel').style.display = 'none';
+  updateBulkRowCount();
+}
+
+function updateBulkRowCount() {
+  const n = document.getElementById('bulkTbody').querySelectorAll('tr').length;
+  document.getElementById('bulkRowCount').textContent = n + ' row' + (n !== 1 ? 's' : '');
+}
+
+function applySharedFields() {
+  const fields = ['training_date','operational_date','account','group_name','batch'];
+  const vals = {};
+  fields.forEach(f => vals[f] = document.getElementById('bulk_' + f).value);
+  document.querySelectorAll('#bulkTbody tr').forEach(row => {
+    fields.forEach(f => {
+      const inp = row.querySelector(`[data-field="${f}"]`);
+      if (inp && vals[f]) inp.value = vals[f];
+    });
+  });
+}
+
+function getBulkRows() {
+  const rows = [];
+  document.querySelectorAll('#bulkTbody tr').forEach(row => {
+    const get = f => row.querySelector(`[data-field="${f}"]`)?.value.trim() || '';
+    const firstName = get('first_name');
+    const middleName = get('middle_name');
+    const lastName = get('last_name');
+    const suffix = get('suffix');
+    const scheduleName = [firstName, middleName, lastName, suffix].filter(Boolean).join(' ');
+    rows.push({
+      employee_id: get('employee_id'),
+      first_name: firstName,
+      middle_name: middleName || null,
+      last_name: lastName,
+      suffix: suffix || null,
+      schedule_name: scheduleName,
+      email: get('email'),
+      birthdate: get('birthdate') || null,
+      training_date: get('training_date') || null,
+      operational_date: get('operational_date') || null,
+      account: get('account') || null,
+      tl: get('tl') || null,
+      group_name: get('group_name') || null,
+      batch: get('batch') || null,
+      ad_target: get('ad_target') || 'COHERE',
+    });
+  });
+  return rows;
+}
+
+async function runBulkOnboarding() {
+  const rows = getBulkRows();
+  if (!rows.length) { alert('No rows to process.'); return; }
+
+  // Validate
+  let invalid = false;
+  rows.forEach((r, i) => {
+    if (!r.employee_id || !r.first_name || !r.last_name || !r.email) {
+      alert(`Row ${i+1}: Employee ID, First Name, Last Name and Email are required.`);
+      invalid = true;
+    }
+  });
+  if (invalid) return;
+
+  const btn = document.getElementById('bulkOnboardBtn');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Processing...';
+
+  // Show results panel with pending state
+  const panel = document.getElementById('bulkResultsPanel');
+  const list  = document.getElementById('bulkResultsList');
+  panel.style.display = '';
+  list.innerHTML = rows.map((r, i) => `
+    <div class="d-flex align-items-center gap-3 p-2 border-bottom" id="bulkres_${i}">
+      <span class="spinner-border spinner-border-sm text-primary"></span>
+      <div class="flex-grow-1">
+        <span class="fw-semibold" style="font-size:.87rem">${esc(r.schedule_name)}</span>
+        <span class="text-muted ms-2" style="font-size:.78rem">${esc(r.employee_id)}</span>
+      </div>
+      <span class="text-muted small">Queued</span>
+    </div>`).join('');
+
+  // Send all to bulk endpoint at once
+  let successCount = 0, failCount = 0;
+  try {
+    const resp = await fetch('/hrportal/api/onboard/bulk', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({employees: rows})
+    });
+    const data = await resp.json();
+    const results = data.results || [];
+    results.forEach((r, i) => {
+      const resEl = document.getElementById('bulkres_' + i);
+      if (!resEl) return;
+      if (r.success) {
+        successCount++;
+        const steps = [
+          ['Keycloak', r.keycloak_created],
+          ['AD', r.ad_created],
+          ['Email', r.email_created],
+          ['Dashboard', r.dashboard_account_created],
+          ['Biometric', r.biometric_queued],
+          ['Onboarding Record', r.onboarding_created],
+        ];
+        const stepHtml = steps.map(([label, ok]) =>
+          `<span class="badge me-1 ${ok ? 'bg-success' : 'bg-warning text-dark'}" style="font-size:.68rem">${label}</span>`
+        ).join('');
+        resEl.innerHTML = `
+          <i class="bi bi-check-circle-fill text-success fs-5"></i>
+          <div class="flex-grow-1">
+            <span class="fw-semibold" style="font-size:.87rem">${esc(r.name||'')}</span>
+            <span class="text-muted ms-2" style="font-size:.78rem">${esc(r.employee_id)}</span>
+            ${r.ad_username ? '<span class="badge bg-light text-dark border ms-1" style="font-size:.7rem">AD: ' + esc(r.ad_username) + '</span>' : ''}
+            <div class="mt-1">${stepHtml}</div>
+          </div>
+          <span class="text-success small fw-semibold">Done</span>`;
+      } else {
+        failCount++;
+        resEl.innerHTML = `
+          <i class="bi bi-x-circle-fill text-danger fs-5"></i>
+          <div class="flex-grow-1">
+            <span class="fw-semibold" style="font-size:.87rem">${esc(r.name||'')}</span>
+            <span class="text-muted ms-2" style="font-size:.78rem">${esc(r.employee_id)}</span>
+            <div class="text-danger" style="font-size:.78rem">${esc(r.error || 'Unknown error')}</div>
+          </div>
+          <span class="text-danger small fw-semibold">Failed</span>`;
+      }
+    });
+  } catch(e) {
+    rows.forEach((r, i) => {
+      const resEl = document.getElementById('bulkres_' + i);
+      if (resEl) resEl.innerHTML = `<i class="bi bi-x-circle-fill text-danger fs-5"></i><div class="flex-grow-1"><span class="fw-semibold">${esc(r.schedule_name)}</span><div class="text-danger" style="font-size:.78rem">${esc(String(e))}</div></div><span class="text-danger small fw-semibold">Failed</span>`;
+      failCount++;
+    });
+  }
+
+  btn.disabled = false;
+  btn.innerHTML = `<i class="bi bi-play-fill me-1"></i>Onboard All`;
+  loadRecent();
+
+  // Summary toast
+  const msg = `Bulk complete: ${successCount} succeeded, ${failCount} failed.`;
+  alert(msg);
+}
+
+// CSV Upload
+function parseCSV(input) {
+  const file = input.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    const lines = e.target.result.split('\n').filter(l => l.trim());
+    if (lines.length < 2) { alert('CSV must have a header row and at least one data row.'); return; }
+    const headers = lines[0].split(',').map(h => h.trim().toLowerCase().replace(/ /g,'_'));
+    let added = 0;
+    for (let i = 1; i < lines.length; i++) {
+      const vals = lines[i].split(',').map(v => v.trim().replace(/^"|"$/g,''));
+      const row = {};
+      headers.forEach((h, idx) => row[h] = vals[idx] || '');
+      addBulkRow(row);
+      added++;
+    }
+    alert(`Imported ${added} rows from CSV.`);
+  };
+  reader.readAsText(file);
+  input.value = '';
+}
+
+function downloadCSVTemplate(e) {
+  e.preventDefault();
+  const headers = ['employee_id','first_name','middle_name','last_name','suffix','email','birthdate','training_date','operational_date','account','tl','group_name','batch','ad_target'];
+  const sample  = ['260707-01','Juan','Cruz','Dela Cruz','Jr','juan.delacruz@cohere.ph','2000-01-01','2026-07-07','2026-07-28','GYG','TL Name','CS','Batch 43','COHERE'];
+  const csv = headers.join(',') + '\n' + sample.join(',');
+  const blob = new Blob([csv], {type:'text/csv'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'onboarding_template.csv';
+  a.click();
+}
 </script>
+
 {% endblock %}

@@ -24,6 +24,17 @@
           <textarea name="reason" class="form-control form-control-sm" rows="2"
                     placeholder="Why do you need these items?"></textarea>
         </div>
+        {% if session["user"]["email"] in material_admin_emails.split(",") | map("trim") | list %}
+        <div class="mb-3">
+          <div class="form-check">
+            <input class="form-check-input" type="checkbox" name="is_replenishment" id="isReplenishment" value="1">
+            <label class="form-check-label small fw-semibold text-warning" for="isReplenishment">
+              <i class="bi bi-arrow-up-circle me-1"></i>This is a stock replenishment request
+            </label>
+          </div>
+          <small class="text-muted">Check this if you are restocking inventory — items will be added instead of deducted on release.</small>
+        </div>
+        {% endif %}
         <div class="mb-2">
           <label class="form-label small fw-semibold">Items <span class="text-danger">*</span></label>
           <div id="itemsContainer">
@@ -106,7 +117,7 @@
                    style="background:#065f46;color:#fff;font-size:.75rem;">
                   <i class="bi bi-check-circle"></i> Confirm Receipt
                 </a>
-                {% elif r.status not in ('Pending Final Approval', 'Released', 'Rejected', 'Served') and r.request_group_id %}
+                {% elif r.status not in ('Recommended', 'Pending Final Approval', 'Approved', 'Awaiting Confirmation', 'Released', 'Rejected', 'Served') and r.request_group_id %}
                 <a href="{{ url_for('material_edit', group_id=r.request_group_id) }}"
                    class="btn btn-outline-secondary btn-sm py-0 px-2"
                    style="font-size:.75rem;">

@@ -1,0 +1,140 @@
+{% extends "base.html" %}
+{% block title %}CoE Requests - Manage{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4">
+  <div class="d-flex justify-content-between align-items-center mb-3">
+    <h4 style="color: var(--text);">Certificate of Employment - Requests</h4>
+    <div class="btn-group btn-group-sm">
+      <a href="{{ url_for('coe.manage_queue') }}"
+         class="btn btn-outline-secondary {{ 'active' if not active_filter }}">All</a>
+      {% for key, label in status_labels.items() %}
+      <a href="{{ url_for('coe.manage_queue', status=key) }}"
+         class="btn btn-outline-secondary {{ 'active' if active_filter == key }}">{{ label }}</a>
+      {% endfor %}
+    </div>
+  </div>
+
+  {% if not requests %}
+  <p class="text-muted">No requests in this view.</p>
+  {% else %}
+  <div class="table-responsive">
+    <table class="table align-middle">
+      <thead>
+        <tr>
+          <th>Requested</th>
+          <th>Employee</th>
+          <th>Purpose</th>
+          <th>Addressee</th>
+          <th>Notes</th>
+          <th>Status</th>
+          <th>HR Notes</th>
+          <th>Last Touched By</th>
+          <th style="width: 220px;">Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in requests %}
+        <tr id="row-{{ r.id }}">
+          <td class="small">{{ r.requested_at.strftime('%b %d, %Y') }}</td>
+          <td>
+            <div>{{ r.employee_name }}</div>
+            <div class="text-muted small">{{ r.employee_id }}</div>
+          </td>
+          <td>
+            {{ r.purpose }}
+            {% if r.purpose_other %}<div class="text-muted small">{{ r.purpose_other }}</div>{% endif %}
+          </td>
+          <td>{{ r.addressee }}</td>
+          <td class="text-muted small">{{ r.additional_notes or '-' }}</td>
+          <td>
+            {% if r.status == 'released' %}
+            <span class="badge bg-success">Released</span>
+            <div class="text-muted small mt-1">
+              {% if r.released_via == 'employee_confirmed' %}Confirmed by employee
+              {% elif r.released_via == 'auto' %}Auto-released
+              {% else %}Released by HR{% endif %}
+            </div>
+            {% else %}
+            <select class="form-select form-select-sm status-select" data-id="{{ r.id }}">
+              {% for key, label in status_labels.items() %}
+              {% if key != 'released' %}
+              <option value="{{ key }}" {{ 'selected' if r.status == key }}>{{ label }}</option>
+              {% endif %}
+              {% endfor %}
+            </select>
+            {% endif %}
+          </td>
+          <td>
+            <textarea class="form-control form-control-sm hr-notes" data-id="{{ r.id }}"
+                      rows="2">{{ r.hr_notes or '' }}</textarea>
+          </td>
+          <td class="small text-muted">{{ r.processed_by_name or '-' }}</td>
+          <td>
+            <button class="btn btn-sm btn-outline-primary save-btn" data-id="{{ r.id }}">Save</button>
+            <button class="btn btn-sm btn-outline-danger delete-btn" data-id="{{ r.id }}">Remove</button>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+</div>
+
+<script>
+function csrfHeaders() {
+  // ADJUST: plug in your CSRF token pattern if you use one elsewhere
+  return { 'X-Requested-With': 'XMLHttpRequest' };
+}
+
+document.querySelectorAll('.save-btn').forEach(btn => {
+  btn.addEventListener('click', async () => {
+    const id = btn.dataset.id;
+    const statusEl = document.querySelector(`.status-select[data-id="${id}"]`);
+    const status = statusEl ? statusEl.value : 'released'; // released rows have no dropdown
+    const notes = document.querySelector(`.hr-notes[data-id="${id}"]`).value;
+
+    const form = new FormData();
+    form.append('status', status);
+    form.append('hr_notes', notes);
+
+    const res = await fetch(`/coe/manage/${id}/update-status`, {
+      method: 'POST',
+      headers: csrfHeaders(),
+      body: form
+    });
+    const data = await res.json();
+    if (data.success) {
+      btn.textContent = 'Saved';
+      setTimeout(() => { btn.textContent = 'Save'; }, 1200);
+    } else {
+      alert(data.error || 'Failed to update.');
+    }
+  });
+});
+
+document.querySelectorAll('.delete-btn').forEach(btn => {
+  btn.addEventListener('click', async () => {
+    const id = btn.dataset.id;
+    const reason = prompt('Reason for removing this request:');
+    if (!reason) return;
+
+    const form = new FormData();
+    form.append('reason', reason);
+
+    const res = await fetch(`/coe/manage/${id}/delete`, {
+      method: 'POST',
+      headers: csrfHeaders(),
+      body: form
+    });
+    const data = await res.json();
+    if (data.success) {
+      document.getElementById(`row-${id}`).remove();
+    } else {
+      alert(data.error || 'Failed to remove.');
+    }
+  });
+});
+</script>
+{% endblock %}

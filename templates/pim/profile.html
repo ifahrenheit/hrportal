@@ -321,6 +321,55 @@
           </div>
         </div>
 
+        {% if session.get('is_admin') or session.get('permissions', {}).get('can_memos') %}
+        <div class="col-12">
+          <div class="card shadow-sm mb-3">
+            <div class="card-header fw-semibold d-flex align-items-center gap-2">
+              <i class="bi bi-file-earmark-text"></i> Employee Memos
+            </div>
+            <div class="card-body py-2 px-3" id="memos-container">
+              <small class="text-muted">Loading memos...</small>
+            </div>
+          </div>
+        </div>
+        <script>
+        (function () {
+          const employeeId = "{{ employee.employee_id }}";
+          const container = document.getElementById('memos-container');
+
+          function esc(str) {
+            if (!str) return '';
+            const div = document.createElement('div');
+            div.textContent = str;
+            return div.innerHTML;
+          }
+
+          fetch(`/api/memos/${employeeId}`)
+            .then(res => res.json())
+            .then(memos => {
+              if (!Array.isArray(memos) || memos.length === 0) {
+                container.innerHTML = '<small class="text-muted">No memos on file.</small>';
+                return;
+              }
+              container.innerHTML = memos.map(m => `
+                <div class="mb-2 pb-2 border-bottom">
+                  <div class="d-flex justify-content-between align-items-center mb-1">
+                    <span class="badge bg-secondary">${esc(m.category) || 'Memo'}</span>
+                    <span class="text-muted small">${esc(m.memo_date)}</span>
+                  </div>
+                  ${m.violation ? `<div class="small"><strong>Violation:</strong> ${esc(m.violation)}</div>` : ''}
+                  ${m.disciplinary_action ? `<div class="small"><strong>Disciplinary Action:</strong> ${esc(m.disciplinary_action)}</div>` : ''}
+                  ${m.details ? `<div class="small"><strong>Details:</strong> ${esc(m.details)}</div>` : ''}
+                  ${m.supervisor ? `<div class="small text-muted">By: ${esc(m.supervisor)}</div>` : ''}
+                </div>
+              `).join('');
+            })
+            .catch(() => {
+              container.innerHTML = '<small class="text-danger">Failed to load memos.</small>';
+            });
+        })();
+        </script>
+        {% endif %}
         <!-- Sync metadata -->
         <div class="col-12">
           <div class="card shadow-sm">

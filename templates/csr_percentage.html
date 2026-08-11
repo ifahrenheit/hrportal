@@ -1,0 +1,559 @@
+{% extends "base.html" %}
+{% block content %}
+<style>
+  .csr-card { background:var(--surface); border:1px solid var(--border); border-radius:14px; padding:18px; }
+  .csr-filters .form-label { margin-bottom:2px; }
+  .filter-group-label { font-size:.66rem; text-transform:uppercase; letter-spacing:.07em;
+                        color:var(--text-muted); font-weight:700; margin-bottom:.4rem;
+                        display:flex; align-items:center; gap:4px; }
+  .filter-divider { width:1px; align-self:stretch; background:var(--border); margin:0 .25rem; }
+  .filter-col { min-width:120px; }
+  .filter-col.narrow { min-width:104px; }
+  @media (max-width: 991px){ .filter-divider{ display:none; } }
+
+  .table-csr { font-size:.85rem; }
+  .table-csr th { white-space:nowrap; position:sticky; top:0; background:var(--bg); z-index:2; }
+  .table-csr th.sortable { cursor:pointer; user-select:none; }
+  .table-csr th.sortable:hover { background:var(--border); }
+  .table-csr th .sort-arrow { opacity:.35; font-size:.75rem; margin-left:2px; }
+  .table-csr th.sort-active .sort-arrow { opacity:1; }
+  .table-csr td, .table-csr th { vertical-align:middle; }
+  .csr-name { white-space:nowrap; font-weight:600;
+              position:sticky; left:0; background:var(--surface); z-index:1; }
+  .table-csr thead th:first-child { position:sticky; left:0; z-index:3; background:var(--bg); }
+  .table-csr tbody tr:hover .csr-name { background:var(--bg); }
+  .csr-email { white-space:nowrap; color:var(--text-muted); font-size:.8rem; }
+  .csr-cell { text-align:center; white-space:nowrap; font-variant-numeric:tabular-nums; }
+  .csr-blank { color:var(--text-muted); opacity:.35; }
+  /* higher CSR% is worse */
+  /* <15% good | 15-20% watch | >20% high. Tinted background so bands read at a glance. */
+  /* table cells: scoped + !important to beat Bootstrap's .table td rules */
+  .table-csr td.csr-lo   { color:#0f5132 !important; background:rgba(25,135,84,.13) !important; font-weight:600; }
+  .table-csr td.csr-mid  { color:#8a4b00 !important; background:rgba(253,126,20,.16) !important; font-weight:600; }
+  .table-csr td.csr-hi   { color:#842029 !important; background:rgba(220,53,69,.16) !important; font-weight:700; }
+  [data-theme="dark"] .table-csr td.csr-lo  { color:#4ade80 !important; background:rgba(25,135,84,.20) !important; }
+  [data-theme="dark"] .table-csr td.csr-mid { color:#fbbf24 !important; background:rgba(253,126,20,.20) !important; }
+  [data-theme="dark"] .table-csr td.csr-hi  { color:#f87171 !important; background:rgba(220,53,69,.22) !important; }
+  /* legend swatches are spans, keep unscoped versions for them */
+  span.csr-lo  { color:#0f5132; background:rgba(25,135,84,.13);  font-weight:600; }
+  span.csr-mid { color:#8a4b00; background:rgba(253,126,20,.16); font-weight:600; }
+  span.csr-hi  { color:#842029; background:rgba(220,53,69,.16);  font-weight:700; }
+  [data-theme="dark"] span.csr-lo  { color:#4ade80; background:rgba(25,135,84,.20); }
+  [data-theme="dark"] span.csr-mid { color:#fbbf24; background:rgba(253,126,20,.20); }
+  [data-theme="dark"] span.csr-hi  { color:#f87171; background:rgba(220,53,69,.22); }
+  .csr-scroll { max-height:70vh; overflow:auto; }
+  .csr-loading { color:var(--text-muted); padding:20px; }
+  .table-csr td.csr-cell.clickable { cursor:pointer; }
+  .table-csr td.csr-cell.clickable:hover { outline:2px solid var(--accent); outline-offset:-2px; }
+  /* modal */
+  .csrm-backdrop { position:fixed; inset:0; background:rgba(0,0,0,.5); z-index:2000;
+                   display:none; align-items:flex-start; justify-content:center; padding:4vh 2vw; }
+  .csrm-backdrop.open { display:flex; }
+  .csrm-panel { background:var(--surface); color:var(--text); border:1px solid var(--border);
+                border-radius:14px; width:min(1000px,96vw); max-height:88vh; display:flex;
+                flex-direction:column; box-shadow:0 12px 48px rgba(0,0,0,.35); }
+  .csrm-head { display:flex; align-items:center; justify-content:space-between;
+               padding:14px 18px; border-bottom:1px solid var(--border); }
+  .csrm-title { font-weight:700; font-size:1.02rem; }
+  .csrm-sub { font-size:.8rem; color:var(--text-muted); margin-top:2px; }
+  .csrm-close { background:none; border:none; font-size:1.4rem; line-height:1; color:var(--text-muted); cursor:pointer; }
+  .csrm-body { overflow:auto; padding:0; }
+  .csrm-table { width:100%; border-collapse:collapse; font-size:.84rem; }
+  .csrm-table th { position:sticky; top:0; background:var(--bg); color:var(--text-muted);
+                   text-align:left; padding:8px 12px; font-size:.72rem; text-transform:uppercase;
+                   letter-spacing:.05em; border-bottom:1px solid var(--border); white-space:nowrap; }
+  .csrm-table td { padding:9px 12px; border-bottom:1px solid var(--border); vertical-align:top; }
+  .csrm-row-csr { background:rgba(220,53,69,.07); }
+  .csrm-badge { display:inline-block; padding:.12rem .5rem; border-radius:6px; font-size:.72rem; font-weight:700; }
+  .csrm-badge.dsat { background:rgba(220,53,69,.15); color:#b02a37; }
+  .csrm-badge.csr  { background:rgba(220,53,69,.9); color:#fff; }
+  .csrm-badge.rep  { background:rgba(108,117,125,.18); color:var(--text-muted); }
+  .csrm-qa { color:var(--text); white-space:pre-wrap; max-width:420px; }
+  .csrm-qa-name { color:var(--text-muted); font-size:.76rem; margin-top:3px; }
+  .csrm-ticket { color:var(--accent); text-decoration:none; font-weight:600; }
+  .csrm-ticket:hover { text-decoration:underline; }
+  .csrm-empty { padding:28px; text-align:center; color:var(--text-muted); }
+  [data-theme="dark"] .csrm-badge.dsat { color:#f5a3ab; }
+</style>
+
+<div class="container-fluid py-3">
+  <div class="d-flex flex-wrap justify-content-between align-items-center mb-3">
+    <h3 class="mb-0"><i class="bi bi-person-exclamation"></i> CSR Percentage
+      {% if scoped_tl %}<span class="badge bg-secondary">{{ scoped_tl }} team</span>{% endif %}
+    </h3>
+  </div>
+
+  <div class="csr-card mb-3 csr-filters">
+    <div class="d-flex flex-wrap align-items-start" style="gap:1rem;">
+      <div>
+        <div class="filter-group-label"><i class="bi bi-calendar3"></i> Period</div>
+        <div class="d-flex flex-wrap align-items-end" style="gap:.5rem;">
+          <div class="filter-col narrow">
+            <label class="form-label small">View by</label>
+            <div class="btn-group btn-group-sm w-100" role="group" id="csrGranGroup">
+              <input type="radio" class="btn-check" name="csrGran" id="granDay" value="day" autocomplete="off">
+              <label class="btn btn-outline-secondary" for="granDay">Day</label>
+              <input type="radio" class="btn-check" name="csrGran" id="granWeek" value="week" autocomplete="off">
+              <label class="btn btn-outline-secondary" for="granWeek">Week</label>
+              <input type="radio" class="btn-check" name="csrGran" id="granMonth" value="month" autocomplete="off" checked>
+              <label class="btn btn-outline-secondary" for="granMonth">Month</label>
+            </div>
+          </div>
+          <div class="filter-col narrow">
+            <label class="form-label small">From</label>
+            <input type="date" id="csrStart" class="form-control form-control-sm">
+          </div>
+          <div class="filter-col narrow">
+            <label class="form-label small">To</label>
+            <input type="date" id="csrEnd" class="form-control form-control-sm">
+          </div>
+        </div>
+      </div>
+
+      <div class="filter-divider"></div>
+
+      <div>
+        <div class="filter-group-label"><i class="bi bi-people"></i> Segment</div>
+        <div class="d-flex flex-wrap" style="gap:.5rem;">
+          {% if not is_tl_view %}
+          <div class="filter-col">
+            <label class="form-label small">TL</label>
+            <select id="csrTL" class="form-select form-select-sm"><option value="All">All</option></select>
+          </div>
+          {% endif %}
+          <div class="filter-col">
+            <label class="form-label small">Batch</label>
+            <select id="csrBatch" class="form-select form-select-sm"><option value="All">All</option></select>
+          </div>
+        </div>
+      </div>
+
+      <div class="filter-divider"></div>
+
+      <div>
+        <div class="filter-group-label"><i class="bi bi-funnel"></i> Scope</div>
+        <div class="d-flex flex-column" style="gap:.35rem; padding-top:.15rem;">
+          <div class="form-check form-switch mb-0">
+            <input class="form-check-input" type="checkbox" id="csrActive" checked>
+            <label class="form-check-label small" for="csrActive">Active only</label>
+          </div>
+          <div class="form-check form-switch mb-0">
+            <input class="form-check-input" type="checkbox" id="csrCS" checked>
+            <label class="form-check-label small" for="csrCS">CS only</label>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="mt-2 d-flex align-items-center gap-2 flex-wrap">
+      <button id="csrReset" class="btn btn-outline-secondary btn-sm">Reset</button>
+      <button id="csrExport" class="btn btn-outline-secondary btn-sm">
+        <i class="bi bi-download"></i> CSV
+      </button>
+      <input type="text" id="csrSearch" class="form-control form-control-sm"
+             style="max-width:240px" placeholder="Search name / email / TL…">
+      <span id="csrSummary" class="text-muted small"></span>
+    </div>
+  </div>
+
+  <div class="csr-card">
+    <h6 class="mb-2">CSR % of DSATs by Month</h6>
+    <div class="text-muted small mb-2">
+      CSR&nbsp;% = DSATs with root cause <strong>CSR</strong> and no rep responsible,
+      divided by that agent's total DSATs for the month.
+      Blank = no CSR-attributable DSATs. Hover a cell for the counts.
+    </div>
+    <div class="d-flex align-items-center flex-wrap mb-2" style="gap:.75rem;font-size:.78rem;">
+      <span class="text-muted">Legend:</span>
+      <span class="csr-cell csr-lo"  style="padding:.1rem .5rem;border-radius:4px;">&lt; 15%</span>
+      <span class="csr-cell csr-mid" style="padding:.1rem .5rem;border-radius:4px;">15&ndash;20%</span>
+      <span class="csr-cell csr-hi"  style="padding:.1rem .5rem;border-radius:4px;">&gt; 20%</span>
+    </div>
+    <div class="csr-scroll">
+      <table class="table table-sm table-hover table-csr mb-0">
+        <thead><tr id="csrHead"></tr></thead>
+        <tbody id="csrBody">
+          <tr><td class="csr-loading">Loading…</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- DSAT drill-down modal -->
+  <div class="csrm-backdrop" id="csrmBackdrop">
+    <div class="csrm-panel">
+      <div class="csrm-head">
+        <div>
+          <div class="csrm-title" id="csrmTitle">DSAT details</div>
+          <div class="csrm-sub" id="csrmSub"></div>
+        </div>
+        <button class="csrm-close" id="csrmClose" title="Close">&times;</button>
+      </div>
+      <div class="csrm-body" id="csrmBody">
+        <div class="csrm-empty">Loading…</div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+  const $ = function(id){ return document.getElementById(id); };
+  let csrData = { periods: [], agents: [], gran: 'month' };
+  let currentGran = 'month';
+  let sortKey = 'name', sortDir = 'asc';
+
+  function fmtPct(v){ return (v === null || v === undefined) ? '' : v.toFixed(2) + '%'; }
+
+  // Colour bands: <15% good (green) | 15-20% watch (amber) | >20% high (red)
+  function grade(v){
+    if (v === null || v === undefined) return 'csr-blank';
+    if (v > 20) return 'csr-hi';
+    if (v >= 15) return 'csr-mid';
+    return 'csr-lo';
+  }
+
+  const MONTH_NAMES = ['January','February','March','April','May','June',
+                      'July','August','September','October','November','December'];
+  const MONTH_ABBR  = ['Jan','Feb','Mar','Apr','May','Jun',
+                      'Jul','Aug','Sep','Oct','Nov','Dec'];
+
+  // '2026-03' -> 'March 2026' | '2026-W12' -> 'Wk 12' | '2026-03-14' -> 'Mar 14'
+  function periodLabel(p){
+    if (p.indexOf('-W') > 0){
+      const parts = p.split('-W');
+      return 'Wk ' + parseInt(parts[1], 10);
+    }
+    const parts = p.split('-');
+    if (parts.length === 3){
+      return MONTH_ABBR[parseInt(parts[1],10)-1] + ' ' + parseInt(parts[2],10);
+    }
+    return MONTH_NAMES[parseInt(parts[1],10)-1] + ' ' + parts[0];
+  }
+
+  // fuller label for tooltips / CSV
+  function periodLabelFull(p){
+    if (p.indexOf('-W') > 0){
+      const parts = p.split('-W');
+      return 'Week ' + parseInt(parts[1],10) + ', ' + parts[0];
+    }
+    const parts = p.split('-');
+    if (parts.length === 3){
+      return MONTH_NAMES[parseInt(parts[1],10)-1] + ' ' + parseInt(parts[2],10) + ', ' + parts[0];
+    }
+    return MONTH_NAMES[parseInt(parts[1],10)-1] + ' ' + parts[0];
+  }
+
+  function qs(){
+    const p = new URLSearchParams();
+    p.set('start', $('csrStart').value);
+    p.set('end', $('csrEnd').value);
+    if ($('csrTL')) p.set('tl', $('csrTL').value);
+    if ($('csrBatch')) p.set('batch', $('csrBatch').value);
+    p.set('gran', currentGran);
+    p.set('active_only', $('csrActive').checked ? '1' : '0');
+    p.set('cs_only', $('csrCS').checked ? '1' : '0');
+    return '?' + p.toString();
+  }
+
+  function sortAgents(rows){
+    const r = rows.slice();
+    r.sort(function(a, b){
+      let av, bv;
+      if (sortKey === 'name')      { av = (a.name||a.email||'').toLowerCase(); bv = (b.name||b.email||'').toLowerCase(); }
+      else if (sortKey === 'email'){ av = (a.email||'').toLowerCase();          bv = (b.email||'').toLowerCase(); }
+      else if (sortKey === 'tl')   { av = (a.tl||'').toLowerCase();             bv = (b.tl||'').toLowerCase(); }
+      else { // a month key
+        const am = a.months[sortKey], bm = b.months[sortKey];
+        av = (am && am.pct !== null) ? am.pct : -1;
+        bv = (bm && bm.pct !== null) ? bm.pct : -1;
+      }
+      if (av < bv) return sortDir === 'asc' ? -1 : 1;
+      if (av > bv) return sortDir === 'asc' ? 1 : -1;
+      return 0;
+    });
+    return r;
+  }
+
+  function renderHead(){
+    const head = $('csrHead');
+    let html = '<th class="sortable" data-key="name">Name<span class="sort-arrow">&#8597;</span></th>' +
+               '<th class="sortable" data-key="email">Email<span class="sort-arrow">&#8597;</span></th>' +
+               '<th class="sortable" data-key="tl">TL<span class="sort-arrow">&#8597;</span></th>';
+    csrData.periods.forEach(function(m){
+      html += '<th class="sortable csr-cell" data-key="' + m + '" title="' + periodLabelFull(m) + '">' +
+              periodLabel(m) + '<span class="sort-arrow">&#8597;</span></th>';
+    });
+    head.innerHTML = html;
+    head.querySelectorAll('th.sortable').forEach(function(th){
+      th.classList.toggle('sort-active', th.dataset.key === sortKey);
+      th.addEventListener('click', function(){
+        const k = th.dataset.key;
+        if (sortKey === k) { sortDir = (sortDir === 'asc') ? 'desc' : 'asc'; }
+        else { sortKey = k; sortDir = (k === 'name' || k === 'email' || k === 'tl') ? 'asc' : 'desc'; }
+        renderHead(); renderBody();
+      });
+    });
+  }
+
+  function renderBody(){
+    const body = $('csrBody');
+    const f = ($('csrSearch').value || '').toLowerCase();
+    let rows = csrData.agents.filter(function(a){
+      return !f || (a.name||'').toLowerCase().indexOf(f) >= 0
+               || (a.email||'').toLowerCase().indexOf(f) >= 0
+               || (a.tl||'').toLowerCase().indexOf(f) >= 0;
+    });
+    rows = sortAgents(rows);
+
+    const colspan = 2 + csrData.periods.length;
+    if (!rows.length){
+      body.innerHTML = '<tr><td colspan="' + colspan + '" class="csr-loading">No agents with DSATs in this range.</td></tr>';
+      $('csrSummary').textContent = '';
+      return;
+    }
+
+    body.innerHTML = rows.map(function(a){
+      let tds = '<td class="csr-name">' + (a.name || '') + '</td>' +
+                '<td class="csr-email">' + (a.email || '') + '</td>' +
+                '<td>' + (a.tl || '') + '</td>';
+      csrData.periods.forEach(function(m){
+        const cell = a.months[m];
+        const hasDsats = cell && cell.dsats > 0;
+        const clickAttrs = hasDsats
+          ? ' data-email="' + (a.email||'') + '" data-period="' + m +
+            '" data-name="' + (a.name||a.email||'').replace(/"/g,'&quot;') + '"'
+          : '';
+        if (!cell || cell.dsats === 0 || cell.csr === 0){
+          // still clickable if there were DSATs (other root causes) — useful for coaching
+          tds += '<td class="csr-cell csr-blank' + (hasDsats ? ' clickable' : '') + '"' +
+                 clickAttrs + ' title="' +
+                 (cell ? cell.csr + ' CSR of ' + cell.dsats + ' DSATs' : 'No DSATs') +
+                 '">&mdash;</td>';
+        } else {
+          tds += '<td class="csr-cell clickable ' + grade(cell.pct) + '"' + clickAttrs +
+                 ' title="' + cell.csr + ' CSR of ' + cell.dsats + ' DSATs — click for details">' +
+                 fmtPct(cell.pct) + '</td>';
+        }
+      });
+      return '<tr>' + tds + '</tr>';
+    }).join('');
+
+    $('csrSummary').textContent = rows.length + ' agent' + (rows.length === 1 ? '' : 's') +
+                                  ' \u00b7 ' + csrData.periods.length + ' ' + currentGran +
+                                  (csrData.periods.length === 1 ? '' : 's') + columnWarning();
+  }
+
+  async function loadData(){
+    $('csrBody').innerHTML = '<tr><td class="csr-loading">Loading…</td></tr>';
+    const r = await fetch('/csr-percentage/data' + qs());
+    if (!r.ok){
+      $('csrBody').innerHTML = '<tr><td class="csr-loading">Failed to load.</td></tr>';
+      return;
+    }
+    csrData = await r.json();
+    renderHead();
+    renderBody();
+    populateFilterOptions();
+  }
+
+  // build TL / Batch dropdowns from the returned agents (once)
+  let optionsBuilt = false;
+  function populateFilterOptions(){
+    if (optionsBuilt) return;
+    const tls = {}, batches = {};
+    csrData.agents.forEach(function(a){
+      if (a.tl) tls[a.tl] = 1;
+      if (a.batch) batches[a.batch] = 1;
+    });
+    if ($('csrTL')){
+      Object.keys(tls).sort().forEach(function(t){
+        const o = document.createElement('option'); o.value = t; o.textContent = t;
+        $('csrTL').appendChild(o);
+      });
+    }
+    Object.keys(batches).sort().forEach(function(b){
+      const o = document.createElement('option'); o.value = b; o.textContent = b;
+      $('csrBatch').appendChild(o);
+    });
+    optionsBuilt = true;
+  }
+
+  function exportCsv(){
+    const head = ['Name','Email','TL'].concat(csrData.periods.map(periodLabelFull));
+    const lines = [head.join(',')];
+    sortAgents(csrData.agents).forEach(function(a){
+      const cells = [
+        '"' + (a.name || '').replace(/"/g,'""') + '"',
+        a.email || '',
+        '"' + (a.tl || '').replace(/"/g,'""') + '"'
+      ];
+      csrData.periods.forEach(function(m){
+        const c = a.months[m];
+        cells.push((!c || c.dsats === 0 || c.csr === 0) ? '' : c.pct.toFixed(2) + '%');
+      });
+      lines.push(cells.join(','));
+    });
+    const blob = new Blob([lines.join('\n')], {type:'text/csv;charset=utf-8;'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'csr-percentage-' + currentGran + 'ly-' + $('csrStart').value + '-to-' + $('csrEnd').value + '.csv';
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  function iso(d){ return d.toISOString().slice(0,10); }
+
+  // Sensible default span per granularity so the table never becomes unreadable:
+  //   month -> year to date | week -> last 12 weeks | day -> last 30 days
+  function rangeForGran(gran){
+    const today = new Date();
+    if (gran === 'day'){
+      const from = new Date(today); from.setDate(from.getDate() - 29);
+      return [iso(from), iso(today)];
+    }
+    if (gran === 'week'){
+      const from = new Date(today); from.setDate(from.getDate() - (12 * 7));
+      return [iso(from), iso(today)];
+    }
+    const jan1 = new Date(today.getFullYear(), 0, 1);
+    return [iso(jan1), iso(today)];
+  }
+
+  function applyGranRange(gran){
+    const r = rangeForGran(gran);
+    $('csrStart').value = r[0];
+    $('csrEnd').value = r[1];
+  }
+
+  function defaultDates(){ applyGranRange(currentGran); }
+
+  // warn when the chosen span would render an unwieldy number of columns
+  function columnWarning(){
+    const start = new Date($('csrStart').value);
+    const end   = new Date($('csrEnd').value);
+    if (isNaN(start) || isNaN(end) || end < start) return '';
+    const days = Math.round((end - start) / 86400000) + 1;
+    let cols = 0;
+    if (currentGran === 'day')        cols = days;
+    else if (currentGran === 'week')  cols = Math.ceil(days / 7);
+    else                              cols = Math.ceil(days / 30);
+    if (cols > 60) return ' \u00b7 ' + cols + ' columns \u2014 scroll sideways, or narrow the range';
+    return '';
+  }
+
+  defaultDates();
+  loadData();
+
+  document.querySelectorAll('input[name="csrGran"]').forEach(function(radio){
+    radio.addEventListener('change', function(){
+      if (!this.checked) return;
+      currentGran = this.value;
+      applyGranRange(currentGran);   // auto-narrow to a readable span
+      loadData();
+    });
+  });
+
+  $('csrStart').addEventListener('change', loadData);
+  $('csrEnd').addEventListener('change', loadData);
+  if ($('csrTL')) $('csrTL').addEventListener('change', loadData);
+  $('csrBatch').addEventListener('change', loadData);
+  $('csrActive').addEventListener('change', loadData);
+  $('csrCS').addEventListener('change', loadData);
+  $('csrSearch').addEventListener('input', renderBody);
+  $('csrExport').addEventListener('click', exportCsv);
+  // ---------- DSAT drill-down modal ----------
+  const ZENDESK_BASE = 'https://getyourguidesupport.zendesk.com/agent/tickets/';
+
+  function periodTitle(p){ return periodLabelFull(p); }
+
+  function escapeHtml(s){
+    return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  }
+
+  function openCsrModal(email, period, name){
+    $('csrmTitle').textContent = name + ' — ' + periodTitle(period);
+    $('csrmSub').textContent = 'Loading DSATs…';
+    $('csrmBody').innerHTML = '<div class="csrm-empty">Loading…</div>';
+    $('csrmBackdrop').classList.add('open');
+
+    const p = new URLSearchParams();
+    p.set('email', email);
+    p.set('period', period);
+    p.set('gran', currentGran);
+
+    fetch('/csr-percentage/responses?' + p.toString())
+      .then(function(r){ return r.json(); })
+      .then(function(d){
+        if (d.error){ $('csrmBody').innerHTML = '<div class="csrm-empty">Error: ' + d.error + '</div>'; return; }
+        $('csrmSub').textContent = d.total + ' DSAT' + (d.total===1?'':'s') +
+                                   ' \u00b7 ' + d.csr_count + ' CSR-attributable';
+        if (!d.responses.length){
+          $('csrmBody').innerHTML = '<div class="csrm-empty">No DSATs in this period.</div>';
+          return;
+        }
+        let rows = d.responses.map(function(x){
+          const rate = (x.rate === null || x.rate === '') ? '' : x.rate;
+          const ticket = '<a class="csrm-ticket" href="' + ZENDESK_BASE + x.ticket_id +
+                         '" target="_blank" rel="noopener">' + x.ticket_id + '</a>';
+          let cause = '';
+          if (x.is_csr){
+            cause = '<span class="csrm-badge csr">CSR</span>';
+          } else if (x.root_cause){
+            cause = escapeHtml(x.root_cause);
+            if (x.rep_responsible){
+              cause += ' <span class="csrm-badge rep" title="Attributed to another rep">&rarr; ' +
+                       escapeHtml(x.rep_responsible) + '</span>';
+            }
+          }
+          let qa = escapeHtml(x.qa_comment);
+          if (x.qa_name) qa += '<div class="csrm-qa-name">&mdash; ' + escapeHtml(x.qa_name) + '</div>';
+          return '<tr class="' + (x.is_csr ? 'csrm-row-csr' : '') + '">' +
+                 '<td>' + x.date + '</td>' +
+                 '<td>' + ticket + '</td>' +
+                 '<td>' + escapeHtml(x.channel) + '</td>' +
+                 '<td>' + rate + '</td>' +
+                 '<td><span class="csrm-badge dsat">DSAT</span></td>' +
+                 '<td>' + cause + '</td>' +
+                 '<td class="csrm-qa">' + qa + '</td>' +
+                 '</tr>';
+        }).join('');
+        $('csrmBody').innerHTML =
+          '<table class="csrm-table"><thead><tr>' +
+          '<th>Date</th><th>Ticket</th><th>Channel</th><th>Rate</th>' +
+          '<th>Result</th><th>Root Cause</th><th>QA Comment</th>' +
+          '</tr></thead><tbody>' + rows + '</tbody></table>';
+      })
+      .catch(function(e){ $('csrmBody').innerHTML = '<div class="csrm-empty">Error: ' + e + '</div>'; });
+  }
+
+  function closeCsrModal(){ $('csrmBackdrop').classList.remove('open'); }
+
+  // event delegation: any clickable cell opens the modal
+  $('csrBody').addEventListener('click', function(e){
+    const td = e.target.closest('td.clickable');
+    if (!td) return;
+    openCsrModal(td.dataset.email, td.dataset.period, td.dataset.name);
+  });
+  $('csrmClose').addEventListener('click', closeCsrModal);
+  $('csrmBackdrop').addEventListener('click', function(e){
+    if (e.target === $('csrmBackdrop')) closeCsrModal();
+  });
+  document.addEventListener('keydown', function(e){
+    if (e.key === 'Escape') closeCsrModal();
+  });
+
+  $('csrReset').addEventListener('click', function(){
+    currentGran = 'month';
+    const mr = $('granMonth'); if (mr) mr.checked = true;
+    defaultDates();
+    if ($('csrTL')) $('csrTL').value = 'All';
+    $('csrBatch').value = 'All';
+    $('csrActive').checked = true;
+    $('csrCS').checked = true;
+    $('csrSearch').value = '';
+    loadData();
+  });
+</script>
+{% endblock %}

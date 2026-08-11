@@ -1,0 +1,152 @@
+{% extends "base.html" %}
+
+{% block title %}Requirements — Cohere HR{% endblock %}
+{% block page_title %}Employee Requirements{% endblock %}
+
+{% block content %}
+<div class="req-wrap">
+
+  {% if not can_edit %}
+    <div class="req-readonly-note">
+      <i class="bi bi-eye"></i> View only — requirements can be updated by HR.
+    </div>
+  {% endif %}
+
+  <div class="req-toolbar">
+    <input type="text" id="reqSearch" class="form-control req-search"
+           placeholder="Search name or ID…">
+
+    <select id="reqAccountFilter" class="form-select req-filter">
+      <option value="">All Accounts</option>
+      {% for a in accounts %}<option value="{{ a }}">{{ a }}</option>{% endfor %}
+    </select>
+
+    <select id="reqGroupFilter" class="form-select req-filter">
+      <option value="">All Groups</option>
+      {% for g in groups %}<option value="{{ g }}">{{ g }}</option>{% endfor %}
+    </select>
+
+    <select id="reqTlFilter" class="form-select req-filter">
+      <option value="">All TLs</option>
+      {% for t in tls %}<option value="{{ t }}">{{ t }}</option>{% endfor %}
+    </select>
+
+    <span id="reqCount" class="req-count"></span>
+  </div>
+
+  <div class="req-table-scroll">
+    <table class="table table-sm req-table" id="reqTable">
+      <thead>
+        <tr>
+          <th class="sticky-col">Employee</th>
+          <th>Account</th>
+          {% for key, label in fields %}<th class="req-col">{{ label }}</th>{% endfor %}
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in rows %}
+          <tr data-account="{{ row.account or '' }}"
+              data-group="{{ row.group_name or '' }}"
+              data-tl="{{ row.tl or '' }}"
+              data-search="{{ ((row.schedule_name or '') ~ ' ' ~ row.employee_id) | lower }}">
+            <td class="sticky-col">
+              <div class="req-name">{{ row.schedule_name or '—' }}</div>
+              <div class="req-empid">{{ row.employee_id }}</div>
+            </td>
+            <td>{{ row.account or '—' }}</td>
+            {% for key, label in fields %}
+              <td class="req-cell {{ 'is-checked' if row[key] else 'is-missing' }}">
+                <input type="checkbox" class="req-check"
+                       data-emp="{{ row.employee_id }}" data-field="{{ key }}"
+                       {% if row[key] %}checked{% endif %}
+                       {% if not can_edit %}disabled{% endif %}>
+              </td>
+            {% endfor %}
+          </tr>
+        {% else %}
+          <tr><td colspan="{{ fields|length + 2 }}" class="text-center text-muted py-3">No employees found.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<style>
+  .req-wrap { width: 100%; }
+  .req-readonly-note {
+    background: rgba(59,130,246,.08); border: 1px solid rgba(59,130,246,.25);
+    padding: 8px 12px; border-radius: 8px; margin-bottom: 12px; font-size: 13px;
+  }
+  .req-toolbar { display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin-bottom:12px; }
+  .req-search { max-width: 260px; }
+  .req-filter { max-width: 200px; }
+  .req-count { font-size:13px; opacity:.7; margin-left:auto; }
+  .req-table-scroll { overflow-x:auto; }
+  .req-table th, .req-table td { text-align:center; white-space:nowrap; vertical-align:middle; }
+  .req-table th.sticky-col, .req-table td.sticky-col {
+    position:sticky; left:0; z-index:2; background:var(--surface,#fff);
+    text-align:left; min-width:210px;
+  }
+  .req-name { font-weight:600; }
+  .req-empid { font-size:11px; opacity:.6; }
+  .req-col { min-width:60px; }
+  .req-cell.is-checked { background:rgba(34,197,94,.12); }
+  .req-cell.is-missing { background:rgba(239,68,68,.09); }
+  .req-check { width:17px; height:17px; cursor:pointer; }
+  .req-check:disabled { cursor:default; opacity:.85; }
+</style>
+
+<script>
+(function () {
+  var search = document.getElementById('reqSearch');
+  var acct   = document.getElementById('reqAccountFilter');
+  var grp    = document.getElementById('reqGroupFilter');
+  var tl     = document.getElementById('reqTlFilter');
+  var table  = document.getElementById('reqTable');
+  var countEl= document.getElementById('reqCount');
+  var rows   = Array.prototype.slice.call(table.querySelectorAll('tbody tr'));
+
+  function applyFilters() {
+    var q = (search.value || '').toLowerCase().trim();
+    var a = acct.value, g = grp.value, t = tl.value, visible = 0;
+    rows.forEach(function (tr) {
+      if (!tr.dataset.search) return;
+      var show = (!q || tr.dataset.search.indexOf(q) !== -1)
+              && (!a || tr.dataset.account === a)
+              && (!g || tr.dataset.group === g)
+              && (!t || tr.dataset.tl === t);
+      tr.style.display = show ? '' : 'none';
+      if (show) visible++;
+    });
+    countEl.textContent = visible + ' employee' + (visible === 1 ? '' : 's');
+  }
+  [search, acct, grp, tl].forEach(function (el) {
+    el.addEventListener('input', applyFilters);
+    el.addEventListener('change', applyFilters);
+  });
+  applyFilters();
+
+  table.querySelectorAll('.req-check').forEach(function (box) {
+    if (box.disabled) return;
+    box.addEventListener('change', function () {
+      var cell = box.closest('td');
+      var prev = !box.checked;
+      box.disabled = true;
+      fetch("{{ url_for('requirements.requirements_toggle') }}", {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ employee_id: box.dataset.emp, field: box.dataset.field, value: box.checked })
+      })
+      .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); })
+      .then(function (res) {
+        if (!res.ok || !res.j.ok) throw new Error(res.j.error || 'save failed');
+        cell.classList.toggle('is-checked', box.checked);
+        cell.classList.toggle('is-missing', !box.checked);
+      })
+      .catch(function () { box.checked = prev; alert('Could not save. Please try again.'); })
+      .finally(function () { box.disabled = false; });
+    });
+  });
+})();
+</script>
+{% endblock %}

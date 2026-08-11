@@ -66,16 +66,29 @@
         </div>
 
         <!-- Rest Day fields -->
-        <div id="restDayFields" class="col-md-6" style="display:none;">
-          <label class="form-label">Work Category</label>
-          <select name="work_category" id="work_category" class="form-select"
-                  onchange="toggleTicketsRD()">
-            <option value="REGULAR">Regular Work</option>
-            <option value="OVERHEAD_OT">Overhead OT</option>
-            <option value="TEAM_MEETING">Team Meeting</option>
-            <option value="OT260">OT260</option>
-            <option value="DAILY_OT">Daily OT</option>
-          </select>
+        <div id="restDayFields" class="col-12 row g-3 m-0 p-0" style="display:none;">
+          <div class="col-md-6">
+            <label class="form-label">Work Category</label>
+            <select name="work_category" id="work_category" class="form-select"
+                    onchange="toggleTicketsRD()">
+              <option value="REGULAR">Regular Work</option>
+              <option value="OVERHEAD_OT">Overhead OT</option>
+              <option value="TEAM_MEETING">Team Meeting</option>
+              <option value="OT260">OT260</option>
+              <option value="DAILY_OT">Daily OT</option>
+            </select>
+          </div>
+          <div class="col-md-6">
+            <label class="form-label">Did you take a 1-hour break during this shift? <span class="text-danger">*</span></label>
+            <select name="took_break" id="took_break" class="form-select" required>
+              <option value="">-- Select --</option>
+              <option value="N">No</option>
+              <option value="Y">Yes</option>
+            </select>
+            <div class="form-text text-muted">
+              ð¡ If Yes, 1 hour will be deducted from your paid RDW hours
+            </div>
+          </div>
         </div>
 
         <!-- Start / End time (always shown once type is picked) -->
@@ -237,10 +250,19 @@ function toggleWorkDayType() {
   const regular    = document.getElementById('regularFields');
   const restDay    = document.getElementById('restDayFields');
   const timeFields = document.getElementById('timeFields');
+  const tookBreak  = document.getElementById('took_break');
 
   regular.style.display    = type === 'REGULAR'  ? 'flex' : 'none';
-  restDay.style.display    = type === 'REST_DAY' ? 'block' : 'none';
+  restDay.style.display    = type === 'REST_DAY' ? 'flex' : 'none';
   timeFields.style.display = type ? 'flex' : 'none';
+
+  // Only require the break question when filing Rest Day
+  if (tookBreak) {
+    tookBreak.required = (type === 'REST_DAY');
+    if (type !== 'REST_DAY') {
+      tookBreak.value = '';
+    }
+  }
 
   // Reset ticket section
   document.getElementById('ticketSection').style.display = 'none';

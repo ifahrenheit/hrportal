@@ -1,0 +1,333 @@
+{% extends "base.html" %}
+{% block title %}QA Updates - Data{% endblock %}
+
+{% block content %}
+<style>
+  .qaa-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 12px;
+    margin-bottom: 24px;
+  }
+  .qaa-header h2 {
+    font-family: 'Outfit', sans-serif;
+    font-weight: 600;
+    margin: 0;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .qaa-report-controls { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 18px; align-items: center; }
+  .qaa-report-controls select {
+    border: 1px solid var(--border); border-radius: 8px; padding: 7px 12px;
+    font-size: 0.875rem; background: var(--surface); min-width: 260px; color: var(--text);
+  }
+  .qaa-progress-pill {
+    display: inline-flex; align-items: center; gap: 6px; font-size: 0.8rem;
+    font-weight: 600; padding: 3px 12px; border-radius: 20px;
+  }
+  .qaa-progress-pill.full { background: #eaf3ea; color: #4a7a4a; }
+  .qaa-progress-pill.partial { background: #fff0e0; color: #b8580b; }
+  .qaa-progress-pill.empty { background: #fde8e8; color: #c0392b; }
+  .qaa-team-block { background: var(--surface); border-radius: 12px; box-shadow: var(--card-shadow); margin-bottom: 14px; overflow: hidden; }
+  .qaa-team-header {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 12px 18px; cursor: pointer; background: var(--bg);
+  }
+  .qaa-team-header strong { font-family: 'Outfit', sans-serif; }
+  .qaa-team-rows { display: none; }
+  .qaa-team-rows.expanded { display: block; }
+  .qaa-emp-row {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 9px 18px; border-top: 1px solid var(--border); font-size: 0.85rem;
+  }
+  .qaa-emp-row .yes { color: #4a7a4a; }
+  .qaa-emp-row .no { color: #c0392b; }
+  .qaa-not-acked-list { font-size: 0.8rem; color: var(--text-muted); margin-top: 4px; }
+  .qaa-badge-category { font-size: 0.7rem; font-weight: 600; padding: 3px 10px; border-radius: 20px; background: #e8f0fd; color: #1e5fd4; }
+  [data-theme="dark"] .qaa-badge-category { background: rgba(59,130,246,.15); color: #93c5fd; }
+
+  /* Overview matrix */
+  .qaa-matrix-wrap { overflow-x: auto; background: var(--surface); border-radius: 12px; box-shadow: var(--card-shadow); }
+  table.qaa-matrix { border-collapse: collapse; width: 100%; font-size: 0.82rem; }
+  table.qaa-matrix th, table.qaa-matrix td { padding: 10px 14px; text-align: center; border-bottom: 1px solid var(--border); white-space: nowrap; }
+  table.qaa-matrix th.qaa-matrix-tl-col, table.qaa-matrix td.qaa-matrix-tl-col { text-align: left; position: sticky; left: 0; background: var(--surface); z-index: 2; font-weight: 600; }
+  table.qaa-matrix thead th { background: var(--bg); font-weight: 600; font-size: 0.75rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.02em; }
+  table.qaa-matrix thead th.qaa-matrix-tl-col { background: var(--bg); }
+  .qaa-cell-pill {
+    display: inline-block; min-width: 46px; padding: 4px 8px; border-radius: 8px;
+    font-weight: 700; font-size: 0.78rem; cursor: pointer;
+  }
+  .qaa-cell-pill.full { background: #eaf3ea; color: #2f6b2f; }
+  .qaa-cell-pill.partial { background: #fff0e0; color: #b8580b; }
+  .qaa-cell-pill.empty { background: #fde8e8; color: #c0392b; }
+  .qaa-cell-pill.nodata { background: var(--bg); color: var(--text-muted); cursor: default; }
+  .qaa-matrix-legend { display: flex; gap: 16px; align-items: center; margin: 10px 0 16px; font-size: 0.78rem; color: var(--text-muted); }
+  .qaa-matrix-legend span { display: flex; align-items: center; gap: 5px; }
+  .qaa-legend-dot { width: 10px; height: 10px; border-radius: 3px; display: inline-block; }
+  .qaa-cell-detail-overlay { display: none; position: fixed; top:0;left:0;right:0;bottom:0; background: rgba(0,0,0,0.45); z-index: 1060; align-items: center; justify-content: center; }
+  .qaa-cell-detail-overlay.show { display: flex; }
+  .qaa-cell-detail { background: var(--surface); border-radius: 14px; max-width: 420px; width: 100%; max-height: 80vh; overflow-y: auto; padding: 24px; }
+  .qaa-btn-secondary {
+    background: var(--bg); color: var(--text-muted); border: 1px solid var(--border);
+    border-radius: 8px; padding: 8px 18px; font-size: 0.9rem; cursor: pointer;
+  }
+  .qaa-form-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px; }
+</style>
+
+<div class="qaa-header">
+  <h2><i class="bi bi-bar-chart-line"></i> QA Updates &mdash; Data</h2>
+</div>
+
+<div class="qaa-report-controls">
+  <label style="font-size:0.85rem;font-weight:600;color:var(--text-muted);">View:</label>
+  <select id="qaaReportMode" onchange="qaaReportModeChanged()">
+    <option value="overview" selected>Overview (all teams x all updates)</option>
+    <option value="byUpdate">Per Update (full roster for one update)</option>
+    <option value="byTeam">Per Team (one team across all updates)</option>
+  </select>
+
+  <select id="qaaUpdateSelect" style="display:none;" onchange="qaaLoadByUpdate()"></select>
+  <select id="qaaTeamSelect" style="display:none;" onchange="qaaLoadByTeam()"></select>
+</div>
+
+<div id="qaaReportContent"></div>
+
+<!-- Cell detail modal (Overview matrix drill-down) -->
+<div class="qaa-cell-detail-overlay" id="qaaCellDetailOverlay" onclick="qaaCloseCellDetail(event)">
+  <div class="qaa-cell-detail" onclick="event.stopPropagation()">
+    <h4 id="qaaCellDetailTitle" style="font-family:'Outfit',sans-serif;margin-bottom:6px;"></h4>
+    <p id="qaaCellDetailSubtitle" style="color:var(--text-muted);font-size:0.85rem;margin-bottom:14px;"></p>
+    <div id="qaaCellDetailBody"></div>
+    <div class="qaa-form-actions">
+      <button type="button" class="qaa-btn-secondary" onclick="qaaCloseCellDetail()">Close</button>
+    </div>
+  </div>
+</div>
+
+<script>
+function qaaFormatDate(iso) {
+  if (!iso) return '-';
+  const d = new Date(iso);
+  return d.toLocaleDateString() + ' ' + d.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
+}
+function qaaEscape(str) {
+  if (!str) return '';
+  const div = document.createElement('div');
+  div.textContent = str;
+  return div.innerHTML;
+}
+
+function qaaReportModeChanged() {
+  const mode = document.getElementById('qaaReportMode').value;
+  document.getElementById('qaaUpdateSelect').style.display = mode === 'byUpdate' ? '' : 'none';
+  document.getElementById('qaaTeamSelect').style.display = mode === 'byTeam' ? '' : 'none';
+  document.getElementById('qaaReportContent').innerHTML = '';
+  if (mode === 'overview') qaaLoadOverview();
+  else if (mode === 'byUpdate') qaaLoadByUpdate();
+  else qaaLoadByTeam();
+}
+
+function qaaInitReportDropdowns() {
+  fetch('/qa-updates/api/report/updates-list')
+    .then(r => r.json())
+    .then(data => {
+      const sel = document.getElementById('qaaUpdateSelect');
+      sel.innerHTML = (data.updates || []).map(u =>
+        `<option value="${u.id}">${qaaEscape(u.title)} (${qaaFormatDate(u.created_at)})</option>`
+      ).join('');
+    });
+
+  fetch('/qa-updates/api/report/teams-list')
+    .then(r => r.json())
+    .then(data => {
+      const sel = document.getElementById('qaaTeamSelect');
+      sel.innerHTML = (data.teams || []).map(t => `<option value="${qaaEscape(t.tl_name)}">${qaaEscape(t.tl_name)}</option>`).join('');
+    });
+}
+
+function qaaProgressPillClass(acked, total) {
+  if (total === 0) return 'empty';
+  if (acked === total) return 'full';
+  if (acked === 0) return 'empty';
+  return 'partial';
+}
+
+function qaaLoadOverview() {
+  const content = document.getElementById('qaaReportContent');
+  content.innerHTML = '<p style="color:var(--text-muted);">Loading...</p>';
+
+  fetch('/qa-updates/api/report/overview')
+    .then(r => r.json())
+    .then(data => {
+      if (!data.tls || data.tls.length === 0 || !data.updates || data.updates.length === 0) {
+        content.innerHTML = '<p style="color:var(--text-muted);">No teams or no QA updates found yet.</p>';
+        return;
+      }
+
+      window._qaaOverviewData = data;
+
+      let html = `
+        <div class="qaa-matrix-legend">
+          <span><span class="qaa-legend-dot" style="background:#eaf3ea;"></span> Everyone done</span>
+          <span><span class="qaa-legend-dot" style="background:#fff0e0;"></span> Partially done</span>
+          <span><span class="qaa-legend-dot" style="background:#fde8e8;"></span> Nobody done</span>
+          <span style="margin-left:auto;color:var(--text-muted);">Click any cell for names</span>
+        </div>
+        <div class="qaa-matrix-wrap">
+        <table class="qaa-matrix">
+          <thead>
+            <tr>
+              <th class="qaa-matrix-tl-col">Team</th>
+              ${data.updates.map(u => `<th title="${qaaEscape(u.title)}">${qaaEscape(u.title.length > 18 ? u.title.slice(0, 16) + '…' : u.title)}</th>`).join('')}
+            </tr>
+          </thead>
+          <tbody>
+            ${data.tls.map(tl => `
+              <tr>
+                <td class="qaa-matrix-tl-col">${qaaEscape(tl)}</td>
+                ${data.updates.map(u => {
+                  const cell = (data.matrix[tl] || {})[u.id] || { acked: 0, total: 0 };
+                  if (cell.total === 0) {
+                    return `<td><span class="qaa-cell-pill nodata">–</span></td>`;
+                  }
+                  const cls = cell.acked === cell.total ? 'full' : (cell.acked === 0 ? 'empty' : 'partial');
+                  return `<td><span class="qaa-cell-pill ${cls}" onclick="qaaShowCellDetail('${tl.replace(/'/g, "\\'")}', ${u.id})">${cell.acked}/${cell.total}</span></td>`;
+                }).join('')}
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+        </div>`;
+
+      content.innerHTML = html;
+    });
+}
+
+function qaaShowCellDetail(tl, updateId) {
+  const data = window._qaaOverviewData;
+  if (!data) return;
+  const cell = (data.matrix[tl] || {})[updateId];
+  const update = data.updates.find(u => u.id === updateId);
+  if (!cell || !update) return;
+
+  document.getElementById('qaaCellDetailTitle').textContent = `${tl} — ${update.title}`;
+  document.getElementById('qaaCellDetailSubtitle').textContent = `${cell.acked} / ${cell.total} acknowledged`;
+
+  const body = document.getElementById('qaaCellDetailBody');
+  if (cell.total === 0) {
+    body.innerHTML = '<p style="color:var(--text-muted);font-size:0.85rem;">No active members found for this team.</p>';
+  } else if (cell.not_acked.length === 0) {
+    body.innerHTML = '<p style="color:#2f6b2f;font-size:0.85rem;"><i class="bi bi-check-circle"></i> Everyone has acknowledged.</p>';
+  } else {
+    body.innerHTML = `
+      <p style="font-size:0.8rem;color:var(--text-muted);margin-bottom:8px;">Not yet acknowledged:</p>
+      <ul style="margin:0;padding-left:18px;font-size:0.85rem;">
+        ${cell.not_acked.map(n => `<li>${qaaEscape(n)}</li>`).join('')}
+      </ul>`;
+  }
+
+  document.getElementById('qaaCellDetailOverlay').classList.add('show');
+}
+
+function qaaCloseCellDetail(event) {
+  if (event && event.target.id !== 'qaaCellDetailOverlay') return;
+  document.getElementById('qaaCellDetailOverlay').classList.remove('show');
+}
+
+function qaaLoadByUpdate() {
+  const id = document.getElementById('qaaUpdateSelect').value;
+  if (!id) return;
+  const content = document.getElementById('qaaReportContent');
+  content.innerHTML = '<p style="color:var(--text-muted);">Loading...</p>';
+
+  fetch(`/qa-updates/api/report/by-update/${id}`)
+    .then(r => r.json())
+    .then(data => {
+      if (data.error) { content.innerHTML = `<p>${data.error}</p>`; return; }
+
+      const overallClass = qaaProgressPillClass(data.overall_acked, data.overall_total);
+      let html = `
+        <div style="margin-bottom:16px;">
+          <span class="qaa-progress-pill ${overallClass}">
+            <i class="bi bi-people"></i> ${data.overall_acked} / ${data.overall_total} acknowledged overall
+          </span>
+        </div>`;
+
+      data.teams.forEach((team, idx) => {
+        const cls = qaaProgressPillClass(team.acked_count, team.total_count);
+        html += `
+          <div class="qaa-team-block">
+            <div class="qaa-team-header" onclick="qaaToggleTeamRows(${idx})">
+              <strong>${qaaEscape(team.tl)}</strong>
+              <span class="qaa-progress-pill ${cls}">${team.acked_count} / ${team.total_count}</span>
+            </div>
+            <div class="qaa-team-rows" id="qaaTeamRows${idx}">
+              ${team.employees.map(e => `
+                <div class="qaa-emp-row">
+                  <span>${qaaEscape(e.name)} <span style="color:var(--text-muted);">(${qaaEscape(e.group_name || '-')})</span></span>
+                  <span class="${e.acknowledged ? 'yes' : 'no'}">
+                    <i class="bi ${e.acknowledged ? 'bi-check-circle-fill' : 'bi-x-circle-fill'}"></i>
+                    ${e.acknowledged ? 'Done' : 'Not done'}
+                  </span>
+                </div>
+              `).join('')}
+            </div>
+          </div>`;
+      });
+
+      content.innerHTML = html;
+    });
+}
+
+function qaaToggleTeamRows(idx) {
+  document.getElementById(`qaaTeamRows${idx}`).classList.toggle('expanded');
+}
+
+function qaaLoadByTeam() {
+  const tl = document.getElementById('qaaTeamSelect').value;
+  if (!tl) return;
+  const content = document.getElementById('qaaReportContent');
+  content.innerHTML = '<p style="color:var(--text-muted);">Loading...</p>';
+
+  fetch(`/qa-updates/api/report/by-team/${encodeURIComponent(tl)}`)
+    .then(r => r.json())
+    .then(data => {
+      if (!data.updates || data.updates.length === 0) {
+        content.innerHTML = '<p style="color:var(--text-muted);">No QA updates or no active members found for this team.</p>';
+        return;
+      }
+
+      let html = `<p style="color:var(--text-muted);font-size:0.85rem;margin-bottom:14px;">${data.members.length} active member(s) under ${qaaEscape(tl)}</p>`;
+
+      data.updates.forEach(u => {
+        const cls = qaaProgressPillClass(u.acked_count, u.total_count);
+        html += `
+          <div class="qaa-team-block">
+            <div class="qaa-team-header" style="cursor:default;">
+              <div>
+                <strong>${qaaEscape(u.title)}</strong>
+                ${u.category ? `<span class="qaa-badge-category" style="margin-left:8px;">${qaaEscape(u.category)}</span>` : ''}
+              </div>
+              <span class="qaa-progress-pill ${cls}">${u.acked_count} / ${u.total_count}</span>
+            </div>
+            ${u.not_acked_names.length > 0 ? `
+              <div style="padding:10px 18px;border-top:1px solid var(--border);">
+                <div class="qaa-not-acked-list"><i class="bi bi-exclamation-circle"></i> Not yet acknowledged: ${u.not_acked_names.map(qaaEscape).join(', ')}</div>
+              </div>` : `
+              <div style="padding:10px 18px;border-top:1px solid var(--border);color:#4a7a4a;font-size:0.8rem;">
+                <i class="bi bi-check-circle"></i> Everyone has acknowledged this update.
+              </div>`}
+          </div>`;
+      });
+
+      content.innerHTML = html;
+    });
+}
+
+qaaInitReportDropdowns();
+qaaLoadOverview();
+</script>
+{% endblock %}

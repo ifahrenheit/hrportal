@@ -24,6 +24,17 @@
           {% endfor %}
         </select>
       </div>
+
+      <div class="col-6 col-md-2">
+        <label class="form-label small mb-1">TL</label>
+        <select name="tl" class="form-select form-select-sm" onchange="this.form.submit()">
+          <option value="">All TLs</option>
+          {% for t in tls %}
+          <option value="{{ t }}" {% if t == tl_filter %}selected{% endif %}>{{ t }}</option>
+          {% endfor %}
+        </select>
+      </div>
+
       <div class="col-6 col-md-2">
         <label class="form-label small mb-1">Shift</label>
         <select name="shift" class="form-select form-select-sm" onchange="this.form.submit()">

@@ -50,6 +50,9 @@
               <span class="text-muted small">{{ r.employee_id }}</span></td>
           <td><span class="badge bg-secondary">{{ r.category }}</span></td>
           <td>{{ r.item_name }}
+            {% if r.is_replenishment %}
+              <br><span class="badge bg-info text-dark">🔄 Replenishment</span>
+            {% endif %}
             {% if r.is_special %}
               {% if r.payment_required %}
                 <br><span class="badge bg-warning text-dark" title="{{ r.payment_reason }}">💰 PHP {{ '%.2f'|format(r.amount_due) }}</span>

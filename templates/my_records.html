@@ -1,0 +1,146 @@
+{% extends "base.html" %}
+{% block title %}My Records{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4" style="max-width: 960px;">
+
+  <div class="d-flex align-items-center justify-content-between mb-4">
+    <div>
+      <h4 class="mb-1" style="font-family: 'Outfit', sans-serif; font-weight: 600;">My Records</h4>
+      <div class="text-muted" style="font-size: 0.85rem;">Your own attendance records. Only you can see these.</div>
+    </div>
+    {% if account %}<span class="badge bg-light text-muted border">{{ account }}</span>{% endif %}
+  </div>
+
+  <ul class="nav nav-pills mb-4" style="gap: 0.5rem;">
+    <li class="nav-item">
+      <a class="nav-link {{ 'active' if active_tab == 'tardiness' else '' }}"
+         href="{{ url_for('my_records.records', tab='tardiness') }}">Tardiness</a>
+    </li>
+    <li class="nav-item">
+      <a class="nav-link {{ 'active' if active_tab == 'overbreak' else '' }}"
+         href="{{ url_for('my_records.records', tab='overbreak') }}">Overbreak</a>
+    </li>
+  </ul>
+
+  {% if active_tab == 'tardiness' %}
+  <!-- ================= TARDINESS ================= -->
+  <div class="d-flex align-items-center justify-content-between mb-3">
+    <div class="d-flex align-items-center" style="gap: 0.5rem;">
+      <a class="btn btn-sm btn-outline-secondary"
+         href="{{ url_for('my_records.records', tab='tardiness', **{'from': period_start.isoformat(), 'to': period_end.isoformat(), 'nav': 'prev'}) }}">&laquo; Prev</a>
+      <span class="text-muted" style="font-size: 0.85rem;">
+        {{ period_start.strftime('%b %d') }} &ndash; {{ period_end.strftime('%b %d, %Y') }}
+      </span>
+      <a class="btn btn-sm btn-outline-secondary"
+         href="{{ url_for('my_records.records', tab='tardiness', **{'from': period_start.isoformat(), 'to': period_end.isoformat(), 'nav': 'next'}) }}">Next &raquo;</a>
+    </div>
+    <span class="badge bg-secondary">{{ late_records|length }} late</span>
+  </div>
+
+  {% if late_records %}
+  <div class="table-responsive">
+    <table class="table table-sm align-middle">
+      <thead>
+        <tr class="text-muted" style="font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.03em;">
+          <th>Date</th><th>Shift Start</th><th>Time In</th><th class="text-end">Minutes Late</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in late_records %}
+        <tr>
+          <td>{{ r.record_date.strftime('%a, %b %d') }}</td>
+          <td>{{ r.shift_start.strftime('%I:%M %p') if r.shift_start else '—' }}</td>
+          <td>{{ r.time_in.strftime('%I:%M %p') if r.time_in else '—' }}</td>
+          <td class="text-end"><span class="badge bg-danger-subtle text-danger">{{ r.minutes_late }} min</span></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div class="text-center text-muted py-5"><div style="font-size: 2rem;">✓</div><div>No late records this period. Nice work.</div></div>
+  {% endif %}
+
+  {% else %}
+  <!-- ================= OVERBREAK ================= -->
+  {% if overbreak_is_breaklog %}
+  <!-- Numa/Arctic: derived from live break tool, period-scoped -->
+  <div class="d-flex align-items-center justify-content-between mb-3">
+    <div class="d-flex align-items-center" style="gap: 0.5rem;">
+      <a class="btn btn-sm btn-outline-secondary"
+         href="{{ url_for('my_records.records', tab='overbreak', **{'from': period_start.isoformat(), 'to': period_end.isoformat(), 'nav': 'prev'}) }}">&laquo; Prev</a>
+      <span class="text-muted" style="font-size: 0.85rem;">
+        {{ period_start.strftime('%b %d') }} &ndash; {{ period_end.strftime('%b %d, %Y') }}
+      </span>
+      <a class="btn btn-sm btn-outline-secondary"
+         href="{{ url_for('my_records.records', tab='overbreak', **{'from': period_start.isoformat(), 'to': period_end.isoformat(), 'nav': 'next'}) }}">Next &raquo;</a>
+    </div>
+    <span class="badge bg-secondary">{{ overbreak_records|length }} day(s) over</span>
+  </div>
+
+  {% if overbreak_records %}
+  <div class="text-muted mb-2" style="font-size: 0.8rem;">Days where your total break exceeded the 90-minute allowance.</div>
+  <div class="table-responsive">
+    <table class="table table-sm align-middle">
+      <thead>
+        <tr class="text-muted" style="font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.03em;">
+          <th>Date</th><th>Total Break</th><th class="text-end">Over By</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in overbreak_records %}
+        <tr>
+          <td>{{ r.record_date.strftime('%a, %b %d, %Y') if r.record_date else '—' }}</td>
+          <td>{{ r.total_minutes }} min</td>
+          <td class="text-end"><span class="badge bg-warning-subtle text-warning">+{{ r.over_minutes }} min</span></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div class="text-center text-muted py-5"><div style="font-size: 2rem;">✓</div><div>No overbreaks this period. Nice work.</div></div>
+  {% endif %}
+
+  {% else %}
+  <!-- Other accounts: Google-Sheets synced overbreak_records (all history) -->
+  <div class="d-flex align-items-center justify-content-between mb-3">
+    <span class="text-muted" style="font-size: 0.85rem;">All your recorded overbreaks</span>
+    <span class="badge bg-secondary">{{ overbreak_records|length }} total</span>
+  </div>
+
+  {% if overbreak_records %}
+  <div class="table-responsive">
+    <table class="table table-sm align-middle">
+      <thead>
+        <tr class="text-muted" style="font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.03em;">
+          <th>Date</th><th>Duration</th><th>Validity</th><th>Payroll Period</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in overbreak_records %}
+        <tr>
+          <td>{{ r.record_date.strftime('%a, %b %d, %Y') if r.record_date else '—' }}</td>
+          <td>{{ r.break_duration if r.break_duration else '—' }}</td>
+          <td>
+            {% if r.validity and r.validity|lower == 'valid' %}
+              <span class="badge bg-success-subtle text-success">{{ r.validity }}</span>
+            {% elif r.validity %}
+              <span class="badge bg-warning-subtle text-warning">{{ r.validity }}</span>
+            {% else %}—{% endif %}
+          </td>
+          <td class="text-muted">{{ r.payroll_month }}{% if r.payroll_cycle %} · Cycle {{ r.payroll_cycle }}{% endif %}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div class="text-center text-muted py-5"><div style="font-size: 2rem;">✓</div><div>No overbreak records. Nice work.</div></div>
+  {% endif %}
+  {% endif %}
+
+  {% endif %}
+</div>
+{% endblock %}

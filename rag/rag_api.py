@@ -5,6 +5,8 @@ import pymysql
 from pypdf import PdfReader
 from docx import Document
 import os
+from dotenv import load_dotenv
+load_dotenv()
 
 app = Flask(__name__)
 
@@ -14,7 +16,7 @@ LLAMA_URL = "https://inurbane-admittedly-mayra.ngrok-free.dev"
 DB_CONFIG = {
     "host": "127.0.0.1",
     "user": "root",
-    "password": "Rootpass123!@#",
+    "password": os.environ.get("DB_PASSWORD"),
     "database": "orangehrm2",
     "charset": "utf8mb4"
 }

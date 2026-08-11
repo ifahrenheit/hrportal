@@ -136,6 +136,7 @@
         <th style="width:24px;"></th>
         <th>Topic</th>
         <th>Category</th>
+        <th>Audience</th>
         <th>Implementation Date</th>
         <th>Author</th>
         <th>Acks</th>
@@ -233,6 +234,12 @@
             <option value="1">Yes</option>
           </select>
         </div>
+        <div class="qaa-form-group">
+          <label>Audience <span style="color:var(--text-muted);font-weight:400;">(who should see this)</span></label>
+          <select id="qaaAudience">
+            <option value="CS">CS</option>
+          </select>
+        </div>
       </div>
       <div class="qaa-form-group">
         <label>Attachments</label>
@@ -311,6 +318,7 @@ function qaaRenderTable() {
       </td>
       <td><strong>${qaaEscape(u.title)}</strong></td>
       <td>${u.category ? `<span class="qaa-badge-category">${qaaEscape(u.category)}</span>` : '-'}</td>
+      <td>${(u.audience && u.audience !== 'All' && u.audience !== 'CS') ? `<span class="qaa-badge-category" style="background:#fff0e0;color:#b8580b;">${qaaEscape(u.audience)} only</span>` : '<span style="color:var(--text-muted);">CS</span>'}</td>
       <td>${u.implementation_date ? new Date(u.implementation_date + 'T00:00:00').toLocaleDateString() : '-'}</td>
       <td>${qaaEscape(u.author_name || '-')}</td>
       <td><button class="qaa-ack-link" onclick="qaaShowAcks(${u.id})">${u.ack_count || 0}</button></td>
@@ -430,6 +438,7 @@ function qaaOpenModal(id) {
       document.getElementById('qaaCategory').value = u.category || '';
       document.getElementById('qaaImplementationDate').value = u.implementation_date || '';
       document.getElementById('qaaPinned').value = u.is_pinned ? '1' : '0';
+      document.getElementById('qaaAudience').value = u.audience || 'All';
     }
   }
   document.getElementById('qaaModalOverlay').classList.add('show');
@@ -448,6 +457,7 @@ document.getElementById('qaaForm').addEventListener('submit', function(e) {
   fd.append('category', document.getElementById('qaaCategory').value);
   fd.append('implementation_date', document.getElementById('qaaImplementationDate').value);
   fd.append('is_pinned', document.getElementById('qaaPinned').value);
+  fd.append('audience', document.getElementById('qaaAudience').value);
 
   const files = document.getElementById('qaaAttachments').files;
   for (let i = 0; i < files.length; i++) fd.append('attachments', files[i]);
@@ -632,14 +642,41 @@ function qaaShowCellDetail(tl, updateId) {
   const body = document.getElementById('qaaCellDetailBody');
   if (cell.total === 0) {
     body.innerHTML = '<p style="color:var(--text-muted);font-size:0.85rem;">No active members found for this team.</p>';
-  } else if (cell.not_acked.length === 0) {
-    body.innerHTML = '<p style="color:#2f6b2f;font-size:0.85rem;"><i class="bi bi-check-circle"></i> Everyone has acknowledged.</p>';
   } else {
-    body.innerHTML = `
-      <p style="font-size:0.8rem;color:var(--text-muted);margin-bottom:8px;">Not yet acknowledged:</p>
-      <ul style="margin:0;padding-left:18px;font-size:0.85rem;">
-        ${cell.not_acked.map(n => `<li>${qaaEscape(n)}</li>`).join('')}
-      </ul>`;
+    // Collect Acknowledged Names
+    const notAckedSet = new Set(cell.not_acked);
+    
+    // Fallback array mapping to discover who is done if your endpoint provides a roster
+    let htmlContent = '';
+
+    // 1. Show Acknowledged Section
+    htmlContent += `<p style="font-size:0.8rem;color:#2f6b2f;font-weight:600;margin-bottom:8px;"><i class="bi bi-check-circle-fill"></i> Acknowledged:</p>`;
+    if (cell.acked === 0) {
+      htmlContent += '<p style="color:var(--text-muted);font-size:0.85rem;margin-left:18px;margin-bottom:14px;">Nobody has acknowledged yet.</p>';
+    } else {
+      // If your API returns an explicit acked list use it, otherwise we leave a helpful placeholder or derive it
+      const ackedNames = cell.acked_names || [];
+      if (ackedNames.length > 0) {
+        htmlContent += `<ul style="margin:0 0 14px 0;padding-left:18px;font-size:0.85rem;color:#2f6b2f;">
+          ${ackedNames.map(n => `<li>${qaaEscape(n)}</li>`).join('')}
+        </ul>`;
+      } else {
+        htmlContent += `<p style="color:var(--text-muted);font-size:0.78rem;margin-left:18px;margin-bottom:14px;">(${cell.acked} agents marked completed—click total acks column on 'Manage' tab for precise timestamps)</p>`;
+      }
+    }
+
+    // 2. Show Not Yet Acknowledged Section
+    htmlContent += `<p style="font-size:0.8rem;color:#c0392b;font-weight:600;margin-bottom:8px;"><i class="bi bi-exclamation-circle-fill"></i> Not yet acknowledged:</p>`;
+    if (cell.not_acked.length === 0) {
+      htmlContent += '<p style="color:#2f6b2f;font-size:0.85rem;margin-left:18px;">Everyone has acknowledged!</p>';
+    } else {
+      htmlContent += `
+        <ul style="margin:0;padding-left:18px;font-size:0.85rem;color:#c0392b;">
+          ${cell.not_acked.map(n => `<li>${qaaEscape(n)}</li>`).join('')}
+        </ul>`;
+    }
+
+    body.innerHTML = htmlContent;
   }
 
   document.getElementById('qaaCellDetailOverlay').classList.add('show');
@@ -678,6 +715,10 @@ function qaaLoadByUpdate() {
 
       data.teams.forEach((team, idx) => {
         const cls = qaaProgressPillClass(team.acked_count, team.total_count);
+        
+        // 🌟 SORTING: Pushes all people who haven't acknowledged to the top of the list automatically!
+        const sortedEmployees = [...team.employees].sort((a, b) => a.acknowledged - b.acknowledged);
+
         html += `
           <div class="qaa-team-block">
             <div class="qaa-team-header" onclick="qaaToggleTeamRows(${idx})">
@@ -685,12 +726,15 @@ function qaaLoadByUpdate() {
               <span class="qaa-progress-pill ${cls}">${team.acked_count} / ${team.total_count}</span>
             </div>
             <div class="qaa-team-rows" id="qaaTeamRows${idx}">
-              ${team.employees.map(e => `
-                <div class="qaa-emp-row">
-                  <span>${qaaEscape(e.name)} <span style="color:var(--text-muted);">(${qaaEscape(e.group_name || '-')})</span></span>
-                  <span class="${e.acknowledged ? 'yes' : 'no'}">
+              ${sortedEmployees.map(e => `
+                <div class="qaa-emp-row" style="${e.acknowledged ? 'background: rgba(74,122,74,0.04);' : 'background: rgba(192,57,43,0.03);'}">
+                  <span>
+                    <strong>${qaaEscape(e.name)}</strong> 
+                    <span style="color:var(--text-muted);"> anonymity/group: (${qaaEscape(e.group_name || '-')})</span>
+                  </span>
+                  <span class="${e.acknowledged ? 'yes' : 'no'}" style="font-weight: 600;">
                     <i class="bi ${e.acknowledged ? 'bi-check-circle-fill' : 'bi-x-circle-fill'}"></i>
-                    ${e.acknowledged ? 'Done' : 'Not done'}
+                    ${e.acknowledged ? 'Done' : 'Pending'}
                   </span>
                 </div>
               `).join('')}
@@ -747,6 +791,21 @@ function qaaLoadByTeam() {
     });
 }
 
+function qaaLoadAudienceChoices() {
+  fetch('/qa-updates/api/audience-choices')
+    .then(r => r.json())
+    .then(data => {
+      const sel = document.getElementById('qaaAudience');
+      const current = sel.value;
+      sel.innerHTML = (data.audiences || ['All']).map(a =>
+        `<option value="${qaaEscape(a)}">${a === 'All' ? 'Everyone' : qaaEscape(a) + ' only'}</option>`
+      ).join('');
+      sel.value = current || 'CS';
+    })
+    .catch(() => {});
+}
+
+qaaLoadAudienceChoices();
 qaaLoad();
 </script>
 {% endblock %}

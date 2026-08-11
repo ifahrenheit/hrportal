@@ -1,5 +1,5 @@
 import json
-from flask import Flask, session, redirect, url_for, request, render_template, flash, jsonify, Blueprint, abort, g
+from flask import Flask, session, redirect, url_for, request, render_template, flash, jsonify, Blueprint, abort, g, send_file
 from authlib.integrations.flask_client import OAuth
 import pymysql
 import os
@@ -31,18 +31,44 @@ app.register_blueprint(ir_bp, url_prefix='/incident-reports')
 # Tardiness Blueprint
 from tardiness import tardiness_bp
 app.register_blueprint(tardiness_bp, url_prefix='/tardiness')
+from my_records import my_records_bp
+app.register_blueprint(my_records_bp)
 
 # ── Incident Reports blueprint (TEST COPY) ────────────────────────────
-
 from floor_map import floor_map_bp
 app.register_blueprint(floor_map_bp)
 from tl_view import tl_view_bp
 app.register_blueprint(tl_view_bp)
 
 # ── QA Updates blueprint ─────────────────────────────────────────
-from qa_updates import qa_updates_bp, qa_can_manage
+from qa_updates import qa_updates_bp, qa_can_manage, qa_can_view_data
 app.register_blueprint(qa_updates_bp)
-app.jinja_env.globals.update(qa_can_manage=qa_can_manage)
+app.jinja_env.globals.update(qa_can_manage=qa_can_manage, qa_can_view_data=qa_can_view_data)
+
+# -- COE Blueprint --
+from coe_requests import coe_bp, coe_can_manage
+app.register_blueprint(coe_bp)
+app.jinja_env.globals.update(coe_can_manage=coe_can_manage)
+
+# -- Overbreak Sync Blueprint --
+from sync_overbreak import sync_overbreak_bp
+app.register_blueprint(sync_overbreak_bp)
+
+# -- Memo Blueprint --
+from memos import memos_bp
+app.register_blueprint(memos_bp)
+
+# CSR % Blueprint
+from csr_percentage import csr_bp
+app.register_blueprint(csr_bp)
+
+# FTS EMail Blueprint
+from blueprints.fts_automation import fts_bp
+app.register_blueprint(fts_bp)
+
+## Requirements Blueprint
+from requirements import requirements_bp
+app.register_blueprint(requirements_bp)
 
 IR_SGA      = os.getenv('IR_SGA', '').split(',')
 IR_RTA      = os.getenv('IR_RTA', '').split(',')
@@ -143,11 +169,27 @@ def _send_email_worker(to, subject, body):
             smtp.login(os.getenv('SMTP_USER'), os.getenv('SMTP_PASSWORD'))
             smtp.sendmail(os.getenv('SMTP_USER'), to, msg.as_string())
     except Exception as e:
-        print(f"Email error: {e}")
+        app.logger.error(f"Email error to {to}: {e}")
 
 def send_email(to, subject, body):
     import threading
     threading.Thread(target=_send_email_worker, args=(to, subject, body), daemon=True).start()
+
+def send_email_as(to, subject, body, from_name):
+    def worker():
+        try:
+            msg = MIMEMultipart('alternative')
+            msg['Subject'] = subject
+            msg['From']    = f"{from_name} <{os.getenv('SMTP_USER')}>"
+            msg['To']      = to
+            msg.attach(MIMEText(body, 'html'))
+            with smtplib.SMTP(os.getenv('SMTP_SERVER'), int(os.getenv('SMTP_PORT', 2525)), timeout=10) as smtp:
+                smtp.login(os.getenv('SMTP_USER'), os.getenv('SMTP_PASSWORD'))
+                smtp.sendmail(os.getenv('SMTP_USER'), to, msg.as_string())
+        except Exception as e:
+            app.logger.error(f"Email error to {to}: {e}")
+    import threading
+    threading.Thread(target=worker, daemon=True).start()
 
 def get_supervisor_email(emp_number):
     db = get_db()
@@ -236,7 +278,7 @@ def get_employee_by_email(email):
                        e.emp_firstname, e.emp_lastname, e.employee_id
                 FROM ohrm_user u
                 JOIN hs_hr_employee e ON u.emp_number = e.emp_number
-                WHERE u.user_name = %s
+                WHERE u.user_name = %s ORDER BY u.emp_number DESC
             """, (email,))
             return c.fetchone()
     finally:
@@ -302,6 +344,35 @@ def get_leave_balances(emp_number):
     finally:
         db.close()
 
+# --- AWOL_PATCH --- helper + endpoint
+_AWOL_TYPE_CACHE = {}
+def _get_awol_type():
+    """Return {'id','name'} for the AWOL leave type, or None. Cached."""
+    if 'row' in _AWOL_TYPE_CACHE:
+        return _AWOL_TYPE_CACHE['row']
+    db = get_db()
+    try:
+        with db.cursor() as c:
+            c.execute("SELECT id, name FROM ohrm_leave_type WHERE name = 'AWOL' AND deleted = 0 LIMIT 1")
+            r = c.fetchone()
+    finally:
+        db.close()
+    _AWOL_TYPE_CACHE['row'] = ({'id': r['id'], 'name': r['name']} if r else None)
+    return _AWOL_TYPE_CACHE['row']
+
+@app.route('/api/is-holiday')
+@login_required
+def api_is_holiday():
+    s = request.args.get('start')
+    if not s:
+        return jsonify({'holiday': False})
+    try:
+        d = datetime.strptime(s, '%Y-%m-%d').date()
+    except ValueError:
+        return jsonify({'holiday': False})
+    name = get_holiday_name(d)
+    return jsonify({'holiday': bool(name), 'name': (name.strip() if name else None)})
+
 def is_holiday(target_date):
     db = get_db()
     try:
@@ -352,13 +423,20 @@ def get_sub_admin_permissions(emp_number):
                 'can_facilities_final': bool(row.get('can_facilities_final', 0)),
                 'can_view_approved_items': bool(row.get('can_view_approved_items', 0)),
                 'can_onboarding': bool(row.get('can_onboarding', 0)),
+                'can_wfm': bool(row.get('can_wfm', 0)),
+                'can_overbreak': bool(row.get('can_overbreak', 0)),
                 'can_inventory': bool(row.get('can_inventory', 0)),
                 'can_attrition_report': bool(row.get('can_attrition_report', 0)),
                 'can_csat':         bool(row.get('can_csat', 0)),
                 'can_surveys':      bool(row.get('can_surveys', 0)),
                 'can_floor_map':    bool(row.get('can_floor_map', 0)),
                 'can_pim':          bool(row.get('can_pim', 0)),
+                'can_memos':        bool(row.get('can_memos', 0)),
                 'can_qa_updates': bool(row.get('can_qa_updates', 0)),
+                'can_requirements': bool(row.get('can_requirements', 0)),
+                'can_ot_hours': bool(row.get('can_ot_hours', 0)),
+                'can_night_differential': bool(row.get('can_night_differential', 0)),
+                'can_holiday_awol': bool(row.get('can_holiday_awol', 0)),
             }
     finally:
         db.close()
@@ -699,6 +777,20 @@ def notify_file_request(emp_number, request_type, details_html):
             Approve / Reject on HR Portal</a></p>"""
         )
 
+def get_leave_code(leave_type_name):
+    """Convert ohrm_leave_type.name to a short grid display code."""
+    mapping = {
+        'vacation leave':           'VL',
+        'sick leave':               'SL',
+        'leave without pay (lwop)': 'LWOP',
+        'parental leave':           'PL',
+        'carry-over leave':         'COL',
+        'magic leave':              'ML',
+    }
+    if not leave_type_name:
+        return 'LV'
+    return mapping.get(leave_type_name.lower().strip(), 'LV')
+
 @app.route('/')
 def index():
     if 'user' in session:
@@ -771,7 +863,7 @@ def auth_callback():
             'email':      email,
             'emp_number': portal_user['emp_number'],
             'name':       f"{portal_user['firstname']} {portal_user['lastname']}",
-            'employee_id': ''
+            'employee_id': gs_emp['employee_id']
         }
         session['is_admin']      = False
         session['is_supervisor'] = False
@@ -831,21 +923,19 @@ def auth_callback():
         perms = get_sub_admin_permissions(employee['emp_number'])
         if perms:
             session['is_sub_admin'] = True
-            session['permissions']  = perms
-            # Grant supervisor access if can_approve
-            if perms['can_approve']:
+            # SAFE: Only store keys that are actually True to keep cookie tiny
+            session['permissions'] = {k: v for k, v in perms.items() if v}
+            if perms.get('can_approve'):
                 session['is_supervisor'] = True
         else:
             session['is_sub_admin'] = False
-            session['permissions']  = {}
+            session['permissions'] = {}
     else:
+        # SUPER ADMIN: Keep permissions empty! 
+        # Your other pages already check if session['is_admin'] is True.
         session['is_sub_admin'] = False
-        session['permissions']  = {
-            'can_all_leaves': True, 'can_approve': True,
-            'can_file_for_emp': True, 'can_schedules': True,
-            'can_reports': True, 'can_work_mode': True,
-            'can_settings': True, 'can_entitlements': True, 'can_file_requests': True, 'can_material_requests': True, 'can_final_approval': True, 'can_view_tickets': True, 'can_facilities_review': True, 'can_facilities_final': True, 'can_view_approved_items': True, 'can_onboarding': True, 'can_inventory': True, 'can_pim': True,
-        }
+        session['permissions'] = {}
+
     return redirect(url_for('dashboard'))
 
 @app.route('/admin/login-as/<target_emp>', methods=['POST'])
@@ -856,6 +946,7 @@ def login_as(target_emp):
         'emp_number': session['user']['emp_number'],
         'email':      session['user']['email'],
         'name':       session['user']['name'],
+        'employee_id': session['user'].get('employee_id', ''),
         'is_admin':   session.get('is_admin'),
         'is_tl':      session.get('is_tl'),
         'tl_name':    session.get('tl_name'),
@@ -866,7 +957,7 @@ def login_as(target_emp):
         with db.cursor() as c:
             # Try by employee_id first (e.g. '260113-01')
             c.execute("""
-                SELECT u.emp_number, u.user_name, e.emp_firstname, e.emp_lastname
+                SELECT u.emp_number, u.user_name, e.emp_firstname, e.emp_lastname, e.employee_id
                 FROM ohrm_user u
                 JOIN hs_hr_employee e ON e.emp_number = u.emp_number
                 WHERE e.employee_id = %s
@@ -878,7 +969,7 @@ def login_as(target_emp):
                 try:
                     emp_num = int(target_emp)
                     c.execute("""
-                        SELECT u.emp_number, u.user_name, e.emp_firstname, e.emp_lastname
+                        SELECT u.emp_number, u.user_name, e.emp_firstname, e.emp_lastname, e.employee_id
                         FROM ohrm_user u
                         JOIN hs_hr_employee e ON e.emp_number = u.emp_number
                         WHERE u.emp_number = %s
@@ -937,10 +1028,12 @@ def login_as(target_emp):
     perms = get_sub_admin_permissions(emp['emp_number'])
     if perms:
         session['is_sub_admin'] = True
-        session['permissions']  = perms
+        # Keep it light by filtering for True values only
+        session['permissions'] = {k: v for k, v in perms.items() if v}
         if perms.get('can_approve'):
             session['is_supervisor'] = True
     else:
+        session['is_sub_admin'] = False
         session['permissions'] = {}
 
     flash(f'Now viewing as {emp["emp_firstname"]} {emp["emp_lastname"]}. Click the banner below to switch back.', 'warning')
@@ -966,14 +1059,8 @@ def login_as_back():
     session['tl_name']       = original.get('tl_name')
     session['is_supervisor'] = is_supervisor(original['emp_number'])
     session['is_sub_admin']  = False
-    session['permissions']   = {
-        'can_all_leaves': True, 'can_approve': True,
-        'can_file_for_emp': True, 'can_schedules': True,
-        'can_reports': True, 'can_work_mode': True,
-        'can_settings': True, 'can_entitlements': True, 'can_pim': True,
-        'can_file_requests': True, 'can_material_requests': True,
-        'can_final_approval': True, 'can_facilities_review': True, 'can_facilities_final': True, 'can_view_approved_items': True, 'can_onboarding': True, 'can_inventory': True,
-    }
+    session['permissions']   = {} # Keep it empty for restored super-admins!
+    
     flash('Returned to admin session.', 'success')
     return redirect(url_for('dashboard'))
 
@@ -1090,11 +1177,33 @@ def dashboard():
 def file_leave():
     emp_number = session['user']['emp_number']
     balances, portal_balances = get_leave_balances(emp_number)
+    # --- AWOL_PATCH --- inject synthetic AWOL type (name-gated, no entitlement)
+    _awol = _get_awol_type()
+    if _awol and not any(b['leave_type_id'] == _awol['id'] for b in balances):
+        balances = list(balances) + [{
+            'leave_type_id':   _awol['id'],
+            'leave_type_name': _awol['name'],
+            'total_hours':     0.0,
+            'used_hours':      0.0,
+            'remaining_hours': 0.0,
+            'remaining_days':  0.0,
+            'is_awol':         True,
+        }]
 
     if request.method == 'POST':
         leave_type_id = int(request.form['leave_type_id'])
+        # --- AWOL_PATCH --- resolve AWOL + enforce holiday-only + single-day
+        _awol = _get_awol_type()
+        is_awol = bool(_awol and leave_type_id == _awol['id'])
         start_date    = datetime.strptime(request.form['start_date'], '%Y-%m-%d').date()
         end_date      = datetime.strptime(request.form['end_date'], '%Y-%m-%d').date()
+        # --- AWOL_PATCH --- AWOL is single-day and holidays-only
+        if is_awol:
+            end_date = start_date
+            if not is_holiday(start_date):
+                flash('AWOL can only be filed on a holiday.', 'danger')
+                return render_template('file_leave.html', balances=balances,
+                                       portal_balances=portal_balances, user=session['user'])
         notes         = request.form.get('notes', '').strip()
         duration      = request.form.get('duration', 'full')
 
@@ -1119,10 +1228,13 @@ def file_leave():
 
         # Calculate deductions
         deductions = calculate_deduction(emp_number, start_date, end_date, duration)
+# --- AWOL_PATCH --- AWOL: single 8h/1day row on the holiday, bypass calc
+        if is_awol:
+            deductions = [{'date': start_date, 'hours': 8.0, 'days': 1.0, 'is_off_day': False}]
         # Check holidays first before generic error
         from datetime import timedelta as _td
         check_date = start_date
-        while check_date <= end_date:
+        while check_date <= end_date and not is_awol:
             holiday_name = get_holiday_name(check_date)
             if holiday_name:
                 flash(f'Cannot file leave on {check_date.strftime("%b %d, %Y")} — it is a public holiday ({holiday_name.strip()}).', 'danger')
@@ -1133,7 +1245,7 @@ def file_leave():
             return render_template('file_leave.html', balances=balances, user=session['user'])
 
         # Block filing on public holidays
-        leave_dates_check = [d['date'] for d in deductions if not d['is_off_day']]
+        leave_dates_check = [] if is_awol else [d['date'] for d in deductions if not d['is_off_day']]
         for ld in leave_dates_check:
             holiday_name = get_holiday_name(ld)
             if holiday_name:
@@ -1172,46 +1284,48 @@ def file_leave():
             )
             return render_template('file_leave.html', balances=balances, user=session['user'])
 
-        # Advance notice check — check portal entitlements first, fall back to OrangeHRM
-        balance = next((b for b in portal_balances if b['leave_type_id'] == leave_type_id), None)
-        if not balance:
-            balance = next((b for b in balances if b['leave_type_id'] == leave_type_id), None)
-        if balance:
-            violated = check_advance_notice(balance['leave_type_name'], leave_dates)
-            if violated:
-                violated_str = ', '.join(d.strftime('%b %d') for d in violated)
-                flash(
-                    f'{balance["leave_type_name"]} requires at least {ADVANCE_NOTICE_DAYS} days advance notice. '
-                    f'These dates are too soon: {violated_str}',
-                    'danger'
-                )
-                return render_template('file_leave.html', balances=balances, user=session['user'])
+        # --- AWOL_PATCH --- AWOL bypasses advance-notice and balance checks
+        if not is_awol:
+            # Advance notice check — check portal entitlements first, fall back to OrangeHRM
+            balance = next((b for b in portal_balances if b['leave_type_id'] == leave_type_id), None)
+            if not balance:
+                balance = next((b for b in balances if b['leave_type_id'] == leave_type_id), None)
+            if balance:
+                violated = check_advance_notice(balance['leave_type_name'], leave_dates)
+                if violated:
+                    violated_str = ', '.join(d.strftime('%b %d') for d in violated)
+                    flash(
+                        f'{balance["leave_type_name"]} requires at least {ADVANCE_NOTICE_DAYS} days advance notice. '
+                        f'These dates are too soon: {violated_str}',
+                        'danger'
+                    )
+                    return render_template('file_leave.html', balances=balances, user=session['user'])
 
-        # Check balance
-        if not balance:
-            flash('Selected leave type not found.', 'danger')
-            return render_template('file_leave.html', balances=balances, user=session['user'])
-        if use_remaining:
-            # Use exactly the remaining balance
-            available = balance['remaining_hours']
-            if available <= 0:
-                flash(f'No remaining balance for {balance["leave_type_name"]}.', 'danger')
+            # Check balance
+            if not balance:
+                flash('Selected leave type not found.', 'danger')
                 return render_template('file_leave.html', balances=balances, user=session['user'])
-            # Distribute available hours across deduction days
-            total_base = sum(d['hours'] for d in deductions)
-            ratio = available / total_base if total_base > 0 else 0
-            for d in deductions:
-                d['hours'] = round(d['hours'] * ratio, 2)
-                d['days']  = round(d['days'] * ratio, 4)
-            total_hours = available
-            total_days  = sum(d['days'] for d in deductions)
-            flash(f'Remaining balance of {available:.1f} hrs will be fully used.', 'info')
-        elif total_hours > balance['remaining_hours']:
-            if balance['remaining_hours'] <= 0:
-                flash(f'Insufficient balance. You have no remaining hours for {balance["leave_type_name"]}.', 'danger')
+            if use_remaining:
+                # Use exactly the remaining balance
+                available = balance['remaining_hours']
+                if available <= 0:
+                    flash(f'No remaining balance for {balance["leave_type_name"]}.', 'danger')
+                    return render_template('file_leave.html', balances=balances, user=session['user'])
+                # Distribute available hours across deduction days
+                total_base = sum(d['hours'] for d in deductions)
+                ratio = available / total_base if total_base > 0 else 0
+                for d in deductions:
+                    d['hours'] = round(d['hours'] * ratio, 2)
+                    d['days']  = round(d['days'] * ratio, 4)
+                total_hours = available
+                total_days  = sum(d['days'] for d in deductions)
+                flash(f'Remaining balance of {available:.1f} hrs will be fully used.', 'info')
+            elif total_hours > balance['remaining_hours']:
+                if balance['remaining_hours'] <= 0:
+                    flash(f'Insufficient balance. You have no remaining hours for {balance["leave_type_name"]}.', 'danger')
+                    return render_template('file_leave.html', balances=balances, user=session['user'])
+                flash(f'Insufficient balance. Available: {balance["remaining_hours"]:.1f} hrs | Required: {total_hours:.1f} hrs', 'danger')
                 return render_template('file_leave.html', balances=balances, user=session['user'])
-            flash(f'Insufficient balance. Available: {balance["remaining_hours"]:.1f} hrs | Required: {total_hours:.1f} hrs', 'danger')
-            return render_template('file_leave.html', balances=balances, user=session['user'])
 
         # Insert leave
         db = get_db()
@@ -1248,7 +1362,7 @@ def file_leave():
                     """, (d['date'], d['hours'], d['days'], leave_request_id, leave_type_id, emp_number))
 
                 # 4. Deduct from correct entitlement source
-                if total_days > 0:
+                if total_days > 0 and not is_awol:
                     # Check if portal entitlement exists for this employee/type/year
                     c.execute("""
                         SELECT id FROM leave4day_entitlements
@@ -1599,6 +1713,7 @@ def admin_supervisors():
     db = get_db()
     search = request.args.get('search', '').strip()
     group_filter = request.args.get('group', '')
+    tl_filter = request.args.get('tl', '')
     try:
         if request.method == 'POST':
             action = request.form.get('action')
@@ -1871,13 +1986,20 @@ def admin_sub_admins():
                     'can_facilities_final': 1 if request.form.get('can_facilities_final') else 0,
                     'can_view_approved_items': 1 if request.form.get('can_view_approved_items') else 0,
                     'can_onboarding': 1 if request.form.get('can_onboarding') else 0,
+                    'can_wfm': 1 if request.form.get('can_wfm') else 0,
+                    'can_overbreak': 1 if request.form.get('can_overbreak') else 0,
                     'can_inventory': 1 if request.form.get('can_inventory') else 0,
                     'can_attrition_report': 1 if request.form.get('can_attrition_report') else 0,
                     'can_csat': 1 if request.form.get('can_csat') else 0,
                     'can_surveys': 1 if request.form.get('can_surveys') else 0,
                     'can_floor_map': 1 if request.form.get('can_floor_map') else 0,
                     'can_pim': 1 if request.form.get('can_pim') else 0,
+                    'can_memos': 1 if request.form.get('can_memos') else 0,
                     'can_qa_updates': 1 if request.form.get('can_qa_updates') else 0,
+                    'can_requirements': 1 if request.form.get('can_requirements') else 0,
+                    'can_night_differential': 1 if request.form.get('can_night_differential') else 0,
+                    'can_holiday_awol': 1 if request.form.get('can_holiday_awol') else 0,
+                    'can_ot_hours': 1 if request.form.get('can_ot_hours') else 0,
                 }
                 with db.cursor() as c:
                     c.execute("""
@@ -1885,26 +2007,26 @@ def admin_sub_admins():
                             (emp_number, can_all_leaves, can_all_requests, can_approve, can_file_for_emp,
                              can_schedules, can_reports, can_work_mode, can_settings, can_absences, can_tardiness,
                              can_entitlements, can_file_requests, can_material_requests,
-                             can_final_approval, can_view_tickets, can_facilities_review, can_facilities_final, can_view_approved_items, can_onboarding, can_inventory, can_attrition_report, can_csat, can_surveys, can_floor_map, can_pim, can_qa_updates, assigned_by)
-                        VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                             can_final_approval, can_view_tickets, can_facilities_review, can_facilities_final, can_view_approved_items, can_onboarding, can_wfm, can_overbreak, can_inventory, can_attrition_report, can_csat, can_surveys, can_floor_map, can_pim, can_qa_updates, can_requirements, can_night_differential, can_holiday_awol, can_memos, assigned_by, can_ot_hours)
+                        VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
                         ON DUPLICATE KEY UPDATE
                             can_all_leaves=%s, can_all_requests=%s, can_approve=%s, can_file_for_emp=%s,
-                            can_schedules=%s, can_reports=%s, can_work_mode=%s, can_absences=%s,
-                            can_tardiness=%s, can_settings=%s, can_entitlements=%s, can_file_requests=%s,
+                            can_schedules=%s, can_reports=%s, can_work_mode=%s, can_settings=%s,
+                            can_absences=%s, can_tardiness=%s, can_entitlements=%s, can_file_requests=%s,
                             can_material_requests=%s, can_final_approval=%s,
-                            can_view_tickets=%s, can_facilities_review=%s, can_facilities_final=%s, can_view_approved_items=%s, can_onboarding=%s, can_inventory=%s, can_attrition_report=%s, can_csat=%s, can_surveys=%s, can_floor_map=%s, can_pim=%s, can_qa_updates=%s, assigned_by=%s
+                            can_view_tickets=%s, can_facilities_review=%s, can_facilities_final=%s, can_view_approved_items=%s, can_onboarding=%s, can_wfm=%s, can_overbreak=%s, can_inventory=%s, can_attrition_report=%s, can_csat=%s, can_surveys=%s, can_floor_map=%s, can_pim=%s, can_qa_updates=%s, can_requirements=%s, can_night_differential=%s, can_holiday_awol=%s, can_memos=%s, assigned_by=%s, can_ot_hours=%s
                     """, (
                         emp_number,
                         perms['can_all_leaves'], perms['can_all_requests'], perms['can_approve'], perms['can_file_for_emp'],
                         perms['can_schedules'], perms['can_reports'], perms['can_work_mode'],
                         perms['can_settings'], perms['can_absences'], perms['can_tardiness'],    perms['can_entitlements'], perms['can_file_requests'],
                         perms['can_material_requests'], perms['can_final_approval'],
-                        perms['can_view_tickets'], perms['can_facilities_review'], perms['can_facilities_final'], perms['can_view_approved_items'], perms['can_onboarding'], perms['can_inventory'], perms['can_attrition_report'], perms['can_csat'], perms['can_surveys'], perms['can_floor_map'], perms['can_pim'], perms['can_qa_updates'], session['user']['emp_number'],
+                        perms['can_view_tickets'], perms['can_facilities_review'], perms['can_facilities_final'], perms['can_view_approved_items'], perms['can_onboarding'], perms['can_wfm'], perms['can_overbreak'], perms['can_inventory'], perms['can_attrition_report'], perms['can_csat'], perms['can_surveys'], perms['can_floor_map'], perms['can_pim'], perms['can_qa_updates'], perms['can_requirements'], perms['can_night_differential'], perms['can_holiday_awol'], perms['can_memos'], session['user']['emp_number'], perms['can_ot_hours'],
                         perms['can_all_leaves'], perms['can_all_requests'], perms['can_approve'], perms['can_file_for_emp'],
                         perms['can_schedules'], perms['can_reports'], perms['can_work_mode'],
                         perms['can_settings'], perms['can_absences'], perms['can_tardiness'],    perms['can_entitlements'], perms['can_file_requests'],
                         perms['can_material_requests'], perms['can_final_approval'],
-                        perms['can_view_tickets'], perms['can_facilities_review'], perms['can_facilities_final'], perms['can_view_approved_items'], perms['can_onboarding'], perms['can_inventory'], perms['can_attrition_report'], perms['can_csat'], perms['can_surveys'], perms['can_floor_map'], perms['can_pim'], perms['can_qa_updates'], session['user']['emp_number']
+                        perms['can_view_tickets'], perms['can_facilities_review'], perms['can_facilities_final'], perms['can_view_approved_items'], perms['can_onboarding'], perms['can_wfm'], perms['can_overbreak'], perms['can_inventory'], perms['can_attrition_report'], perms['can_csat'], perms['can_surveys'], perms['can_floor_map'], perms['can_pim'], perms['can_qa_updates'], perms['can_requirements'], perms['can_night_differential'], perms['can_holiday_awol'], perms['can_memos'], session['user']['emp_number'], perms['can_ot_hours']
                     ))
                 db.commit()
                 flash('Sub-admin permissions updated!', 'success')
@@ -1934,14 +2056,22 @@ def admin_sub_admins():
                     'can_facilities_final':  1 if request.form.get('can_facilities_final') else 0,
                     'can_view_approved_items': 1 if request.form.get('can_view_approved_items') else 0,
                     'can_onboarding': 1 if request.form.get('can_onboarding') else 0,
+                    'can_wfm': 1 if request.form.get('can_wfm') else 0,
+                    'can_overbreak': 1 if request.form.get('can_overbreak') else 0,
                     'can_inventory': 1 if request.form.get('can_inventory') else 0,
                     'can_attrition_report': 1 if request.form.get('can_attrition_report') else 0,
                     'can_csat': 1 if request.form.get('can_csat') else 0,
                     'can_surveys': 1 if request.form.get('can_surveys') else 0,
                     'can_floor_map': 1 if request.form.get('can_floor_map') else 0,
                     'can_pim': 1 if request.form.get('can_pim') else 0,
+                    'can_memos': 1 if request.form.get('can_memos') else 0,
                     'can_qa_updates': 1 if request.form.get('can_qa_updates') else 0,
+                    'can_requirements': 1 if request.form.get('can_requirements') else 0,
                     'can_tardiness': 1 if request.form.get('can_tardiness') else 0,
+                    'can_absences': 1 if request.form.get('can_absences') else 0,
+                    'can_night_differential': 1 if request.form.get('can_night_differential') else 0,
+                    'can_holiday_awol': 1 if request.form.get('can_holiday_awol') else 0,
+                    'can_ot_hours': 1 if request.form.get('can_ot_hours') else 0,
                 }
                 if not group_name:
                     flash('Please select a group.', 'danger')
@@ -1960,26 +2090,26 @@ def admin_sub_admins():
                                     (emp_number, can_all_leaves, can_all_requests, can_approve, can_file_for_emp,
                                      can_schedules, can_reports, can_work_mode, can_settings,
                                      can_entitlements, can_file_requests, can_material_requests,
-                                     can_final_approval, can_view_tickets, can_facilities_review, can_facilities_final, can_view_approved_items, can_onboarding, can_inventory, can_attrition_report, can_csat, can_surveys, can_floor_map, can_pim, assigned_by)
-                                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                                     can_final_approval, can_view_tickets, can_facilities_review, can_facilities_final, can_view_approved_items, can_onboarding, can_wfm, can_overbreak, can_inventory, can_attrition_report, can_csat, can_surveys, can_floor_map, can_pim, can_qa_updates, can_requirements, can_absences, can_tardiness, can_night_differential, can_holiday_awol, can_ot_hours, can_memos, assigned_by)
+                                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
                                 ON DUPLICATE KEY UPDATE
                                     can_all_leaves=%s, can_all_requests=%s, can_approve=%s, can_file_for_emp=%s,
                                     can_schedules=%s, can_reports=%s, can_work_mode=%s,
                                     can_settings=%s, can_entitlements=%s, can_file_requests=%s,
                                     can_material_requests=%s, can_final_approval=%s,
-                                    can_view_tickets=%s, can_facilities_review=%s, can_facilities_final=%s, can_view_approved_items=%s, can_onboarding=%s, can_inventory=%s, can_attrition_report=%s, can_csat=%s, can_surveys=%s, can_floor_map=%s, can_pim=%s, assigned_by=%s
+                                    can_view_tickets=%s, can_facilities_review=%s, can_facilities_final=%s, can_view_approved_items=%s, can_onboarding=%s, can_wfm=%s, can_overbreak=%s, can_inventory=%s, can_attrition_report=%s, can_csat=%s, can_surveys=%s, can_floor_map=%s, can_pim=%s, can_qa_updates=%s, can_requirements=%s, can_absences=%s, can_tardiness=%s, can_night_differential=%s, can_holiday_awol=%s, can_ot_hours=%s, can_memos=%s, assigned_by=%s
                             """, (
                                 en,
                                 perms['can_all_leaves'], perms['can_all_requests'], perms['can_approve'], perms['can_file_for_emp'],
                                 perms['can_schedules'], perms['can_reports'], perms['can_work_mode'],
                                 perms['can_settings'], perms['can_entitlements'], perms['can_file_requests'],
                                 perms['can_material_requests'], perms['can_final_approval'],
-                                perms['can_view_tickets'], perms['can_facilities_review'], perms['can_facilities_final'], perms['can_view_approved_items'], perms['can_onboarding'], perms['can_inventory'], perms['can_attrition_report'], perms['can_csat'], perms['can_surveys'], perms['can_floor_map'], perms['can_pim'], session['user']['emp_number'],
+                                perms['can_view_tickets'], perms['can_facilities_review'], perms['can_facilities_final'], perms['can_view_approved_items'], perms['can_onboarding'], perms['can_wfm'], perms['can_overbreak'], perms['can_inventory'], perms['can_attrition_report'], perms['can_csat'], perms['can_surveys'], perms['can_floor_map'], perms['can_pim'], perms['can_qa_updates'], perms['can_requirements'], perms['can_absences'], perms['can_tardiness'], perms['can_night_differential'], perms['can_holiday_awol'], perms['can_ot_hours'], perms['can_memos'], session['user']['emp_number'],
                                 perms['can_all_leaves'], perms['can_all_requests'], perms['can_approve'], perms['can_file_for_emp'],
                                 perms['can_schedules'], perms['can_reports'], perms['can_work_mode'],
                                 perms['can_settings'], perms['can_entitlements'], perms['can_file_requests'],
                                 perms['can_material_requests'], perms['can_final_approval'],
-                                perms['can_view_tickets'], perms['can_facilities_review'], perms['can_facilities_final'], perms['can_view_approved_items'], perms['can_onboarding'], perms['can_inventory'], perms['can_attrition_report'], perms['can_csat'], perms['can_surveys'], perms['can_floor_map'], perms['can_pim'], perms['can_qa_updates'], session['user']['emp_number']
+                                perms['can_view_tickets'], perms['can_facilities_review'], perms['can_facilities_final'], perms['can_view_approved_items'], perms['can_onboarding'], perms['can_wfm'], perms['can_overbreak'], perms['can_inventory'], perms['can_attrition_report'], perms['can_csat'], perms['can_surveys'], perms['can_floor_map'], perms['can_pim'], perms['can_qa_updates'], perms['can_requirements'], perms['can_absences'], perms['can_tardiness'], perms['can_night_differential'], perms['can_holiday_awol'], perms['can_ot_hours'], perms['can_memos'], session['user']['emp_number']
                             ))
                             count += 1
                     db.commit()
@@ -1995,7 +2125,7 @@ def admin_sub_admins():
                        sa.can_all_leaves, sa.can_all_requests, sa.can_approve, sa.can_file_for_emp,
                        sa.can_schedules, sa.can_reports, sa.can_work_mode,
                        sa.can_settings, sa.can_absences, sa.can_tardiness, sa.can_entitlements, sa.can_file_requests, sa.can_attrition_report,
-                       sa.can_material_requests, sa.can_final_approval, sa.can_view_tickets, sa.can_facilities_review, sa.can_facilities_final, sa.can_view_approved_items, sa.can_onboarding, sa.can_inventory, sa.can_csat, sa.can_surveys, sa.can_floor_map, sa.can_pim, sa.can_qa_updates
+                       sa.can_material_requests, sa.can_final_approval, sa.can_view_tickets, sa.can_facilities_review, sa.can_facilities_final, sa.can_view_approved_items, sa.can_onboarding, sa.can_wfm, sa.can_overbreak, sa.can_inventory, sa.can_csat, sa.can_surveys, sa.can_floor_map, sa.can_pim, sa.can_qa_updates, sa.can_requirements, sa.can_night_differential, sa.can_holiday_awol, sa.can_memos, sa.can_ot_hours
                 FROM hs_hr_employee h
                 JOIN ohrm_user u ON u.emp_number = h.emp_number
                 LEFT JOIN leave4day_sub_admins sa ON sa.emp_number = h.emp_number
@@ -2189,9 +2319,344 @@ def admin_ot_tickets():
                            approver_list=approver_list,
                            sub_type=sub_type)
 
+@app.route('/admin/ot-hours')
+@login_required
+@permission_required('can_ot_hours')
+def admin_ot_hours():
+    from datetime import timedelta as _ot_td, datetime as _ot_dt
+    from payroll_period import get_default_payroll_period
+
+    _default_start, _default_end = get_default_payroll_period()
+    date_from = request.args.get('date_from', _default_start.strftime('%Y-%m-%d'))
+    date_to   = request.args.get('date_to', _default_end.strftime('%Y-%m-%d'))
+    status_filter = request.args.get('status', 'all')
+    emp_search = request.args.get('emp_search', '').strip()
+    tl_filter_list       = request.args.getlist('tl')
+    approver_filter_list = request.args.getlist('approver')
+    account_filter_list  = request.args.getlist('account')
+    ot_type_filter_list  = request.args.getlist('ot_type')
+
+    def build_status_clause(prefix):
+        col = f"{prefix}.status"
+        if status_filter == 'approved':
+            return f"AND {col} = 'Approved'"
+        elif status_filter == 'pending':
+            return f"AND {col} = 'Pending'"
+        return f"AND {col} IN ('Approved','Pending')"
+
+    cdb = get_central_db()
+    try:
+        with cdb.cursor() as c:
+            # Dropdown data
+            c.execute("""
+                SELECT DISTINCT tl FROM gsheet_employees
+                WHERE tl IS NOT NULL AND tl != '' AND status != 'Separated'
+                ORDER BY tl
+            """)
+            tl_list = [r['tl'] for r in c.fetchall()]
+
+            c.execute("""SELECT DISTINCT approver FROM gsheet_employees
+                WHERE approver IS NOT NULL AND approver != '' AND approver != '#N/A' AND status != 'Separated'
+                ORDER BY approver""")
+            approver_list = [r['approver'] for r in c.fetchall()]
+
+            c.execute("""SELECT DISTINCT account FROM gsheet_employees
+                WHERE account IS NOT NULL AND account != '' AND status != 'Separated'
+                ORDER BY account""")
+            account_list = [r['account'] for r in c.fetchall()]
+
+            ot_type_options = ['PRE','POST','TEAM_MEETING','OVERHEAD_OT','DAILY_OT','QA_REFRESHER','OT260',
+                                'RD_REGULAR','RD_OVERHEAD_OT','RD_TEAM_MEETING','RD_OT260','RD_DAILY_OT']
+
+            params_common = [date_from, date_to]
+
+            tl_clause, tl_p = "", []
+            if tl_filter_list:
+                tl_clause = f"AND g.tl IN ({','.join(['%s']*len(tl_filter_list))})"
+                tl_p = tl_filter_list
+
+            approver_clause, approver_p = "", []
+            if approver_filter_list:
+                approver_clause = f"AND g.approver IN ({','.join(['%s']*len(approver_filter_list))})"
+                approver_p = approver_filter_list
+
+            account_clause, account_p = "", []
+            if account_filter_list:
+                account_clause = f"AND g.account IN ({','.join(['%s']*len(account_filter_list))})"
+                account_p = account_filter_list
+
+            emp_clause_o, emp_clause_r, emp_p = "", "", []
+            if emp_search:
+                emp_clause_o = "AND (g.schedule_name LIKE %s OR o.employee_id LIKE %s)"
+                emp_clause_r = "AND (g.schedule_name LIKE %s OR r.employee_id LIKE %s)"
+                emp_p = [f"%{emp_search}%", f"%{emp_search}%"]
+
+            records = []
+
+            want_ot_types = [t for t in ot_type_filter_list if not t.startswith('RD_')]
+            include_ot = (not ot_type_filter_list) or bool(want_ot_types)
+            if include_ot:
+                ot_type_clause, ot_type_p = "", []
+                if want_ot_types:
+                    ot_type_clause = f"AND o.ot_type IN ({','.join(['%s']*len(want_ot_types))})"
+                    ot_type_p = want_ot_types
+                c.execute(f"""
+                    SELECT o.employee_id, g.schedule_name AS employee_name,
+                           o.ot_date, o.start_time, o.end_time, o.ot_type,
+                           o.status, o.approver_name, o.approved_at,
+                           'N' AS took_break
+                    FROM ot_requests o
+                    LEFT JOIN gsheet_employees g ON g.employee_id = o.employee_id COLLATE utf8mb4_unicode_ci
+                    WHERE o.ot_date BETWEEN %s AND %s AND o.deleted_at IS NULL
+                    {build_status_clause('o')}
+                    {tl_clause} {approver_clause} {account_clause} {emp_clause_o} {ot_type_clause}
+                """, params_common + tl_p + approver_p + account_p + emp_p + ot_type_p)
+                for r in c.fetchall():
+                    r['req_type'] = 'OT'
+                    records.append(r)
+
+            want_rd_types = [t.replace('RD_', '') for t in ot_type_filter_list if t.startswith('RD_')]
+            include_rd = (not ot_type_filter_list) or bool(want_rd_types)
+            if include_rd:
+                rd_type_clause, rd_type_p = "", []
+                if want_rd_types:
+                    rd_type_clause = f"AND r.work_category IN ({','.join(['%s']*len(want_rd_types))})"
+                    rd_type_p = want_rd_types
+                c.execute(f"""
+                    SELECT r.employee_id, g.schedule_name AS employee_name,
+                           r.rd_date AS ot_date, r.start_time, r.end_time,
+                           CONCAT('RD_', r.work_category) AS ot_type,
+                           r.status, r.approver_name, r.approved_at,
+                           r.took_break
+                    FROM rd_requests r
+                    LEFT JOIN gsheet_employees g ON g.employee_id = r.employee_id COLLATE utf8mb4_unicode_ci
+                    WHERE r.rd_date BETWEEN %s AND %s AND r.deleted_at IS NULL
+                    {build_status_clause('r')}
+                    {tl_clause} {approver_clause} {account_clause} {emp_clause_r} {rd_type_clause}
+                """, params_common + tl_p + approver_p + account_p + emp_p + rd_type_p)
+                for r in c.fetchall():
+                    r['req_type'] = 'RD'
+                    records.append(r)
+    finally:
+        cdb.close()
+
+    def calc_hours(start_time, end_time, took_break):
+        s, e = start_time, end_time
+        if e < s:
+            e = e + _ot_td(hours=24)
+        duration = (e - s).total_seconds() / 3600
+        if took_break == 'Y':
+            duration -= 1
+        return round(duration, 2)
+
+    for r in records:
+        r['ot_hours'] = calc_hours(r['start_time'], r['end_time'], r.get('took_break', 'N'))
+
+    records.sort(key=lambda x: (str(x['ot_date']), str(x['start_time'])), reverse=True)
+
+    total_hours    = sum(r['ot_hours'] for r in records)
+    total_records  = len(records)
+    unique_agents  = len(set(r['employee_id'] for r in records))
+    approved_count = sum(1 for r in records if r['status'] == 'Approved')
+    pending_count  = sum(1 for r in records if r['status'] == 'Pending')
+
+    return render_template('admin/ot_hours.html',
+                           records=records,
+                           date_from=date_from, date_to=date_to,
+                           status_filter=status_filter, emp_search=emp_search,
+                           tl_list=tl_list, tl_filter_list=tl_filter_list,
+                           approver_list=approver_list, approver_filter_list=approver_filter_list,
+                           account_list=account_list, account_filter_list=account_filter_list,
+                           ot_type_options=ot_type_options, ot_type_filter_list=ot_type_filter_list,
+                           total_hours=total_hours, total_records=total_records,
+                           unique_agents=unique_agents, approved_count=approved_count,
+                           pending_count=pending_count)
+
+# ============================================================================
+#  HOLIDAY AWOL REPORT
+#  Flags agents who were scheduled to work on a past holiday (YTD), were
+#  absent (no time-in AND no time-out in DTR), and have no covering CWS.
+#  Paste this block into app.py (anywhere among the other @app.route defs).
+#  Requires: get_central_db(), login_required, permission_required, render_template,
+#            request, Response, session  (all already imported in app.py)
+# ============================================================================
+
+def _holiday_awol_rows():
+    """
+    Returns list of dict rows:
+      holiday_date, holiday_name, employee_id, name, personid, shift_time
+    for every scheduled-but-absent-and-uncovered agent on past holidays YTD.
+
+    Cross-DB: holidays live in orangehrm2 (get_db), everything else in
+    central_db (get_central_db). We can't JOIN across the two connections,
+    so we read holiday dates first, then pass them into the central_db query.
+    """
+    # --- Step 1: gather past holidays (YTD) from BOTH sources (orangehrm2) ---  # AWOL_RECURRING
+    # Includes recurring holidays projected onto the current year (mirrors is_holiday()).
+    ohrm = get_db()  # orangehrm2
+    holidays = {}  # 'YYYY-MM-DD' (current year) -> name
+    _hol_sql = """
+        SELECT
+            CASE WHEN recurring = 1
+                 THEN DATE(CONCAT(YEAR(CURDATE()), '-', LPAD(MONTH(`date`),2,'0'), '-', LPAD(DAY(`date`),2,'0')))
+                 ELSE `date`
+            END AS cy,
+            description AS name
+        FROM {tbl}
+        WHERE (
+                (recurring = 0 AND `date` <= CURDATE() AND YEAR(`date`) = YEAR(CURDATE()))
+             OR (recurring = 1
+                 AND DATE(CONCAT(YEAR(CURDATE()), '-', LPAD(MONTH(`date`),2,'0'), '-', LPAD(DAY(`date`),2,'0'))) <= CURDATE())
+              )
+    """
+    try:
+        with ohrm.cursor() as c:
+            for tbl in ('ohrm_holiday', 'leave4day_holidays'):
+                c.execute(_hol_sql.format(tbl=tbl))
+                for r in c.fetchall():
+                    if not r.get('cy'):
+                        continue
+                    ds = r['cy'].strftime('%Y-%m-%d') if hasattr(r['cy'], 'strftime') else str(r['cy'])
+                    nm = (r.get('name') or '').strip()
+                    # don't overwrite an existing name with a blank one
+                    if ds not in holidays or (not holidays[ds] and nm):
+                        holidays[ds] = nm
+    finally:
+        ohrm.close()
+
+    if not holidays:
+        return []
+
+    holiday_dates = sorted(holidays.keys())
+
+    # --- Step 2: for those dates, run the AWOL-detection query in central_db ---
+    placeholders = ','.join(['%s'] * len(holiday_dates))
+    sql = f"""
+        SELECT
+            es.schedule_date                         AS holiday_date,
+            es.employee_id                           AS employee_id,
+            TRIM(CONCAT(u.fname, ' ', u.lname))      AS name,
+            u.personid                               AS personid,
+            es.shift_time                            AS shift_time
+        FROM employee_schedules es
+        JOIN userdata u
+              ON u.companyid = es.employee_id
+             AND u.active = 1
+        WHERE es.schedule_date IN ({placeholders})
+          AND es.is_rest_day = 0
+          -- absent: no IN and no OUT punch that calendar day
+          AND NOT EXISTS (
+                SELECT 1 FROM dailytimerecordsfiltered d
+                WHERE d.personid = u.personid
+                  AND d.date_only = es.schedule_date
+                  AND d.type IN ('in', 'out')
+          )
+          -- no covering CWS (any status except rejected/cancelled/deleted)
+          AND NOT EXISTS (
+                SELECT 1 FROM cws_requests cw
+                WHERE cw.employee_id COLLATE utf8mb4_unicode_ci = es.employee_id
+                  AND cw.original_date = es.schedule_date
+                  AND LOWER(cw.status) NOT IN ('rejected','cancelled','deleted')
+          )
+        ORDER BY es.schedule_date ASC, name ASC
+    """
+    conn = get_central_db()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(sql, holiday_dates)
+            rows = cur.fetchall()
+    finally:
+        conn.close()
+
+    # attach holiday_name and normalize date to string
+    out = []
+    for r in rows:
+        ds = r['holiday_date'].strftime('%Y-%m-%d') if hasattr(r['holiday_date'], 'strftime') else str(r['holiday_date'])
+        out.append({
+            'holiday_date': ds,
+            'holiday_name': holidays.get(ds, ''),
+            'employee_id':  r['employee_id'],
+            'name':         r['name'],
+            'personid':     r['personid'],
+            'shift_time':   r.get('shift_time') or '',
+        })
+    return out
+
+
+@app.route('/admin/holiday-awol')
+@login_required
+@permission_required('can_holiday_awol')
+def admin_holiday_awol():
+    rows = _holiday_awol_rows()
+
+    # group by holiday_date -> {date, name, count, agents[]}
+    groups = {}
+    for r in rows:
+        g = groups.setdefault(r['holiday_date'], {
+            'date': r['holiday_date'],
+            'name': r['holiday_name'],
+            'agents': [],
+        })
+        g['agents'].append(r)
+    # ordered list, newest holiday first
+    grouped = sorted(groups.values(), key=lambda g: g['date'], reverse=True)
+    for g in grouped:
+        g['count'] = len(g['agents'])
+
+    total = len(rows)
+    return render_template('admin/holiday_awol.html',
+                           grouped=grouped, total=total,
+                           user=session['user'])
+
+
+@app.route('/admin/holiday-awol.xlsx')
+@login_required
+@permission_required('can_holiday_awol')
+def admin_holiday_awol_xlsx():
+    import io
+    from flask import Response
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, PatternFill, Alignment
+
+    rows = _holiday_awol_rows()
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Holiday AWOL"
+
+    headers = ['Holiday Date', 'Holiday', 'Employee ID', 'Name', 'Scheduled Shift']
+    ws.append(headers)
+    hdr_fill = PatternFill(start_color="1F3A5F", end_color="1F3A5F", fill_type="solid")
+    hdr_font = Font(color="FFFFFF", bold=True)
+    for col, _ in enumerate(headers, 1):
+        cell = ws.cell(row=1, column=col)
+        cell.fill = hdr_fill
+        cell.font = hdr_font
+        cell.alignment = Alignment(horizontal="left", vertical="center")
+
+    for r in rows:
+        ws.append([r['holiday_date'], r['holiday_name'],
+                   r['employee_id'], r['name'], r['shift_time']])
+
+    widths = [14, 26, 14, 28, 20]
+    for i, w in enumerate(widths, 1):
+        ws.column_dimensions[chr(64 + i)].width = w
+    ws.freeze_panes = "A2"
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    from datetime import date as _d
+    fname = f"holiday_awol_{_d.today().strftime('%Y%m%d')}.xlsx"
+    return Response(
+        buf.getvalue(),
+        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f"attachment; filename={fname}"}
+    )
+
 @app.route('/admin/night-differential')
 @login_required
-@permission_required('can_reports')
+@permission_required('can_night_differential')
 def admin_night_diff():
     from datetime import date as _date
     import calendar
@@ -3269,6 +3734,7 @@ def admin_schedules():
     emp_search    = request.args.get('emp_search', '').strip()
     group_filter  = request.args.get('group', '')
     shift_filter  = request.args.get('shift', '')
+    tl_filter     = request.args.get('tl', '')
 
     cdb = get_central_db()
     try:
@@ -3282,6 +3748,12 @@ def admin_schedules():
                          WHERE group_name IS NOT NULL AND status != 'Separated'
                          ORDER BY group_name""")
             groups = [r['group_name'] for r in c.fetchall()]
+
+            # Available TLs (from tl_view_map — the current/active TL roster)
+            c.execute("""SELECT DISTINCT tl_name FROM tl_view_map
+                         WHERE tl_name IS NOT NULL AND tl_name != ''
+                         ORDER BY tl_name""")
+            tls = [r['tl_name'] for r in c.fetchall()]
 
             # Available shifts for selected month
             c.execute("""SELECT DISTINCT shift_time FROM employee_schedules
@@ -3299,6 +3771,9 @@ def admin_schedules():
             if group_filter:
                 where.append('g.group_name = %s')
                 params.append(group_filter)
+            if tl_filter:
+                where.append('g.tl = %s')
+                params.append(tl_filter)
 
             # Get all schedules for the month
             c.execute(f"""
@@ -3349,9 +3824,10 @@ def admin_schedules():
 
     return render_template('admin/schedules.html',
                            employees=employees, all_dates=all_dates, date_headers=date_headers,
-                           months=months, groups=groups, shifts=shifts,
+                           months=months, groups=groups, shifts=shifts, tls=tls,
                            month_filter=month_filter, emp_search=emp_search,
                            group_filter=group_filter, shift_filter=shift_filter,
+                           tl_filter=tl_filter,
                            user=session['user'])
 
 @app.route('/api/employee-search')
@@ -4835,6 +5311,218 @@ def api_check_special_item():
     finally:
         cdb.close()
 
+def get_inventory_as_of(cdb, target_date):
+    """
+    target_date: a date object. Returns today's item details + reconstructed
+    stock_as_of quantity (backward reconstruction, verified against
+    current_stock — see check_backward_reconstruction.py), excluding items
+    that did not exist yet as of that date.
+    """
+    cutoff = f"{target_date} 23:59:59"
+    with cdb.cursor() as c:
+        c.execute("""
+            SELECT
+                ii.*,
+                (ii.current_stock - COALESCE((
+                    SELECT SUM(
+                        CASE
+                            WHEN it.transaction_type = 'in' THEN it.quantity
+                            ELSE -it.quantity
+                        END
+                    )
+                    FROM inventory_transactions it
+                    WHERE it.item_id = ii.id AND it.performed_at > %s
+                ), 0)) AS stock_as_of
+            FROM inventory_items ii
+            WHERE ii.is_active = 1 AND ii.created_at <= %s
+            ORDER BY ii.category, ii.item_name
+        """, (cutoff, cutoff))
+        return c.fetchall()
+
+@app.route('/admin/inventory/history')
+@login_required
+def inventory_history():
+    if not (session.get('is_admin') or session.get('permissions',{}).get('can_material_requests') or session.get('permissions',{}).get('can_inventory')):
+        abort(403)
+    from datetime import datetime, date as date_cls
+
+    date_str = request.args.get('date')
+    if date_str:
+        try:
+            target_date = datetime.strptime(date_str, '%Y-%m-%d').date()
+        except ValueError:
+            flash('Invalid date format.', 'danger')
+            target_date = date_cls.today()
+    else:
+        target_date = date_cls.today()
+
+    cdb = get_central_db()
+    try:
+        items = get_inventory_as_of(cdb, target_date)
+    finally:
+        cdb.close()
+
+    return render_template('admin/inventory_history.html',
+                            items=items,
+                            target_date=target_date,
+                            today=date_cls.today())
+
+@app.route('/admin/inventory/pdf-as-of')
+@login_required
+def inventory_pdf_as_of():
+    if not (session.get('is_admin') or session.get('permissions',{}).get('can_material_requests') or session.get('permissions',{}).get('can_inventory')):
+        abort(403)
+    from reportlab.lib.pagesizes import A4, landscape
+    from reportlab.lib import colors
+    from reportlab.lib.units import mm
+    from reportlab.platypus import Table, TableStyle, Paragraph, SimpleDocTemplate, Spacer
+    from reportlab.lib.styles import ParagraphStyle
+    from reportlab.lib.enums import TA_CENTER, TA_LEFT
+    import io
+    from datetime import date, datetime
+
+    date_str = request.args.get('date')
+    try:
+        target_date = datetime.strptime(date_str, '%Y-%m-%d').date()
+    except (TypeError, ValueError):
+        abort(400, "Invalid or missing date parameter")
+
+    cdb = get_central_db()
+    try:
+        items = get_inventory_as_of(cdb, target_date)
+    finally:
+        cdb.close()
+
+    buf = io.BytesIO()
+    doc = SimpleDocTemplate(buf, pagesize=landscape(A4), leftMargin=15*mm, rightMargin=15*mm, topMargin=15*mm, bottomMargin=15*mm)
+    styles = {'title': ParagraphStyle('t', fontName='Helvetica-Bold', fontSize=14, alignment=TA_CENTER, spaceAfter=4),
+              'sub':   ParagraphStyle('s', fontName='Helvetica', fontSize=9, alignment=TA_CENTER, spaceAfter=10),
+              'hdr':   ParagraphStyle('h', fontName='Helvetica-Bold', fontSize=8, alignment=TA_CENTER),
+              'cell':  ParagraphStyle('c', fontName='Helvetica', fontSize=8, alignment=TA_LEFT),
+              'num':   ParagraphStyle('n', fontName='Helvetica', fontSize=8, alignment=TA_CENTER)}
+    story = [
+        Paragraph("COHERE OUTSOURCING (PHILIPPINES) INC.", styles['title']),
+        Paragraph(f"Inventory Report — As of {target_date.strftime('%B %d, %Y')} (generated {date.today().strftime('%B %d, %Y')})", styles['sub']),
+    ]
+    headers = [Paragraph(h, styles['hdr']) for h in ['#', 'Category', 'Item Name', 'Stock', 'Unit', 'Min Alert', 'Max Stock']]
+    rows = [headers]
+    for i, r in enumerate(items, 1):
+        stock_val = r['stock_as_of']
+        stock = str(stock_val)
+        if r.get('sub_unit') and r.get('sub_unit_per_unit'):
+            stock += f" ({round(stock_val/r['sub_unit_per_unit'],1)} {r['sub_unit']})"
+        rows.append([
+            Paragraph(str(i), styles['num']),
+            Paragraph(r['category'], styles['cell']),
+            Paragraph(r['item_name'], styles['cell']),
+            Paragraph(stock, styles['num']),
+            Paragraph(r['unit'] or '', styles['num']),
+            Paragraph(str(r['min_stock_alert']), styles['num']),
+            Paragraph(str(r['max_stock'] or '—'), styles['num']),
+        ])
+    col_w = [10*mm, 45*mm, 90*mm, 35*mm, 20*mm, 22*mm, 22*mm]
+    tbl = Table(rows, colWidths=col_w, repeatRows=1)
+    style = [
+        ('GRID', (0,0), (-1,-1), 0.4, colors.grey),
+        ('BACKGROUND', (0,0), (-1,0), colors.HexColor('#1e3a5f')),
+        ('TEXTCOLOR', (0,0), (-1,0), colors.white),
+        ('ROWBACKGROUNDS', (0,1), (-1,-1), [colors.white, colors.HexColor('#f5f7fa')]),
+        ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+        ('TOPPADDING', (0,0), (-1,-1), 3),
+        ('BOTTOMPADDING', (0,0), (-1,-1), 3),
+    ]
+    for i, r in enumerate(items, 1):
+        stock_val = r['stock_as_of']
+        if stock_val <= 0:
+            style.append(('BACKGROUND', (0,i), (-1,i), colors.HexColor('#fde8e8')))
+        elif stock_val <= r['min_stock_alert']:
+            style.append(('BACKGROUND', (0,i), (-1,i), colors.HexColor('#fef9e7')))
+    tbl.setStyle(TableStyle(style))
+    story.append(tbl)
+    story.append(Spacer(1, 5*mm))
+    story.append(Paragraph(f"Total: {len(items)} items  |  🔴 Out of stock  |  🟡 Low stock  |  Reconstructed from transaction log", styles['sub']))
+    doc.build(story)
+    buf.seek(0)
+    filename = f"inventory_as_of_{target_date.strftime('%Y%m%d')}.pdf"
+    return send_file(buf, mimetype='application/pdf', as_attachment=True, download_name=filename)
+
+
+@app.route('/admin/inventory/excel-as-of')
+@login_required
+def inventory_excel_as_of():
+    if not (session.get('is_admin') or session.get('permissions',{}).get('can_material_requests') or session.get('permissions',{}).get('can_inventory')):
+        abort(403)
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, PatternFill, Alignment
+    import io
+    from datetime import date, datetime
+
+    date_str = request.args.get('date')
+    try:
+        target_date = datetime.strptime(date_str, '%Y-%m-%d').date()
+    except (TypeError, ValueError):
+        abort(400, "Invalid or missing date parameter")
+
+    cdb = get_central_db()
+    try:
+        items = get_inventory_as_of(cdb, target_date)
+    finally:
+        cdb.close()
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Inventory Snapshot"
+
+    ws.merge_cells('A1:I1')
+    ws['A1'] = "COHERE OUTSOURCING (PHILIPPINES) INC."
+    ws['A1'].font = Font(bold=True, size=14)
+    ws['A1'].alignment = Alignment(horizontal='center')
+
+    ws.merge_cells('A2:I2')
+    ws['A2'] = f"Inventory Report — As of {target_date.strftime('%B %d, %Y')} (generated {date.today().strftime('%B %d, %Y')})"
+    ws['A2'].alignment = Alignment(horizontal='center')
+
+    headers = ['#', 'Category', 'Item Name', 'Stock', 'Unit', 'Min Alert', 'Supplier', 'Location', 'Cost']
+    ws.append([])
+    ws.append(headers)
+    header_row = ws.max_row
+    header_fill = PatternFill(start_color='1E3A5F', end_color='1E3A5F', fill_type='solid')
+    for col_idx, _ in enumerate(headers, 1):
+        cell = ws.cell(row=header_row, column=col_idx)
+        cell.font = Font(bold=True, color='FFFFFF')
+        cell.fill = header_fill
+        cell.alignment = Alignment(horizontal='center')
+
+    low_fill = PatternFill(start_color='FEF9E7', end_color='FEF9E7', fill_type='solid')
+    out_fill = PatternFill(start_color='FDE8E8', end_color='FDE8E8', fill_type='solid')
+
+    for i, r in enumerate(items, 1):
+        stock_val = r['stock_as_of']
+        row = [
+            i, r['category'], r['item_name'], stock_val,
+            r['unit'] or '', r['min_stock_alert'],
+            r['supplier'] or '', r['location'] or '',
+            float(r['unit_cost']) if r['unit_cost'] else None
+        ]
+        ws.append(row)
+        row_num = ws.max_row
+        if stock_val <= 0:
+            for col_idx in range(1, len(headers)+1):
+                ws.cell(row=row_num, column=col_idx).fill = out_fill
+        elif stock_val <= r['min_stock_alert']:
+            for col_idx in range(1, len(headers)+1):
+                ws.cell(row=row_num, column=col_idx).fill = low_fill
+
+    col_widths = [5, 20, 40, 10, 10, 10, 25, 25, 12]
+    for i, w in enumerate(col_widths, 1):
+        ws.column_dimensions[chr(64+i)].width = w
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    filename = f"inventory_as_of_{target_date.strftime('%Y%m%d')}.xlsx"
+    return send_file(buf, mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', as_attachment=True, download_name=filename)
+
 @app.route('/admin/inventory/pdf')
 @login_required
 def inventory_pdf():
@@ -5133,6 +5821,7 @@ def file_material():
                 categories_list = request.form.getlist("category[]")
                 item_names_list = request.form.getlist("item_name[]")
                 quantities_list = request.form.getlist("quantity[]")
+                is_replenishment = 1 if request.form.get("is_replenishment") else 0
                 reason      = request.form.get("reason","").strip()
                 date_needed = request.form.get("date_needed","").strip() or None
                 items = [(cat.strip(), iname.strip(), max(1, int(qty or 1)))
@@ -5181,10 +5870,14 @@ def file_material():
                                     payment_reason = 'Free item already claimed within the last 2 years'
                                     amount_due = float(sp['price'])
                         auto_ids = [x.strip() for x in os.getenv("AUTO_RECOMMEND_IDS","").split(",") if x.strip()]
-                        if employee_id in auto_ids:
-                            c.execute('INSERT INTO material_requests (employee_id, employee_name, request_group_id, category, item_name, quantity, reason, date_needed, status, som_name, is_special, payment_required, payment_reason, amount_due) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,"Recommended",%s,%s,%s,%s,%s)', (employee_id, emp_name, group_id, cat, iname, qty, reason, date_needed, emp_name, is_special, payment_required, payment_reason, amount_due))
+                        if is_replenishment and employee_id in auto_ids:
+                            c.execute('INSERT INTO material_requests (employee_id, employee_name, request_group_id, category, item_name, quantity, reason, date_needed, status, som_name, is_special, payment_required, payment_reason, amount_due, is_replenishment) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,"Recommended",%s,%s,%s,%s,%s,%s)', (employee_id, emp_name, group_id, cat, iname, qty, reason, date_needed, emp_name, is_special, payment_required, payment_reason, amount_due, is_replenishment))
+                        elif is_replenishment:
+                            c.execute('INSERT INTO material_requests (employee_id, employee_name, request_group_id, category, item_name, quantity, reason, date_needed, status, is_special, payment_required, payment_reason, amount_due, is_replenishment) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,"Pending",%s,%s,%s,%s,%s)', (employee_id, emp_name, group_id, cat, iname, qty, reason, date_needed, is_special, payment_required, payment_reason, amount_due, is_replenishment))
+                        elif employee_id in auto_ids:
+                            c.execute('INSERT INTO material_requests (employee_id, employee_name, request_group_id, category, item_name, quantity, reason, date_needed, status, som_name, is_special, payment_required, payment_reason, amount_due, is_replenishment) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,"Recommended",%s,%s,%s,%s,%s,%s)', (employee_id, emp_name, group_id, cat, iname, qty, reason, date_needed, emp_name, is_special, payment_required, payment_reason, amount_due, is_replenishment))
                         else:
-                            c.execute('INSERT INTO material_requests (employee_id, employee_name, request_group_id, category, item_name, quantity, reason, date_needed, status, is_special, payment_required, payment_reason, amount_due) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,"Pending",%s,%s,%s,%s)', (employee_id, emp_name, group_id, cat, iname, qty, reason, date_needed, is_special, payment_required, payment_reason, amount_due))
+                            c.execute('INSERT INTO material_requests (employee_id, employee_name, request_group_id, category, item_name, quantity, reason, date_needed, status, is_special, payment_required, payment_reason, amount_due, is_replenishment) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,"Pending",%s,%s,%s,%s,%s)', (employee_id, emp_name, group_id, cat, iname, qty, reason, date_needed, is_special, payment_required, payment_reason, amount_due, is_replenishment))
                     cdb.commit()
                     grp_som_map = {}
                     for _entry in os.getenv("GROUP_SOM_OVERRIDES","").split(","):
@@ -5221,7 +5914,8 @@ def file_material():
     return render_template('file_requests/material.html',
                            categories=inv_categories, history=history,
                            employee_id=employee_id,
-                           error=error, success=success, user=session['user'])
+                           error=error, success=success, user=session['user'],
+                           material_admin_emails=os.getenv('MATERIAL_ADMIN_EMAIL',''))
 
 
 @app.route('/file-requests/material/som-approvals')
@@ -5350,7 +6044,7 @@ def material_requests_pending_count():
         with cdb.cursor() as c:
             if is_admin:
                 c.execute("""SELECT COUNT(*) as cnt FROM material_requests
-                             WHERE status='Pending' AND deleted_at IS NULL""")
+                             WHERE status='Pending' AND deleted_at IS NULL AND category != 'Medicine'""")
             else:
                 sub_ids = get_supervisor_central_employees(user_email) or []
                 if not sub_ids:
@@ -5484,13 +6178,20 @@ def material_release_action():
                 c.execute('SELECT id, current_stock, sub_unit, sub_unit_per_unit FROM inventory_items WHERE item_name=%s AND category=%s AND is_active=1 LIMIT 1', (req['item_name'], req['category']))
                 inv = c.fetchone()
                 if inv:
-                    deduct_qty = req['quantity']
-                    log_note = 'Released to ' + req['employee_name']
-                    if inv.get('sub_unit') and inv.get('sub_unit_per_unit'):
-                        log_note = 'Released to ' + req['employee_name'] + ' (' + str(req['quantity']) + ' ' + inv['unit'] + ')'
-                    new_stock = max(0, inv['current_stock'] - deduct_qty)
+                    qty = req['quantity']
+                    is_repl = req.get('is_replenishment', 0)
+                    if is_repl:
+                        log_note = 'Replenishment by ' + req['employee_name']
+                        new_stock = inv['current_stock'] + qty
+                        txn_type = 'in'
+                    else:
+                        log_note = 'Released to ' + req['employee_name']
+                        if inv.get('sub_unit') and inv.get('sub_unit_per_unit'):
+                            log_note = 'Released to ' + req['employee_name'] + ' (' + str(qty) + ' ' + inv['unit'] + ')'
+                        new_stock = max(0, inv['current_stock'] - qty)
+                        txn_type = 'out'
                     c.execute('UPDATE inventory_items SET current_stock=%s WHERE id=%s', (new_stock, inv['id']))
-                    c.execute('INSERT INTO inventory_transactions (item_id, transaction_type, quantity, reference_type, reference_id, notes, performed_by) VALUES (%s,%s,%s,%s,%s,%s,%s)', (inv['id'], 'out', deduct_qty, 'material_request', req['id'], log_note, session['user']['name']))
+                    c.execute('INSERT INTO inventory_transactions (item_id, transaction_type, quantity, reference_type, reference_id, notes, performed_by) VALUES (%s,%s,%s,%s,%s,%s,%s)', (inv['id'], txn_type, qty, 'material_request', req['id'], log_note, session['user']['name']))
                     cdb.commit()
             # Get employee email from central_db
             with cdb.cursor() as c:
@@ -6643,7 +7344,7 @@ def file_requests_hub():
                            ROUND(MOD(TIMESTAMPDIFF(MINUTE,
                                CONCAT(r.rd_date," ",r.start_time),
                                CONCAT(r.rd_date," ",r.end_time)
-                           ) + 1440, 1440) / 60, 2) AS hours
+                           ) + 1440, 1440) / 60, 2) - IF(r.took_break = 'Y', 1, 0) AS hours
                     FROM rd_requests r
                     LEFT JOIN gsheet_employees g ON g.employee_id = r.employee_id COLLATE utf8mb4_unicode_ci
                     WHERE {w}
@@ -6815,6 +7516,7 @@ def file_ot():
 
         # Rest Day specific
         work_category = request.form.get('work_category', 'REGULAR').strip()
+        took_break     = request.form.get('took_break', '').strip()
 
         # ── Validation ──────────────────────────────────────
         errors = []
@@ -6833,6 +7535,10 @@ def file_ot():
                 errors.append('OT Type is required.')
             if not regular_rate:
                 errors.append('Regular Rate is required.')
+
+        if work_day_type == 'REST_DAY':
+            if took_break not in ('Y', 'N'):
+                errors.append('Please indicate whether you took a 1-hour break.')
 
         # Ticket validation
         # Regular OT: PRE and POST require tickets
@@ -6951,9 +7657,9 @@ def file_ot():
                     cursor.execute(
                         """INSERT INTO rd_requests
                            (employee_id, rd_date, start_time, end_time,
-                            work_category, status)
-                           VALUES (%s,%s,%s,%s,%s,'Pending')""",
-                        (employee_id, ot_date, start_time, end_time, work_category)
+                            work_category, took_break, status)
+                           VALUES (%s,%s,%s,%s,%s,%s,'Pending')""",
+                        (employee_id, ot_date, start_time, end_time, work_category, took_break)
                     )
                     rd_request_id = cursor.lastrowid
                     hours_per_ticket = round(ot_hours / len(ticket_list), 2) if ticket_list else ot_hours
@@ -7145,9 +7851,10 @@ def file_rdw_legacy():
         start_time    = request.form.get('start_time', '').strip()
         end_time      = request.form.get('end_time', '').strip()
         work_category = request.form.get('work_category', 'REGULAR').strip()
+        took_break    = request.form.get('took_break', '').strip()
 
-        if not all([rd_date, start_time, end_time]):
-            message = 'All fields are required.'
+        if not all([rd_date, start_time, end_time]) or took_break not in ('Y', 'N'):
+            message = 'All fields are required, including the break question.'
             msg_type = 'danger'
         elif not employee_id:
             message = 'Your account is not linked to an Employee ID. Contact HR.'
@@ -7173,9 +7880,9 @@ def file_rdw_legacy():
                 cursor.execute(
                     """INSERT INTO rd_requests
                        (employee_id, rd_date, start_time, end_time,
-                        work_category, status)
-                       VALUES (%s, %s, %s, %s, %s, 'Pending')""",
-                    (employee_id, rd_date, start_time, end_time, work_category)
+                        work_category, took_break, status)
+                       VALUES (%s, %s, %s, %s, %s, %s, 'Pending')""",
+                    (employee_id, rd_date, start_time, end_time, work_category, took_break)
                 )
                 conn.commit()
                 message = 'RDW request submitted successfully!'
@@ -7358,7 +8065,7 @@ def file_requests_approvals():
                        ROUND(MOD(TIMESTAMPDIFF(MINUTE,
                            CONCAT(r.rd_date,' ',r.start_time),
                            CONCAT(r.rd_date,' ',r.end_time)
-                       ) + 1440, 1440) / 60, 2) AS rd_hours
+                       ) + 1440, 1440) / 60, 2) - IF(r.took_break = 'Y', 1, 0) AS rd_hours
                 FROM rd_requests r
                 JOIN gsheet_employees g ON g.employee_id COLLATE utf8mb4_unicode_ci = r.employee_id COLLATE utf8mb4_unicode_ci
                 WHERE r.status = 'Pending'
@@ -7683,7 +8390,7 @@ def admin_delete_request():
                 return jsonify({'success': False, 'message': 'Invalid request type'}), 400
             tbl, emp_col = table_map_check[req_type]
             _conn = get_central_db()
-            _cur  = _conn.cursor(dictionary=True)
+            _cur  = _conn.cursor()
             _cur.execute(f"SELECT {emp_col} FROM {tbl} WHERE id = %s", (req_id,))
             _row = _cur.fetchone()
             _cur.close(); _conn.close()
@@ -7705,7 +8412,7 @@ def admin_delete_request():
     try:
         if req_type == 'material':
             conn   = get_central_db()
-            cursor = conn.cursor(dictionary=True)
+            cursor = conn.cursor()
             cursor.execute("SELECT request_group_id FROM material_requests WHERE id = %s", (req_id,))
             row = cursor.fetchone()
             group_id = row['request_group_id'] if row else None
@@ -7975,6 +8682,545 @@ def hrportal_search_employee():
 
 # ── API: Recent offboardings ───────────────────────────────
 
+
+@app.route('/hrportal/api/onboarding-tasks/<employee_id>')
+@permission_required('can_onboarding')
+def hrportal_onboarding_tasks(employee_id):
+    try:
+        conn = get_db_connection()
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT id, task_name, task_category, task_description,
+                       is_required, status, completed_by, completed_date, notes
+                FROM onboarding_tasks
+                WHERE employee_id = %s
+                ORDER BY task_category, id
+            """, [employee_id])
+            tasks = cur.fetchall()
+        conn.close()
+        for t in tasks:
+            if t.get('completed_date'): t['completed_date'] = str(t['completed_date'])
+        return jsonify(tasks)
+    except Exception as e:
+        app.logger.error(f'Onboarding tasks error: {e}')
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/hrportal/api/onboarding-tasks/<int:task_id>/complete', methods=['POST'])
+@permission_required('can_onboarding')
+def hrportal_complete_onboarding_task(task_id):
+    try:
+        completed_by = session.get('user', {}).get('name', 'Admin')
+        conn = get_db_connection()
+        with conn.cursor() as cur:
+            cur.execute("""
+                UPDATE onboarding_tasks
+                SET status = 'Completed', completed_by = %s, completed_date = NOW()
+                WHERE id = %s
+            """, [completed_by, task_id])
+            # Get employee_id to check if all tasks done
+            cur.execute("SELECT employee_id FROM onboarding_tasks WHERE id = %s", [task_id])
+            row = cur.fetchone()
+            if row:
+                emp_id = row['employee_id']
+                cur.execute("""
+                    SELECT COUNT(*) AS pending
+                    FROM onboarding_tasks
+                    WHERE employee_id = %s AND status != 'Completed'
+                """, [emp_id])
+                pending = cur.fetchone()['pending']
+                if pending == 0:
+                    cur.execute("""
+                        UPDATE employee_onboarding
+                        SET onboarding_status = 'Completed', completed_date = CURDATE()
+                        WHERE employee_id = %s
+                    """, [emp_id])
+        conn.commit()
+        conn.close()
+        return jsonify({'success': True})
+    except Exception as e:
+        app.logger.error(f'Complete task error: {e}')
+        return jsonify({'error': str(e)}), 500
+
+
+def get_overbreak_periods():
+    """
+    Returns an ordered list of distinct (payroll_month, payroll_cycle,
+    record_year) tuples present in overbreak_records, ordered
+    chronologically by each period's earliest record_date. record_year
+    is included in the grouping key because payroll_month/payroll_cycle
+    labels (e.g. "December-1st") repeat every year -- without the year,
+    all Decembers across multiple years would be merged into one bucket.
+    """
+    conn = get_db_connection()
+    with conn.cursor() as cur:
+        cur.execute("""
+            SELECT payroll_month, payroll_cycle, record_year,
+                   MIN(record_date) AS first_date, MAX(record_date) AS last_date
+            FROM overbreak_records
+            WHERE payroll_month IS NOT NULL AND payroll_month != ''
+              AND payroll_cycle IS NOT NULL AND payroll_cycle != ''
+              AND record_year IS NOT NULL
+            GROUP BY payroll_month, payroll_cycle, record_year
+            ORDER BY first_date ASC
+        """)
+        rows = cur.fetchall()
+    conn.close()
+    return [{'payroll_month': r['payroll_month'], 'payroll_cycle': r['payroll_cycle'],
+             'record_year': r['record_year'],
+             'first_date': r['first_date'], 'last_date': r['last_date']} for r in rows]
+
+
+def get_overbreak_trigger_events_for_period(payroll_month, payroll_cycle, record_year):
+    """
+    In-memory preview of the same rule logic as overbreak_notify.py's
+    cron, scoped to a single payroll period (exact payroll_month +
+    payroll_cycle + record_year match). Does NOT touch
+    overbreak_cycle_state and does NOT send email -- purely a
+    preview/report, mirroring tardiness.py's get_trigger_events_for_range().
+    """
+    conn = get_db_connection()
+    with conn.cursor() as cur:
+        cur.execute("""
+            SELECT record_date, agent_name, employee_id, break_duration, tl, batch
+            FROM overbreak_records
+            WHERE validity = 'Valid' AND employee_id IS NOT NULL AND employee_id != ''
+              AND payroll_month = %s AND payroll_cycle = %s AND record_year = %s
+            ORDER BY record_date ASC, id ASC
+        """, (payroll_month, payroll_cycle, record_year))
+        rows = cur.fetchall()
+    conn.close()
+
+    period_key = f"{payroll_month} {record_year}-{payroll_cycle}"
+
+    RULE1_THRESHOLD = 3
+    RULE2_PAIR_THRESHOLD_MIN = 210
+    RULE2_ALLOWED_PAIR_MIN = 180
+    RULE3_THRESHOLD_MIN = 120
+    RULE3_ALLOWED_MIN = 90
+
+    def _duration_to_minutes(val):
+        if val is None:
+            return 0
+        total_seconds = getattr(val, 'total_seconds', None)
+        if total_seconds:
+            return int(val.total_seconds() // 60)
+        return 0
+
+    sim_state = {}
+    events = []
+
+    for r in rows:
+        employee_id = r['employee_id']
+        minutes = _duration_to_minutes(r['break_duration'])
+        record_date = r['record_date']
+
+        if employee_id not in sim_state:
+            sim_state[employee_id] = {
+                'agent_name': r['agent_name'], 'employee_id': employee_id,
+                'tl': r['tl'], 'batch': r['batch'],
+                'rule1_count': 0, 'rule1_total': 0, 'rule1_breakdown': [],
+                'rule2_pair_count': 0, 'rule2_breakdown': [],
+            }
+        s = sim_state[employee_id]
+        entry = {'date': str(record_date), 'minutes': minutes}
+
+        s['rule1_count'] += 1
+        s['rule1_total'] += 1
+        s['rule1_breakdown'].append(entry)
+        if s['rule1_count'] >= RULE1_THRESHOLD:
+            events.append({
+                'event_date': record_date, 'trigger_type': 'RULE1',
+                'agent_name': s['agent_name'], 'employee_id': employee_id,
+                'tl': s['tl'], 'batch': s['batch'], 'period_key': period_key,
+                'detail': f"The agent has {s['rule1_total']} overbreaks in this cycle.",
+                'value': s['rule1_total'], 'excess_minutes': None,
+                'breakdown': list(s['rule1_breakdown']),
+            })
+            s['rule1_count'] = 0
+            s['rule1_breakdown'] = []
+
+        s['rule2_pair_count'] += 1
+        s['rule2_breakdown'].append(entry)
+        if s['rule2_pair_count'] >= 2:
+            pair_total = sum(e['minutes'] for e in s['rule2_breakdown'])
+            if pair_total > RULE2_PAIR_THRESHOLD_MIN:
+                excess = pair_total - RULE2_ALLOWED_PAIR_MIN
+                events.append({
+                    'event_date': record_date, 'trigger_type': 'RULE2',
+                    'agent_name': s['agent_name'], 'employee_id': employee_id,
+                    'tl': s['tl'], 'batch': s['batch'], 'period_key': period_key,
+                    'detail': f"2 instances totaling {pair_total} min, exceeding the 3-hr allowed threshold.",
+                    'value': pair_total, 'excess_minutes': excess,
+                    'breakdown': list(s['rule2_breakdown']),
+                })
+            s['rule2_pair_count'] = 0
+            s['rule2_breakdown'] = []
+
+        if minutes > RULE3_THRESHOLD_MIN:
+            excess = minutes - RULE3_ALLOWED_MIN
+            events.append({
+                'event_date': record_date, 'trigger_type': 'RULE3',
+                'agent_name': s['agent_name'], 'employee_id': employee_id,
+                'tl': s['tl'], 'batch': s['batch'], 'period_key': period_key,
+                'detail': f"Single instance of {minutes} min, exceeding the 1.5-hr allowed threshold.",
+                'value': minutes, 'excess_minutes': excess,
+                'breakdown': [entry],
+            })
+
+    events.sort(key=lambda e: e['event_date'])
+    return events
+
+
+def get_overbreak_trigger_events_for_range(date_from, date_to):
+    """
+    Date-range wrapper around get_overbreak_trigger_events_for_period().
+
+    Rules 1 and 2 are stateful and reset per payroll cycle (mirroring
+    overbreak_notify.py). Evaluating them across an arbitrary range would
+    invent triggers the cron would never fire -- e.g. one overbreak per month
+    across three months would falsely satisfy "3+ instances in this cycle".
+
+    So: evaluate per cycle as normal, then filter the resulting events down to
+    the requested window. Every event returned is one the cron would also
+    produce; the range only narrows what is displayed.
+    """
+    periods = get_overbreak_periods()
+    if not periods:
+        return []
+
+    events = []
+    for p in periods:
+        first_date = p.get('first_date')
+        last_date = p.get('last_date')
+        # Skip cycles that cannot overlap the requested window.
+        if first_date and last_date:
+            if last_date < date_from or first_date > date_to:
+                continue
+        events.extend(get_overbreak_trigger_events_for_period(
+            p['payroll_month'], p['payroll_cycle'], p['record_year']
+        ))
+
+    events = [e for e in events if date_from <= e['event_date'] <= date_to]
+    events.sort(key=lambda e: e['event_date'])
+    return events
+
+
+@app.route('/admin/overbreak')
+def admin_overbreak():
+    if not (session.get('is_admin') or session.get('permissions', {}).get('can_overbreak')):
+        flash('Access denied.', 'danger')
+        return redirect(url_for('dashboard'))
+
+    view = request.args.get('view', 'records')
+    if view == 'triggers':
+        from payroll_period import get_default_payroll_period
+        default_period_start, default_period_end = get_default_payroll_period()
+        date_from_str = request.args.get('date_from', '').strip()
+        date_to_str = request.args.get('date_to', '').strip()
+        try:
+            trig_date_from = (datetime.strptime(date_from_str, '%Y-%m-%d').date()
+                              if date_from_str else default_period_start)
+            trig_date_to = (datetime.strptime(date_to_str, '%Y-%m-%d').date()
+                            if date_to_str else default_period_end)
+        except ValueError:
+            trig_date_from, trig_date_to = default_period_start, default_period_end
+        if trig_date_to < trig_date_from:
+            trig_date_from, trig_date_to = trig_date_to, trig_date_from
+
+        events = get_overbreak_trigger_events_for_range(trig_date_from, trig_date_to)
+
+        tl_filter = request.args.get('tl', '').strip()
+        batch_filter = request.args.get('batch', '').strip()
+        tl_options_for_triggers = sorted({e['tl'] for e in events if e['tl']})
+        batch_options_for_triggers = sorted({e['batch'] for e in events if e['batch']})
+        if tl_filter:
+            events = [e for e in events if (e['tl'] or '') == tl_filter]
+        if batch_filter:
+            events = [e for e in events if (e['batch'] or '') == batch_filter]
+
+        rule1_total = sum(1 for e in events if e['trigger_type'] == 'RULE1')
+        rule2_total = sum(1 for e in events if e['trigger_type'] == 'RULE2')
+        rule3_total = sum(1 for e in events if e['trigger_type'] == 'RULE3')
+        for e in events:
+            e['event_date'] = str(e['event_date'])
+
+        return render_template(
+            'admin/overbreak.html',
+            view=view,
+            events=events,
+            periods=[],
+            current_period=None, prev_period=None, next_period=None,
+            date_from=trig_date_from.isoformat(),
+            date_to=trig_date_to.isoformat(),
+            rule1_total=rule1_total,
+            rule2_total=rule2_total,
+            rule3_total=rule3_total,
+            tl_options=tl_options_for_triggers,
+            batch_options=batch_options_for_triggers,
+            filters={'tl': tl_filter, 'batch': batch_filter},
+        )
+
+    if False:  # legacy period-based triggers branch, superseded above
+        periods = get_overbreak_periods()
+        if not periods:
+            return render_template(
+                'admin/overbreak.html', view=view, events=[], periods=[],
+                current_period=None, prev_period=None, next_period=None,
+                rule1_total=0, rule2_total=0, rule3_total=0,
+                tl_options=[], filters={'tl': ''},
+            )
+
+        period_month = request.args.get('period_month', '').strip()
+        period_cycle = request.args.get('period_cycle', '').strip()
+        period_year_raw = request.args.get('period_year', '').strip()
+
+        current_index = None
+        if period_month and period_cycle and period_year_raw:
+            try:
+                period_year = int(period_year_raw)
+            except ValueError:
+                period_year = None
+            if period_year is not None:
+                for idx, p in enumerate(periods):
+                    if (p['payroll_month'] == period_month and p['payroll_cycle'] == period_cycle
+                            and p['record_year'] == period_year):
+                        current_index = idx
+                        break
+        if current_index is None:
+            current_index = len(periods) - 1
+
+        current_period = periods[current_index]
+        prev_period = periods[current_index - 1] if current_index > 0 else None
+        next_period = periods[current_index + 1] if current_index < len(periods) - 1 else None
+
+        events = get_overbreak_trigger_events_for_period(
+            current_period['payroll_month'], current_period['payroll_cycle'], current_period['record_year']
+        )
+
+        tl_filter = request.args.get('tl', '').strip()
+        if tl_filter:
+            events = [e for e in events if (e['tl'] or '') == tl_filter]
+
+        rule1_total = sum(1 for e in events if e['trigger_type'] == 'RULE1')
+        rule2_total = sum(1 for e in events if e['trigger_type'] == 'RULE2')
+        rule3_total = sum(1 for e in events if e['trigger_type'] == 'RULE3')
+
+        for e in events:
+            e['event_date'] = str(e['event_date'])
+
+        tl_options_conn = get_db_connection()
+        with tl_options_conn.cursor() as tlc:
+            tlc.execute('SELECT DISTINCT tl FROM overbreak_records WHERE tl IS NOT NULL AND tl != "" ORDER BY tl')
+            tl_options_for_triggers = [row['tl'] for row in tlc.fetchall()]
+        tl_options_conn.close()
+
+        return render_template(
+            'admin/overbreak.html',
+            view=view,
+            events=events,
+            periods=periods,
+            current_period=current_period,
+            prev_period=prev_period,
+            next_period=next_period,
+            rule1_total=rule1_total,
+            rule2_total=rule2_total,
+            rule3_total=rule3_total,
+            tl_options=tl_options_for_triggers,
+            filters={'tl': tl_filter},
+        )
+
+    conn = get_db_connection()
+    with conn.cursor() as cur:
+        tl_filter = request.args.get('tl', '').strip()
+        batch_filter = request.args.get('batch', '').strip()
+        month_filter = request.args.get('payroll_month', '').strip()
+        cycle_filter = request.args.get('payroll_cycle', '').strip()
+        # Default to the current payroll period rather than showing every
+        # record ever, so Records and Triggers open on the same range and the
+        # period arrows have a defined starting point.
+        from payroll_period import get_default_payroll_period
+        _rec_default_start, _rec_default_end = get_default_payroll_period()
+        date_from = request.args.get('date_from', '').strip() or _rec_default_start.isoformat()
+        date_to = request.args.get('date_to', '').strip() or _rec_default_end.isoformat()
+        search = request.args.get('search', '').strip()
+
+        where = []
+        params = []
+
+        if tl_filter:
+            where.append('tl = %s')
+            params.append(tl_filter)
+        if batch_filter:
+            where.append('batch = %s')
+            params.append(batch_filter)
+        if month_filter:
+            where.append('payroll_month = %s')
+            params.append(month_filter)
+        if cycle_filter:
+            where.append('payroll_cycle = %s')
+            params.append(cycle_filter)
+        if date_from:
+            where.append('record_date >= %s')
+            params.append(date_from)
+        if date_to:
+            where.append('record_date <= %s')
+            params.append(date_to)
+        if search:
+            where.append('(agent_name LIKE %s OR employee_id LIKE %s)')
+            params.append(f'%{search}%')
+            params.append(f'%{search}%')
+
+        where_clause = ('WHERE ' + ' AND '.join(where)) if where else ''
+
+        cur.execute(f"""
+            SELECT record_date, agent_name, employee_id, break_duration, validity,
+                   submitted, payroll_month, payroll_cycle, tl, duplicate_count,
+                   batch, incident_report_info
+            FROM overbreak_records
+            {where_clause}
+            ORDER BY record_date DESC, agent_name ASC
+        """, params)
+        records = cur.fetchall()
+
+        cur.execute('SELECT DISTINCT tl FROM overbreak_records WHERE tl IS NOT NULL AND tl != "" ORDER BY tl')
+        tl_options = [r['tl'] for r in cur.fetchall()]
+
+        cur.execute('SELECT DISTINCT batch FROM overbreak_records WHERE batch IS NOT NULL AND batch != "" ORDER BY batch')
+        batch_options = [r['batch'] for r in cur.fetchall()]
+
+        cur.execute('SELECT DISTINCT payroll_month FROM overbreak_records WHERE payroll_month IS NOT NULL AND payroll_month != "" ORDER BY payroll_month')
+        month_options = [r['payroll_month'] for r in cur.fetchall()]
+
+    conn.close()
+
+    ALLOWED_BREAK_MINUTES = 90  # 1:30
+
+    def _duration_to_minutes(val):
+        if val is None:
+            return 0
+        total_seconds = getattr(val, 'total_seconds', None)
+        if total_seconds:
+            return int(val.total_seconds() // 60)
+        return 0
+
+    def _minutes_to_hm(total_minutes):
+        h, m = divmod(int(total_minutes), 60)
+        if h and m:
+            return f"{h}h {m}m"
+        if h:
+            return f"{h}h"
+        return f"{m}m"
+
+    for r in records:
+        if r.get('record_date'):
+            r['record_date'] = str(r['record_date'])
+        actual_minutes = _duration_to_minutes(r.get('break_duration'))
+        if r.get('break_duration') is not None:
+            r['break_duration'] = str(r['break_duration'])
+        excess = actual_minutes - ALLOWED_BREAK_MINUTES
+        r['excess_minutes'] = excess if excess > 0 else 0
+        r['excess_hm'] = _minutes_to_hm(excess) if excess > 0 else ''
+    return render_template(
+        'admin/overbreak.html',
+        records=records,
+        tl_options=tl_options,
+        batch_options=batch_options,
+        month_options=month_options,
+        filters={
+            'tl': tl_filter, 'batch': batch_filter, 'payroll_month': month_filter,
+            'payroll_cycle': cycle_filter, 'date_from': date_from, 'date_to': date_to,
+            'search': search
+        }
+    )
+
+
+@app.route('/hrportal/wfm-onboarding')
+@login_required
+def hrportal_wfm_onboarding():
+    if not (session.get('is_admin') or session.get('permissions', {}).get('can_wfm')):
+        flash('Access denied.', 'danger')
+        return redirect(url_for('dashboard'))
+    return render_template('admin/wfm_onboarding.html')
+
+@app.route('/hrportal/api/wfm-onboarding-list')
+@login_required
+def hrportal_wfm_onboarding_list():
+    if not (session.get('is_admin') or session.get('permissions', {}).get('can_wfm')):
+        return jsonify({'error': 'Access denied'}), 403
+    try:
+        conn = get_db_connection()
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT eo.employee_id, eo.start_date, eo.wfm_onboarded,
+                       eo.wfm_onboarded_by, eo.wfm_onboarded_at,
+                       g.schedule_name, g.email, g.account, g.group_name,
+                       g.operational_date
+                FROM employee_onboarding eo
+                JOIN gsheet_employees g ON g.employee_id = eo.employee_id
+                ORDER BY eo.wfm_onboarded ASC, eo.start_date DESC
+            """)
+            rows = cur.fetchall()
+        conn.close()
+        for r in rows:
+            if r.get('start_date'): r['start_date'] = str(r['start_date'])
+            if r.get('operational_date'): r['operational_date'] = str(r['operational_date'])
+            if r.get('wfm_onboarded_at'): r['wfm_onboarded_at'] = str(r['wfm_onboarded_at'])
+            r['wfm_onboarded'] = int(r['wfm_onboarded']) if r['wfm_onboarded'] is not None else 0
+        return jsonify(rows)
+    except Exception as e:
+        app.logger.error(f'WHM onboarding list error: {e}')
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/hrportal/api/wfm-mark-onboarded/<employee_id>', methods=['POST'])
+@login_required
+def hrportal_wfm_mark_onboarded(employee_id):
+    if not (session.get('is_admin') or session.get('permissions', {}).get('can_wfm')):
+        return jsonify({'error': 'Access denied'}), 403
+    try:
+        marked_by = session.get('user', {}).get('name', 'WHM')
+        conn = get_db_connection()
+        with conn.cursor() as cur:
+            cur.execute("""
+                UPDATE employee_onboarding
+                SET wfm_onboarded = 1, wfm_onboarded_by = %s, wfm_onboarded_at = NOW()
+                WHERE employee_id = %s
+            """, [marked_by, employee_id])
+        conn.commit()
+        conn.close()
+        return jsonify({'success': True})
+    except Exception as e:
+        app.logger.error(f'WHM mark onboarded error: {e}')
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/hrportal/api/recent-onboardings')
+@permission_required('can_onboarding')
+def hrportal_recent_onboardings():
+    try:
+        conn = get_db_connection()
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT eo.employee_id, eo.onboarding_status, eo.start_date,
+                       eo.start_date AS training_date,
+                       eo.expected_completion_date, eo.completed_date,
+                       g.schedule_name, g.email, g.account,
+                       (SELECT COUNT(*) FROM onboarding_tasks t WHERE t.employee_id = eo.employee_id) AS total_tasks,
+                       (SELECT COUNT(*) FROM onboarding_tasks t WHERE t.employee_id = eo.employee_id AND t.status = 'Completed') AS done_tasks
+                FROM employee_onboarding eo
+                LEFT JOIN gsheet_employees g ON g.employee_id = eo.employee_id
+                ORDER BY eo.created_at DESC
+                LIMIT 20
+            """)
+            rows = cur.fetchall()
+        conn.close()
+        for r in rows:
+            if r.get('start_date'): r['start_date'] = str(r['start_date'])
+            if r.get('expected_completion_date'): r['expected_completion_date'] = str(r['expected_completion_date'])
+            if r.get('completed_date'): r['completed_date'] = str(r['completed_date'])
+        return jsonify(rows)
+    except Exception as e:
+        app.logger.error(f'Recent onboardings error: {e}')
+        return jsonify({'error': str(e)}), 500
+
 @app.route('/hrportal/api/recent-offboardings')
 @permission_required('can_onboarding')
 def hrportal_recent_offboardings():
@@ -7993,6 +9239,8 @@ def hrportal_recent_offboardings():
         for r in rows:
             if r.get('exit_date'):    r['exit_date']    = str(r['exit_date'])
             if r.get('processed_at'): r['processed_at'] = str(r['processed_at'])
+            for flag in ['ad_disabled','keycloak_disabled','email_suspended','dashboard_disabled','orangehrm_updated','status_updated','biometric_deleted','biometric_deactivated']:
+                if flag in r: r[flag] = int(r[flag]) if r[flag] is not None else 0
         return jsonify(rows)
     except Exception as e:
         app.logger.error(f'Recent offboardings error: {e}')
@@ -8000,6 +9248,113 @@ def hrportal_recent_offboardings():
 
 
 # ── API: Onboard (Create Employee) ────────────────────────
+
+@app.route('/hrportal/api/onboard/bulk', methods=['POST'])
+@permission_required('can_onboarding')
+def hrportal_onboard_bulk():
+    data = request.get_json() or {}
+    employees = data.get('employees', [])
+    if not employees:
+        return jsonify({'error': 'No employees provided'}), 400
+
+    results = []
+    for emp in employees:
+        employee_id = emp.get('employee_id', '').strip()
+        first_name  = emp.get('first_name', '').strip()
+        last_name   = emp.get('last_name', '').strip()
+        if not employee_id or not first_name or not last_name:
+            results.append({
+                'employee_id': employee_id or '?',
+                'name': f'{first_name} {last_name}'.strip() or '?',
+                'success': False,
+                'error': 'Missing required fields (Employee ID, First Name, Last Name)'
+            })
+            continue
+        try:
+            import requests as _req
+            emp['_bulk'] = True
+            resp = _req.post(
+                'http://localhost:5001/hrportal/api/onboard',
+                json=emp,
+                cookies=dict(request.cookies),
+                headers={'X-Bulk-Onboard': '1'},
+                timeout=120
+            )
+            r = resp.json()
+            if resp.status_code == 200 and r.get('success'):
+                results.append({
+                    'employee_id': employee_id,
+                    'name': emp.get('schedule_name', f'{first_name} {last_name}'),
+                    'success': True,
+                    'keycloak_created': r.get('keycloak_created', False),
+                    'ad_created': r.get('ad_created', False),
+                    'ad_username': r.get('ad_username'),
+                    'email_created': r.get('email_created', False),
+                    'dashboard_account_created': r.get('dashboard_account_created', False),
+                    'onboarding_created': r.get('onboarding_created', False),
+                    'account': emp.get('account', '—'),
+                    'group_name': emp.get('group_name', '—'),
+                })
+            else:
+                results.append({
+                    'employee_id': employee_id,
+                    'name': emp.get('schedule_name', f'{first_name} {last_name}'),
+                    'success': False,
+                    'error': r.get('error', 'Unknown error')
+                })
+        except Exception as e:
+            results.append({
+                'employee_id': employee_id,
+                'name': emp.get('schedule_name', f'{first_name} {last_name}'),
+                'success': False,
+                'error': str(e)
+            })
+
+    # Send one summary email for all
+    try:
+        notify_emails = os.environ.get('ONBOARDING_NOTIFY_EMAILS', '')
+        if notify_emails:
+            success_list = [r for r in results if r.get('success')]
+            fail_list    = [r for r in results if not r.get('success')]
+            rows_html = ''.join([f"""
+              <tr>
+                <td style="padding:4px 8px">{r['employee_id']}</td>
+                <td style="padding:4px 8px">{r.get('name','')}</td>
+                <td style="padding:4px 8px">{r.get('account','—')}</td>
+                <td style="padding:4px 8px">{r.get('group_name','—')}</td>
+                <td style="padding:4px 8px">{'✅' if r.get('ad_username') else '❌'}</td>
+                <td style="padding:4px 8px">{'✅' if r.get('email_created') else '❌'}</td>
+                <td style="padding:4px 8px">{r.get('ad_username','—')}</td>
+              </tr>""" for r in success_list] +
+              [f"""<tr style="background:#fef2f2">
+                <td style="padding:4px 8px">{r['employee_id']}</td>
+                <td style="padding:4px 8px">{r.get('name','')}</td>
+                <td colspan="5" style="padding:4px 8px;color:#dc2626">{r.get('error','Failed')}</td>
+              </tr>""" for r in fail_list])
+            body = f"""
+            <p><strong>{len(success_list)}</strong> employee(s) onboarded successfully, <strong>{len(fail_list)}</strong> failed.</p>
+            <table style="border-collapse:collapse;font-family:sans-serif;font-size:13px;width:100%">
+              <thead style="background:#f3f4f6">
+                <tr>
+                  <th style="padding:4px 8px;text-align:left">Employee ID</th>
+                  <th style="padding:4px 8px;text-align:left">Name</th>
+                  <th style="padding:4px 8px;text-align:left">Account</th>
+                  <th style="padding:4px 8px;text-align:left">Group</th>
+                  <th style="padding:4px 8px;text-align:left">AD</th>
+                  <th style="padding:4px 8px;text-align:left">Email</th>
+                  <th style="padding:4px 8px;text-align:left">AD Username</th>
+                </tr>
+              </thead>
+              <tbody>{rows_html}</tbody>
+            </table>
+            """
+            for recipient in [e.strip() for e in notify_emails.split(',')]:
+                send_email_as(recipient, f'Bulk Onboarding Complete — {len(success_list)} employees', body,
+                    os.environ.get('ONBOARDING_FROM_NAME', 'Onboarding System'))
+    except Exception as e:
+        app.logger.error(f'Bulk notify email error: {e}')
+
+    return jsonify({'results': results})
 
 @app.route('/hrportal/api/onboard', methods=['POST'])
 @permission_required('can_onboarding')
@@ -8163,6 +9518,23 @@ def hrportal_onboard():
                 results['ad_created']  = True
                 results['ad_username'] = ad_username
                 app.logger.info(f'✅ AD account created: {ad_username}')
+                # If BOTH target, also create in secondary AD
+                if len(ad_configs) > 1:
+                    try:
+                        secondary_ad = ad_configs[1][1]
+                        sec_resp = ext_requests.post(
+                            f"{secondary_ad['base_url']}/api/user/create",
+                            headers=secondary_ad['headers'],
+                            json={'username': ad_username, 'first_name': first_name,
+                                  'last_name': last_name, 'email': email, 'password': temp_password},
+                            timeout=30
+                        )
+                        if sec_resp.status_code == 200:
+                            app.logger.info(f'✅ AD account created on secondary ({ad_configs[1][0]}): {ad_username}')
+                        else:
+                            app.logger.error(f'❌ AD secondary create failed: {sec_resp.text}')
+                    except Exception as e2:
+                        app.logger.error(f'❌ AD secondary error: {e2}')
             else:
                 app.logger.error(f'❌ AD creation failed: {ad_resp.text}')
         except Exception as e:
@@ -8321,10 +9693,12 @@ def hrportal_onboard():
 
         # ── Notify HR/IT teams ────────────────────────────
         try:
-            notify_emails = os.environ.get('ONBOARDING_NOTIFY_EMAILS', '')
+            is_bulk = (data.get('_bulk', False) or request.headers.get('X-Bulk-Onboard') == '1')
+            app.logger.info(f'🔔 Onboard notify check: is_bulk={is_bulk} bulk_body={data.get("_bulk")} bulk_header={request.headers.get("X-Bulk-Onboard")}')
+            notify_emails = os.environ.get('ONBOARDING_NOTIFY_EMAILS', '') if not is_bulk else ''
             if notify_emails:
                 for recipient in [e.strip() for e in notify_emails.split(',')]:
-                    send_email(recipient, f'New Employee Onboarded — {schedule_name}', f"""
+                    send_email_as(recipient, f'New Employee Onboarded — {schedule_name}', f"""
                     <p>A new employee has been successfully onboarded.</p>
                     <table style="border-collapse:collapse;font-family:sans-serif;font-size:14px">
                       <tr><td style="padding:4px 16px 4px 0;font-weight:bold">Employee ID</td><td>{employee_id}</td></tr>
@@ -8335,7 +9709,7 @@ def hrportal_onboard():
                       <tr><td style="padding:4px 16px 4px 0;font-weight:bold">AD Username</td><td>{results.get('ad_username', 'N/A')}</td></tr>
                       <tr><td style="padding:4px 16px 4px 0;font-weight:bold">Processed By</td><td>{processed_by}</td></tr>
                     </table>
-                    """)
+                    """, os.environ.get("ONBOARDING_FROM_NAME", "Onboarding System"))
         except Exception as e:
             app.logger.error(f'❌ Onboarding notify email error: {e}')
 
@@ -8601,6 +9975,97 @@ def hrportal_offboard(employee_id):
         app.logger.error(f'❌ Offboarding error: {e}', exc_info=True)
         return jsonify({'error': str(e)}), 500
 
+def build_attendance_map(personids, window_start, window_end):
+    """
+    Returns {(personid, date): {'status': 'Present'|'FTS IN'|'FTS OUT', 'time_in':..., 'time_out':...}}
+    Reused by /admin/absences and /admin/attendance-grid so both stay consistent.
+    window_start/window_end should include a 1-day buffer on each side to catch
+    overnight-shift punches crossing the boundary.
+    """
+    MAX_HOURS    = 18 * 3600
+    NOON_SECONDS = 12 * 3600
+
+    raw_logs = {}
+    if personids:
+        ph = ','.join(['%s'] * len(personids))
+        cdb2 = get_central_db()
+        try:
+            with cdb2.cursor() as c:
+                c.execute(f"""
+                    SELECT personid, date, type
+                    FROM dailytimerecordsfiltered
+                    WHERE personid IN ({ph})
+                      AND date_only BETWEEN %s AND %s
+                    ORDER BY personid, date
+                """, personids + [window_start, window_end])
+                for row in c.fetchall():
+                    pid = int(row['personid'])
+                    raw_logs.setdefault(pid, []).append((row['date'], row['type']))
+        finally:
+            cdb2.close()
+
+    attendance_map = {}
+
+    for pid, logs in raw_logs.items():
+        previous_in = None
+
+        for (log_dt, log_type) in logs:
+            log_date = log_dt.date()
+            log_ts   = log_dt.timestamp()
+
+            if log_type == 'in':
+                if previous_in:
+                    prev_ts   = previous_in.timestamp()
+                    time_diff = log_ts - prev_ts
+                    if time_diff > MAX_HOURS:
+                        prev_date = previous_in.date()
+                        attendance_map[(pid, prev_date)] = {
+                            'status': 'FTS OUT', 'time_in': previous_in.strftime('%b %d %H:%M'), 'time_out': None,
+                        }
+                        previous_in = None
+                if previous_in is None:
+                    previous_in = log_dt
+
+            elif log_type == 'out':
+                log_time_secs = log_dt.hour * 3600 + log_dt.minute * 60 + log_dt.second
+                # Attribution logic for before-noon OUT punches:
+                # - Same-day IN+OUT (e.g. 1am-10am): use that day directly
+                # - Overnight crossing midnight (e.g. 7pm-6am): attribute to previous day
+                # - Orphan OUT with no prior IN (FTS IN case): attribute to previous day
+                if log_time_secs < NOON_SECONDS:
+                    if previous_in and previous_in.date() == log_date:
+                        record_date = log_date
+                    else:
+                        record_date = (log_dt - timedelta(days=1)).date()
+                else:
+                    record_date = log_date
+
+                if previous_in:
+                    in_ts     = previous_in.timestamp()
+                    time_diff = log_ts - in_ts
+                    if time_diff <= MAX_HOURS:
+                        pair_date = record_date
+                        attendance_map[(pid, pair_date)] = {
+                            'status': 'Present', 'time_in': previous_in.strftime('%b %d %H:%M'), 'time_out': log_dt.strftime('%b %d %H:%M'),
+                        }
+                        previous_in = None
+                    else:
+                        attendance_map[(pid, record_date)] = {
+                            'status': 'FTS IN', 'time_in': None, 'time_out': log_dt.strftime('%b %d %H:%M'),
+                        }
+                else:
+                    attendance_map[(pid, record_date)] = {
+                        'status': 'FTS IN', 'time_in': None, 'time_out': log_dt.strftime('%b %d %H:%M'),
+                    }
+
+        if previous_in:
+            prev_date = previous_in.date()
+            if prev_date <= window_end:
+                attendance_map[(pid, prev_date)] = {
+                    'status': 'FTS OUT', 'time_in': previous_in.strftime('%b %d %H:%M'), 'time_out': None,
+                }
+
+    return attendance_map
 
 @app.route('/admin/absences')
 def admin_absences():
@@ -8608,7 +10073,16 @@ def admin_absences():
         return redirect(url_for('dashboard'))
 
     from datetime import date, timedelta, datetime as dt
-    yesterday = date.today() - timedelta(days=1)
+    from payroll_period import get_default_payroll_period
+
+    default_period_start, default_period_end = get_default_payroll_period()
+
+    TODAY_CUTOFF_HOUR = 13  # matches the 1 PM absence-report cron / Today button logic
+    now = dt.now()
+    if now.hour < TODAY_CUTOFF_HOUR:
+        safe_last_day = date.today() - timedelta(days=2)
+    else:
+        safe_last_day = date.today() - timedelta(days=1)
 
     def parse_date(val, fallback):
         try:
@@ -8616,10 +10090,16 @@ def admin_absences():
         except ValueError:
             return fallback
 
-    date_from = parse_date(request.args.get('date_from'), yesterday)
-    date_to   = parse_date(request.args.get('date_to'),   yesterday)
+    date_from = parse_date(request.args.get('date_from'), default_period_start)
+    date_to   = parse_date(request.args.get('date_to'),   default_period_end)
     if date_to < date_from:
         date_to = date_from
+    # Never show data beyond the last fully-completed day, even if the
+    # selected payroll period (or a manually-entered date) extends further.
+    if date_to > safe_last_day:
+        date_to = safe_last_day
+    if date_from > date_to:
+        date_from = date_to
 
     # ── Step 1: All scheduled active employees in date range ──
     scheduled = []
@@ -8668,110 +10148,11 @@ def admin_absences():
 
         personids = list(personid_map.keys())
 
-        # ── Step 2: Fetch ALL time records with a buffer day on each side ──
-        # Buffer before: to catch INs from the day before date_from (for overnight shifts)
-        raw_logs = {}  # personid -> [(datetime, type), ...]
-        if personids:
-            ph         = ','.join(['%s'] * len(personids))
-            window_start = date_from - timedelta(days=1)
-            window_end   = date_to   + timedelta(days=1)
-            cdb2 = get_central_db()
-            try:
-                with cdb2.cursor() as c:
-                    c.execute(f"""
-                        SELECT personid, date, type
-                        FROM dailytimerecordsfiltered
-                        WHERE personid IN ({ph})
-                          AND date_only BETWEEN %s AND %s
-                        ORDER BY personid, date
-                    """, personids + [window_start, window_end])
-                    for row in c.fetchall():
-                        pid = int(row['personid'])
-                        raw_logs.setdefault(pid, []).append((row['date'], row['type']))
-            finally:
-                cdb2.close()
-
-        # ── Step 3: PHP-style sequential pairing per employee ──
-        # Returns list of {day, time_in, time_out, status} for each employee
-        MAX_HOURS    = 18 * 3600  # 18-hour pairing window
-        NOON_SECONDS = 12 * 3600  # noon threshold for prev-day attribution
-
-        # Build a map: (personid, date) -> {status, time_in, time_out}
-        attendance_map = {}
-
-        for pid, logs in raw_logs.items():
-            previous_in = None  # (datetime, type='in') log entry
-
-            for (log_dt, log_type) in logs:
-                log_date = log_dt.date()
-                log_time = log_dt.time()
-                log_ts   = log_dt.timestamp()
-
-                if log_type == 'in':
-                    if previous_in:
-                        prev_ts   = previous_in.timestamp()
-                        time_diff = log_ts - prev_ts
-
-                        if time_diff > MAX_HOURS:
-                            # Previous IN has no OUT within 18hrs -> FTS OUT
-                            prev_date = previous_in.date()
-                            attendance_map[(pid, prev_date)] = {
-                                'status':   'FTS OUT',
-                                'time_in':  previous_in.strftime('%b %d %H:%M'),
-                                'time_out': None,
-                            }
-                            previous_in = None
-
-                    if previous_in is None:
-                        previous_in = log_dt
-
-                elif log_type == 'out':
-                    log_time_secs = log_dt.hour * 3600 + log_dt.minute * 60 + log_dt.second
-
-                    # If OUT before noon -> attribute to previous calendar day
-                    if log_time_secs < NOON_SECONDS:
-                        record_date = (log_dt - timedelta(days=1)).date()
-                    else:
-                        record_date = log_date
-
-                    if previous_in:
-                        in_ts     = previous_in.timestamp()
-                        time_diff = log_ts - in_ts
-
-                        if time_diff <= MAX_HOURS:
-                            # Valid pair
-                            pair_date = previous_in.date()
-                            attendance_map[(pid, pair_date)] = {
-                                'status':   'Present',
-                                'time_in':  previous_in.strftime('%b %d %H:%M'),
-                                'time_out': log_dt.strftime('%b %d %H:%M'),
-                            }
-                            previous_in = None
-                        else:
-                            # Gap too large -> OUT is FTS IN (no valid prior IN)
-                            attendance_map[(pid, record_date)] = {
-                                'status':   'FTS IN',
-                                'time_in':  None,
-                                'time_out': log_dt.strftime('%b %d %H:%M'),
-                            }
-                    else:
-                        # No prior IN -> FTS IN
-                        attendance_map[(pid, record_date)] = {
-                            'status':   'FTS IN',
-                            'time_in':  None,
-                            'time_out': log_dt.strftime('%b %d %H:%M'),
-                        }
-
-            # Leftover unpaired IN -> FTS OUT
-            if previous_in:
-                prev_date = previous_in.date()
-                # Don't flag if it's past the filter end date (might still be working)
-                if prev_date <= date_to:
-                    attendance_map[(pid, prev_date)] = {
-                        'status':   'FTS OUT',
-                        'time_in':  previous_in.strftime('%b %d %H:%M'),
-                        'time_out': None,
-                    }
+        # ── Step 2-3: Build attendance map using shared helper (also used by
+        # /admin/attendance-grid), so both pages stay consistent ──
+        window_start = date_from - timedelta(days=1)
+        window_end   = date_to   + timedelta(days=1)
+        attendance_map = build_attendance_map(personids, window_start, window_end)
 
         # ── Step 4: Match scheduled rows to attendance_map ──
         for row in scheduled:
@@ -10201,7 +11582,8 @@ CSAT_SYNC_TOKEN = os.environ.get("CSAT_SYNC_TOKEN")  # add to .env
 CSAT_COLS = [
     "performed_at_date","ticket_id","core_language","customer_name","booking_reference",
     "theme_l1","agent_tenure","agent_email","ticket_language","csat_rate","csat_score",
-    "week","month","tl","tenure","group_name","batch","channel_type","som","qa_comment","qa_name"
+    "week","month","tl","tenure","group_name","batch","channel_type","som","qa_comment","qa_name",
+    "root_cause","rep_responsible"
 ]
 
 @app.route("/api/csat/sync", methods=["POST"])
@@ -11416,6 +12798,738 @@ def api_my_csat_periods():
     finally:
         cdb.close()
 
+@app.route('/admin/attendance-grid')
+@permission_required('can_absences')
+def admin_attendance_grid():
+    from datetime import date, timedelta, datetime as dt
+    from calendar import monthrange
+
+    today = date.today()
+    # "Safe" last day = same cutoff logic as the Today button (1 PM)
+    TODAY_CUTOFF_HOUR = 13
+    now = dt.now()
+    if now.hour < TODAY_CUTOFF_HOUR:
+        safe_last_day = today - timedelta(days=2)
+    else:
+        safe_last_day = today - timedelta(days=1)
+
+    month_filter = request.args.get('month', today.strftime('%Y-%m'))
+    group_filter = request.args.get('group', '')
+    tl_filter    = request.args.get('tl', '')
+    emp_search   = request.args.get('emp_search', '').strip()
+
+    year, month = map(int, month_filter.split('-'))
+    month_start = date(year, month, 1)
+    last_day_of_month = date(year, month, monthrange(year, month)[1])
+    # Don't show/calc beyond the safe cutoff day if viewing the current month
+    # Always show all calendar days as columns
+    month_end = last_day_of_month
+    # But only query attendance data up to the safe cutoff
+    data_end = min(last_day_of_month, safe_last_day) if month_filter == today.strftime('%Y-%m') else last_day_of_month
+
+    cdb = get_central_db()
+    try:
+        with cdb.cursor() as c:
+            c.execute("""SELECT DISTINCT group_name FROM gsheet_employees
+                         WHERE group_name IS NOT NULL AND status != 'Separated'
+                         ORDER BY group_name""")
+            groups = [r['group_name'] for r in c.fetchall()]
+
+            c.execute("""SELECT DISTINCT tl FROM gsheet_employees
+                         WHERE tl IS NOT NULL AND tl != '' AND status != 'Separated'
+                         ORDER BY tl""")
+            tls = [r['tl'] for r in c.fetchall()]
+
+            where  = ['es.schedule_date BETWEEN %s AND %s']
+            params = [month_start, month_end]
+            
+            if group_filter:
+                where.append('g.group_name = %s')
+                params.append(group_filter)
+            if tl_filter:
+                where.append('g.tl = %s')
+                params.append(tl_filter)
+            if emp_search:
+                where.append('(g.employee_id LIKE %s OR g.schedule_name LIKE %s)')
+                params += [f'%{emp_search}%', f'%{emp_search}%']
+
+            c.execute(f"""
+                SELECT
+                    g.employee_id, g.schedule_name, COALESCE(g.tl,'-') AS tl,
+                    COALESCE(g.group_name,'No Group') AS group_name,
+                    g.status, g.exit_date,
+                    es.schedule_date, es.is_rest_day, u.personid
+                FROM employee_schedules es
+                JOIN gsheet_employees g
+                    ON g.employee_id COLLATE utf8mb4_unicode_ci = es.employee_id COLLATE utf8mb4_unicode_ci
+                JOIN (
+                    SELECT companyid,
+                           SUBSTRING_INDEX(GROUP_CONCAT(personid ORDER BY personid DESC), ',', 1) AS personid
+                    FROM userdata GROUP BY companyid
+                ) u ON u.companyid COLLATE utf8mb4_unicode_ci = es.employee_id COLLATE utf8mb4_unicode_ci
+                WHERE {' AND '.join(where)}
+                ORDER BY g.group_name, g.tl, g.schedule_name, es.schedule_date
+            """, params)
+            rows = c.fetchall()
+
+            # All notes for this employee set + month, in one query
+            emp_ids = list({r['employee_id'] for r in rows})
+            notes_map = {}
+            if emp_ids:
+                ph = ','.join(['%s'] * len(emp_ids))
+                c.execute(f"""
+                    SELECT employee_id, note_date, note, created_by, updated_at
+                    FROM attendance_notes
+                    WHERE employee_id IN ({ph})
+                      AND note_date BETWEEN %s AND %s
+                """, emp_ids + [month_start, month_end])
+                for n in c.fetchall():
+                    notes_map[f"{n['employee_id']}|{n['note_date']}"] = n
+    finally:
+        cdb.close()
+
+    # Leave map: employee_id|date -> {code, pending}
+    leave_map = {}
+    if emp_ids:
+        odb = get_db()
+        try:
+            with odb.cursor() as lc:
+                lc.execute("""
+                    SELECT e.employee_id, lr.leave_date,
+                           lt.name AS leave_type_name, lr.status
+                    FROM leave4day_requests lr
+                    JOIN hs_hr_employee e ON e.emp_number = lr.emp_number
+                    JOIN ohrm_leave_type lt ON lt.id = lr.leave_type_id
+                    WHERE lr.leave_date BETWEEN %s AND %s
+                      AND lr.status NOT IN ('Rejected','Cancelled','Deleted','rejected','cancelled')
+                """, [month_start, month_end])
+                emp_ids_set = set(emp_ids)
+                for lv in lc.fetchall():
+                    if lv['employee_id'] not in emp_ids_set:
+                        continue
+                    key = f"{lv['employee_id']}|{lv['leave_date']}"
+                    leave_map[key] = {
+                        'name': lv['leave_type_name'],
+                        'code': get_leave_code(lv['leave_type_name']),
+                        'pending': lv['status'] in ('Pending Approval', 'pending', 'Scheduled')
+                    }
+        finally:
+            odb.close()
+
+    # --- NEW: suspension (SUS) dates from central_db.absence_records ---
+    # employee_id -> set of 'YYYY-MM-DD' strings. Used to relabel days that
+    # would otherwise fall through to 'A'. Counting behaviour is unchanged.
+    sus_lookup = {}
+    try:
+        cdb_sus = get_central_db()
+        try:
+            with cdb_sus.cursor() as c:
+                c.execute("""
+                    SELECT employee_id, DATE_FORMAT(absence_date, '%Y-%m-%d') AS d
+                    FROM absence_records
+                    WHERE code = 'SUS'
+                      AND employee_id IS NOT NULL
+                      AND absence_date IS NOT NULL
+                """)
+                for row in c.fetchall():
+                    sus_lookup.setdefault(row['employee_id'], set()).add(row['d'])
+        finally:
+            cdb_sus.close()
+    except Exception as e:
+        app.logger.warning(f"attendance-grid: SUS lookup failed, continuing without it: {e}")
+        sus_lookup = {}
+
+    # Fetch holidays for the selected month from orangehrm2
+    # Recurring holidays use the stored date but with the year adjusted to match the viewed month
+    holiday_map = {}  # date string -> holiday name
+    odb2 = get_db()
+    try:
+        with odb2.cursor() as hc:
+            hc.execute("""
+                SELECT description, date, recurring
+                FROM ohrm_holiday
+                WHERE (YEAR(date) = %s AND MONTH(date) = %s)
+                   OR (recurring = 1 AND MONTH(date) = %s)
+            """, [year, month, month])
+            for h in hc.fetchall():
+                hdate = h['date']
+                if h['recurring']:
+                    # Shift recurring holidays to the viewed year
+                    try:
+                        hdate = hdate.replace(year=year)
+                    except ValueError:
+                        continue  # skip Feb 29 in non-leap years
+                if hdate.month == month:
+                    holiday_map[str(hdate)] = h['description'].strip()
+    finally:
+        odb2.close()
+
+    if not rows:
+        return render_template('admin/attendance_grid.html', 
+                               employees=[], date_headers=[],
+                               groups=groups, tls=tls, month_filter=month_filter,
+                               group_filter=group_filter, tl_filter=tl_filter,
+                               emp_search=emp_search, team_rate=None,
+                               team_present=0, team_scheduled=0,
+                               holiday_map={}, is_current_month=False,
+                               team_forecast_rate=None, team_remaining=0,
+                               user=session['user'])
+
+    personids = list({int(r['personid']) for r in rows if r['personid']})
+    window_start = month_start - timedelta(days=1)
+    window_end   = month_end + timedelta(days=1)
+    attendance_map = build_attendance_map(personids, window_start, window_end)
+
+    # Build per-employee day grid
+    emp_map = {}
+    for r in rows:
+        eid = r['employee_id']
+        if eid not in emp_map:
+            emp_map[eid] = {
+                'employee_id': eid, 'name': r['schedule_name'] or eid,
+                'group_name': r['group_name'], 'tl': r['tl'],
+                'personid': int(r['personid']) if r['personid'] else None,
+                'exit_date': r['exit_date'],
+                'days': {}, 'scheduled_count': 0, 'present_count': 0,
+                'remaining_days': 0,
+            }
+        emp = emp_map[eid]
+        d = r['schedule_date']
+        is_rest = bool(r['is_rest_day'])
+        if emp['exit_date'] and d > emp['exit_date']:
+            emp['days'][str(d)] = {'status': None, 'note': None, 'leave': None}
+            continue
+        if d > data_end:
+            # Future/incomplete day — show blank, don't affect rate
+            emp['days'][str(d)] = {'status': None, 'note': None, 'leave': None}
+            if not is_rest:
+                emp['remaining_days'] += 1
+            continue
+
+        if is_rest:
+            status_char = 'RD'
+        else:
+            att    = attendance_map.get((emp['personid'], d)) if emp['personid'] else None
+            lv     = leave_map.get(f"{eid}|{d}")
+            emp['scheduled_count'] += 1
+            if att and att['status'] == 'Present':
+                status_char = 'P'
+                emp['present_count'] += 1
+            elif att and att['status'] == 'FTS IN':
+                status_char = 'FI'
+                emp['present_count'] += 1
+            elif att and att['status'] == 'FTS OUT':
+                status_char = 'FO'
+                emp['present_count'] += 1
+            elif lv:
+                status_char = f"{lv['code']}*" if lv['pending'] else lv['code']
+                if lv['code'] in ('PL', 'ML'):
+                    emp['scheduled_count'] -= 1  # PL and ML excluded from rate entirely
+                # All other leave types count as absent — no present_count increment
+            elif str(d) in sus_lookup.get(eid, ()):
+                status_char = 'SUS'
+            else:
+                status_char = 'A'
+
+        note = notes_map.get(f"{eid}|{d}")
+        lv   = leave_map.get(f"{eid}|{d}")
+        emp['days'][str(d)] = {'status': status_char, 'note': note, 'leave': lv}
+
+    employees = list(emp_map.values())
+    # Build status breakdown counts per employee
+    all_statuses = ['P', 'A', 'FI', 'FO', 'VL', 'SL', 'LWOP', 'PL', 'COL', 'ML',
+                    'VL*', 'SL*', 'LWOP*', 'PL*', 'COL*', 'ML*', 'RD']
+    for emp in employees:
+        counts = {s: 0 for s in all_statuses}
+        for day in emp['days'].values():
+            s = day.get('status')
+            if s in counts:
+                counts[s] += 1
+        emp['status_counts'] = counts
+    is_current_month = month_filter == today.strftime('%Y-%m')
+
+    for emp in employees:
+        emp['absence_rate'] = round(
+            (emp['present_count'] / emp['scheduled_count'] * 100), 1
+        ) if emp['scheduled_count'] > 0 else None
+        # Forecasted achievement — best case (all remaining days present)
+        # Only computed for current month, uses remaining_days counted during day-building loop
+        if is_current_month:
+            remaining = emp.get('remaining_days', 0)
+            total_scheduled = emp['scheduled_count'] + remaining
+            total_present = emp['present_count'] + remaining
+            emp['forecast_rate'] = round(
+                (total_present / total_scheduled * 100), 1
+            ) if total_scheduled > 0 else None
+            emp['forecast_remaining'] = remaining
+        else:
+            emp['forecast_rate'] = None
+            emp['forecast_remaining'] = 0
+
+    team_present   = sum(e['present_count'] for e in employees)
+    team_scheduled = sum(e['scheduled_count'] for e in employees)
+    team_rate = round((team_present / team_scheduled * 100), 1) if team_scheduled > 0 else None
+
+    # Team forecast — best case, current month only
+    if is_current_month:
+        team_remaining = sum(e.get('remaining_days', 0) for e in employees)
+        team_forecast_scheduled = team_scheduled + team_remaining
+        team_forecast_present   = team_present + team_remaining
+        team_forecast_rate = round(
+            (team_forecast_present / team_forecast_scheduled * 100), 1
+        ) if team_forecast_scheduled > 0 else None
+    else:
+        team_remaining      = 0
+        team_forecast_rate  = None
+
+    date_headers = []
+    cursor_date = month_start
+    while cursor_date <= month_end:
+        date_headers.append({'date': str(cursor_date), 'day': cursor_date.strftime('%d'), 'weekday': cursor_date.strftime('%a')})
+        cursor_date += timedelta(days=1)
+
+    return render_template('admin/attendance_grid.html',
+                           employees=employees, date_headers=date_headers,
+                           groups=groups, tls=tls, month_filter=month_filter,
+                           group_filter=group_filter, tl_filter=tl_filter,
+                           emp_search=emp_search, team_rate=team_rate,
+                           team_present=team_present, team_scheduled=team_scheduled,
+                           holiday_map=holiday_map, is_current_month=is_current_month,
+                           team_forecast_rate=team_forecast_rate, team_remaining=team_remaining,
+                           user=session['user'])
+
+
+@app.route('/api/attendance-note', methods=['POST'])
+@login_required
+def save_attendance_note():
+    if not session.get('is_admin') and not session.get('permissions', {}).get('can_absences'):
+        return jsonify({'error': 'Permission denied'}), 403
+
+    data = request.get_json(force=True)
+    employee_id = data.get('employee_id', '').strip()
+    note_date   = data.get('note_date', '').strip()
+    note_text   = data.get('note', '').strip()
+
+    if not employee_id or not note_date:
+        return jsonify({'error': 'Missing employee_id or note_date'}), 400
+
+    changed_by = session['user']['name']
+    cdb = get_central_db()
+    try:
+        with cdb.cursor() as c:
+            if not note_text:
+                # Check if note exists before deleting
+                c.execute("SELECT note FROM attendance_notes WHERE employee_id=%s AND note_date=%s",
+                          (employee_id, note_date))
+                existing = c.fetchone()
+                if existing:
+                    c.execute("DELETE FROM attendance_notes WHERE employee_id=%s AND note_date=%s",
+                              (employee_id, note_date))
+                    c.execute("""
+                        INSERT INTO attendance_note_logs (employee_id, note_date, note, action, changed_by)
+                        VALUES (%s, %s, %s, 'deleted', %s)
+                    """, (employee_id, note_date, existing['note'], changed_by))
+            else:
+                # Check if existing note
+                c.execute("SELECT note FROM attendance_notes WHERE employee_id=%s AND note_date=%s",
+                          (employee_id, note_date))
+                existing = c.fetchone()
+                action = 'updated' if existing else 'created'
+
+                c.execute("""
+                    INSERT INTO attendance_notes (employee_id, note_date, note, created_by)
+                    VALUES (%s, %s, %s, %s)
+                    ON DUPLICATE KEY UPDATE note=%s, created_by=%s, updated_at=CURRENT_TIMESTAMP
+                """, (employee_id, note_date, note_text, changed_by,
+                      note_text, changed_by))
+                c.execute("""
+                    INSERT INTO attendance_note_logs (employee_id, note_date, note, action, changed_by)
+                    VALUES (%s, %s, %s, %s, %s)
+                """, (employee_id, note_date, note_text, action, changed_by))
+        cdb.commit()
+    finally:
+        cdb.close()
+
+    return jsonify({'success': True})
+
+@app.route('/api/attendance-note-logs')
+@login_required
+def get_attendance_note_logs():
+    if not session.get('is_admin') and not session.get('permissions', {}).get('can_absences'):
+        return jsonify({'error': 'Permission denied'}), 403
+
+    employee_id = request.args.get('employee_id', '').strip()
+    note_date   = request.args.get('note_date', '').strip()
+
+    if not employee_id or not note_date:
+        return jsonify({'error': 'Missing params'}), 400
+
+    cdb = get_central_db()
+    try:
+        with cdb.cursor() as c:
+            c.execute("""
+                SELECT note, action, changed_by, changed_at
+                FROM attendance_note_logs
+                WHERE employee_id = %s AND note_date = %s
+                ORDER BY changed_at DESC
+            """, (employee_id, note_date))
+            logs = c.fetchall()
+    finally:
+        cdb.close()
+
+    return jsonify([{
+        'note': r['note'],
+        'action': r['action'],
+        'changed_by': r['changed_by'],
+        'changed_at': r['changed_at'].strftime('%b %d, %Y %I:%M %p')
+    } for r in logs])
+
 app.register_blueprint(survey_bp)
+
+# Add this route to app.py (or a Blueprint if you prefer to keep it separate).
+# Requires: ABSENCE_SYNC_KEY set in .env
+
+import hashlib
+from flask import request, jsonify
+import os
+
+ABSENCE_SYNC_KEY = os.environ.get('ABSENCE_SYNC_KEY')
+
+def make_row_hash(date, employee_id, reason):
+    raw = f"{date}|{employee_id}|{reason}".strip().lower()
+    return hashlib.md5(raw.encode('utf-8')).hexdigest()
+
+@app.route('/api/absence-records/sync', methods=['POST'])
+def sync_absence_records():
+    key = request.headers.get('X-Sync-Key') or request.json.get('sync_key')
+    if key != ABSENCE_SYNC_KEY:
+        return jsonify({'error': 'unauthorized'}), 401
+
+    data = request.get_json()
+    rows = data.get('rows', [])
+    if not rows:
+        return jsonify({'error': 'no rows provided'}), 400
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    inserted = 0
+    updated = 0
+
+    sql = """
+        INSERT INTO absence_records (
+            sheet_row, row_hash, absence_date, agent_name, reason, approval_status, code,
+            is_planned, remarks, team_lead, cw, tenure, with_sl, with_vl,
+            emp_group, email, month_label, duplicated, employee_id, year_label,
+            holidays, day_of_week, shift_schedule, status_v, before_holiday,
+            email_gyg, batch, absence_type
+        ) VALUES (
+            %s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s
+        )
+        ON DUPLICATE KEY UPDATE
+            row_hash = VALUES(row_hash),
+            absence_date = VALUES(absence_date),
+            agent_name = VALUES(agent_name),
+            reason = VALUES(reason),
+            approval_status = VALUES(approval_status),
+            code = VALUES(code),
+            is_planned = VALUES(is_planned),
+            remarks = VALUES(remarks),
+            team_lead = VALUES(team_lead),
+            cw = VALUES(cw),
+            tenure = VALUES(tenure),
+            with_sl = VALUES(with_sl),
+            with_vl = VALUES(with_vl),
+            emp_group = VALUES(emp_group),
+            email = VALUES(email),
+            month_label = VALUES(month_label),
+            duplicated = VALUES(duplicated),
+            employee_id = VALUES(employee_id),
+            year_label = VALUES(year_label),
+            holidays = VALUES(holidays),
+            day_of_week = VALUES(day_of_week),
+            shift_schedule = VALUES(shift_schedule),
+            status_v = VALUES(status_v),
+            before_holiday = VALUES(before_holiday),
+            email_gyg = VALUES(email_gyg),
+            batch = VALUES(batch),
+            absence_type = VALUES(absence_type)
+    """
+
+    for r in rows:
+        row_hash = make_row_hash(r.get('date', ''), r.get('employee_id', ''), r.get('reason', ''))
+        params = (
+            r.get('sheet_row'),
+            row_hash,
+            r.get('date') or None,
+            r.get('agent'),
+            r.get('reason'),
+            r.get('status'),
+            r.get('code'),
+            r.get('planned'),
+            r.get('remarks'),
+            r.get('tl'),
+            r.get('cw'),
+            r.get('tenure'),
+            r.get('with_sl'),
+            r.get('with_vl'),
+            r.get('group'),
+            r.get('email'),
+            r.get('month'),
+            r.get('duplicated'),
+            r.get('employee_id'),
+            r.get('year'),
+            r.get('holidays'),
+            r.get('day'),
+            r.get('shift_schedule'),
+            r.get('status_v'),
+            r.get('before_holiday'),
+            r.get('email_gyg'),
+            r.get('batch'),
+            r.get('absence_type'),
+        )
+        cursor.execute(sql, params)
+        if cursor.rowcount == 1:
+            inserted += 1
+        else:
+            updated += 1
+
+    conn.commit()
+    cursor.close()
+    conn.close()
+
+    return jsonify({'status': 'ok', 'inserted': inserted, 'updated_or_unchanged': updated, 'total': len(rows)})
+    
+
+@app.context_processor
+def inject_nav_style():
+    style = os.getenv('NAV_STYLE', 'sidebar')
+    pilot = [u.strip().lower() for u in os.getenv('NAV_TOPNAV_USERS', '').split(',') if u.strip()]
+    # Option B: during Login As, check the *original admin's* email
+    # so impersonation follows your pilot membership, not the target's
+    original = session.get('original_admin')
+    if original:
+        email = (original.get('email') or '').lower()
+    else:
+        email = ((session.get('user') or {}).get('email') or '').lower()
+    if email and email in pilot:
+        style = 'topnav'
+    return dict(nav_style=style)
+
+
+
+# ================================================================
+# NAV PARITY CHECK  /admin/nav-parity
+# Renders _sidebar.html and _topnav.html for 15 synthetic sessions
+# and diffs the visible url_for() endpoints.
+# Admin-only. Remove or gate behind is_admin before production flip.
+# ================================================================
+@app.route('/admin/nav-parity')
+def nav_parity_check():
+    if not session.get('is_admin'):
+        return "Admin only", 403
+
+    from jinja2 import DictLoader, Environment
+    import re
+
+    # -- helpers that read session; we patch them with lambda mocks --
+    # Real implementations are called via app.jinja_env.globals which
+    # already hold the real functions. We override per-profile below.
+
+    DUMMY_EMAIL = 'parity-test-noreply@cohere.ph'
+
+    PROFILES = [
+        {"name": "01 plain agent",
+         "session": {"user": {"email": DUMMY_EMAIL, "name": "Test", "employee_id": "000000-00", "emp_number": 9999},
+                     "bl_is_overhead": False}},
+        {"name": "02 supervisor",
+         "session": {"user": {"email": DUMMY_EMAIL, "name": "Test", "employee_id": "000000-00", "emp_number": 9999},
+                     "is_supervisor": True, "bl_is_overhead": False}},
+        {"name": "03 TL",
+         "session": {"user": {"email": DUMMY_EMAIL, "name": "Test", "employee_id": "000000-00", "emp_number": 9999},
+                     "is_tl": True, "bl_is_overhead": False}},
+        {"name": "04 CSAT TL",
+         "session": {"user": {"email": DUMMY_EMAIL, "name": "Test", "employee_id": "000000-00", "emp_number": 9999},
+                     "is_csat_tl": True, "bl_is_overhead": False}},
+        {"name": "05 TL + can_schedules",
+         "session": {"user": {"email": DUMMY_EMAIL, "name": "Test", "employee_id": "000000-00", "emp_number": 9999},
+                     "is_tl": True, "is_sub_admin": True, "bl_is_overhead": False,
+                     "permissions": {"can_schedules": True}}},
+        {"name": "06 narrow: can_inventory",
+         "session": {"user": {"email": DUMMY_EMAIL, "name": "Test", "employee_id": "000000-00", "emp_number": 9999},
+                     "is_sub_admin": True, "bl_is_overhead": False,
+                     "permissions": {"can_inventory": True}}},
+        {"name": "07 narrow: can_tardiness",
+         "session": {"user": {"email": DUMMY_EMAIL, "name": "Test", "employee_id": "000000-00", "emp_number": 9999},
+                     "is_sub_admin": True, "bl_is_overhead": False,
+                     "permissions": {"can_tardiness": True}}},
+        {"name": "08 narrow: can_pim",
+         "session": {"user": {"email": DUMMY_EMAIL, "name": "Test", "employee_id": "000000-00", "emp_number": 9999},
+                     "is_sub_admin": True, "bl_is_overhead": False,
+                     "permissions": {"can_pim": True}}},
+        {"name": "09 narrow: can_csat",
+         "session": {"user": {"email": DUMMY_EMAIL, "name": "Test", "employee_id": "000000-00", "emp_number": 9999},
+                     "is_sub_admin": True, "bl_is_overhead": False,
+                     "permissions": {"can_csat": True}}},
+        {"name": "10 narrow: can_night_differential",
+         "session": {"user": {"email": DUMMY_EMAIL, "name": "Test", "employee_id": "000000-00", "emp_number": 9999},
+                     "is_sub_admin": True, "bl_is_overhead": False,
+                     "permissions": {"can_night_differential": True}}},
+        {"name": "11 ops bundle",
+         "session": {"user": {"email": DUMMY_EMAIL, "name": "Test", "employee_id": "000000-00", "emp_number": 9999},
+                     "is_sub_admin": True, "bl_is_overhead": False,
+                     "permissions": {"can_material_requests": True, "can_facilities_review": True,
+                                     "can_facilities_final": True, "can_inventory": True}}},
+        {"name": "12 analytics bundle",
+         "session": {"user": {"email": DUMMY_EMAIL, "name": "Test", "employee_id": "000000-00", "emp_number": 9999},
+                     "is_sub_admin": True, "bl_is_overhead": False,
+                     "permissions": {"can_reports": True, "can_absences": True,
+                                     "can_night_differential": True, "can_overbreak": True}}},
+        {"name": "13 people bundle",
+         "session": {"user": {"email": DUMMY_EMAIL, "name": "Test", "employee_id": "000000-00", "emp_number": 9999},
+                     "is_sub_admin": True, "bl_is_overhead": False,
+                     "permissions": {"can_pim": True, "can_all_leaves": True,
+                                     "can_memos": True, "can_all_requests": True}}},
+        {"name": "14 supervisor + material",
+         "session": {"user": {"email": DUMMY_EMAIL, "name": "Test", "employee_id": "000000-00", "emp_number": 9999},
+                     "is_supervisor": True, "is_sub_admin": True, "bl_is_overhead": False,
+                     "permissions": {"can_material_requests": True}}},
+        {"name": "15 full admin",
+         "session": {"user": {"email": DUMMY_EMAIL, "name": "Test", "employee_id": "000000-00", "emp_number": 9999},
+                     "is_admin": True, "is_supervisor": True, "is_sub_admin": True,
+                     "is_tl": True, "bl_is_overhead": False,
+                     "permissions": {k: True for k in [
+                         "can_all_leaves","can_all_requests","can_file_for_emp","can_pim","can_memos",
+                         "can_material_requests","can_inventory","can_final_approval","can_view_approved_items",
+                         "can_facilities_review","can_facilities_final","can_it_tickets","can_hr_tickets",
+                         "can_reports","can_schedules","can_view_tickets","can_absences","can_attrition_report",
+                         "can_surveys","can_ot_hours","can_night_differential","can_overbreak","can_tardiness",
+                         "can_onboarding","can_wfm","can_settings","can_work_mode","can_entitlements",
+                         "can_floor_map","can_csat","can_qa_updates"
+                     ]}}},
+    ]
+
+    def extract_endpoints(html):
+        """Pull every href that is a portal route (starts with /)."""
+        return set(re.findall(r'href="(/[^"]*?)"', html))
+
+    def render_nav(template_name, fake_session, helpers):
+        """Render a nav template with a fake session and mocked helpers."""
+        env = app.jinja_env
+        # save real globals
+        saved = {}
+        for k, v in helpers.items():
+            saved[k] = env.globals.get(k)
+            env.globals[k] = v
+        try:
+            from flask import g
+            with app.test_request_context('/dashboard'):
+                import flask
+                # swap session
+                real_session = flask.session
+                flask.session = type('FakeSession', (), {
+                    'get': lambda self, k, d=None: fake_session.get(k, d),
+                    '__contains__': lambda self, k: k in fake_session,
+                    '__getitem__': lambda self, k: fake_session[k],
+                })()
+                try:
+                    tpl = env.get_template(template_name)
+                    html = tpl.render(
+                        session=fake_session,
+                        request=type('R', (), {'endpoint': 'dashboard'})(),
+                        config=app.config,
+                        url_for=lambda ep, **kw: '/' + ep.replace('.', '/'),
+                    )
+                finally:
+                    flask.session = real_session
+        finally:
+            for k, v in saved.items():
+                if v is None:
+                    env.globals.pop(k, None)
+                else:
+                    env.globals[k] = v
+        return html
+
+    results = []
+    all_ok = True
+
+    for profile in PROFILES:
+        fs = profile["session"]
+        perms = fs.get("permissions", {})
+
+        # mock helpers for this profile
+        helpers = {
+            "ir_can_file":  lambda: bool(fs.get("is_admin") or fs.get("is_supervisor")),
+            "ir_can_view":  lambda: bool(fs.get("is_admin") or fs.get("is_supervisor")),
+            "qa_can_manage": lambda: bool(fs.get("is_admin") or perms.get("can_qa_updates")),
+            "qa_can_view_data": lambda: bool(fs.get("is_admin") or perms.get("can_qa_updates")),
+            "coe_can_manage": lambda: bool(fs.get("is_admin")),
+            "break_log_supervisor_access": lambda: bool(
+                fs.get("is_admin") or fs.get("is_supervisor") or fs.get("is_sub_admin")
+            ),
+        }
+
+        try:
+            sidebar_html = render_nav("nav/_sidebar.html", fs, helpers)
+            topnav_html  = render_nav("nav/_topnav.html",  fs, helpers)
+            sidebar_eps  = extract_endpoints(sidebar_html)
+            topnav_eps   = extract_endpoints(topnav_html)
+
+            # known intentional differences
+            # sidebar has /logout as a plain link; topnav too - both fine
+            # topnav adds /dashboard brand link - exclude from diff
+            topnav_only  = topnav_eps  - sidebar_eps - {'/dashboard'}
+            sidebar_only = sidebar_eps - topnav_eps
+
+            ok = not topnav_only and not sidebar_only
+            if not ok:
+                all_ok = False
+            results.append({
+                "name": profile["name"],
+                "ok": ok,
+                "topnav_only": sorted(topnav_only),
+                "sidebar_only": sorted(sidebar_only),
+                "sidebar_count": len(sidebar_eps),
+                "topnav_count": len(topnav_eps),
+            })
+        except Exception as ex:
+            all_ok = False
+            results.append({
+                "name": profile["name"],
+                "ok": False,
+                "error": str(ex),
+                "topnav_only": [],
+                "sidebar_only": [],
+                "sidebar_count": 0,
+                "topnav_count": 0,
+            })
+
+    # render as HTML table
+    rows = []
+    for r in results:
+        status = '<td style="color:green;font-weight:700">PASS</td>' if r["ok"] else '<td style="color:red;font-weight:700">FAIL</td>'
+        extra = ''
+        if r.get("error"):
+            extra = '<br><code style="color:red">ERROR: ' + r["error"] + '</code>'
+        if r["topnav_only"]:
+            extra += '<br><span style="color:orange">topnav extra: ' + ', '.join(r["topnav_only"]) + '</span>'
+        if r["sidebar_only"]:
+            extra += '<br><span style="color:red">sidebar only (MISSING from topnav): ' + ', '.join(r["sidebar_only"]) + '</span>'
+        rows.append('<tr>' + status + '<td>' + r["name"] + extra + '</td>'
+                   + '<td>' + str(r["sidebar_count"]) + '</td>'
+                   + '<td>' + str(r["topnav_count"]) + '</td></tr>')
+
+    banner = ('<h2 style="color:green">ALL 15 PROFILES PASS</h2>' if all_ok
+              else '<h2 style="color:red">FAILURES DETECTED - fix before flip</h2>')
+
+    return ('<html><head><title>Nav Parity</title></head><body>'
+            + '<h1>Nav Parity Check</h1>' + banner
+            + '<table border="1" cellpadding="6" style="border-collapse:collapse">'
+            + '<tr><th>Result</th><th>Profile</th><th>Sidebar links</th><th>Topnav links</th></tr>'
+            + ''.join(rows)
+            + '</table><p style="color:#888">topnav brand /dashboard link excluded from diff. '
+            + 'Email-list gates (IR_SGA, COE_HR_ACCESS) mocked as False for all profiles.</p>'
+            + '</body></html>')
+
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0', port=5001)

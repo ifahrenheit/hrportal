@@ -14,3 +14,11 @@ static/uploads/
 rag/vectordb/
 
 # Requirement typo fix handled separately
+
+# Timestamped patch backups
+*.bak
+*.bak.*
+*.bak_*
+
+# User-uploaded QA images
+uploads/

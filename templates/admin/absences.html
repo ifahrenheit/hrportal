@@ -4,21 +4,60 @@
 
 {% block content %}
 
+{# ── Page Tabs ───────────────────────────────────────────── #}
+<ul class="nav nav-tabs mb-3">
+  <li class="nav-item">
+    <a class="nav-link active" href="{{ url_for('admin_absences') }}">
+      <i class="bi bi-person-x me-1"></i>Absence Report
+    </a>
+  </li>
+  <li class="nav-item">
+    <a class="nav-link" href="{{ url_for('admin_attendance_grid') }}">
+      <i class="bi bi-grid-3x3 me-1"></i>Attendance Grid
+    </a>
+  </li>
+</ul>
+
 {# Filters #}
-<div class="d-flex align-items-center gap-3 mb-3 flex-wrap">
-  <form method="get" class="d-flex align-items-center gap-2 flex-wrap">
-    <label class="fw-semibold mb-0" style="font-size:.9rem;white-space:nowrap;">From</label>
-    <input type="date" name="date_from" value="{{ date_from }}"
-           class="form-control form-control-sm" style="width:150px;">
-    <label class="fw-semibold mb-0" style="font-size:.9rem;white-space:nowrap;">To</label>
-    <input type="date" name="date_to" value="{{ date_to }}"
-           class="form-control form-control-sm" style="width:150px;">
+<style>
+  .filter-bar {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 14px;
+    box-shadow: var(--card-shadow); padding: 1rem 1.25rem; margin-bottom: 1.5rem;
+    display: flex; align-items: center; gap: .75rem; flex-wrap: wrap;
+  }
+  .filter-bar label { font-size: .82rem; color: var(--text-muted); font-weight: 500; margin-right: -.25rem; }
+  .date-nav { display: flex; align-items: center; gap: .25rem; }
+  .date-nav .btn-icon {
+    width: 32px; height: 32px; display: flex; align-items: center; justify-content: center;
+    border: 1px solid var(--border); border-radius: 8px; background: var(--bg); color: var(--text-muted);
+  }
+  .date-nav .btn-icon:hover { background: var(--accent); color: #fff; border-color: var(--accent); }
+</style>
+
+<div class="filter-bar">
+  <form method="get" id="dateForm" class="d-flex align-items-center gap-2 flex-wrap" style="flex:1;">
+    <div class="date-nav">
+      <button type="button" class="btn-icon" id="prevPeriodBtn" title="Previous payroll period">
+        <i class="bi bi-chevron-left"></i>
+      </button>
+      <label for="date_from">From</label>
+      <input type="date" id="date_from" name="date_from" value="{{ date_from }}"
+             class="form-control form-control-sm" style="width:auto;">
+      <label for="date_to">To</label>
+      <input type="date" id="date_to" name="date_to" value="{{ date_to }}"
+             class="form-control form-control-sm" style="width:auto;">
+      <button type="button" class="btn-icon" id="nextPeriodBtn" title="Next payroll period">
+        <i class="bi bi-chevron-right"></i>
+      </button>
+      <button type="button" class="btn btn-outline-secondary btn-sm" id="currentPeriodBtn">Current Period</button>
+      <button type="button" class="btn btn-outline-secondary btn-sm" id="todayBtn">Today</button>
+    </div>
     <button class="btn btn-primary btn-sm" type="submit">
       <i class="bi bi-search me-1"></i>Check
     </button>
   </form>
   {% if records %}
-  <button class="btn btn-outline-secondary btn-sm ms-auto" id="copyTableBtn" onclick="copyTable()">
+  <button class="btn btn-outline-secondary btn-sm" id="copyTableBtn" onclick="copyTable()">
     <i class="bi bi-clipboard me-1"></i>Copy Table
   </button>
   {% endif %}
@@ -176,6 +215,110 @@
 
 {% block scripts %}
 <script>
+// ── Payroll period navigation (mirrors payroll_period.py) ──
+document.addEventListener('DOMContentLoaded', function () {
+  const dateFromInput = document.getElementById('date_from');
+  const dateToInput = document.getElementById('date_to');
+  const form = document.getElementById('dateForm');
+
+  function ymd(y, m, d) { return new Date(Date.UTC(y, m - 1, d)); }
+  function fmt(dt) { return dt.toISOString().slice(0, 10); }
+
+  function shiftPeriod(direction) {
+    const [fy, fm, fd] = dateFromInput.value.split('-').map(Number);
+    let newStart, newEnd;
+
+    if (fd === 8) {
+      if (direction === -1) {
+        let pm = fm - 1, py = fy;
+        if (pm === 0) { pm = 12; py = fy - 1; }
+        newStart = ymd(py, pm, 23);
+        newEnd = ymd(fy, fm, 7);
+      } else {
+        let nm = fm + 1, ny = fy;
+        if (nm === 13) { nm = 1; ny = fy + 1; }
+        newStart = ymd(fy, fm, 23);
+        newEnd = ymd(ny, nm, 7);
+      }
+    } else if (fd === 23) {
+      if (direction === -1) {
+        newStart = ymd(fy, fm, 8);
+        newEnd = ymd(fy, fm, 22);
+      } else {
+        let nm = fm + 1, ny = fy;
+        if (nm === 13) { nm = 1; ny = fy + 1; }
+        newStart = ymd(ny, nm, 8);
+        newEnd = ymd(ny, nm, 22);
+      }
+    } else {
+      const [ty, tm, td] = dateToInput.value.split('-').map(Number);
+      const start = ymd(fy, fm, fd);
+      const end = ymd(ty, tm, td);
+      const rangeDays = Math.round((end - start) / 86400000) + 1;
+      const shiftMs = direction * rangeDays * 86400000;
+      newStart = new Date(start.getTime() + shiftMs);
+      newEnd = new Date(end.getTime() + shiftMs);
+    }
+
+    dateFromInput.value = fmt(newStart);
+    dateToInput.value = fmt(newEnd);
+    form.submit();
+  }
+
+  document.getElementById('prevPeriodBtn')?.addEventListener('click', () => shiftPeriod(-1));
+  document.getElementById('nextPeriodBtn')?.addEventListener('click', () => shiftPeriod(1));
+
+  document.getElementById('currentPeriodBtn')?.addEventListener('click', () => {
+    const today = new Date();
+    const y = today.getUTCFullYear(), m = today.getUTCMonth() + 1, d = today.getUTCDate();
+    let periodStart, periodEnd;
+    if (d >= 8 && d <= 22) {
+      periodStart = ymd(y, m, 8);
+      periodEnd = ymd(y, m, 22);
+    } else if (d >= 23) {
+      let nm = m + 1, ny = y;
+      if (nm === 13) { nm = 1; ny = y + 1; }
+      periodStart = ymd(y, m, 23);
+      periodEnd = ymd(ny, nm, 7);
+    } else {
+      let pm = m - 1, py = y;
+      if (pm === 0) { pm = 12; py = y - 1; }
+      periodStart = ymd(py, pm, 23);
+      periodEnd = ymd(y, m, 7);
+    }
+    dateFromInput.value = fmt(periodStart);
+    dateToInput.value = fmt(periodEnd);
+    shiftPeriod(-1); // step back once more to the most recently COMPLETED period + submits
+  });
+
+  // Today button: defaults to the last day whose shifts have fully
+  // completed (per TODAY_CUTOFF_HOUR), to avoid showing incomplete
+  // FTS/Absent/Late counts for a day still in progress. The date inputs
+  // can still be manually set to the actual current date if needed.
+  const TODAY_CUTOFF_HOUR = 13; // matches the 1 PM absence-report cron
+  document.getElementById('todayBtn')?.addEventListener('click', () => {
+    const now = new Date();
+    const todayCutoff = new Date(now);
+    todayCutoff.setHours(TODAY_CUTOFF_HOUR, 0, 0, 0);
+
+    let target = new Date(now);
+    if (now < todayCutoff) {
+      // Yesterday's overnight shifts haven't hit their completion deadline yet
+      // (today's 1 PM cutoff), so the last SAFE day is two days back.
+      target.setDate(target.getDate() - 2);
+    } else {
+      target.setDate(target.getDate() - 1);
+    }
+
+    const y = target.getFullYear();
+    const m = String(target.getMonth() + 1).padStart(2, '0');
+    const d = String(target.getDate()).padStart(2, '0');
+    const safeDate = `${y}-${m}-${d}`;
+    dateFromInput.value = safeDate;
+    dateToInput.value = safeDate;
+    form.submit();
+  });
+});  
 // ── Column sort ──
 (function() {
   // Track sort state per table (by index among .absence-table)
