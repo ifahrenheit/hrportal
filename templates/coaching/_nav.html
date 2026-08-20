@@ -1,0 +1,9 @@
+{# Coaching sub-nav toolbar — rendered inside content since base has no header_actions block #}
+<div class="d-flex flex-wrap gap-2 align-items-center mb-3">
+  <span class="fw-bold me-2" style="font-size:1.1rem;">Coaching</span>
+  <a href="{{ url_for('coaching.index') }}" class="btn btn-sm {{ 'btn-primary' if active=='dashboard' else 'btn-outline-secondary' }}">Dashboard</a>
+  <a href="{{ url_for('coaching.new_session') }}" class="btn btn-sm {{ 'btn-primary' if active=='new' else 'btn-outline-secondary' }}">+ New Session</a>
+  <a href="{{ url_for('coaching.all_sessions') }}" class="btn btn-sm {{ 'btn-primary' if active=='sessions' else 'btn-outline-secondary' }}">All Sessions</a>
+  <a href="{{ url_for('coaching.agents') }}" class="btn btn-sm {{ 'btn-primary' if active=='agents' else 'btn-outline-secondary' }}">Agents</a>
+  {% if is_manager %}<a href="{{ url_for('coaching.reports') }}" class="btn btn-sm {{ 'btn-primary' if active=='reports' else 'btn-outline-secondary' }}">Reports</a>{% endif %}
+</div>

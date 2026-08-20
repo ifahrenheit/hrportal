@@ -62,12 +62,51 @@ def _edit_allowlist():
     return {x.strip().lower() for x in raw.split(",") if x.strip()}
 
 
+def _om_allowlist():
+    raw = os.getenv("REQUIREMENTS_OMS", "")
+    return {x.strip().lower() for x in raw.split(",") if x.strip()}
+
+
 def _can_edit():
     if session.get("is_admin"):
         return True
     u = session.get("user", {})
     ident = {str(u.get("email", "")).lower(), str(u.get("employee_id", "")).lower()}
     return bool(ident & _edit_allowlist())
+
+
+def _scope_for_session(conn):
+    """Decide which employees this session may see.
+    Returns ("all", None) or ("tl", tl_name).
+
+      admin / HR editor  -> all (HR also edits)
+      OM (env allowlist) -> all, read-only
+      TL (in tl_view_map)-> own agents + self, read-only
+      anyone else w/ perm-> all, read-only (director / unmapped manager)
+    """
+    if session.get("is_admin"):
+        return ("all", None)
+
+    email = str(session.get("user", {}).get("email", "")).lower()
+    if not email:
+        return ("all", None)
+
+    if email in _edit_allowlist():
+        return ("all", None)
+    if email in _om_allowlist():
+        return ("all", None)
+
+    cur = conn.cursor(pymysql.cursors.DictCursor)
+    cur.execute(
+        "SELECT tl_name FROM tl_view_map WHERE LOWER(login_email) = %s LIMIT 1",
+        (email,),
+    )
+    row = cur.fetchone()
+    cur.close()
+    if row and row.get("tl_name"):
+        return ("tl", row["tl_name"])
+
+    return ("all", None)
 
 
 @requirements_bp.route("/requirements")
@@ -79,7 +118,17 @@ def requirements_page():
 
     conn = _central_conn()
     try:
+        scope_kind, scope_val = _scope_for_session(conn)
+
         col_sql = ", ".join("r.%s" % c for c in REQUIREMENT_KEYS)
+        where = "e.status IN ('Active', 'Training', 'Pending')"
+        params = []
+        if scope_kind == "tl":
+            # own agents + the TL's own row
+            where += " AND (e.tl = %s OR e.employee_id = %s)"
+            me = str(session.get("user", {}).get("employee_id", ""))
+            params.extend([scope_val, me])
+
         sql = """
             SELECT
                 e.employee_id,
@@ -95,11 +144,11 @@ def requirements_page():
             LEFT JOIN employee_requirements r
                    ON r.employee_id = e.employee_id
                   COLLATE utf8mb4_unicode_ci
-            WHERE e.status IN ('Active', 'Training', 'Pending')
+            WHERE {where}
             ORDER BY e.schedule_name ASC
-        """.format(cols=col_sql)
+        """.format(cols=col_sql, where=where)
         cur = conn.cursor(pymysql.cursors.DictCursor)
-        cur.execute(sql)
+        cur.execute(sql, params)
         rows = cur.fetchall()
 
         cur.execute("""
@@ -137,6 +186,7 @@ def requirements_page():
         accounts=accounts,
         groups=groups,
         tls=tls,
+        scope_kind=scope_kind,
         can_edit=_can_edit(),
     )
 

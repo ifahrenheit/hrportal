@@ -90,6 +90,50 @@
   color: var(--text-muted, #6b7280); font-size: 15px;
 }
 .tn-iconbtn:hover { background: var(--surface-2, rgba(0,0,0,.04)); color: var(--text, #111); }
+.tn-notif { position: relative; }
+.tn-notif-badge {
+  position: absolute; top: -3px; right: -3px;
+  min-width: 16px; height: 16px; padding: 0 4px;
+  background: #ef4444; color: #fff; font-size: 10px; font-weight: 700;
+  line-height: 16px; text-align: center; border-radius: 999px;
+  display: none;
+}
+.tn-notif-badge.show { display: block; }
+.tn-notif-panel {
+  position: absolute; top: 42px; right: 0; width: 340px;
+  max-height: 420px; overflow-y: auto;
+  background: var(--surface, #fff); border: 1px solid var(--border, #e4e7ec);
+  border-radius: var(--radius, 10px); box-shadow: 0 8px 28px rgba(0,0,0,.16);
+  z-index: 2000; display: none;
+}
+.tn-notif-panel.open { display: block; }
+.tn-notif-head {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 10px 13px; border-bottom: 1px solid var(--border, #e4e7ec);
+  font-size: 13px; font-weight: 600; color: var(--text, #111);
+}
+.tn-notif-head button {
+  background: none; border: none; color: var(--accent, #2563eb);
+  font-size: 11.5px; cursor: pointer; padding: 0;
+}
+.tn-notif-item {
+  display: block; padding: 10px 13px; text-decoration: none;
+  border-bottom: 1px solid var(--border, #f1f2f4);
+  color: var(--text, #111); font-size: 12.5px; line-height: 1.4;
+}
+.tn-notif-item:hover { background: var(--surface-2, rgba(0,0,0,.03)); }
+.tn-notif-item.unread { background: rgba(37,99,235,.06); }
+.tn-notif-item .tn-notif-time { font-size: 10.5px; color: var(--text-muted, #6b7280); margin-top: 3px; }
+.tn-notif-sec {
+  display: flex; align-items: center; gap: 6px;
+  padding: 8px 13px 5px; font-size: 11px; font-weight: 700;
+  text-transform: uppercase; letter-spacing: .04em;
+  color: var(--text-muted, #6b7280); background: var(--surface-2, rgba(0,0,0,.02));
+}
+.tn-notif-sec span { margin-left: auto; background: var(--accent, #2563eb); color: #fff;
+  font-size: 10px; padding: 1px 6px; border-radius: 999px; }
+.tn-notif-empty { padding: 22px 13px; text-align: center; color: var(--text-muted, #6b7280); font-size: 12.5px; }
+
 .tn-userpill {
   display: flex; align-items: center; gap: 7px;
   height: 31px; padding: 0 11px;
@@ -231,6 +275,79 @@
   .tn-burger { display: grid; }
 }
 </style>
+<script>
+(function () {
+  function initNotif() {
+  var btn = document.getElementById('tnNotifBtn');
+  var panel = document.getElementById('tnNotifPanel');
+  var badge = document.getElementById('tnNotifBadge');
+  var list = document.getElementById('tnNotifList');
+  var markAll = document.getElementById('tnNotifMarkAll');
+  if (!btn) return;
+
+  function render(sections) {
+    if (!sections.length) {
+      list.innerHTML = '<div class="tn-notif-empty">Nothing pending</div>';
+      return;
+    }
+    list.innerHTML = sections.map(function (sec) {
+      var head = '<div class="tn-notif-sec"><i class="bi ' + sec.icon + '"></i> ' +
+                 sec.title + ' <span>' + sec.items.length + '</span></div>';
+      var rows = sec.items.map(function (n) {
+        var href = n.link ? n.link : '#';
+        return '<a class="tn-notif-item unread" href="' + href + '">' +
+          n.message.replace(/</g, '&lt;') +
+          '<div class="tn-notif-time">' + (n.created_at || '') + '</div></a>';
+      }).join('');
+      return head + rows;
+    }).join('');
+  }
+
+  function load() {
+    fetch('/api/notifications', { credentials: 'same-origin' })
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        render(d.sections || []);
+        if (d.unread > 0) {
+          badge.textContent = d.unread > 99 ? '99+' : d.unread;
+          badge.classList.add('show');
+        } else {
+          badge.classList.remove('show');
+        }
+      })
+      .catch(function () {});
+  }
+
+  btn.addEventListener('click', function (e) {
+    e.stopPropagation();
+    var opening = !panel.classList.contains('open');
+    panel.classList.toggle('open');
+    if (opening) {
+      load();
+    }
+  });
+
+  markAll.addEventListener('click', function (e) {
+    e.stopPropagation();
+    load();
+  });
+
+  document.addEventListener('click', function (e) {
+    if (!document.getElementById('tnNotifWrap').contains(e.target)) {
+      panel.classList.remove('open');
+    }
+  });
+
+  load();
+  setInterval(load, 60000);
+  }
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initNotif);
+  } else {
+    initNotif();
+  }
+})();
+</script>
 
 <header class="tn-header">
   <div class="tn-inner">
@@ -308,6 +425,21 @@
       <button class="tn-iconbtn" type="button" id="tnThemeBtn" onclick="toggleTheme()" title="Toggle dark/light mode">
         <i class="bi bi-moon-stars-fill" id="tnThemeIcon"></i>
       </button>
+      <div class="tn-notif" id="tnNotifWrap">
+        <button class="tn-iconbtn" type="button" id="tnNotifBtn" title="Notifications">
+          <i class="bi bi-bell"></i>
+          <span class="tn-notif-badge" id="tnNotifBadge">0</span>
+        </button>
+        <div class="tn-notif-panel" id="tnNotifPanel">
+          <div class="tn-notif-head">
+            <span>Notifications</span>
+            <button type="button" id="tnNotifMarkAll">Refresh</button>
+          </div>
+          <div id="tnNotifList">
+            <div class="tn-notif-empty">Loading…</div>
+          </div>
+        </div>
+      </div>
       <a class="tn-iconbtn" href="{{ url_for('logout') }}" title="Logout">
         <i class="bi bi-box-arrow-left"></i>
       </a>
@@ -363,6 +495,8 @@
           <i class="bi bi-file-earmark-text"></i> Request CoE</a>
         <a class="tn-item {% if EP == 'my_records.records' %}active{% endif %}" href="{{ url_for('my_records.records') }}">
           <i class="bi bi-clipboard-check"></i> My Records</a>
+        <a class="tn-item {% if EP and EP.startswith('coaching.my') %}active{% endif %}" href="{{ url_for('coaching.my_sessions') }}">
+          <i class="bi bi-easel2"></i> My Coaching</a>
       </div>
     </div>
 
@@ -381,6 +515,10 @@
           <span id="fileRequestsBadge" style="display:none;margin-left:auto;background:#ef4444;color:#fff;font-size:.65rem;font-weight:700;padding:.15rem .45rem;border-radius:999px;min-width:18px;text-align:center;"></span></a>
         <a class="tn-item {% if EP == 'supervisor_team_calendar' %}active{% endif %}" href="{{ url_for('supervisor_team_calendar') }}">
           <i class="bi bi-calendar3"></i> Team Calendar</a>
+        {% endif %}
+        {% if ADMIN or P.get('can_coaching') or P.get('can_coaching_reports') %}
+        <a class="tn-item {% if EP and EP.startswith('coaching.') %}active{% endif %}" href="{{ url_for('coaching.index') }}">
+          <i class="bi bi-easel2"></i> Coaching</a>
         {% endif %}
         {% if SUPER or ADMIN or P.get('can_material_requests') %}
         <a class="tn-item {% if EP == 'material_som_approvals' %}active{% endif %}" href="{{ url_for('material_som_approvals') }}">

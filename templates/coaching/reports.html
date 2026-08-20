@@ -1,0 +1,131 @@
+{% extends "base.html" %}
+{% block title %}Coaching Reports{% endblock %}
+{% block page_title %}Coaching Reports{% endblock %}
+{% block content %}
+<style>
+  .co-tabs{display:flex;gap:6px;flex-wrap:wrap;}
+  .co-filters .fg{display:flex;flex-direction:column;gap:4px;font-size:.78rem;font-weight:600;color:var(--text-muted);}
+  .co-filters select,.co-filters input{padding:7px 9px;border:1px solid var(--border);border-radius:6px;font-size:.85rem;background:var(--surface);color:var(--text);}
+  .co-stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:14px;}
+  .co-stat{background:var(--surface);border:1px solid var(--border);border-left:4px solid var(--accent);border-radius:var(--radius);padding:14px;text-align:center;}
+  .co-stat .num{font-size:1.6rem;font-weight:700;color:var(--accent);}
+  .co-stat .lbl{margin-top:4px;font-size:.68rem;text-transform:uppercase;letter-spacing:.03em;color:var(--text-muted);}
+  /* By Group */
+  .grp-acct{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);margin-bottom:16px;overflow:hidden;}
+  .grp-acct-head{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px 18px;background:var(--surface-2);border-bottom:1px solid var(--border);}
+  .grp-acct-name{font-weight:700;font-size:1.05rem;color:var(--text);display:flex;align-items:center;gap:10px;}
+  .grp-acct-badge{background:var(--accent);color:var(--accent-text);font-size:.78rem;font-weight:700;padding:.2rem .6rem;border-radius:999px;}
+  .grp-acct-meta{font-size:.78rem;color:var(--text-muted);}
+  .grp-row{display:flex;align-items:center;gap:14px;padding:11px 18px;border-bottom:1px solid var(--border);}
+  .grp-row:last-child{border-bottom:none;}
+  .grp-name{flex:0 0 160px;font-weight:600;font-size:.9rem;color:var(--text);}
+  .grp-bar-wrap{flex:1;height:8px;background:var(--surface-2);border-radius:999px;overflow:hidden;}
+  .grp-bar{height:100%;background:var(--accent);border-radius:999px;}
+  .grp-nums{flex:0 0 auto;display:flex;gap:16px;font-size:.82rem;}
+  .grp-nums .n{font-weight:700;color:var(--text);}
+  .grp-nums .l{color:var(--text-muted);font-size:.72rem;}
+  .grp-done{color:var(--ok);} .grp-pend{color:#c05621;}
+</style>
+{% include "coaching/_nav.html" with context %}
+
+<div class="card mb-3">
+  <div class="card-body">
+    <div class="d-flex justify-content-between flex-wrap gap-2 mb-3">
+      <div class="co-tabs">
+        {% for key,label in [('summary','Summary'),('by_group','By Group'),('by_supervisor','By Supervisor'),('by_agent','By Agent'),('by_type','By Type'),('detailed','Detailed')] %}
+          <a href="{{ url_for('coaching.reports', type=key, **filters) }}" class="btn btn-sm {{ 'btn-primary' if rtype==key else 'btn-outline-secondary' }}">{{ label }}</a>
+        {% endfor %}
+      </div>
+      <div class="d-flex gap-1">
+        <a href="{{ url_for('coaching.reports_export', type=rtype, **filters) }}" class="btn btn-sm btn-outline-primary">Export CSV</a>
+        <button onclick="window.print()" class="btn btn-sm btn-outline-secondary">Print</button>
+      </div>
+    </div>
+    <form method="get" class="co-filters d-flex flex-wrap gap-2 align-items-end">
+      <input type="hidden" name="type" value="{{ rtype }}">
+      <div class="fg">Account
+        <select name="account"><option value="">All</option>
+          {% for a in accounts %}<option value="{{ a }}" {{ 'selected' if filters.account==a }}>{{ a }}</option>{% endfor %}
+        </select></div>
+      <div class="fg">Group
+        <select name="group"><option value="">All</option>
+          {% for g in groups %}<option value="{{ g }}" {{ 'selected' if filters.group==g }}>{{ g }}</option>{% endfor %}
+        </select></div>
+      <div class="fg">Supervisor
+        <select name="supervisor"><option value="">All</option>
+          {% for s in supervisors %}<option value="{{ s.employee_id }}" {{ 'selected' if filters.supervisor==s.employee_id }}>{{ s.schedule_name or s.employee_id }}</option>{% endfor %}
+        </select></div>
+      <div class="fg">From <input type="date" name="date_from" value="{{ filters.date_from }}"></div>
+      <div class="fg">To <input type="date" name="date_to" value="{{ filters.date_to }}"></div>
+      <button type="submit" class="btn btn-sm btn-primary">Apply</button>
+      <a href="{{ url_for('coaching.reports', type=rtype) }}" class="btn btn-sm btn-outline-secondary">Clear</a>
+    </form>
+  </div>
+</div>
+
+{% if rtype == 'by_group' %}
+  {% if grouped %}
+    {% for acct, data in grouped.items() %}
+      <div class="grp-acct">
+        <div class="grp-acct-head">
+          <div class="grp-acct-name"><i class="bi bi-diagram-3"></i> {{ acct }}
+            <span class="grp-acct-badge">{{ data.total }} session{{ '' if data.total==1 else 's' }}</span></div>
+          <div class="grp-acct-meta">{{ data.agents }} agent{{ '' if data.agents==1 else 's' }} ·
+            <span class="grp-done">{{ data.completed }} done</span> ·
+            <span class="grp-pend">{{ data.pending }} pending</span></div>
+        </div>
+        {% for r in data.rows %}
+          <div class="grp-row">
+            <div class="grp-name">{{ r.group_name }}</div>
+            <div class="grp-bar-wrap"><div class="grp-bar" style="width:{{ ((r.total / data.total * 100) if data.total else 0)|round(0,'floor') }}%;"></div></div>
+            <div class="grp-nums">
+              <div><span class="n">{{ r.total }}</span> <span class="l">total</span></div>
+              <div><span class="n grp-done">{{ r.completed }}</span> <span class="l">done</span></div>
+              <div><span class="n grp-pend">{{ r.pending }}</span> <span class="l">pending</span></div>
+              <div><span class="n">{{ r.agents }}</span> <span class="l">agents</span></div>
+            </div>
+          </div>
+        {% endfor %}
+      </div>
+    {% endfor %}
+  {% else %}
+    <div class="card"><div class="card-body text-center text-muted py-4">No coaching data for these filters.</div></div>
+  {% endif %}
+
+{% else %}
+<div class="card">
+  <div class="card-body">
+  {% if rtype=='summary' %}
+    {% set r = rows[0] if rows else {} %}
+    <div class="co-stats">
+      <div class="co-stat"><div class="num">{{ r.total or 0 }}</div><div class="lbl">Total</div></div>
+      <div class="co-stat"><div class="num">{{ r.agents or 0 }}</div><div class="lbl">Agents</div></div>
+      <div class="co-stat"><div class="num">{{ r.supervisors or 0 }}</div><div class="lbl">Supervisors</div></div>
+      <div class="co-stat"><div class="num">{{ r.completed or 0 }}</div><div class="lbl">Completed</div></div>
+      <div class="co-stat"><div class="num">{{ r.pending or 0 }}</div><div class="lbl">Pending</div></div>
+    </div>
+  {% else %}
+    <div class="table-responsive">
+    {% if rtype=='by_supervisor' %}
+      <table class="table table-hover align-middle" style="font-size:.9rem;"><thead><tr><th>Supervisor</th><th>Total</th><th>Completed</th><th>Pending</th><th>Completion %</th></tr></thead><tbody>
+        {% for r in rows %}<tr><td>{{ r.supervisor_name or '—' }}</td><td>{{ r.total }}</td><td>{{ r.completed }}</td><td>{{ r.pending }}</td><td>{{ ((r.completed/r.total*100)|round(1)) if r.total else 0 }}%</td></tr>
+        {% else %}<tr><td colspan="5" class="text-center text-muted py-4">No data.</td></tr>{% endfor %}</tbody></table>
+    {% elif rtype=='by_agent' %}
+      <table class="table table-hover align-middle" style="font-size:.9rem;"><thead><tr><th>Agent</th><th>Account</th><th>Group</th><th>Total</th><th>Last Session</th><th>Pending</th></tr></thead><tbody>
+        {% for r in rows %}<tr><td>{{ r.agent_name or '—' }}</td><td>{{ r.account }}</td><td>{{ r.group_name }}</td><td>{{ r.total }}</td><td>{{ r.last_session or '—' }}</td><td>{{ r.pending }}</td></tr>
+        {% else %}<tr><td colspan="6" class="text-center text-muted py-4">No data.</td></tr>{% endfor %}</tbody></table>
+    {% elif rtype=='by_type' %}
+      <table class="table table-hover align-middle" style="font-size:.9rem;"><thead><tr><th>Type</th><th>Total</th><th>Share</th></tr></thead><tbody>
+        {% for r in rows %}<tr><td>{{ types.get(r.coaching_type, r.coaching_type) }}</td><td>{{ r.total }}</td><td>{{ ((r.total/total_all*100)|round(1)) if total_all else 0 }}%</td></tr>
+        {% else %}<tr><td colspan="3" class="text-center text-muted py-4">No data.</td></tr>{% endfor %}</tbody></table>
+    {% elif rtype=='detailed' %}
+      <table class="table table-hover align-middle" style="font-size:.9rem;"><thead><tr><th>Date</th><th>Agent</th><th>Account</th><th>Group</th><th>Supervisor</th><th>Type</th><th>Status</th></tr></thead><tbody>
+        {% for r in rows %}<tr><td>{{ r.session_date }}</td><td>{{ r.agent_name or '—' }}</td><td>{{ r.account }}</td><td>{{ r.group_name }}</td><td>{{ r.supervisor_name or '—' }}</td><td>{{ types.get(r.coaching_type, r.coaching_type) }}</td><td><span class="badge" style="{{ coaching_status_style.get(r.status,'') }}">{{ coaching_status_label.get(r.status, r.status) }}</span></td></tr>
+        {% else %}<tr><td colspan="7" class="text-center text-muted py-4">No data.</td></tr>{% endfor %}</tbody></table>
+    {% endif %}
+    </div>
+  {% endif %}
+  </div>
+</div>
+{% endif %}
+{% endblock %}

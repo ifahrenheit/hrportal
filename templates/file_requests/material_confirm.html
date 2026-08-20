@@ -1,9 +1,10 @@
 {% extends 'base.html' %}
-{% block title %}Receipt Confirmed{% endblock %}
-{% block page_title %}Receipt Confirmed{% endblock %}
+{% block title %}Confirm Receipt{% endblock %}
+{% block page_title %}Confirm Receipt{% endblock %}
 {% block content %}
 <div class="row justify-content-center mt-5">
   <div class="col-md-6">
+    {% if confirmed %}
     <div class="card text-center p-4">
       <div style="font-size:4rem;">✅</div>
       <h4 class="mt-3">Thank you, {{ req.employee_name }}!</h4>
@@ -12,13 +13,38 @@
         <tr><th>Category</th><td>{{ req.category }}</td></tr>
         <tr><th>Item</th><td>{{ req.item_name }}</td></tr>
         <tr><th>Quantity</th><td>{{ req.quantity }}</td></tr>
-        <tr><th>Released by</th><td>{{ req.released_by }}</td></tr>
       </table>
-      <p class="text-success fw-bold mt-2">Status: Served</p>
+      <p class="text-success fw-bold mt-2">Status: Served ✓</p>
       <a href="https://hrportal.cohere.ph/file-requests/material" class="btn btn-outline-secondary mt-2">
         Back to My Requests
       </a>
     </div>
+    {% else %}
+    <div class="card p-4">
+      <h4 class="mb-1">Confirm Receipt</h4>
+      <p class="text-muted small mb-3">Please confirm that you received the item below.</p>
+      <table class="table table-sm mb-4">
+        <tr><th>Category</th><td>{{ req.category }}</td></tr>
+        <tr><th>Item</th><td>{{ req.item_name }}</td></tr>
+        <tr><th>Quantity</th><td>{{ req.quantity }}</td></tr>
+      </table>
+      {% if error %}
+      <div class="alert alert-danger py-2 small">{{ error }}</div>
+      {% endif %}
+      <form method="POST">
+        <div class="mb-3">
+          <label class="form-label fw-semibold">Who gave you this item? <span class="text-danger">*</span></label>
+          <input type="text" name="released_by_name" class="form-control"
+                 placeholder="Enter the name of the person who handed you the item"
+                 required>
+          <small class="text-muted">This helps us trace who physically released the item.</small>
+        </div>
+        <button type="submit" class="btn btn-success w-100">
+          <i class="bi bi-check-circle me-1"></i>Confirm Receipt
+        </button>
+      </form>
+    </div>
+    {% endif %}
   </div>
 </div>
 {% endblock %}

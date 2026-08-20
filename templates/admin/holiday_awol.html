@@ -1,104 +1,183 @@
 {% extends "base.html" %}
 
-{% block title %}Holiday AWOL Report{% endblock %}
+{% block title %}Holiday AWOL{% endblock %}
 {% block page_title %}Holiday AWOL Report{% endblock %}
 
 {% block content %}
-  <div class="awol-intro">
-    <div class="awol-topbar">
-      <p class="text-muted mb-0">
-        Agents scheduled to work on a holiday (year-to-date) who had
-        <strong>no time-in and no time-out</strong> and filed
-        <strong>no Change Work Schedule</strong> moving that holiday.
-        <span class="awol-total">Total flagged: {{ total }}</span>
-      </p>
-      <a href="{{ url_for('admin_holiday_awol_xlsx') }}" class="btn btn-light awol-export">
-        <i class="bi bi-file-earmark-excel me-1"></i> Export Excel
-      </a>
-    </div>
-    <input type="text" id="awolSearch" class="search-input"
-           placeholder="Search name or employee ID across all holidays…">
+
+<ul class="nav nav-tabs mb-3">
+  <li class="nav-item">
+    <a class="nav-link" href="{{ url_for('admin_absences') }}">
+      <i class="bi bi-person-x me-1"></i>Absence Report
+    </a>
+  </li>
+  <li class="nav-item">
+    <a class="nav-link" href="{{ url_for('admin_attendance_grid') }}">
+      <i class="bi bi-grid-3x3 me-1"></i>Attendance Grid
+    </a>
+  </li>
+  <li class="nav-item">
+    <a class="nav-link active" href="{{ url_for('admin_holiday_awol') }}">
+      <i class="bi bi-calendar-x me-1"></i>Holiday AWOL
+    </a>
+  </li>
+</ul>
+
+<div class="card mb-3">
+  <div class="card-body pb-2">
+    <form method="GET" class="row g-2 align-items-end">
+      <div class="col-6 col-md-3">
+        <label class="form-label small mb-1">Group</label>
+        <select name="group" class="form-select form-select-sm" onchange="this.form.submit()">
+          <option value="">All Groups</option>
+          {% for g in groups %}
+          <option value="{{ g }}" {% if g == group_filter %}selected{% endif %}>{{ g }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-6 col-md-3">
+        <label class="form-label small mb-1">Team Lead</label>
+        <select name="tl" class="form-select form-select-sm" onchange="this.form.submit()">
+          <option value="">All TLs</option>
+          {% for t in tls %}
+          <option value="{{ t }}" {% if t == tl_filter %}selected{% endif %}>{{ t }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-8 col-md-4">
+        <label class="form-label small mb-1">Search</label>
+        <input type="text" name="emp_search" class="form-control form-control-sm"
+               value="{{ emp_search }}" placeholder="Name or Employee ID…">
+      </div>
+      <div class="col-4 col-md-2 d-flex gap-2">
+        <button type="submit" class="btn btn-sm btn-primary flex-fill">
+          <i class="bi bi-funnel"></i>
+        </button>
+        <button type="button" class="btn btn-sm btn-outline-primary" id="copyBtn">
+          <i class="bi bi-clipboard me-1"></i>Copy Table
+        </button>
+      </div>
+      <div class="col-12 mt-1">
+        <div class="form-check">
+          <input class="form-check-input" type="checkbox" name="include_separated" value="1"
+                 id="incSep" {% if include_separated %}checked{% endif %}
+                 onchange="this.form.submit()">
+          <label class="form-check-label small" for="incSep">
+            Include separated employees
+          </label>
+        </div>
+      </div>
+    </form>
   </div>
+</div>
 
-  {% if grouped %}
-    {% for g in grouped %}
-      <div class="card awol-holiday" data-holiday="{{ g.date }}">
-        <div class="card-header awol-holiday-head">
-          <span class="awol-holiday-title">
-            {{ g.date }}{% if g.name %} — {{ g.name }}{% endif %}
-          </span>
-          <span class="badge awol-count-badge">{{ g.count }} AWOL</span>
-        </div>
-        <div class="card-body p-0">
-          <table class="data-table awol-table">
-            <thead>
-              <tr>
-                <th>Employee ID</th>
-                <th>Name</th>
-                <th>Scheduled Shift</th>
-              </tr>
-            </thead>
-            <tbody>
-              {% for a in g.agents %}
-                <tr class="awol-row" data-search="{{ (a.name ~ ' ' ~ a.employee_id) | lower }}">
-                  <td>{{ a.employee_id }}</td>
-                  <td>{{ a.name }}</td>
-                  <td>{{ a.shift_time }}</td>
-                </tr>
-              {% endfor %}
-            </tbody>
-          </table>
-        </div>
+<p class="text-muted small mb-3">
+  Scheduled to work on a holiday (year-to-date) with
+  <strong>no time-in and no time-out</strong> and
+  <strong>no covering CWS</strong>.
+  {% if not include_separated %}Separated employees excluded.{% else %}Including separated employees.{% endif %}
+  <span class="awol-total">Total flagged: {{ total }}</span>
+</p>
+
+{% if grouped %}
+  {% for g in grouped %}
+    <div class="card awol-holiday mb-3">
+      <div class="card-header d-flex align-items-center justify-content-between">
+        <span class="fw-semibold">
+          {{ g.date }}{% if g.name %} — {{ g.name }}{% endif %}
+        </span>
+        <span class="badge awol-count-badge">{{ g.count }} AWOL</span>
       </div>
-    {% endfor %}
-  {% else %}
-    <div class="card">
-      <div class="card-body empty">
-        No AWOL cases found for holidays year-to-date. 🎉
+      <div class="card-body p-0">
+        <table class="table table-sm mb-0 awol-table">
+          <colgroup>
+            <col class="c-empid"><col class="c-name"><col class="c-group">
+            <col class="c-tl"><col class="c-shift"><col class="c-reg"><col class="c-sl">
+          </colgroup>
+          <thead>
+            <tr>
+              <th>Employee ID</th>
+              <th>Name</th>
+              <th>Group</th>
+              <th>Team Lead</th>
+              <th>Scheduled Shift</th>
+              <th>Regularization Date</th>
+              <th>Remaining SL Hours</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for a in g.agents %}
+              <tr>
+                <td>{{ a.employee_id }}</td>
+                <td>{{ a.name }}</td>
+                <td>{{ a.group_name }}</td>
+                <td>{{ a.tl }}</td>
+                <td>{{ a.shift_time }}</td>
+                <td>{{ a.regularization_date }}</td>
+                <td class="num">{{ "%.1f"|format(a.sl_remaining) }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
       </div>
     </div>
-  {% endif %}
+  {% endfor %}
+{% else %}
+  <div class="card">
+    <div class="card-body text-center text-muted py-4">
+      No AWOL cases found for the selected filters.
+    </div>
+  </div>
+{% endif %}
 
-  <style>
-    .awol-intro { margin-bottom: 1rem; }
-    .awol-topbar { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; }
-    .awol-export { white-space: nowrap; }
-    .awol-total { margin-left: .5rem; font-weight: 600; color: var(--accent, #1F3A5F); }
-    .awol-holiday { margin-bottom: 1rem; }
-    .awol-holiday-head {
-      display: flex; align-items: center; justify-content: space-between;
+<style>
+  .awol-total { margin-left: .5rem; font-weight: 600; color: var(--accent, #1F3A5F); }
+  .awol-count-badge { background: #b23a48; color: #fff; padding: .25rem .6rem;
+    border-radius: 999px; font-size: .8rem; }
+  .awol-table { table-layout: fixed; width: 100%; }
+  .awol-table th { font-size: .75rem; text-transform: uppercase; letter-spacing: .02em; }
+  .awol-table th, .awol-table td { padding: .5rem .75rem; vertical-align: middle; }
+  .awol-table col.c-empid  { width: 10%; }
+  .awol-table col.c-name   { width: 20%; }
+  .awol-table col.c-group  { width: 12%; }
+  .awol-table col.c-tl     { width: 14%; }
+  .awol-table col.c-shift  { width: 14%; }
+  .awol-table col.c-reg    { width: 15%; }
+  .awol-table col.c-sl     { width: 15%; text-align: right; }
+  .awol-table td.num       { text-align: right; }
+</style>
+<script>
+(function () {
+  // Build TSV: header + one row per agent, across all holidays
+  const headers = ['Holiday Date','Holiday','Employee ID','Name','Group','Team Lead','Scheduled Shift','Regularization Date','Remaining SL Hours'];
+  const rows = [
+    {% for g in grouped %}
+      {% for a in g.agents %}
+      [{{ g.date|tojson }}, {{ (g.name or '')|tojson }}, {{ a.employee_id|tojson }}, {{ a.name|tojson }}, {{ a.group_name|tojson }}, {{ a.tl|tojson }}, {{ a.shift_time|tojson }}, {{ a.regularization_date|tojson }}, {{ ("%.1f"|format(a.sl_remaining))|tojson }}],
+      {% endfor %}
+    {% endfor %}
+  ];
+  const btn = document.getElementById('copyBtn');
+  if (!btn) return;
+  btn.addEventListener('click', async function () {
+    const tsv = [headers.join('\t')]
+      .concat(rows.map(r => r.join('\t')))
+      .join('\n');
+    try {
+      await navigator.clipboard.writeText(tsv);
+      const old = btn.innerHTML;
+      btn.innerHTML = '<i class="bi bi-check2 me-1"></i>Copied!';
+      setTimeout(() => { btn.innerHTML = old; }, 1500);
+    } catch (e) {
+      // fallback: temporary textarea
+      const ta = document.createElement('textarea');
+      ta.value = tsv; document.body.appendChild(ta); ta.select();
+      document.execCommand('copy'); document.body.removeChild(ta);
+      const old = btn.innerHTML;
+      btn.innerHTML = '<i class="bi bi-check2 me-1"></i>Copied!';
+      setTimeout(() => { btn.innerHTML = old; }, 1500);
     }
-    .awol-holiday-title { font-weight: 600; }
-    .awol-count-badge {
-      background: #b23a48; color: #fff; padding: .25rem .6rem;
-      border-radius: 999px; font-size: .8rem;
-    }
-    .awol-table { width: 100%; }
-    #awolSearch {
-      width: 100%; padding: .5rem .75rem; border: 1px solid #ccc;
-      border-radius: 6px; margin-top: .25rem;
-    }
-    .awol-holiday.hidden { display: none; }
-  </style>
-
-  <script>
-    (function () {
-      var box = document.getElementById('awolSearch');
-      if (!box) return;
-      box.addEventListener('input', function () {
-        var q = this.value.trim().toLowerCase();
-        document.querySelectorAll('.awol-holiday').forEach(function (card) {
-          var anyVisible = false;
-          card.querySelectorAll('.awol-row').forEach(function (row) {
-            var hay = row.getAttribute('data-search') || '';
-            var show = !q || hay.indexOf(q) !== -1;
-            row.style.display = show ? '' : 'none';
-            if (show) anyVisible = true;
-          });
-          // hide the whole holiday card if nothing matches
-          card.classList.toggle('hidden', q && !anyVisible);
-        });
-      });
-    })();
-  </script>
+  });
+})();
+</script>
 {% endblock %}

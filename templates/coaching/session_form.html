@@ -1,0 +1,90 @@
+{% extends "base.html" %}
+{% block title %}{{ 'Edit' if mode=='edit' else 'New' }} Session{% endblock %}
+{% block page_title %}{{ 'Edit' if mode=='edit' else 'New' }} Coaching Session{% endblock %}
+
+{% block content %}
+{% include "coaching/_nav.html" with context %}
+
+<div style="max-width:900px;">
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% for cat, msg in messages %}<div class="alert alert-danger py-2">{{ msg }}</div>{% endfor %}
+  {% endwith %}
+
+  {% set action = url_for('coaching.edit_session', session_id=s.id) if mode=='edit' else url_for('coaching.new_session') %}
+  <form method="post" action="{{ action }}">
+    <div class="card mb-3">
+      <div class="card-body">
+        <h6 class="text-primary fw-bold mb-3" style="border-left:3px solid var(--accent);padding-left:8px;">Session Details</h6>
+        <div class="row g-3">
+          <div class="col-md-6">
+            <label class="form-label small fw-semibold">Agent *</label>
+            <select name="agent_id" class="form-select form-select-sm" required>
+              <option value="">Select agent…</option>
+              {% for a in agents %}<option value="{{ a.employee_id }}" {{ 'selected' if (s.agent_id or request.args.get('agent'))==a.employee_id }}>{{ a.schedule_name or a.employee_id }}</option>{% endfor %}
+            </select>
+          </div>
+          <div class="col-md-6">
+            <label class="form-label small fw-semibold">Coaching Type *</label>
+            <select name="coaching_type" class="form-select form-select-sm" required>
+              <option value="">Select type…</option>
+              {% for k,v in types.items() %}<option value="{{ k }}" {{ 'selected' if s.coaching_type==k }}>{{ v }}</option>{% endfor %}
+            </select>
+          </div>
+          <div class="col-md-6">
+            <label class="form-label small fw-semibold">Session Date *</label>
+            <input type="date" name="session_date" class="form-control form-control-sm" value="{{ s.session_date or '' }}" required>
+          </div>
+          <div class="col-md-6">
+            <label class="form-label small fw-semibold">Session Time *</label>
+            <input type="time" name="session_time" class="form-control form-control-sm" value="{{ s.session_time or '' }}" required>
+          </div>
+          <div class="col-12">
+            <label class="form-label small fw-semibold">Topic *</label>
+            <input type="text" name="topic" class="form-control form-control-sm" value="{{ s.topic or '' }}" maxlength="255" placeholder="e.g., Call handling improvement" required>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card mb-3">
+      <div class="card-body">
+        <h6 class="text-primary fw-bold mb-3" style="border-left:3px solid var(--accent);padding-left:8px;">Discussion &amp; Feedback</h6>
+        <div class="mb-3">
+          <label class="form-label small fw-semibold">Discussion Notes *</label>
+          <textarea name="discussion_notes" class="form-control form-control-sm" rows="3" required>{{ s.discussion_notes or '' }}</textarea>
+        </div>
+        <div class="mb-3">
+          <label class="form-label small fw-semibold">Areas for Improvement *</label>
+          <textarea name="areas_for_improvement" class="form-control form-control-sm" rows="3" required>{{ s.areas_for_improvement or '' }}</textarea>
+        </div>
+        <div>
+          <label class="form-label small fw-semibold">Strengths <span class="text-muted fw-normal">(optional)</span></label>
+          <textarea name="strengths" class="form-control form-control-sm" rows="3">{{ s.strengths or '' }}</textarea>
+        </div>
+      </div>
+    </div>
+
+    <div class="card mb-3">
+      <div class="card-body">
+        <div class="row g-3">
+          <div class="col-md-6">
+            <label class="form-label small fw-semibold">Follow-up Date</label>
+            <input type="date" name="follow_up_date" class="form-control form-control-sm" value="{{ s.follow_up_date or '' }}">
+          </div>
+          <div class="col-md-6">
+            <label class="form-label small fw-semibold">Status</label>
+            <select name="status" class="form-select form-select-sm">
+              {% for k,v in statuses.items() %}<option value="{{ k }}" {{ 'selected' if (s.status or 'pending')==k }}>{{ v }}</option>{% endfor %}
+            </select>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="d-flex gap-2">
+      <button type="submit" class="btn btn-primary">{{ 'Save Changes' if mode=='edit' else 'Create Session' }}</button>
+      <a href="{{ url_for('coaching.all_sessions') }}" class="btn btn-outline-secondary">Cancel</a>
+    </div>
+  </form>
+</div>
+{% endblock %}

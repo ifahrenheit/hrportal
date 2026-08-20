@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% block title %}Agents{% endblock %}
+{% block page_title %}Agents{% endblock %}
+{% block content %}
+{% include "coaching/_nav.html" with context %}
+<div class="card">
+  <div class="card-body">
+    <div class="table-responsive">
+      <table class="table table-hover align-middle" style="font-size:.9rem;">
+        <thead><tr><th>Agent</th><th>Email</th><th>Sessions</th><th>Last Session</th><th>Pending</th><th></th></tr></thead>
+        <tbody>
+          {% for r in rows %}
+            <tr>
+              <td>{{ r.schedule_name or r.employee_id }}</td>
+              <td>{{ r.email or '—' }}</td>
+              <td>{{ r.session_count }}</td>
+              <td>{{ r.last_session or '—' }}</td>
+              <td>{% if r.pending %}<span class="badge" style="background:var(--danger);color:#fff;">{{ r.pending }}</span>{% else %}0{% endif %}</td>
+              <td><a href="{{ url_for('coaching.agent_profile', employee_id=r.employee_id) }}" class="btn btn-sm btn-outline-primary">Profile</a>
+                  <a href="{{ url_for('coaching.new_session') }}?agent={{ r.employee_id }}" class="btn btn-sm btn-outline-secondary">Coach</a></td>
+            </tr>
+          {% else %}
+            <tr><td colspan="6" class="text-center text-muted py-4">No agents with sessions found.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endblock %}

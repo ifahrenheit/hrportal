@@ -511,6 +511,7 @@ def dashboard():
                 SUM(CASE WHEN ir.status='rwe_request'  THEN 1 ELSE 0 END) as rwe_request,
                 SUM(CASE WHEN ir.status='rwe_for_signature' THEN 1 ELSE 0 END) as rwe_for_signature,
                 SUM(CASE WHEN ir.status='rwe_for_service'   THEN 1 ELSE 0 END) as rwe_for_service,
+                SUM(CASE WHEN ir.status='awaiting_explanation' THEN 1 ELSE 0 END) as awaiting_explanation,
                 SUM(CASE WHEN ir.status='forwarded'         THEN 1 ELSE 0 END) as forwarded,
                 SUM(CASE WHEN ir.status='for_memo'          THEN 1 ELSE 0 END) as for_memo,
                 SUM(CASE WHEN ir.status='rwe_served'   THEN 1 ELSE 0 END) as rwe_served,
@@ -557,6 +558,7 @@ def dashboard():
                           WHEN 'rwe_request'       THEN DATEDIFF(NOW(), COALESCE(rwe_requested_at, updated_at))
                           WHEN 'rwe_for_signature' THEN DATEDIFF(NOW(), COALESCE(rwe_for_signature_at, updated_at))
                           WHEN 'rwe_for_service'   THEN DATEDIFF(NOW(), COALESCE(rwe_for_service_at, updated_at))
+                          WHEN 'awaiting_explanation' THEN DATEDIFF(NOW(), COALESCE(awaiting_explanation_at, updated_at))
                           WHEN 'forwarded'         THEN DATEDIFF(NOW(), COALESCE(forwarded_at, updated_at))
                           WHEN 'for_memo'          THEN DATEDIFF(NOW(), COALESCE(for_memo_at, updated_at))
                         END as days_in_stage,
@@ -569,9 +571,9 @@ def dashboard():
                            WHERE ag.employee_id COLLATE utf8mb4_unicode_ci = incident_reports.employee_id COLLATE utf8mb4_unicode_ci
                            LIMIT 1) as responsible_tl
                     FROM incident_reports
-                    WHERE status IN ('rwe_request','rwe_for_signature','rwe_for_service','forwarded','for_memo')
+                    WHERE status IN ('rwe_request','rwe_for_signature','rwe_for_service','awaiting_explanation','forwarded','for_memo')
                     {scope_sql}
-                    ORDER BY FIELD(status,'rwe_request','rwe_for_signature','rwe_for_service','forwarded','for_memo'),
+                    ORDER BY FIELD(status,'rwe_request','rwe_for_signature','rwe_for_service','awaiting_explanation','forwarded','for_memo'),
                              updated_at ASC
                 """, scope_params)
                 rwe_reports = cur.fetchall()
@@ -1041,7 +1043,7 @@ def add_comment():
         if not report_number or not comment_text:
             return jsonify({'success': False, 'message': 'Comment cannot be empty'})
 
-        valid = ['reviewed', 'resolved', 'rwe_request', 'rwe_for_signature', 'rwe_for_service', 'rwe_served', 'forwarded', 'for_memo', 'waived']
+        valid = ['reviewed', 'resolved', 'rwe_request', 'rwe_for_signature', 'rwe_for_service', 'rwe_served', 'awaiting_explanation', 'forwarded', 'for_memo', 'waived']
         if status_action and status_action not in valid:
             return jsonify({'success': False, 'message': 'Invalid status'})
 
@@ -1090,11 +1092,21 @@ def add_comment():
                                    SET status=%s, rwe_for_service_at=NOW()
                                    WHERE report_number=%s""",
                                 (status_action, report_number))
-                elif status_action == 'forwarded':
-                    # HR served the RWE -> forwarded to SOM/TL for decision.
-                    # Stamp both served and forwarded (same moment).
+                elif status_action == 'awaiting_explanation':
+                    # HR served the RWE -> now waiting for the agent's written explanation.
+                    # Stamp served + entered-awaiting-explanation (same moment).
                     cur.execute("""UPDATE incident_reports
-                                   SET status=%s, rwe_served_at=NOW(), forwarded_at=NOW()
+                                   SET status=%s, rwe_served_at=NOW(), awaiting_explanation_at=NOW()
+                                   WHERE report_number=%s""",
+                                (status_action, report_number))
+                elif status_action == 'forwarded':
+                    # Agent's explanation received (or no response) -> forward to SOM/TL.
+                    # Stamp forwarded; also stamp served/awaiting if this was a direct admin jump.
+                    cur.execute("""UPDATE incident_reports
+                                   SET status=%s,
+                                       rwe_served_at=COALESCE(rwe_served_at, NOW()),
+                                       awaiting_explanation_at=COALESCE(awaiting_explanation_at, NOW()),
+                                       forwarded_at=NOW()
                                    WHERE report_number=%s""",
                                 (status_action, report_number))
                 elif status_action == 'for_memo':
@@ -1211,7 +1223,7 @@ def update_status():
     new_status    = data.get('status', '')
 
     # Update this array to allow your two new workflow steps!
-    valid = ['pending', 'reviewed', 'resolved', 'rwe_request', 'rwe_for_signature', 'rwe_for_service', 'rwe_served', 'forwarded', 'for_memo', 'waived']
+    valid = ['pending', 'reviewed', 'resolved', 'rwe_request', 'rwe_for_signature', 'rwe_for_service', 'rwe_served', 'awaiting_explanation', 'forwarded', 'for_memo', 'waived']
     if not report_number or new_status not in valid:
         return jsonify({'success': False, 'message': 'Invalid status'})
 

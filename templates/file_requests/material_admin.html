@@ -129,6 +129,16 @@
                    title="Download MRF PDF" target="_blank">
                   <i class="bi bi-file-earmark-pdf text-danger"></i>
                 </a>
+                <form method="POST" action="{{ url_for('material_admin_action') }}" style="display:inline;">
+                  <input type="hidden" name="req_id" value="{{ r.id }}">
+                  <input type="hidden" name="action" value="reject">
+                  <input type="hidden" name="admin_remarks" value="">
+                  <input type="hidden" name="_filter" value="{{ status_filter }}">
+                  <button type="submit" class="btn btn-sm btn-danger"
+                          onclick="return confirm('Reject this medicine request?')">
+                    <i class="bi bi-x-lg"></i>
+                  </button>
+                </form>
               </div>
             {% elif r.status == "Pending" %}
               <span class="text-muted small">Awaiting SOM recommendation</span>
@@ -143,6 +153,16 @@
                    title="Download MRF PDF" target="_blank">
                   <i class="bi bi-file-earmark-pdf text-danger"></i>
                 </a>
+                <form method="POST" action="{{ url_for('material_admin_action') }}" style="display:inline;">
+                  <input type="hidden" name="req_id" value="{{ r.id }}">
+                  <input type="hidden" name="action" value="reject">
+                  <input type="hidden" name="admin_remarks" value="">
+                  <input type="hidden" name="_filter" value="{{ status_filter }}">
+                  <button type="submit" class="btn btn-sm btn-danger"
+                          onclick="return confirm('Reject this medicine request?')">
+                    <i class="bi bi-x-lg"></i>
+                  </button>
+                </form>
               </div>
             {% elif r.status == 'Approved' %}
               <div class="d-flex gap-1">
@@ -179,6 +199,7 @@
                 <br><span class="badge" style="background:#b45309;color:#fff;">Awaiting Confirmation</span>
               {% elif r.status == 'Served' %}
                 <br><span class="badge" style="background:#065f46;color:#fff;">Served ✓</span>
+                {% if r.released_by_name %}<br><small class="text-muted">Given by: <strong>{{ r.released_by_name }}</strong></small>{% endif %}
               {% elif r.status == 'Released' %}
                 <br><span class="badge" style="background:#065f46;color:#fff;">Released</span>
                 {% if r.release_notes %}<br><em class="small">{{ r.release_notes }}</em>{% endif %}

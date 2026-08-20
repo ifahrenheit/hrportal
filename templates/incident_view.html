@@ -330,7 +330,8 @@
               <option value="rwe_request">⚠️ Request RWE (Send to HR)</option>
               <option value="rwe_for_signature">🖊 RWE for Signature (Doc created)</option>
               <option value="rwe_for_service">📨 RWE for Service (Signed)</option>
-              <option value="forwarded">📧 RWE Served (Forward to SOM/TL)</option>
+              <option value="awaiting_explanation">📧 RWE Served (Awaiting Explanation)</option>
+              <option value="forwarded">📤 Explanation Received (Forward to SOM/TL)</option>
               <option value="for_memo">⚖️ Proceed with Disciplinary Action</option>
               <option value="resolved">✅ Mark as Resolved</option>
               <option value="waived">⚪ Mark as Waived</option>
@@ -341,7 +342,9 @@
                 <option value="rwe_for_signature">🖊 RWE for Signature (Doc created)</option>
                 <option value="reviewed">👁 Mark as IR Reviewed (investigating)</option>
               {% elif report.status == 'rwe_for_service' %}
-                <option value="forwarded">📧 RWE Served (Forward to SOM/TL)</option>
+                <option value="awaiting_explanation">📧 RWE Served (Awaiting Explanation)</option>
+              {% elif report.status == 'awaiting_explanation' %}
+                <option value="forwarded">📤 Explanation Received (Forward to SOM/TL)</option>
               {% elif report.status == 'for_memo' %}
                 <option value="resolved">✅ Mark as Resolved (file memo)</option>
               {% elif report.status == 'reviewed' %}
@@ -360,7 +363,7 @@
               {% elif report.status == 'forwarded' %}
                 <option value="for_memo">⚖️ Proceed with Disciplinary Action</option>
                 <option value="waived">⚪ Waive IR</option>
-              {% elif report.status in ['rwe_request', 'rwe_for_service', 'for_memo', 'reviewed'] %}
+              {% elif report.status in ['rwe_request', 'rwe_for_service', 'awaiting_explanation', 'for_memo', 'reviewed'] %}
                 {# Waiting on HR — no TL transition #}
               {% else %}
                 <option value="resolved">✅ Mark as Resolved</option>
@@ -376,7 +379,9 @@
               {% if report.status == 'rwe_request' %}
                 Create the RWE document, then mark "RWE for Signature". If investigating (e.g. termination), mark "IR Reviewed".
               {% elif report.status == 'rwe_for_service' %}
-                Serve the signed RWE to the agent, then mark "RWE Served" to forward to the SOM/TL.
+                Serve the signed RWE to the agent, then mark "RWE Served" — the ticket then waits for the agent's explanation.
+              {% elif report.status == 'awaiting_explanation' %}
+                Waiting for the agent's written explanation. Mark "Explanation Received" once submitted (or forward with a note if no response after 5 days).
               {% elif report.status == 'for_memo' %}
                 The SOM/TL chose disciplinary action. Create the memo, then Resolve.
               {% elif report.status == 'reviewed' %}
@@ -393,6 +398,8 @@
                 HR is preparing the RWE document. No action needed from you yet.
               {% elif report.status == 'rwe_for_service' %}
                 HR is serving the RWE to the agent. No action needed from you yet.
+              {% elif report.status == 'awaiting_explanation' %}
+                HR is waiting for the agent's written explanation. No action needed from you yet.
               {% elif report.status == 'for_memo' %}
                 HR is preparing the memo. No action needed from you yet.
               {% elif report.status == 'reviewed' %}

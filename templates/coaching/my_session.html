@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+{% block title %}My Coaching · #{{ s.id }}{% endblock %}
+{% block page_title %}Coaching Session{% endblock %}
+{% block content %}
+<style>
+  .co-detail{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:14px;}
+  .co-detail .l{font-size:.68rem;text-transform:uppercase;letter-spacing:.03em;color:var(--text-muted);margin-bottom:2px;}
+  .co-blk h6{font-size:.9rem;margin:16px 0 5px;color:var(--accent);font-weight:700;}
+  .co-blk p{white-space:pre-wrap;margin:0;color:var(--text);}
+  .smart-box{background:var(--surface-2);border:1px solid var(--border);border-radius:var(--radius);padding:12px 14px;font-size:.82rem;color:var(--text-muted);}
+  .smart-box b{color:var(--text);}
+</style>
+
+<div style="max-width:900px;">
+  <a href="{{ url_for('coaching.my_sessions') }}" class="btn btn-sm btn-outline-secondary mb-3">← My Sessions</a>
+
+  <div class="card mb-3">
+    <div class="card-body">
+      <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
+        <h5 class="mb-0">Session #{{ s.id }}</h5>
+        <span class="badge" style="{{ coaching_status_style.get(s.status,'') }}">{{ coaching_status_label.get(s.status, s.status) }}</span>
+      </div>
+      <div class="co-detail mb-2">
+        <div><div class="l">Supervisor</div><div>{{ s.supervisor_name or s.supervisor_id }}</div></div>
+        <div><div class="l">Date</div><div>{{ s.session_date }}{% if s.session_time %} · {{ s.session_time }}{% endif %}</div></div>
+        <div><div class="l">Type</div><div><span class="badge bg-secondary">{{ types.get(s.coaching_type, s.coaching_type) }}</span></div></div>
+        {% if s.agent_account %}<div><div class="l">Account</div><div>{{ s.agent_account }}</div></div>{% endif %}
+        {% if s.agent_group %}<div><div class="l">Group</div><div>{{ s.agent_group }}</div></div>{% endif %}
+      </div>
+      <div class="co-blk">
+        {% if s.topic %}<h6>Topic</h6><p>{{ s.topic }}</p>{% endif %}
+        {% if s.discussion_notes %}<h6>Discussion Notes</h6><p>{{ s.discussion_notes }}</p>{% endif %}
+        {% if s.areas_for_improvement %}<h6>Areas for Improvement</h6><p>{{ s.areas_for_improvement }}</p>{% endif %}
+        {% if s.strengths %}<h6>Strengths</h6><p>{{ s.strengths }}</p>{% endif %}
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-body">
+      <h5 class="card-title mb-2">My Action Plan</h5>
+      <div class="smart-box mb-3">
+        Write your plan using the <b>SMART</b> approach —
+        <b>S</b>pecific (what exactly you'll do),
+        <b>M</b>easurable (how you'll know it's done),
+        <b>A</b>chievable (realistic for you),
+        <b>R</b>elevant (tied to the coaching above), and
+        <b>T</b>ime-bound (by when).
+      </div>
+
+      {% if locked %}
+        <p class="mb-2"><span class="badge" style="{{ coaching_status_style.get('completed','') }}">Completed</span></p>
+        <div class="co-blk"><p>{{ s.action_plan or '—' }}</p></div>
+        <p class="text-muted mt-2" style="font-size:.8rem;">This session is complete and can no longer be edited.</p>
+      {% else %}
+        <form method="post" action="{{ url_for('coaching.my_session', session_id=s.id) }}">
+          <textarea name="action_plan" class="form-control form-control-sm mb-3" rows="6"
+                    placeholder="e.g. I will reduce dead air on calls by using the hold script on every transfer, measured by my QA scores, reviewed weekly with my TL, by end of this month.">{{ s.action_plan or '' }}</textarea>
+          <div class="d-flex gap-2">
+            <button type="submit" name="save" value="1" class="btn btn-outline-primary">Save Draft</button>
+            <button type="submit" name="complete" value="1" class="btn btn-primary"
+                    onclick="return confirm('Complete this coaching? You will not be able to edit your action plan afterwards.');">
+              Complete
+            </button>
+          </div>
+          <p class="text-muted mt-2" style="font-size:.8rem;">Action Plan is required to complete. Once completed, it locks.</p>
+        </form>
+      {% endif %}
+    </div>
+  </div>
+</div>
+{% endblock %}

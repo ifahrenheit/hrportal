@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% block title %}{{ agent.schedule_name or agent.employee_id }}{% endblock %}
+{% block page_title %}{{ agent.schedule_name or agent.employee_id }}{% endblock %}
+{% block content %}
+<style>
+  .co-stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:14px;}
+  .co-stat{background:var(--surface);border:1px solid var(--border);border-left:4px solid var(--accent);
+           border-radius:var(--radius);padding:14px;text-align:center;}
+  .co-stat .num{font-size:1.6rem;font-weight:700;color:var(--accent);}
+  .co-stat .lbl{margin-top:4px;font-size:.68rem;text-transform:uppercase;letter-spacing:.03em;color:var(--text-muted);}
+</style>
+{% include "coaching/_nav.html" with context %}
+
+<div class="card mb-3">
+  <div class="card-body">
+    <div class="d-flex justify-content-between align-items-start flex-wrap gap-2 mb-3">
+      <div><h5 class="mb-0">{{ agent.schedule_name or agent.employee_id }}</h5>
+        <small class="text-muted">{{ agent.email or '' }} · {{ agent.employee_id }}</small></div>
+      <a href="{{ url_for('coaching.new_session') }}?agent={{ agent.employee_id }}" class="btn btn-sm btn-primary">+ New Session</a>
+    </div>
+    <div class="co-stats">
+      <div class="co-stat"><div class="num">{{ sessions|length }}</div><div class="lbl">Total Sessions</div></div>
+      {% for t in by_type %}<div class="co-stat"><div class="num">{{ t.n }}</div><div class="lbl">{{ types.get(t.coaching_type, t.coaching_type) }}</div></div>{% endfor %}
+    </div>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-body">
+    <h5 class="card-title mb-3">Session History</h5>
+    <div class="table-responsive">
+      <table class="table table-hover align-middle" style="font-size:.9rem;">
+        <thead><tr><th>Date</th><th>Type</th><th>Topic</th><th>Supervisor</th><th>Status</th><th></th></tr></thead>
+        <tbody>
+          {% for s in sessions %}
+            <tr>
+              <td>{{ s.session_date }}</td>
+              <td><span class="badge bg-secondary">{{ types.get(s.coaching_type, s.coaching_type) }}</span></td>
+              <td>{{ s.topic or '—' }}</td>
+              <td>{{ s.supervisor_name or s.supervisor_id }}</td>
+              <td><span class="badge" style="{{ coaching_status_style.get(s.status,'') }}">{{ statuses.get(s.status, s.status) }}</span></td>
+              <td><a href="{{ url_for('coaching.view_session', session_id=s.id) }}" class="btn btn-sm btn-outline-primary">View</a></td>
+            </tr>
+          {% else %}
+            <tr><td colspan="6" class="text-center text-muted py-4">No sessions for this agent.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endblock %}

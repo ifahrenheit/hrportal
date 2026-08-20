@@ -81,6 +81,9 @@ def _shift_date(conn, employee_id):
     """
     Returns the business shift date for an employee.
     Handles overnight shifts with 9 AM cutoff rule.
+    Before 9 AM, checks TODAY's shift first: if it's a daytime shift that has
+    already started, the break belongs to today (fixes 5am-2pm agents whose
+    early-morning break was mis-stamped to yesterday).
     """
     now = datetime.now()
     today = now.strftime('%Y-%m-%d')
@@ -88,6 +91,26 @@ def _shift_date(conn, employee_id):
     cur_min = now.hour * 60 + now.minute
 
     if now.hour < 9:
+        # 1) Check TODAY's shift — if a daytime shift has already started, it's today.
+        with conn.cursor() as c:
+            c.execute("""
+                SELECT shift_time FROM employee_schedules
+                WHERE employee_id = %s AND schedule_date = %s AND is_rest_day = 0
+                LIMIT 1
+            """, (employee_id, today))
+            trow = c.fetchone()
+        if trow:
+            st = _normalize_shift(trow['shift_time'])
+            if st:
+                m = re.match(r'^(\d{2}):(\d{2})-(\d{2}):(\d{2})$', st)
+                if m:
+                    start_min = int(m[1]) * 60 + int(m[2])
+                    start_h, end_h = int(m[1]), int(m[3])
+                    # Daytime shift (not overnight) that has already begun → today
+                    if start_h <= end_h and cur_min >= start_min:
+                        return today
+
+        # 2) Otherwise check if YESTERDAY's overnight shift bleeds into now.
         with conn.cursor() as c:
             c.execute("""
                 SELECT shift_time FROM employee_schedules
@@ -103,6 +126,7 @@ def _shift_date(conn, employee_id):
                     sh, eh, em = int(m[1]), int(m[2]), int(m[3])
                     if sh > eh and cur_min < (eh * 60 + em):
                         return yesterday
+
     return today
 
 

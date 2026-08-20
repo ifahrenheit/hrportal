@@ -26,7 +26,8 @@
       {% for g in groups %}<option value="{{ g }}">{{ g }}</option>{% endfor %}
     </select>
 
-    <select id="reqTlFilter" class="form-select req-filter">
+    <select id="reqTlFilter" class="form-select req-filter"
+            {% if scope_kind == 'tl' %}style="display:none"{% endif %}>
       <option value="">All TLs</option>
       {% for t in tls %}<option value="{{ t }}">{{ t }}</option>{% endfor %}
     </select>
@@ -81,12 +82,19 @@
   .req-search { max-width: 260px; }
   .req-filter { max-width: 200px; }
   .req-count { font-size:13px; opacity:.7; margin-left:auto; }
-  .req-table-scroll { overflow-x:auto; }
+  .req-table-scroll { overflow-x:auto; overflow-y:auto; max-height:75vh; }
+  .req-table { border-collapse:separate; border-spacing:0; }
   .req-table th, .req-table td { text-align:center; white-space:nowrap; vertical-align:middle; }
+  .req-table thead th {
+    position:sticky; top:0; z-index:3;
+    background:var(--surface,#fff);
+    box-shadow:inset 0 -1px 0 rgba(0,0,0,.15);
+  }
   .req-table th.sticky-col, .req-table td.sticky-col {
     position:sticky; left:0; z-index:2; background:var(--surface,#fff);
     text-align:left; min-width:210px;
   }
+  .req-table thead th.sticky-col { z-index:4; }
   .req-name { font-weight:600; }
   .req-empid { font-size:11px; opacity:.6; }
   .req-col { min-width:60px; }

@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% block title %}Session #{{ s.id }}{% endblock %}
+{% block page_title %}Session #{{ s.id }}{% endblock %}
+{% block content %}
+<style>
+  .co-detail{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:14px;}
+  .co-detail .l{font-size:.68rem;text-transform:uppercase;letter-spacing:.03em;color:var(--text-muted);margin-bottom:2px;}
+  .co-blk h6{font-size:.9rem;margin:16px 0 5px;color:var(--accent);font-weight:700;}
+  .co-blk p{white-space:pre-wrap;margin:0;color:var(--text);}
+</style>
+{% include "coaching/_nav.html" with context %}
+
+<div style="max-width:900px;">
+  <div class="card">
+    <div class="card-body">
+      <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
+        <h5 class="mb-0">Session #{{ s.id }} <span class="badge" style="{{ coaching_status_style.get(s.status,'') }}">{{ coaching_status_label.get(s.status, s.status) }}</span></h5>
+        {% if can_edit %}
+          <div class="d-flex gap-2">
+            <a href="{{ url_for('coaching.edit_session', session_id=s.id) }}" class="btn btn-sm btn-primary">Edit</a>
+            <form method="post" action="{{ url_for('coaching.delete_session', session_id=s.id) }}" onsubmit="return confirm('Cancel this session?');">
+              <button type="submit" class="btn btn-sm btn-outline-danger">Cancel Session</button>
+            </form>
+          </div>
+        {% endif %}
+      </div>
+
+      <div class="co-detail mb-2">
+        <div><div class="l">Agent</div><div>{% if s.agent_id %}<a href="{{ url_for('coaching.agent_profile', employee_id=s.agent_id) }}">{{ s.agent_name or s.agent_id }}</a>{% else %}—{% endif %}</div></div>
+        <div><div class="l">Supervisor</div><div>{{ s.supervisor_name or s.supervisor_id }}</div></div>
+        <div><div class="l">Date / Time</div><div>{{ s.session_date }}{% if s.session_time %} · {{ s.session_time }}{% endif %}</div></div>
+        <div><div class="l">Type</div><div><span class="badge bg-secondary">{{ types.get(s.coaching_type, s.coaching_type) }}</span></div></div>
+        <div><div class="l">Follow-up</div><div>{{ s.follow_up_date or '—' }}</div></div>
+        {% if s.agent_account %}<div><div class="l">Account</div><div>{{ s.agent_account }}</div></div>{% endif %}
+        {% if s.agent_group %}<div><div class="l">Group</div><div>{{ s.agent_group }}</div></div>{% endif %}
+      </div>
+
+      <div class="co-blk">
+        {% if s.topic %}<h6>Topic</h6><p>{{ s.topic }}</p>{% endif %}
+        {% if s.discussion_notes %}<h6>Discussion Notes</h6><p>{{ s.discussion_notes }}</p>{% endif %}
+        {% if s.strengths %}<h6>Strengths</h6><p>{{ s.strengths }}</p>{% endif %}
+        {% if s.areas_for_improvement %}<h6>Areas for Improvement</h6><p>{{ s.areas_for_improvement }}</p>{% endif %}
+        {% if s.action_plan %}<h6>Agent Action Plan (SMART)</h6><p>{{ s.action_plan }}</p>{% endif %}
+      </div>
+      <p class="text-muted mt-3" style="font-size:.75rem;">Created {{ s.created_at }}{% if s.updated_at and s.updated_at != s.created_at %} · Updated {{ s.updated_at }}{% endif %}</p>
+    </div>
+  </div>
+</div>
+{% endblock %}

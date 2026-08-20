@@ -346,7 +346,8 @@
     {% set stage_defs = [
       ('rwe_request',       '🔴 Awaiting Document',  'HR',  '#ef4444', 'Create the RWE document', 'rwe_for_signature', '🖊 Doc Created',  5),
       ('rwe_for_signature', '🟡 Awaiting Signature', 'TL',  '#f59e0b', 'TL must sign the RWE document', 'rwe_for_service', '✍ Signed', 5),
-      ('rwe_for_service',   '🟠 Awaiting Service',   'HR',  '#f97316', 'Serve the signed RWE to the agent', 'forwarded', '📧 RWE Served', 5),
+      ('rwe_for_service',   '🟠 Awaiting Service',   'HR',  '#f97316', 'Serve the signed RWE to the agent', 'awaiting_explanation', '📧 RWE Served', 5),
+      ('awaiting_explanation', '🟤 Awaiting Explanation', 'HR', '#a16207', 'Waiting for the agent\'s written explanation', 'forwarded', '📤 Explanation Received', 5),
       ('forwarded',         '🟣 SOM/TL Decision',    'TL',  '#8b5cf6', 'Waive or proceed with disciplinary action', 'for_memo', '⚖️ Proceed w/ Action', 5),
       ('for_memo',          '🔵 Awaiting Memo',      'HR',  '#3b82f6', 'Create the memo, then resolve', 'resolved', '✅ Resolve (memo)', 5),
     ] %}

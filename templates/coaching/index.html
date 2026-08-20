@@ -1,0 +1,88 @@
+{% extends "base.html" %}
+{% block title %}Coaching{% endblock %}
+{% block page_title %}Coaching Dashboard{% endblock %}
+
+{% block content %}
+<style>
+  .co-stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:16px;margin-bottom:20px;}
+  .co-stat{background:var(--surface);border:1px solid var(--border);border-left:4px solid var(--accent);
+           border-radius:var(--radius);padding:18px 20px;text-align:center;}
+  .co-stat .num{font-size:2rem;font-weight:700;color:var(--accent);line-height:1.1;}
+  .co-stat .lbl{margin-top:6px;font-size:.72rem;letter-spacing:.03em;text-transform:uppercase;color:var(--text-muted);}
+  .co-team{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:14px;}
+  .co-tc{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:14px 16px;}
+  .co-tc-head{display:flex;align-items:center;gap:10px;margin-bottom:10px;}
+  .co-av{width:36px;height:36px;border-radius:50%;background:var(--accent);color:var(--accent-text);
+         display:flex;align-items:center;justify-content:center;font-weight:600;font-size:.8rem;flex-shrink:0;}
+  .co-tc-name{font-weight:600;font-size:.9rem;line-height:1.15;color:var(--text);}
+  .co-tc-email{font-size:.72rem;color:var(--text-muted);word-break:break-all;}
+  .co-tc-m{display:flex;gap:12px;padding-top:9px;border-top:1px solid var(--border);}
+  .co-m{flex:1;text-align:center;}
+  .co-m .n{font-weight:700;font-size:1.05rem;color:var(--text);}
+  .co-m .n.pend{color:var(--danger);}
+  .co-m .l{font-size:.64rem;text-transform:uppercase;letter-spacing:.03em;color:var(--text-muted);}
+  .co-tc-foot{margin-top:8px;font-size:.7rem;color:var(--text-muted);}
+</style>
+
+{% include "coaching/_nav.html" with context %}
+
+<div class="co-stats">
+  <div class="co-stat"><div class="num">{{ stats.total or 0 }}</div><div class="lbl">{% if is_manager %}Total (All Teams){% else %}Total Sessions{% endif %}</div></div>
+  <div class="co-stat"><div class="num">{{ stats.this_month or 0 }}</div><div class="lbl">This Month</div></div>
+  <div class="co-stat"><div class="num">{{ stats.pending or 0 }}</div><div class="lbl">Pending Follow-ups</div></div>
+</div>
+
+{% if is_manager and team %}
+<div class="card mb-4">
+  <div class="card-body">
+    <h5 class="card-title mb-1">Team Performance Overview</h5>
+    <p class="text-muted mb-3" style="font-size:.85rem;">Coaching activity breakdown by supervisor</p>
+    <div class="co-team">
+      {% for t in team %}
+        {% set nm = t.schedule_name or t.employee_id or '—' %}
+        <div class="co-tc">
+          <div class="co-tc-head">
+            <div class="co-av">{{ (nm[:2]).upper() }}</div>
+            <div><div class="co-tc-name">{{ nm }}</div>{% if t.email %}<div class="co-tc-email">{{ t.email }}</div>{% endif %}</div>
+          </div>
+          <div class="co-tc-m">
+            <div class="co-m"><div class="n">{{ t.total }}</div><div class="l">Total</div></div>
+            <div class="co-m"><div class="n">{{ t.this_month or 0 }}</div><div class="l">This Mo</div></div>
+            <div class="co-m"><div class="n {% if t.pending %}pend{% endif %}">{{ t.pending or 0 }}</div><div class="l">Pending</div></div>
+          </div>
+          {% if t.last_session %}<div class="co-tc-foot">Last: {{ t.last_session }}</div>{% endif %}
+        </div>
+      {% endfor %}
+    </div>
+  </div>
+</div>
+{% endif %}
+
+<div class="card">
+  <div class="card-body">
+    <h5 class="card-title mb-3">Recent Sessions</h5>
+    <div class="table-responsive">
+      <table class="table table-hover align-middle" style="font-size:.9rem;">
+        <thead>
+          <tr><th>Date</th><th>Agent</th>{% if is_manager %}<th>Supervisor</th>{% endif %}<th>Type</th><th>Topic</th><th>Status</th><th></th></tr>
+        </thead>
+        <tbody>
+          {% for r in recent %}
+            <tr>
+              <td>{{ r.session_date }}</td>
+              <td>{% if r.agent_id %}<a href="{{ url_for('coaching.agent_profile', employee_id=r.agent_id) }}">{{ r.agent_name or r.agent_id }}</a>{% else %}<span class="text-muted">—</span>{% endif %}</td>
+              {% if is_manager %}<td>{{ r.supervisor_name or r.supervisor_id }}</td>{% endif %}
+              <td><span class="badge bg-secondary">{{ types.get(r.coaching_type, r.coaching_type) }}</span></td>
+              <td>{{ r.topic or '—' }}</td>
+              <td><span class="badge" style="{{ coaching_status_style.get(r.status,'') }}">{{ statuses.get(r.status, r.status) }}</span></td>
+              <td><a href="{{ url_for('coaching.view_session', session_id=r.id) }}" class="btn btn-sm btn-outline-primary">View</a></td>
+            </tr>
+          {% else %}
+            <tr><td colspan="{{ 7 if is_manager else 6 }}" class="text-center text-muted py-4">No sessions yet.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endblock %}

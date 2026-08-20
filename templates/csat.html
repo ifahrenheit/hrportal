@@ -620,7 +620,7 @@
         borderWidth:2, order:1,
         datalabels:{
           display:true, align:'top', anchor:'end', color:'#1e5fd4',
-          font:{ weight:'600', size:10 },
+          font:{ weight:'700', size:13 },
           formatter:function(v){ return (v==null?'':v.toFixed(2)+'%'); }
         }
       }
@@ -634,7 +634,7 @@
         datalabels:{
           display:function(){ return $('trendShowValues') && $('trendShowValues').checked; },
           align:'top', anchor:'end', color:'#198754',
-          font:{ weight:'700', size:9 },
+          font:{ weight:'700', size:12 },
           formatter:function(v){ return (v==null?'':v.toFixed(1)+'%'); }
         }
       });
@@ -646,7 +646,7 @@
         datalabels:{
           display:function(){ return $('trendShowValues') && $('trendShowValues').checked; },
           align:'bottom', anchor:'start', color:'#fd7e14',
-          font:{ weight:'700', size:9 },
+          font:{ weight:'700', size:12 },
           formatter:function(v){ return (v==null?'':v.toFixed(1)+'%'); }
         }
       });
