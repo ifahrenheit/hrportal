@@ -30,6 +30,7 @@ from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 
 from db_core import get_db_connection
+from csrf import validate_csrf
 
 
 # ─── Email ────────────────────────────────────────────────────────────────────
@@ -165,6 +166,9 @@ def _fetch_my_requests(employee_id):
 @login_required
 def request_coe():
     if request.method == "POST":
+        if not validate_csrf():
+            flash('Security check failed, please try again.', 'danger')
+            return redirect(url_for('coe.request_coe'))
         purpose = request.form.get("purpose", "").strip()
         purpose_other = request.form.get("purpose_other", "").strip()
         addressee = request.form.get("addressee", "").strip()
@@ -331,6 +335,8 @@ def manage_queue():
 @login_required
 @coe_hr_required
 def update_status(req_id):
+    if not validate_csrf():
+        return jsonify({"success": False, "error": "Security check failed, please try again."}), 400
     new_status = request.form.get("status", "").strip()
     hr_notes = request.form.get("hr_notes", "").strip()
 
@@ -415,6 +421,8 @@ def update_status(req_id):
 @login_required
 @coe_hr_required
 def delete_request(req_id):
+    if not validate_csrf():
+        return jsonify({"success": False, "error": "Security check failed, please try again."}), 400
     reason = request.form.get("reason", "").strip()
     if not reason:
         return jsonify({"success": False, "error": "A reason is required"}), 400

@@ -84,8 +84,10 @@
 
 <script>
 function csrfHeaders() {
-  // ADJUST: plug in your CSRF token pattern if you use one elsewhere
-  return { 'X-Requested-With': 'XMLHttpRequest' };
+  return {
+    'X-Requested-With': 'XMLHttpRequest',
+    'X-CSRF-Token': getCsrfToken()
+  };
 }
 
 document.querySelectorAll('.save-btn').forEach(btn => {

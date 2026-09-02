@@ -685,6 +685,7 @@ async function markRweServed(reportNumber, btn){
 
   try {
     const fd = new FormData();
+    fd.append('csrf_token', getCsrfToken());
     fd.append('report_number', reportNumber);
     fd.append('comment', 'RWE has been served.');
     fd.append('status_action', 'rwe_served');
@@ -769,6 +770,7 @@ async function markRweStage(reportNumber, action, btn){
   btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span>';
   try {
     const fd = new FormData();
+    fd.append('csrf_token', getCsrfToken());
     fd.append('report_number', reportNumber);
     fd.append('comment', labels[action] || 'Status updated.');
     fd.append('status_action', action);

@@ -303,6 +303,7 @@
     <div class="comment-form mt-3">
       <div class="comment-form-title"><i class="bi bi-chat-left-text me-2"></i>Add a Comment</div>
       <form id="commentForm">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <input type="hidden" name="report_number" value="{{ report.report_number }}">
         <div class="mb-3">
           <textarea class="form-control" name="comment" rows="4" required
@@ -531,6 +532,7 @@ function toggleEdit(type,show){
 
 async function saveDate(){
   const fd=new FormData();
+  fd.append('csrf_token',getCsrfToken());
   fd.append('report_id',REPORT_ID);
   fd.append('incident_date',document.getElementById('dateInput').value);
   fd.append('summary',document.getElementById('summaryTA').value||
@@ -542,6 +544,7 @@ async function saveDate(){
 
 async function saveSummary(){
   const fd=new FormData();
+  fd.append('csrf_token',getCsrfToken());
   fd.append('report_id',REPORT_ID);
   fd.append('summary',document.getElementById('summaryTA').value);
   fd.append('incident_date','{{ report.incident_date }}');
@@ -557,6 +560,7 @@ function toggleCEdit(id,show){
 
 async function saveComment(id){
   const fd=new FormData();
+  fd.append('csrf_token',getCsrfToken());
   fd.append('comment_id',id);
   fd.append('comment',document.getElementById('c-ta-'+id).value);
   const r=await fetch('{{ url_for("incident_reports.edit_comment") }}',{method:'POST',body:fd});

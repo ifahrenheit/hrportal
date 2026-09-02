@@ -3,6 +3,7 @@
 # Place at: /var/www/html/leavesystem/incident_reports.py
 
 from flask import Blueprint, render_template, request, jsonify, session, redirect, url_for
+from csrf import validate_csrf
 from datetime import datetime
 from functools import wraps
 import os, uuid, smtplib, logging
@@ -791,6 +792,8 @@ def new_report():
 @ir_bp.route('/submit', methods=['POST'])
 @login_required
 def submit_report():
+    if not validate_csrf():
+        return jsonify({'success': False, 'message': 'Security check failed, please try again.'})
     u = ir_user()
     incident_date    = request.form.get('incident_date', '').strip()
     agent_eid        = request.form.get('employee_id', '').strip()
@@ -930,6 +933,8 @@ def view_report(report_number):
 @ir_bp.route('/edit-report', methods=['POST'])
 @login_required
 def edit_report():
+    if not validate_csrf():
+        return jsonify({'success': False, 'message': 'Security check failed, please try again.'})
     u = ir_user()
     conn = get_db()
     try:
@@ -988,6 +993,8 @@ def edit_report():
 @ir_bp.route('/edit-comment', methods=['POST'])
 @login_required
 def edit_comment():
+    if not validate_csrf():
+        return jsonify({'success': False, 'message': 'Security check failed, please try again.'})
     u = ir_user()
     conn = get_db()
     try:
@@ -1033,6 +1040,8 @@ def edit_comment():
 @ir_bp.route('/add-comment', methods=['POST'])
 @login_required
 def add_comment():
+    if not validate_csrf():
+        return jsonify({'success': False, 'message': 'Security check failed, please try again.'})
     u = ir_user()
     conn = get_db()
     try:

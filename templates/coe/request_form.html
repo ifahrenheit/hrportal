@@ -31,6 +31,7 @@
       </p>
 
       <form method="post" class="p-4 rounded" style="background: var(--surface); border: 1px solid rgba(0,0,0,0.08);">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <div class="mb-3">
           <label class="form-label">Purpose</label>
           <select name="purpose" id="purpose" class="form-select" required>

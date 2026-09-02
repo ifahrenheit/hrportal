@@ -71,6 +71,7 @@
 
   <div class="ir-card">
     <form id="irForm">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
 
       <div class="mb-4">
         <label class="form-label">Date of Incident <span class="req">*</span></label>

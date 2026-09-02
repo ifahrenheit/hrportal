@@ -242,6 +242,13 @@
 
 <script>
 /* ===============================
+   CSRF TOKEN (for JS-built forms/fetch calls)
+================================ */
+function getCsrfToken() {
+  return document.querySelector('meta[name="csrf-token"]').content;
+}
+
+/* ===============================
    COPY TO CLIPBOARD
 ================================ */
 function copyEmpId(el, empId) {
