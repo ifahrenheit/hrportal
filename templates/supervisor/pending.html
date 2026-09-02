@@ -119,6 +119,7 @@
           <td>
             <form method="POST" action="{{ url_for('cancel_leave', leave_id=id_list[i]) }}"
                   onsubmit="return confirm('Cancel leave on {{ date_list[i] }}?');">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
               <button type="submit" class="btn btn-xs btn-outline-danger btn-sm py-0 px-2">Cancel</button>
             </form>
           </td>

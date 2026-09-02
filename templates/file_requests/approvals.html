@@ -6,7 +6,7 @@
 {# ── Pass data to React ── #}
 <script>
 window.__APPROVALS__ = {
-  combined: {{ combined_safe | safe }},
+  combined: {{ combined_native | tojson }},
   tl_list:  {{ tl_list  | tojson }},
   filters: {
     tl:         {{ tl_filter   | tojson }},
