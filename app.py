@@ -4571,6 +4571,8 @@ def supervisor_action():
 def api_leave_action():
     if not (session.get('is_supervisor') or session.get('is_admin')):
         return jsonify({'success': False, 'message': 'Access denied'}), 403
+    if not validate_csrf():
+        return jsonify({'success': False, 'message': 'Security check failed, please try again.'}), 403
 
     data             = request.get_json(silent=True) or {}
     action           = data.get('action')
@@ -4823,6 +4825,8 @@ def sl_verification():
 def sl_verification_submit():
     if not is_sl_hr_approver():
         return jsonify({'success': False, 'message': 'Access denied'}), 403
+    if not validate_csrf():
+        return jsonify({'success': False, 'message': 'Security check failed, please try again.'}), 403
 
     data = request.get_json(silent=True) or {}
     leave_request_id = data.get('leave_request_id')
@@ -4914,6 +4918,8 @@ def sl_verification_submit():
 def api_leave_bulk_action():
     if not (session.get('is_supervisor') or session.get('is_admin')):
         return jsonify({'success': False, 'message': 'Access denied'}), 403
+    if not validate_csrf():
+        return jsonify({'success': False, 'message': 'Security check failed, please try again.'}), 403
 
     data     = request.get_json(silent=True) or {}
     action   = data.get('action')
@@ -5112,6 +5118,8 @@ def cancel_leave(leave_id):
 @app.route('/api/leave/cancel/<int:leave_id>', methods=['POST'])
 @login_required
 def api_leave_cancel(leave_id):
+    if not validate_csrf():
+        return jsonify({'success': False, 'message': 'Security check failed, please try again.'}), 403
     emp_number = session['user']['emp_number']
     is_admin   = session.get('is_admin', False)
     db = get_db()
@@ -8557,6 +8565,8 @@ def api_approvals_action():
     if not (session.get('is_supervisor') or session.get('is_admin') or
             session.get('permissions', {}).get('can_material_requests')):
         return jsonify({'success': False, 'message': 'Access denied'}), 403
+    if not validate_csrf():
+        return jsonify({'success': False, 'message': 'Security check failed, please try again.'}), 403
 
     data      = request.get_json(silent=True) or {}
     req_type  = data.get('req_type', '').lower()
@@ -8617,6 +8627,8 @@ def api_approvals_bulk_action():
     if not (session.get('is_supervisor') or session.get('is_admin') or
             session.get('permissions', {}).get('can_material_requests')):
         return jsonify({'success': False, 'message': 'Access denied'}), 403
+    if not validate_csrf():
+        return jsonify({'success': False, 'message': 'Security check failed, please try again.'}), 403
 
     data     = request.get_json(silent=True) or {}
     action   = data.get('action')

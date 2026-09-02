@@ -308,7 +308,7 @@ function ApprovalsApp() {
     try {
       const res  = await fetch('/api/approvals/action', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': getCsrfToken() },
         body: JSON.stringify({ action, req_type: reqType, req_id: String(reqId), emp_id: String(empId || '') })
       });
       const data = await res.json();
@@ -332,7 +332,7 @@ function ApprovalsApp() {
     try {
       const res  = await fetch('/api/approvals/bulk-action', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': getCsrfToken() },
         body: JSON.stringify({ action, selected: arr })
       });
       const data = await res.json();

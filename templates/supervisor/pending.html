@@ -186,7 +186,7 @@ function removeLeaveCard(leaveReqId) {
 function submitSingle(action, empId, leaveTypeId, filedAt, leaveRequestId) {
   fetch('/api/leave/action', {
     method: 'POST',
-    headers: {'Content-Type': 'application/json'},
+    headers: {'Content-Type': 'application/json', 'X-CSRF-Token': getCsrfToken()},
     body: JSON.stringify({action: action, target_emp: empId, leave_type_id: leaveTypeId,
                           filed_at: filedAt, leave_request_id: leaveRequestId})
   })
@@ -206,7 +206,7 @@ function submitSingleReject(empId, leaveTypeId, filedAt, leaveRequestId) {
   if (reason === null) return;
   fetch('/api/leave/action', {
     method: 'POST',
-    headers: {'Content-Type': 'application/json'},
+    headers: {'Content-Type': 'application/json', 'X-CSRF-Token': getCsrfToken()},
     body: JSON.stringify({action: 'reject', target_emp: empId, leave_type_id: leaveTypeId,
                           filed_at: filedAt, leave_request_id: leaveRequestId, reject_reason: reason})
   })
@@ -227,7 +227,7 @@ function submitBulk(action) {
   var selected = Array.from(checkboxes).map(function(cb) { return cb.value; });
   fetch('/api/leave/bulk-action', {
     method: 'POST',
-    headers: {'Content-Type': 'application/json'},
+    headers: {'Content-Type': 'application/json', 'X-CSRF-Token': getCsrfToken()},
     body: JSON.stringify({action: action, selected: selected})
   })
   .then(function(r) { return r.json(); })

@@ -4,7 +4,7 @@ function cancelLeave(leaveId, empName, btn) {
   if (!confirm('Cancel leave for ' + empName + '?')) return;
   btn.disabled = true;
   btn.textContent = 'Cancelling...';
-  fetch('/api/leave/cancel/' + leaveId, { method: 'POST' })
+  fetch('/api/leave/cancel/' + leaveId, { method: 'POST', headers: {'X-CSRF-Token': getCsrfToken()} })
     .then(function(r) { return r.json(); })
     .then(function(data) {
       if (data.success) {
