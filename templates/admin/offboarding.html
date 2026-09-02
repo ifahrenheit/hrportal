@@ -280,7 +280,7 @@ async function runOffboarding() {
   try {
     const res  = await fetch(`/hrportal/api/offboard/${selectedEmployee.employee_id}`, {
       method:  'POST',
-      headers: {'Content-Type': 'application/json'},
+      headers: {'Content-Type': 'application/json', 'X-CSRF-Token': getCsrfToken()},
       body: JSON.stringify({
         exit_date: document.getElementById('exit_date').value,
         reason:    document.getElementById('reason').value,

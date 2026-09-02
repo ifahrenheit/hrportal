@@ -247,6 +247,8 @@ def my_requests():
 @coe_bp.route("/my-requests/<int:req_id>/confirm-received", methods=["POST"])
 @login_required
 def confirm_received(req_id):
+    if not validate_csrf():
+        return jsonify({"success": False, "error": "Security check failed, please try again."}), 403
     employee_id = coe_user()['employee_id']
     now = datetime.now()
 

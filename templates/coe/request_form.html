@@ -159,7 +159,7 @@
       try {
         const res = await fetch(`/coe/my-requests/${id}/confirm-received`, {
           method: 'POST',
-          headers: { 'X-Requested-With': 'XMLHttpRequest' }
+          headers: { 'X-Requested-With': 'XMLHttpRequest', 'X-CSRF-Token': getCsrfToken() }
         });
         const data = await res.json();
         if (data.success) {

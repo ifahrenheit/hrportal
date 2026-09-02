@@ -1226,6 +1226,8 @@ def update_status():
     u = ir_user()
     if not u['is_admin']:
         return jsonify({'success': False, 'message': 'Unauthorized'})
+    if not validate_csrf():
+        return jsonify({'success': False, 'message': 'Security check failed, please try again.'})
 
     data          = request.get_json() or {}
     report_number = data.get('report_number', '')

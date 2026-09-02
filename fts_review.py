@@ -2,6 +2,7 @@
 # Flask Blueprint -- Path B FTS standing report (payroll-period, categorized, in-place review)
 # Place at: /var/www/html/leavesystem/fts_review.py
 from flask import Blueprint, render_template, request, jsonify, session, redirect
+from csrf import validate_csrf
 from datetime import datetime, date, timedelta
 from functools import wraps
 
@@ -138,6 +139,8 @@ def review_page():
 def review_action(incident_id, action):
     if not can_review():
         return jsonify(ok=False, error='not authorized'), 403
+    if not validate_csrf():
+        return jsonify(ok=False, error='Security check failed, please try again.'), 403
     if action not in ('confirm', 'dismiss', 'reset'):
         return jsonify(ok=False, error='bad action'), 400
     if action == 'reset':

@@ -153,7 +153,7 @@ function toggleUnfiled(tabKey, on){
 async function ftsAct(id, action){
   const row = document.getElementById('inc-'+id);
   try{
-    const res = await fetch('/fts-review/api/'+id+'/'+action,{method:'POST'});
+    const res = await fetch('/fts-review/api/'+id+'/'+action,{method:'POST',headers:{'X-CSRF-Token':getCsrfToken()}});
     const d = await res.json();
     if(!d.ok){ alert('Error: '+(d.error||'failed')); return; }
     const statusCell = row.querySelector('.status-cell');

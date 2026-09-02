@@ -95,7 +95,7 @@ async function bulkMarkOnboarded() {
   const ids = selected.map(c => c.dataset.empid);
   console.log('Bulk mark IDs:', ids);
   await Promise.all(ids.map(id =>
-    fetch('/hrportal/api/wfm-mark-onboarded/' + id, { method: 'POST' })
+    fetch('/hrportal/api/wfm-mark-onboarded/' + id, { method: 'POST', headers: {'X-CSRF-Token': getCsrfToken()} })
   ));
   btn.disabled = false;
   btn.innerHTML = '<i class="bi bi-check-lg me-1"></i>Mark All Onboarded (<span id="selectedCount2">0</span>)';
@@ -200,7 +200,7 @@ async function markDone(employeeId, btn) {
   btn.disabled = true;
   btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span>';
   try {
-    const res = await fetch('/hrportal/api/wfm-mark-onboarded/' + employeeId, { method: 'POST' });
+    const res = await fetch('/hrportal/api/wfm-mark-onboarded/' + employeeId, { method: 'POST', headers: {'X-CSRF-Token': getCsrfToken()} });
     if (res.ok) { loadWHM(); }
     else { btn.disabled = false; btn.innerHTML = '<i class="bi bi-check-lg me-1"></i>Mark Onboarded'; }
   } catch(e) {

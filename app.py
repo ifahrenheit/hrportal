@@ -9011,6 +9011,8 @@ def hrportal_onboarding_tasks(employee_id):
 @app.route('/hrportal/api/onboarding-tasks/<int:task_id>/complete', methods=['POST'])
 @permission_required('can_onboarding')
 def hrportal_complete_onboarding_task(task_id):
+    if not validate_csrf():
+        return jsonify({'error': 'Security check failed, please try again.'}), 403
     try:
         completed_by = session.get('user', {}).get('name', 'Admin')
         conn = get_db_connection()
@@ -9479,6 +9481,8 @@ def hrportal_wfm_onboarding_list():
 def hrportal_wfm_mark_onboarded(employee_id):
     if not (session.get('is_admin') or session.get('permissions', {}).get('can_wfm')):
         return jsonify({'error': 'Access denied'}), 403
+    if not validate_csrf():
+        return jsonify({'error': 'Security check failed, please try again.'}), 403
     try:
         marked_by = session.get('user', {}).get('name', 'WHM')
         conn = get_db_connection()
@@ -9555,6 +9559,8 @@ def hrportal_recent_offboardings():
 @app.route('/hrportal/api/onboard/bulk', methods=['POST'])
 @permission_required('can_onboarding')
 def hrportal_onboard_bulk():
+    if not validate_csrf():
+        return jsonify({'error': 'Security check failed, please try again.'}), 403
     data = request.get_json() or {}
     employees = data.get('employees', [])
     if not employees:
@@ -9663,6 +9669,8 @@ def hrportal_onboard_bulk():
 @permission_required('can_onboarding')
 def hrportal_onboard():
     """Create new employee across all systems"""
+    if not validate_csrf():
+        return jsonify({'error': 'Security check failed, please try again.'}), 403
     try:
         import bcrypt
         import requests as ext_requests
@@ -10029,6 +10037,8 @@ def hrportal_onboard():
 @permission_required('can_onboarding')
 def hrportal_offboard(employee_id):
     """Disable employee across all systems"""
+    if not validate_csrf():
+        return jsonify({'error': 'Security check failed, please try again.'}), 403
     try:
         import secrets
         import requests as ext_requests

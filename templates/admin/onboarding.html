@@ -346,7 +346,7 @@ async function runOnboarding() {
   try {
     const res  = await fetch('/hrportal/api/onboard', {
       method:  'POST',
-      headers: {'Content-Type': 'application/json'},
+      headers: {'Content-Type': 'application/json', 'X-CSRF-Token': getCsrfToken()},
       body: JSON.stringify({
         employee_id:      document.getElementById('employee_id').value.trim(),
         first_name:       document.getElementById('first_name').value.trim(),
@@ -520,7 +520,7 @@ async function openTasks(employeeId, name) {
 
 async function completeTask(taskId, employeeId, name) {
   try {
-    const res = await fetch('/hrportal/api/onboarding-tasks/' + taskId + '/complete', { method: 'POST' });
+    const res = await fetch('/hrportal/api/onboarding-tasks/' + taskId + '/complete', { method: 'POST', headers: {'X-CSRF-Token': getCsrfToken()} });
     if (res.ok) {
       openTasks(employeeId, name);
       loadRecent();
@@ -688,7 +688,7 @@ async function runBulkOnboarding() {
   try {
     const resp = await fetch('/hrportal/api/onboard/bulk', {
       method: 'POST',
-      headers: {'Content-Type': 'application/json'},
+      headers: {'Content-Type': 'application/json', 'X-CSRF-Token': getCsrfToken()},
       body: JSON.stringify({employees: rows})
     });
     const data = await resp.json();
