@@ -12,6 +12,7 @@
 
   {% set action = url_for('coaching.edit_session', session_id=s.id) if mode=='edit' else url_for('coaching.new_session') %}
   <form method="post" action="{{ action }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <div class="card mb-3">
       <div class="card-body">
         <h6 class="text-primary fw-bold mb-3" style="border-left:3px solid var(--accent);padding-left:8px;">Session Details</h6>

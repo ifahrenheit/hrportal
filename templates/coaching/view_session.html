@@ -19,6 +19,7 @@
           <div class="d-flex gap-2">
             <a href="{{ url_for('coaching.edit_session', session_id=s.id) }}" class="btn btn-sm btn-primary">Edit</a>
             <form method="post" action="{{ url_for('coaching.delete_session', session_id=s.id) }}" onsubmit="return confirm('Cancel this session?');">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
               <button type="submit" class="btn btn-sm btn-outline-danger">Cancel Session</button>
             </form>
           </div>

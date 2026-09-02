@@ -54,6 +54,7 @@
         <p class="text-muted mt-2" style="font-size:.8rem;">This session is complete and can no longer be edited.</p>
       {% else %}
         <form method="post" action="{{ url_for('coaching.my_session', session_id=s.id) }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <textarea name="action_plan" class="form-control form-control-sm mb-3" rows="6"
                     placeholder="e.g. I will reduce dead air on calls by using the hold script on every transfer, measured by my QA scores, reviewed weekly with my TL, by end of this month.">{{ s.action_plan or '' }}</textarea>
           <div class="d-flex gap-2">
