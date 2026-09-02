@@ -2762,13 +2762,10 @@ def admin_holiday_awol_xlsx():
 @login_required
 @permission_required('can_night_differential')
 def admin_night_diff():
-    from datetime import date as _date
-    import calendar
-    today = _date.today()
-    import calendar as _cal
-    def prev_month(d):
-        if d.month == 1:
-            return d.replace(year=d.year-1, month=12, day=1)
+    # Report not yet implemented (route body was never finished); avoid a 500
+    # on the nav link until the underlying query is built.
+    flash('Night Differential report is not yet available.', 'info')
+    return redirect(url_for('dashboard'))
 
 @app.route('/admin/analytics')
 @login_required
