@@ -340,6 +340,7 @@ function qaaRenderTable() {
 
 function qaaTogglePin(id, newVal) {
   const fd = new FormData();
+  fd.append('csrf_token', getCsrfToken());
   fd.append('is_pinned', newVal);
   fetch(`/qa-updates/api/${id}/update`, { method: 'POST', body: fd })
     .then(r => r.json())
@@ -352,6 +353,7 @@ function qaaConfirmDeactivate(id, title) {
     return;
   }
   const fd = new FormData();
+  fd.append('csrf_token', getCsrfToken());
   fd.append('is_active', '0');
   fetch(`/qa-updates/api/${id}/toggle-active`, { method: 'POST', body: fd })
     .then(r => r.json())
@@ -398,6 +400,7 @@ function qaaLoadDeactivated() {
 function qaaReactivate(id) {
   if (!confirm('Reactivate this QA update? It will show up in the bulletin again.')) return;
   const fd = new FormData();
+  fd.append('csrf_token', getCsrfToken());
   fd.append('is_active', '1');
   fetch(`/qa-updates/api/${id}/toggle-active`, { method: 'POST', body: fd })
     .then(r => r.json())
@@ -413,7 +416,7 @@ function qaaReactivate(id) {
 
 function qaaDelete(id) {
   if (!confirm('Delete this QA update? This cannot be undone from the UI.')) return;
-  fetch(`/qa-updates/api/${id}/delete`, { method: 'POST' })
+  fetch(`/qa-updates/api/${id}/delete`, { method: 'POST', headers: {'X-CSRF-Token': getCsrfToken()} })
     .then(r => r.json())
     .then(data => {
       if (data.success) {
@@ -452,6 +455,7 @@ document.getElementById('qaaForm').addEventListener('submit', function(e) {
   e.preventDefault();
   const id = document.getElementById('qaaEditId').value;
   const fd = new FormData();
+  fd.append('csrf_token', getCsrfToken());
   fd.append('title', document.getElementById('qaaTitle').value);
   fd.append('description', document.getElementById('qaaDescription').value);
   fd.append('category', document.getElementById('qaaCategory').value);

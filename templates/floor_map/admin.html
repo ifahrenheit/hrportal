@@ -349,7 +349,7 @@ async function saveSeat() {
   const stype = document.getElementById('edit-type').value;
   const pc    = document.getElementById('edit-computer').value.toUpperCase().trim();
   const res = await fetch('/floor-map/api/update-seat', {
-    method:'POST', headers:{'Content-Type':'application/json'},
+    method:'POST', headers:{'Content-Type':'application/json', 'X-CSRF-Token': getCsrfToken()},
     body: JSON.stringify({ seats:[{station_group:sg, seat_number:snum}],
       team, seat_type:stype, computer_name:pc })
   });
@@ -374,7 +374,7 @@ async function clearSeat() {
 
 async function clearSeatDirect(seat) {
   const res = await fetch('/floor-map/api/update-seat', {
-    method:'POST', headers:{'Content-Type':'application/json'},
+    method:'POST', headers:{'Content-Type':'application/json', 'X-CSRF-Token': getCsrfToken()},
     body: JSON.stringify({ seats:[{station_group:seat.station_group, seat_number:seat.seat_number}],
       team:'cs', seat_type:'agent', computer_name:'' })
   });
@@ -399,7 +399,7 @@ async function applyBulk() {
   if (team)  body.team = team;
   if (stype) body.seat_type = stype;
   const res = await fetch('/floor-map/api/update-seat', {
-    method:'POST', headers:{'Content-Type':'application/json'},
+    method:'POST', headers:{'Content-Type':'application/json', 'X-CSRF-Token': getCsrfToken()},
     body: JSON.stringify(body)
   });
   const data = await res.json();
@@ -446,7 +446,7 @@ async function saveNewSeat() {
   const pc    = document.getElementById('add-computer').value.toUpperCase().trim();
   if (!snum) { showToast('Enter a seat number', 'warning'); return; }
   const res = await fetch('/floor-map/api/add-seat', {
-    method:'POST', headers:{'Content-Type':'application/json'},
+    method:'POST', headers:{'Content-Type':'application/json', 'X-CSRF-Token': getCsrfToken()},
     body: JSON.stringify({station_group:sg, seat_number:snum,
       team, seat_type:stype, computer_name:pc||null})
   });
@@ -465,7 +465,7 @@ async function deleteSeat() {
   const snum = parseInt(document.getElementById('edit-snum').value);
   if (!confirm(`Delete seat ${snum} from ${sg}? This cannot be undone.`)) return;
   const res = await fetch('/floor-map/api/delete-seat', {
-    method:'POST', headers:{'Content-Type':'application/json'},
+    method:'POST', headers:{'Content-Type':'application/json', 'X-CSRF-Token': getCsrfToken()},
     body: JSON.stringify({station_group:sg, seat_number:snum})
   });
   const data = await res.json();

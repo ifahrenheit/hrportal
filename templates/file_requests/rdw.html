@@ -18,6 +18,7 @@
   <div class="card-body p-4">
     <h6 class="fw-bold mb-3">Submit RDW Request</h6>
     <form method="POST">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <div class="row g-3">
         <div class="col-md-4">
           <label class="form-label">RD Date <span class="text-danger">*</span></label>

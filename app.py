@@ -4202,6 +4202,9 @@ def supervisor_team_calendar():
 @app.route('/supervisor/bulk-action', methods=['POST'])
 @login_required
 def supervisor_bulk_action():
+    if not validate_csrf():
+        flash('Security check failed, please try again.', 'danger')
+        return redirect(request.form.get('next', url_for('supervisor_pending')))
     emp_number   = session['user']['emp_number']
     subordinates = get_subordinates(emp_number)
 
@@ -4426,6 +4429,9 @@ def supervisor_active_leaves():
 @app.route('/supervisor/action', methods=['POST'])
 @login_required
 def supervisor_action():
+    if not validate_csrf():
+        flash('Security check failed, please try again.', 'danger')
+        return redirect(request.form.get('next', url_for('supervisor_pending')))
     emp_number   = session['user']['emp_number']
     subordinates = get_subordinates(emp_number)
 
@@ -7707,6 +7713,9 @@ def file_fts():
     msg_type = 'success'
 
     if request.method == 'POST':
+        if not validate_csrf():
+            flash('Security check failed, please try again.', 'danger')
+            return redirect(url_for('file_fts'))
         fts_date = request.form.get('fts_date', '').strip()
         fts_time = request.form.get('fts_time', '').strip()
         fts_type = request.form.get('fts_type', '').strip()
@@ -7810,6 +7819,9 @@ def file_ot():
     ]
 
     if request.method == 'POST':
+        if not validate_csrf():
+            flash('Security check failed, please try again.', 'danger')
+            return redirect(url_for('file_ot'))
         work_day_type = request.form.get('work_day_type', '').strip()
         ot_date       = request.form.get('ot_date', '').strip()
         start_time    = request.form.get('start_time', '').strip()
@@ -8056,6 +8068,9 @@ def file_cws():
     msg_type = 'success'
 
     if request.method == 'POST':
+        if not validate_csrf():
+            flash('Security check failed, please try again.', 'danger')
+            return redirect(url_for('file_cws'))
         original_date = request.form.get('original_date', '').strip()
         original_time = request.form.get('original_time', '').strip()
         new_date      = request.form.get('new_date', '').strip()
@@ -8153,6 +8168,9 @@ def file_rdw_legacy():
     ]
 
     if request.method == 'POST':
+        if not validate_csrf():
+            flash('Security check failed, please try again.', 'danger')
+            return redirect(url_for('file_rdw_legacy'))
         rd_date       = request.form.get('rd_date', '').strip()
         start_time    = request.form.get('start_time', '').strip()
         end_time      = request.form.get('end_time', '').strip()
@@ -8437,6 +8455,9 @@ def file_requests_bulk_action():
     if not (session.get('is_supervisor') or session.get('is_admin') or session.get('permissions', {}).get('can_material_requests')):
         flash('Access denied.', 'danger')
         return redirect(url_for('file_requests_approvals'))
+    if not validate_csrf():
+        flash('Security check failed, please try again.', 'danger')
+        return redirect(url_for('file_requests_approvals'))
 
     action   = request.form.get('action')
     selected = request.form.getlist('selected_reqs')  # "req_type|req_id|emp_id"
@@ -8491,6 +8512,9 @@ def file_requests_bulk_action():
 def file_requests_action():
     if not (session.get('is_supervisor') or session.get('is_admin') or session.get('permissions', {}).get('can_material_requests')):
         flash('Access denied.', 'danger')
+        return redirect(url_for('dashboard'))
+    if not validate_csrf():
+        flash('Security check failed, please try again.', 'danger')
         return redirect(url_for('dashboard'))
 
     req_type  = request.form.get('req_type')   # fts|ot|cws|rdw
@@ -8685,6 +8709,8 @@ def admin_delete_request():
     is_supervisor = session.get('is_supervisor')
     if not (is_admin or is_supervisor):
         return jsonify({'success': False, 'message': 'Unauthorized'}), 403
+    if not validate_csrf():
+        return jsonify({'success': False, 'message': 'Security check failed, please try again.'}), 403
 
     req_type   = request.form.get('type', '').strip()
     req_id     = request.form.get('request_id', '').strip()
@@ -8882,6 +8908,8 @@ def api_rd_tickets(rd_id):
 @app.route('/api/chat', methods=['POST'])
 @login_required
 def chat():
+    if not validate_csrf():
+        return jsonify({'error': 'Security check failed, please try again.'}), 403
     import requests as req
     data = request.json
     message = data.get('message')
@@ -11068,6 +11096,9 @@ def tickets_index():
 @app.route('/tickets/submit', methods=['POST'])
 @login_required
 def tickets_submit():
+    if not validate_csrf():
+        flash('Security check failed, please try again.', 'danger')
+        return redirect(url_for('tickets_index'))
     emp_id   = session['user']['employee_id']
     emp_name = session['user'].get('name', emp_id)
     team        = request.form.get('team', '').strip()
@@ -11148,6 +11179,9 @@ def ticket_detail(ticket_number):
 @app.route('/tickets/<ticket_number>/comment', methods=['POST'])
 @login_required
 def ticket_add_comment(ticket_number):
+    if not validate_csrf():
+        flash('Security check failed, please try again.', 'danger')
+        return redirect(url_for('ticket_detail', ticket_number=ticket_number))
     emp_id   = session['user']['employee_id']
     emp_name = session['user'].get('name', emp_id)
     body     = request.form.get('body', '').strip()
@@ -11258,6 +11292,9 @@ def admin_ticket_update(ticket_number):
     if not (is_admin or perms.get('can_it_tickets') or perms.get('can_hr_tickets')):
         flash('Access denied.', 'danger')
         return redirect(url_for('dashboard'))
+    if not validate_csrf():
+        flash('Security check failed, please try again.', 'danger')
+        return redirect(url_for('ticket_detail', ticket_number=ticket_number))
 
     new_status   = request.form.get('status', '').strip()
     comment_body = request.form.get('comment', '').strip()
@@ -12653,6 +12690,8 @@ def survey_form(slug):
 @survey_bp.route('/<slug>/submit', methods=['POST'])
 @login_required
 def survey_submit(slug):
+    if not validate_csrf():
+        return jsonify({'ok': False, 'error': 'Security check failed, please try again.'}), 403
     db = get_central_db()
     cur = db.cursor(pymysql.cursors.DictCursor)
     cur.execute("SELECT * FROM surveys WHERE slug=%s AND is_active=1", (slug,))
@@ -12799,6 +12838,8 @@ def survey_results_csv(slug):
 def survey_toggle(sid):
     if not (session.get('is_admin') or has_permission('can_surveys')):
         return jsonify({"error": "forbidden"}), 403
+    if not validate_csrf():
+        return jsonify({"error": "Security check failed, please try again."}), 403
     db = get_central_db()
     try:
         cur = db.cursor(pymysql.cursors.DictCursor)
@@ -12842,6 +12883,9 @@ def survey_admin_list():
 def survey_admin_create():
     if not (session.get('is_admin') or has_permission('can_surveys')):
         flash('Access denied.', 'danger')
+        return redirect(url_for('dashboard'))
+    if not validate_csrf():
+        flash('Security check failed, please try again.', 'danger')
         return redirect(url_for('dashboard'))
 
     title = (request.form.get('title') or '').strip()
@@ -13509,6 +13553,8 @@ def admin_attendance_grid():
 def save_attendance_note():
     if not session.get('is_admin') and not session.get('permissions', {}).get('can_absences'):
         return jsonify({'error': 'Permission denied'}), 403
+    if not validate_csrf():
+        return jsonify({'error': 'Security check failed, please try again.'}), 403
 
     data = request.get_json(force=True)
     employee_id = data.get('employee_id', '').strip()
@@ -14161,6 +14207,8 @@ def api_notifications():
 def api_notifications_read():
     if "user" not in session:
         return jsonify({"ok": False}), 401
+    if not validate_csrf():
+        return jsonify({"ok": False}), 403
     eid = session['user'].get('employee_id') or ''
     empn = session['user'].get('emp_number')
     conn = get_db_connection()

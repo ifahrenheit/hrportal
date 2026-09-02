@@ -18,6 +18,7 @@
   <div class="card-body p-4">
     <h6 class="fw-bold mb-3">Submit Request</h6>
     <form method="POST" id="otForm">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <div class="row g-3">
 
         <!-- Work Day Type + Date -->

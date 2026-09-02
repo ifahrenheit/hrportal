@@ -74,7 +74,7 @@
 document.querySelectorAll('.survey-toggle').forEach(function(sw){
   sw.addEventListener('change', function(){
     var id = this.dataset.id, on = this.checked, self = this;
-    fetch('/survey/'+id+'/toggle', {method:'POST', headers:{'X-Requested-With':'XMLHttpRequest'}})
+    fetch('/survey/'+id+'/toggle', {method:'POST', headers:{'X-Requested-With':'XMLHttpRequest', 'X-CSRF-Token': getCsrfToken()}})
       .then(function(r){ return r.json(); })
       .then(function(d){
         if(d.error){ alert('Failed: '+d.error); self.checked = !on; return; }

@@ -23,6 +23,7 @@
         </div>
         <div class="card-body">
           <form method="POST" action="{{ url_for('tickets_submit') }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
 
             {# Team #}
             <div class="mb-3">

@@ -3,6 +3,7 @@ import hmac
 import hashlib
 from datetime import datetime
 from flask import Blueprint, render_template, jsonify, session, request, redirect, url_for
+from csrf import validate_csrf
 from functools import wraps
 import pymysql
 import pymysql.cursors
@@ -169,6 +170,8 @@ def floor_event():
 @floor_map_bp.route('/api/update-seat', methods=['POST'])
 @login_required
 def api_update_seat():
+    if not validate_csrf():
+        return jsonify({'error': 'Security check failed, please try again.'}), 403
     data = request.get_json(silent=True)
     if not data:
         return jsonify({'error': 'no data'}), 400
@@ -222,6 +225,8 @@ def admin():
 @floor_map_bp.route('/api/add-seat', methods=['POST'])
 @login_required
 def api_add_seat():
+    if not validate_csrf():
+        return jsonify({'error': 'Security check failed, please try again.'}), 403
     data = request.get_json(silent=True)
     if not data:
         return jsonify({'error': 'no data'}), 400
@@ -251,6 +256,8 @@ def api_add_seat():
 @floor_map_bp.route('/api/delete-seat', methods=['POST'])
 @login_required
 def api_delete_seat():
+    if not validate_csrf():
+        return jsonify({'error': 'Security check failed, please try again.'}), 403
     data = request.get_json(silent=True)
     if not data:
         return jsonify({'error': 'no data'}), 400

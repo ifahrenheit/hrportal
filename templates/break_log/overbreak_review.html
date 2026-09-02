@@ -242,7 +242,7 @@ async function review(eid, sdate, action) {
   }
   const res = await fetch('/api/supervisor/overbreaks/review', {
     method: 'POST',
-    headers: {'Content-Type': 'application/json'},
+    headers: {'Content-Type': 'application/json', 'X-CSRF-Token': getCsrfToken()},
     body: JSON.stringify({employee_id: eid, shift_date: sdate, action, waive_reason: reason})
   });
   const data = await res.json();

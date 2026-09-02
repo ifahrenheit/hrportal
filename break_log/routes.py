@@ -6,6 +6,7 @@ api/break-api.php, api/supervisor-api.php
 
 from flask import (Blueprint, render_template, request, jsonify,
                    session, redirect, url_for, Response)
+from csrf import validate_csrf
 from functools import wraps
 from datetime import datetime, date, timedelta
 import re, csv, io, ipaddress, logging
@@ -302,6 +303,9 @@ def break_api():
                 })
 
             return jsonify({'success': False, 'error': 'Invalid action'})
+
+        if not validate_csrf():
+            return jsonify({'success': False, 'error': 'Security check failed, please try again.'}), 403
 
         data = request.get_json() or {}
         action = data.get('action')
@@ -724,6 +728,8 @@ def overbreak_detail():
 @break_log_bp.route('/api/supervisor/overbreaks/review', methods=['POST'])
 @supervisor_required
 def overbreak_review_action():
+    if not validate_csrf():
+        return jsonify(success=False, error='Security check failed, please try again.'), 403
     from app import get_central_db
     from ir_autofile import file_incident_report
 

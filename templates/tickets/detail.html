@@ -75,6 +75,7 @@
         <div class="card-header fw-semibold small">Update Ticket</div>
         <div class="card-body">
           <form method="POST" action="{{ url_for('admin_ticket_update', ticket_number=ticket.ticket_number) }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <div class="mb-2">
               <label class="form-label small fw-semibold mb-1">Status</label>
               <select name="status" class="form-select form-select-sm">
@@ -142,6 +143,7 @@
           {% if ticket.status != 'Closed' %}
           <hr class="my-3">
           <form method="POST" action="{{ url_for('ticket_add_comment', ticket_number=ticket.ticket_number) }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <div class="d-flex gap-2">
               <textarea name="body" class="form-control form-control-sm" rows="2"
                         placeholder="Add a reply…" required></textarea>

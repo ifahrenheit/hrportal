@@ -11,6 +11,7 @@ from flask import (
     Blueprint, render_template, request, jsonify, session,
     redirect, url_for, flash, current_app
 )
+from csrf import validate_csrf
 from werkzeug.utils import secure_filename
 import pymysql
 import pymysql.cursors
@@ -379,6 +380,8 @@ def api_toggle_active(update_id):
     Deactivate (hide from bulletin) or reactivate an update.
     Deactivation timestamp + actor are recorded for audit/log purposes.
     """
+    if not validate_csrf():
+        return jsonify({'success': False, 'message': 'Security check failed, please try again.'}), 403
     make_active = request.form.get('is_active') == '1'
     changed_by = session.get('user', {}).get('name')
     now = datetime.now()
@@ -440,6 +443,8 @@ def api_history(update_id):
 @qa_updates_bp.route('/api/create', methods=['POST'])
 @require_qa_manage
 def api_create():
+    if not validate_csrf():
+        return jsonify({'error': 'Security check failed, please try again.'}), 403
     title = request.form.get('title', '').strip()
     description = request.form.get('description', '').strip()
     category = request.form.get('category', '').strip()
@@ -497,6 +502,8 @@ def api_create():
 @require_qa_manage
 def api_update(update_id):
     """Partial update - used for full edits and the quick pin toggle."""
+    if not validate_csrf():
+        return jsonify({'error': 'Security check failed, please try again.'}), 403
     conn = get_db()
     try:
         with conn.cursor(pymysql.cursors.DictCursor) as cur:
@@ -569,6 +576,8 @@ def api_update(update_id):
 @require_qa_manage
 def api_delete(update_id):
     """Soft delete."""
+    if not validate_csrf():
+        return jsonify({'error': 'Security check failed, please try again.'}), 403
     conn = get_db()
     try:
         with conn.cursor() as cur:
@@ -591,6 +600,8 @@ def api_delete(update_id):
 @qa_updates_bp.route('/api/attachment/<int:attachment_id>/delete', methods=['POST'])
 @require_qa_manage
 def api_delete_attachment(attachment_id):
+    if not validate_csrf():
+        return jsonify({'error': 'Security check failed, please try again.'}), 403
     conn = get_db()
     try:
         with conn.cursor(pymysql.cursors.DictCursor) as cur:
@@ -654,6 +665,8 @@ def api_unacknowledged_count():
 @qa_updates_bp.route('/api/<int:update_id>/acknowledge', methods=['POST'])
 @require_login
 def api_acknowledge(update_id):
+    if not validate_csrf():
+        return jsonify({'error': 'Security check failed, please try again.'}), 403
     user = session.get('user', {})
     employee_id = user.get('employee_id')
     email = user.get('email')

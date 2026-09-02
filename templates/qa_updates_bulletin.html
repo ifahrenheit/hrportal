@@ -296,7 +296,7 @@ function qaRefreshUnackBadge() {
 
 function qaAcknowledge(id, btn) {
   btn.disabled = true;
-  fetch(`/qa-updates/api/${id}/acknowledge`, { method: 'POST' })
+  fetch(`/qa-updates/api/${id}/acknowledge`, { method: 'POST', headers: {'X-CSRF-Token': getCsrfToken()} })
     .then(r => r.json())
     .then(data => {
       if (data.success) {

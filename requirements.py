@@ -19,6 +19,7 @@ from flask import (
     Blueprint, render_template, request, session,
     redirect, url_for, jsonify, abort
 )
+from csrf import validate_csrf
 
 requirements_bp = Blueprint("requirements", __name__)
 
@@ -197,6 +198,8 @@ def requirements_toggle():
         return jsonify({"ok": False, "error": "unauthorized"}), 401
     if not _can_edit():
         return jsonify({"ok": False, "error": "forbidden"}), 403
+    if not validate_csrf():
+        return jsonify({"ok": False, "error": "Security check failed, please try again."}), 403
 
     data = request.get_json(silent=True) or {}
     employee_id = (data.get("employee_id") or "").strip()

@@ -410,6 +410,7 @@ function hubBulkDelete() {
   if (btn) { btn.disabled = true; btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Deleting...'; }
   var promises = checked.map(function(c) {
     var fd = new FormData();
+    fd.append('csrf_token', getCsrfToken());
     fd.append('type', c.dataset.type);
     fd.append('request_id', c.dataset.id);
     fd.append('reason', reason);
@@ -517,6 +518,7 @@ function submitDelete() {
   btn.disabled = true;
   btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Deleting...';
   const fd = new FormData();
+  fd.append('csrf_token', getCsrfToken());
   fd.append('type', type);
   fd.append('request_id', id);
   fd.append('reason', reason);
