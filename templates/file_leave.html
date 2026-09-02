@@ -7,6 +7,7 @@
     <div class="card p-4">
       <h6 class="fw-semibold mb-3">Submit Leave Request</h6>
       <form method="POST" id="leaveForm">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <div class="mb-3">
           <label class="form-label">Leave Type</label>
           <select class="form-select" name="leave_type_id" id="leaveTypeId" required>
@@ -79,6 +80,7 @@
                   {% if r.status in ('pending', 'scheduled') %}
                   <form method="POST" action="{{ url_for('cancel_leave', leave_id=r.id) }}"
                         onsubmit="return confirm('Cancel this leave?');">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                     <button type="submit" class="btn btn-outline-danger btn-sm py-0 px-2" style="font-size:.7rem;">Cancel</button>
                   </form>
                   {% endif %}

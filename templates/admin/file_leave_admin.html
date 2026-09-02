@@ -4,6 +4,7 @@
 <h6 class="text-muted text-uppercase fw-semibold mb-3" style="letter-spacing:.07em;">File Leave for Employee</h6>
 <div class="card p-4">
   <form method="POST">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <div class="mb-3">
       <label class="form-label fw-semibold">Employee</label>
       <select name="employee_id" class="form-select" required onchange="this.form.submit()">

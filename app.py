@@ -14,7 +14,7 @@ from break_log.routes import break_log_bp
 import bcrypt
 import secrets
 import requests
-load_dotenv()
+load_dotenv('/var/www/html/leavesystem/.env')
 
 app = Flask(__name__)
 
@@ -127,6 +127,21 @@ app.config['PREFERRED_URL_SCHEME'] = 'https'
 app.config['SESSION_COOKIE_SECURE'] = True
 app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
 app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(hours=12)
+
+# --- Scoped CSRF protection for leave-management forms (file-leave, cancel-leave,
+# admin leave-types, admin file-leave). Not applied app-wide to avoid touching
+# unrelated forms across the site.
+def get_csrf_token():
+    if '_csrf_token' not in session:
+        session['_csrf_token'] = secrets.token_hex(16)
+    return session['_csrf_token']
+
+app.jinja_env.globals['csrf_token'] = get_csrf_token
+
+def validate_csrf():
+    token = session.get('_csrf_token')
+    submitted = request.form.get('csrf_token', '')
+    return bool(token) and secrets.compare_digest(token, submitted)
 
 # OrangeHRM leave status codes:
 # -1 = REJECTED | 1 = PENDING APPROVAL | 2 = SCHEDULED | 3 = TAKEN
@@ -1197,6 +1212,9 @@ def file_leave():
         }]
 
     if request.method == 'POST':
+        if not validate_csrf():
+            flash('Security check failed, please try again.', 'danger')
+            return redirect(url_for('file_leave'))
         leave_type_id = int(request.form['leave_type_id'])
         # --- AWOL_PATCH --- resolve AWOL + enforce holiday-only + single-day
         _awol = _get_awol_type()
@@ -1354,10 +1372,11 @@ def file_leave():
                     c.execute("""
                         INSERT INTO leave4day_requests
                             (emp_number, employee_id, leave_type_id, leave_date, hours_deducted,
-                             days_deducted, is_off_day, notes, status, leave_request_id, shift_half)
-                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                             days_deducted, is_off_day, notes, status, leave_request_id, shift_half, sl_hr_stage)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     """, (emp_number, emp_employee_id, leave_type_id, d['date'], d['hours'],
-                          d['days'], int(d['is_off_day']), notes, 'pending', leave_request_id, shift_value))
+                          d['days'], int(d['is_off_day']), notes, 'pending', leave_request_id, shift_value,
+                          ('pending_hr' if int(leave_type_id) == 2 else None)))
 
                     # 3. Insert into ohrm_leave
                     c.execute("""
@@ -3303,6 +3322,9 @@ def admin_leave_types():
     db = get_db()
     try:
         if request.method == 'POST':
+            if not validate_csrf():
+                flash('Security check failed, please try again.', 'danger')
+                return redirect(url_for('admin_leave_types'))
             action = request.form.get('action')
             if action == 'add':
                 name     = request.form['name'].strip()
@@ -3982,6 +4004,8 @@ def supervisor_pending():
 
             # Build filters
             where  = ["r.status = 'pending'"]
+            # SL (type 2) still awaiting HR verification must not reach the SOM queue
+            where.append("NOT (r.leave_type_id = 2 AND r.sl_hr_stage = 'pending_hr')")
             params = []
 
             if date_from:
@@ -4017,7 +4041,20 @@ def supervisor_pending():
                     lt.name AS leave_type_name,
                     e.emp_firstname, e.emp_lastname,
                     g.tl,
-                    r.shift_half
+                    r.shift_half,
+                    MIN(r.sl_hr_stage)          AS sl_hr_stage,
+                    MIN(r.sl_date_consultation) AS sl_date_consultation,
+                    MIN(r.sl_date_fit_to_work)  AS sl_date_fit_to_work,
+                    MIN(r.sl_valid_absence)     AS sl_valid_absence,
+                    MIN(r.sl_doctor_name)       AS sl_doctor_name,
+                    MIN(r.sl_life_health)       AS sl_life_health,
+                    MIN(r.sl_prc_verified)      AS sl_prc_verified,
+                    MIN(r.sl_specialization)    AS sl_specialization,
+                    MIN(r.sl_spec_match)        AS sl_spec_match,
+                    MIN(r.sl_face_to_face)      AS sl_face_to_face,
+                    MIN(r.sl_awol_dates)        AS sl_awol_dates,
+                    MIN(r.sl_hardcopy_received) AS sl_hardcopy_received,
+                    MIN(r.sl_hr_verified_by)    AS sl_hr_verified_by
                 FROM leave4day_requests r
                 JOIN ohrm_leave_type lt ON r.leave_type_id = lt.id
                 JOIN hs_hr_employee e   ON r.emp_number = e.emp_number
@@ -4387,8 +4424,8 @@ def supervisor_action():
     target_eid = raw_emp  # keep original employee_id string for DB query
 
     if not session.get('is_admin') and not session.get('permissions', {}).get('can_attrition_report'):
-        # Check authorization by emp_number if available, else skip
-        if target_emp and target_emp not in subordinates:
+        # Fail closed: an unresolved target_emp must not bypass the subordinate check.
+        if not target_emp or target_emp not in subordinates:
             flash('Unauthorized action.', 'danger')
             return redirect(request.form.get('next', url_for('supervisor_pending')))
 
@@ -4526,6 +4563,7 @@ def api_leave_action():
     filed_at         = data.get('filed_at')
     leave_request_id = data.get('leave_request_id')
     reject_reason    = data.get('reject_reason', '')
+    hardcopy_forwarded = bool(data.get('hardcopy_forwarded'))
 
     if action not in ('approve', 'reject') or not raw_emp or not leave_type_id:
         return jsonify({'success': False, 'message': 'Invalid request'}), 400
@@ -4540,7 +4578,7 @@ def api_leave_action():
     target_emp   = resolve_emp_number(raw_emp, raw_emp)
     target_eid   = raw_emp
 
-    if not session.get('is_admin') and target_emp and target_emp not in subordinates:
+    if not session.get('is_admin') and (not target_emp or target_emp not in subordinates):
         return jsonify({'success': False, 'message': 'Unauthorized'}), 403
 
     db = get_db()
@@ -4570,6 +4608,13 @@ def api_leave_action():
             if not records:
                 return jsonify({'success': False, 'message': 'No pending records found'}), 404
 
+            # SL hard-copy gate: approving SL with hardcopy_received=No requires SOM confirmation
+            needs_hardcopy = (action == 'approve' and leave_type_id == 2 and
+                              any((r.get('sl_hardcopy_received') == 0) for r in records))
+            if needs_hardcopy and not hardcopy_forwarded:
+                return jsonify({'success': False, 'message':
+                    'Please confirm the original/hard copy of the med cert was received and forwarded to HR before approving.'}), 400
+
             total_days = sum(r['days_deducted'] for r in records)
 
             for r in records:
@@ -4584,6 +4629,10 @@ def api_leave_action():
                     c.execute("""UPDATE ohrm_leave SET status=%s
                         WHERE emp_number=%s AND date=%s AND leave_type_id=%s AND status=1
                     """, (ohrm_status, target_emp, r['leave_date'], leave_type_id))
+                    if leave_type_id == 2 and r.get('sl_hardcopy_received') == 0 and hardcopy_forwarded:
+                        c.execute("""UPDATE leave4day_requests
+                            SET sl_hardcopy_forwarded=1, sl_hardcopy_forwarded_by=%s WHERE id=%s
+                        """, (session['user']['name'], r['id']))
                 else:
                     c.execute("""UPDATE ohrm_leave SET status=-1
                         WHERE emp_number=%s AND date=%s AND leave_type_id=%s
@@ -4621,6 +4670,227 @@ def api_leave_action():
 
     msg = 'Leave approved successfully.' if action == 'approve' else 'Leave rejected. Credits reversed.'
     return jsonify({'success': True, 'message': msg})
+
+
+
+# ============================================================
+# SL HR Verification (HR reviews Sick Leave before it reaches the SOM)
+# ============================================================
+def is_sl_hr_approver():
+    """True if current user may verify SL (email in SL_HR_APPROVER, or admin)."""
+    email = ((session.get('user') or {}).get('email') or '').strip().lower()
+    allow = [e.strip().lower() for e in os.getenv('SL_HR_APPROVER', '').split(',') if e.strip()]
+    return bool(session.get('is_admin')) or (email in allow)
+
+
+def _yn(v):
+    return 'Yes' if v in (1, '1', True) else 'No'
+
+
+def send_sl_verification_email(req):
+    """Email the HR verification result to TL + fixed CCs. `req` is a dict of fields."""
+    tl_email = None
+    try:
+        tl_email = get_supervisor_email(req['emp_number'])
+    except Exception:
+        tl_email = None
+
+    cc = os.getenv('SL_VERIFY_CC', 'som@cohere.ph,wfm@cohere.ph,hr@cohere.ph')
+    cc_list = [e.strip() for e in cc.split(',') if e.strip()]
+    recipients = [e for e in ([tl_email] + cc_list) if e]
+    seen, to_list = set(), []
+    for e in recipients:
+        k = e.strip().lower()
+        if k and k not in seen:
+            seen.add(k); to_list.append(e)
+
+    def yn(v):
+        return 'Yes' if v in (1, '1', True) else 'No'
+
+    rows = [
+        ('Dates of Absence',              req.get('absence_dates', '') or ''),
+        ('Date of Consultation',          req.get('sl_date_consultation', '') or ''),
+        ('Date Fit to Work',              req.get('sl_date_fit_to_work', '') or ''),
+        ('Name of Doctor',                req.get('sl_doctor_name', '') or ''),
+        ('Specialization of Doctor',      req.get('sl_specialization', '') or ''),
+        ('Life and Health',               yn(req.get('sl_life_health'))),
+        ('PRC Verification',              'Verified' if req.get('sl_prc_verified') else 'Non-verified'),
+        ('Specialization',                'Match' if req.get('sl_spec_match') else 'No match'),
+        ('Face to face consult',          yn(req.get('sl_face_to_face'))),
+        ('Valid Absence',                 yn(req.get('sl_valid_absence'))),
+        ('AWOL Dates (RD days exempted)', req.get('sl_awol_dates', '') or 'N/A'),
+        ('Hard Copy Received',            yn(req.get('sl_hardcopy_received'))),
+    ]
+
+    def cell(v, red=False):
+        style = "border:1px solid #333;padding:7px 12px;font-size:13px;"
+        if red:
+            style += "color:#c00;font-weight:bold;"
+        return f"<td style='{style}'>{v}</td>"
+
+    body_rows = ""
+    for label, value in rows:
+        red = (label == 'Life and Health' and value == 'No')
+        body_rows += (
+            f"<tr>"
+            f"<td style='border:1px solid #333;padding:7px 12px;font-size:13px;font-weight:600;"
+            f"background:#f5f6f8;white-space:nowrap;'>{label}</td>"
+            f"{cell(value, red)}</tr>"
+        )
+
+    void_note = ''
+    if not req.get('sl_hardcopy_received'):
+        void_note = ("<p style='margin:14px 0 0;font-size:13px;'>"
+                     "Kindly forward original and hard-copy of the medical certificate to us. "
+                     "Otherwise, the verification is <b>void</b>.</p>")
+
+    html = (
+        f"<div style='font-family:Arial,Helvetica,sans-serif;color:#111;'>"
+        f"<p style='font-size:13px;'>Hi!</p>"
+        f"<p style='font-size:13px;'>Please see verification below,</p>"
+        f"<table style='border-collapse:collapse;border:1px solid #333;min-width:460px;'>"
+        f"<tr><th colspan='2' style='border:1px solid #333;padding:8px 12px;font-size:14px;"
+        f"text-align:center;background:#eef1f5;'>VERIFICATION - {req.get('employee_name','')}</th></tr>"
+        f"{body_rows}</table>{void_note}"
+        f"<p style='font-size:13px;margin-top:16px;'>Regards,<br>"
+        f"{session['user']['name']}<br>HR - Cohere Outsourcing Phils</p></div>"
+    )
+    subject = f"VERIFICATION - {req.get('employee_name','')}"
+    for _rcpt in to_list:
+        try:
+            send_email(_rcpt, subject, html)
+        except Exception as e:
+            app.logger.warning(f"SL verification email to {_rcpt} failed: {e}")
+    app.logger.info(f"SL verification email queued to: {to_list}")
+
+
+@app.route('/leave/sl-verification', methods=['GET'])
+@login_required
+def sl_verification():
+    if not is_sl_hr_approver():
+        flash('You do not have access to SL Verification.', 'danger')
+        return redirect(url_for('dashboard'))
+
+    db = get_db()
+    try:
+        with db.cursor() as c:
+            c.execute("""
+                SELECT
+                    r.emp_number, r.employee_id, r.leave_request_id,
+                    MIN(r.filed_at) AS filed_at, r.notes,
+                    SUM(r.hours_deducted) AS hours_deducted,
+                    SUM(r.days_deducted)  AS days_deducted,
+                    GROUP_CONCAT(r.leave_date ORDER BY r.leave_date) AS dates,
+                    e.emp_firstname, e.emp_lastname, g.tl
+                FROM leave4day_requests r
+                JOIN hs_hr_employee e ON r.emp_number = e.emp_number
+                LEFT JOIN central_db.gsheet_employees g
+                       ON g.employee_id COLLATE utf8mb4_unicode_ci = e.employee_id
+                WHERE r.leave_type_id = 2
+                  AND r.status = 'pending'
+                  AND r.sl_hr_stage = 'pending_hr'
+                  AND r.deleted_at IS NULL
+                GROUP BY r.leave_request_id, r.emp_number, r.employee_id, r.notes,
+                         e.emp_firstname, e.emp_lastname, g.tl
+                ORDER BY MIN(r.leave_date) ASC
+            """)
+            pending = c.fetchall()
+    finally:
+        db.close()
+
+    return render_template('supervisor/sl_verification.html',
+                           pending=pending, user=session['user'])
+
+
+@app.route('/leave/sl-verification/submit', methods=['POST'])
+@login_required
+def sl_verification_submit():
+    if not is_sl_hr_approver():
+        return jsonify({'success': False, 'message': 'Access denied'}), 403
+
+    data = request.get_json(silent=True) or {}
+    leave_request_id = data.get('leave_request_id')
+    if not leave_request_id:
+        return jsonify({'success': False, 'message': 'Missing leave_request_id'}), 400
+
+    consult = (data.get('date_consultation') or '').strip() or None
+    fit     = (data.get('date_fit_to_work') or '').strip() or None
+    doctor  = (data.get('doctor_name') or '').strip()
+    spec    = (data.get('specialization') or '').strip()
+    awol    = (data.get('awol_dates') or '').strip()
+    life    = 1 if data.get('life_health') in (1, '1', True, 'yes', 'Yes') else 0
+    prc     = 1 if data.get('prc_verified') in (1, '1', True, 'verified', 'Verified') else 0
+    f2f     = 1 if data.get('face_to_face') in (1, '1', True, 'yes', 'Yes') else 0
+    spec_match = 1 if data.get('spec_match') in (1, '1', True, 'match', 'Match') else 0
+    hardcpy = 1 if data.get('hardcopy_received') in (1, '1', True, 'yes', 'Yes') else 0
+
+    db = get_db()
+    try:
+        with db.cursor() as c:
+            # Load the SL request rows (absence dates) to compute valid absence
+            c.execute("""SELECT r.id, r.emp_number, r.employee_id, r.leave_date,
+                                e.emp_firstname, e.emp_lastname
+                         FROM leave4day_requests r
+                         JOIN hs_hr_employee e ON e.emp_number = r.emp_number
+                         WHERE r.leave_request_id=%s AND r.leave_type_id=2
+                           AND r.status='pending' AND r.sl_hr_stage='pending_hr'
+                      """, (leave_request_id,))
+            rows = c.fetchall()
+            if not rows:
+                return jsonify({'success': False, 'message': 'No pending SL rows found'}), 404
+
+            # Valid Absence: every absence date within [consult, fit] inclusive
+            valid = 0
+            if consult and fit:
+                try:
+                    from datetime import datetime as _dt
+                    cd = _dt.strptime(consult, '%Y-%m-%d').date()
+                    fd = _dt.strptime(fit, '%Y-%m-%d').date()
+                    absns = [r['leave_date'] for r in rows]
+                    valid = 1 if all(cd <= d <= fd for d in absns) and cd <= fd else 0
+                except ValueError:
+                    valid = 0
+
+            c.execute("""
+                UPDATE leave4day_requests
+                SET sl_hr_stage='hr_verified',
+                    sl_date_consultation=%s, sl_date_fit_to_work=%s,
+                    sl_valid_absence=%s, sl_doctor_name=%s, sl_life_health=%s,
+                    sl_prc_verified=%s, sl_specialization=%s, sl_spec_match=%s, sl_face_to_face=%s,
+                    sl_awol_dates=%s, sl_hardcopy_received=%s,
+                    sl_hr_verified_by=%s, sl_hr_verified_at=NOW()
+                WHERE leave_request_id=%s AND leave_type_id=2 AND status='pending'
+            """, (consult, fit, valid, doctor, life, prc, spec, spec_match, f2f, awol, hardcpy,
+                  session['user']['name'], leave_request_id))
+        db.commit()
+
+        first = rows[0]
+        emp_name = f"{(first['emp_lastname'] or '').strip()}, {(first['emp_firstname'] or '').strip()}".strip(', ')
+        absence_dates = ', '.join(str(r['leave_date']) for r in rows)
+        send_sl_verification_email({
+            'emp_number': first['emp_number'],
+            'employee_name': emp_name,
+            'absence_dates': absence_dates,
+            'sl_date_consultation': consult,
+            'sl_date_fit_to_work': fit,
+            'sl_valid_absence': valid,
+            'sl_doctor_name': doctor,
+            'sl_specialization': spec,
+            'sl_spec_match': spec_match,
+            'sl_life_health': life,
+            'sl_prc_verified': prc,
+            'sl_face_to_face': f2f,
+            'sl_awol_dates': awol,
+            'sl_hardcopy_received': hardcpy,
+        })
+    except Exception as e:
+        db.rollback()
+        return jsonify({'success': False, 'message': str(e)}), 500
+    finally:
+        db.close()
+
+    return jsonify({'success': True, 'message': 'SL verified and forwarded to SOM.',
+                    'valid_absence': bool(valid)})
 
 
 @app.route('/api/leave/bulk-action', methods=['POST'])
@@ -4728,6 +4998,9 @@ def api_leave_bulk_action():
 @app.route('/cancel-leave/<int:leave_id>', methods=['POST'])
 @login_required
 def cancel_leave(leave_id):
+    if not validate_csrf():
+        flash('Security check failed, please try again.', 'danger')
+        return redirect(request.referrer or url_for('dashboard'))
     emp_number = session['user']['emp_number']
     is_admin   = session.get('is_admin', False)
     db = get_db()
@@ -4744,9 +5017,13 @@ def cancel_leave(leave_id):
                 return redirect(url_for('dashboard'))
 
             # Permission check
-            if leave['emp_number'] != emp_number and not is_admin and not session.get('is_supervisor'):
+            subordinates = get_subordinates(emp_number)
+            is_owner = leave['emp_number'] == emp_number
+            is_manager_of_owner = (is_admin or session.get('is_supervisor')) and leave['emp_number'] in subordinates
+            if not (is_owner or is_manager_of_owner):
                 flash('You do not have permission to cancel this leave.', 'danger')
                 return redirect(url_for('dashboard'))
+
 
             # Status check
             allowed_statuses = ['scheduled', 'pending']
@@ -4828,7 +5105,10 @@ def api_leave_cancel(leave_id):
             leave = c.fetchone()
             if not leave:
                 return jsonify({'success': False, 'message': 'Leave request not found'}), 404
-            if leave['emp_number'] != emp_number and not is_admin and not session.get('is_supervisor'):
+            subordinates = get_subordinates(emp_number)
+            is_owner = leave['emp_number'] == emp_number
+            is_manager_of_owner = (is_admin or session.get('is_supervisor')) and leave['emp_number'] in subordinates
+            if not (is_owner or is_manager_of_owner):
                 return jsonify({'success': False, 'message': 'Permission denied'}), 403
             allowed_statuses = ['scheduled', 'pending']
             if is_admin or session.get('is_supervisor'):
@@ -4894,6 +5174,9 @@ def admin_file_leave():
         cdb_tmp.close()
     balances = []
     if request.method == 'POST':
+        if not validate_csrf():
+            flash('Security check failed, please try again.', 'danger')
+            return redirect(url_for('admin_file_leave'))
         target_emp = resolve_emp_number(request.form.get('emp_number'), request.form.get('employee_id'))
         balances, portal_balances = get_leave_balances(target_emp)
 
@@ -5268,25 +5551,24 @@ def api_check_special_item():
 def get_inventory_as_of(cdb, target_date):
     """
     target_date: a date object. Returns today's item details + reconstructed
-    stock_as_of quantity (backward reconstruction, verified against
-    current_stock — see check_backward_reconstruction.py), excluding items
-    that did not exist yet as of that date.
+    stock_as_of quantity (forward reconstruction from opening balance),
+    excluding items that did not exist yet as of that date.
     """
     cutoff = f"{target_date} 23:59:59"
     with cdb.cursor() as c:
         c.execute("""
             SELECT
                 ii.*,
-                (ii.current_stock - COALESCE((
+                COALESCE((
                     SELECT SUM(
                         CASE
-                            WHEN it.transaction_type = 'in' THEN it.quantity
+                            WHEN it.transaction_type IN ('in', 'adjustment') THEN it.quantity
                             ELSE -it.quantity
                         END
                     )
                     FROM inventory_transactions it
-                    WHERE it.item_id = ii.id AND it.performed_at > %s
-                ), 0)) AS stock_as_of
+                    WHERE it.item_id = ii.id AND it.performed_at <= %s
+                ), 0) AS stock_as_of
             FROM inventory_items ii
             WHERE ii.is_active = 1 AND ii.created_at <= %s
             ORDER BY ii.category, ii.item_name
@@ -5887,11 +6169,11 @@ def material_som_approvals():
             if session.get('is_admin'):
                 if tab == 'pending':
                     c.execute("""SELECT * FROM material_requests
-                                 WHERE deleted_at IS NULL AND category != 'Medicine' AND status='Pending'
+                                 WHERE deleted_at IS NULL AND (category != 'Medicine' OR is_replenishment=1) AND status='Pending'
                                  ORDER BY created_at DESC""")
                 else:
                     c.execute("""SELECT * FROM material_requests
-                                 WHERE deleted_at IS NULL AND category != 'Medicine' AND status!='Pending'
+                                 WHERE deleted_at IS NULL AND (category != 'Medicine' OR is_replenishment=1) AND status!='Pending'
                                  ORDER BY FIELD(status,'Recommended','Pending Final Approval','Approved','Awaiting Confirmation','Served','Rejected','Released'), created_at DESC""")
             else:
                 # Get employee IDs under this supervisor (regular assignments)
@@ -5921,12 +6203,12 @@ def material_som_approvals():
                     if tab == 'pending':
                         c.execute(f"""SELECT * FROM material_requests
                                       WHERE employee_id IN ({ph}) AND deleted_at IS NULL
-                                      AND category != 'Medicine' AND status='Pending'
+                                      AND (category != 'Medicine' OR is_replenishment=1) AND status='Pending'
                                       ORDER BY created_at DESC""", combined_ids)
                     else:
                         c.execute(f"""SELECT * FROM material_requests
                                       WHERE employee_id IN ({ph}) AND deleted_at IS NULL
-                                      AND category != 'Medicine' AND status!='Pending'
+                                      AND (category != 'Medicine' OR is_replenishment=1) AND status!='Pending'
                                       ORDER BY FIELD(status,'Recommended','Pending Final Approval','Approved','Awaiting Confirmation','Served','Rejected','Released'), created_at DESC""", combined_ids)
             requests_ = c.fetchall()
     finally:
@@ -6120,7 +6402,7 @@ def material_release_action():
                          SET status='Awaiting Confirmation', released_by=%s,
                              released_at=NOW(), release_notes=%s,
                              confirmation_token=%s
-                         WHERE id=%s AND (status='Approved' OR (status='Recommended' AND category='Medicine') OR (status='Pending' AND category='Medicine'))""",
+                         WHERE id=%s AND (status='Approved' OR (status='Recommended' AND category='Medicine' AND is_replenishment=0) OR (status='Pending' AND category='Medicine' AND is_replenishment=0))""",
                       (session['user']['name'], release_notes, token, req_id))
             c.execute('SELECT * FROM material_requests WHERE id=%s', (req_id,))
             req = c.fetchone()
@@ -7959,7 +8241,7 @@ def file_requests_approvals():
                        f.fts_date, f.fts_time, f.fts_type, f.created_at,
                        g.employee_id, g.tl
                 FROM fts_requests f
-                LEFT JOIN gsheet_employees g ON g.schedule_name COLLATE utf8mb4_unicode_ci = f.employee_name COLLATE utf8mb4_unicode_ci
+                LEFT JOIN gsheet_employees g ON g.employee_id COLLATE utf8mb4_unicode_ci = f.employeeID COLLATE utf8mb4_unicode_ci
                 WHERE f.status = 'Pending'
                 AND f.deleted_at IS NULL
                 {fts_extra}
@@ -9880,7 +10162,7 @@ def hrportal_offboard(employee_id):
                      ad_disabled, keycloak_disabled, email_suspended,
                      dashboard_disabled, biometric_deleted,
                      orangehrm_updated, status_updated, biometric_deactivated)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 """, [
                     employee_id, exit_date, reason, notes, processed_by,
                     results['ad_disabled'], results['keycloak_disabled'],
@@ -12458,6 +12740,71 @@ def survey_admin_list():
 
     return render_template('survey_admin_list.html', surveys=surveys, headcount=headcount)
 
+
+@survey_bp.route('/admin/create', methods=['POST'])
+def survey_admin_create():
+    if not (session.get('is_admin') or has_permission('can_surveys')):
+        flash('Access denied.', 'danger')
+        return redirect(url_for('dashboard'))
+
+    title = (request.form.get('title') or '').strip()
+    description = (request.form.get('description') or '').strip()
+    is_active = 1 if request.form.get('is_active') else 0
+
+    if not title:
+        flash('Survey title is required.', 'danger')
+        return redirect(url_for('survey.survey_admin_list'))
+
+    # Build questions JSON from repeated form fields.
+    # Fields arrive as q_text[] and, per question, opt_<n>[] lists.
+    q_texts = request.form.getlist('q_text[]')
+    questions = []
+    for idx, qtext in enumerate(q_texts):
+        qtext = (qtext or '').strip()
+        opts = [o.strip() for o in request.form.getlist('opt_%d[]' % idx) if o.strip()]
+        if not qtext:
+            continue
+        if len(opts) < 2:
+            flash('Each question needs a text and at least 2 options.', 'danger')
+            return redirect(url_for('survey.survey_admin_list'))
+        questions.append({
+            "id": "q%d" % (idx + 1),
+            "text": qtext,
+            "type": "single",
+            "options": opts,
+        })
+
+    if not questions:
+        flash('Add at least one question with options.', 'danger')
+        return redirect(url_for('survey.survey_admin_list'))
+
+    # Auto slug from title, deduped against existing slugs.
+    base = re.sub(r'[^a-z0-9]+', '-', title.lower()).strip('-')[:60] or 'survey'
+    db = get_central_db()
+    cur = db.cursor(pymysql.cursors.DictCursor)
+    cur.execute("SELECT slug FROM surveys WHERE slug = %s OR slug LIKE %s",
+                (base, base + '-%'))
+    taken = {r['slug'] for r in cur.fetchall()}
+    slug = base
+    n = 2
+    while slug in taken:
+        slug = '%s-%d' % (base, n)
+        n += 1
+
+    try:
+        cur.execute(
+            "INSERT INTO surveys (slug, title, description, questions, is_active) "
+            "VALUES (%s, %s, %s, %s, %s)",
+            (slug, title, description or None, json.dumps(questions), is_active)
+        )
+        db.commit()
+        flash('Survey "%s" created.' % title, 'success')
+    except Exception as e:
+        db.rollback()
+        flash('Error creating survey: %s' % e, 'danger')
+    return redirect(url_for('survey.survey_admin_list'))
+
+
 # CSAT for individual agents (for "My CSAT" dashboard + drilldown from the main dashboard)
 
 @app.route('/api/my-csat')
@@ -13275,7 +13622,10 @@ def inject_nav_style():
         email = ((session.get('user') or {}).get('email') or '').lower()
     if email and email in pilot:
         style = 'topnav'
-    return dict(nav_style=style)
+    # SL Verification access — same 'follow the real operator' rule as nav
+    sl_allow = [e.strip().lower() for e in os.getenv('SL_HR_APPROVER', '').split(',') if e.strip()]
+    sl_hr = bool(session.get('is_admin')) or (email in sl_allow)
+    return dict(nav_style=style, SL_HR_APPROVER=sl_hr)
 
 
 
@@ -13518,7 +13868,7 @@ def api_notifications():
                             FROM leave4day_requests r
                             LEFT JOIN hs_hr_employee e ON e.emp_number = r.emp_number
                             WHERE r.status='pending' AND r.deleted_at IS NULL
-                            ORDER BY r.filed_at DESC LIMIT 25""")
+                            ORDER BY r.filed_at DESC LIMIT 100""")
                     else:
                         fmt = ','.join(['%s'] * len(subs))
                         cur.execute(f"""SELECT r.id, r.employee_id AS who, r.leave_date AS d,
@@ -13527,16 +13877,44 @@ def api_notifications():
                             LEFT JOIN hs_hr_employee e ON e.emp_number = r.emp_number
                             WHERE r.status='pending' AND r.deleted_at IS NULL
                               AND r.emp_number IN ({fmt})
-                            ORDER BY r.filed_at DESC LIMIT 25""", list(subs))
+                            ORDER BY r.filed_at DESC LIMIT 100""", list(subs))
                     lv = cur.fetchall()
             finally:
                 db.close()
             items = [{"message": f"Leave · {(r['nm'] or '').strip() or r['who']} · {r['d']}",
                       "link": f"/supervisor/pending?emp_search={r['who']}",
+                      "type": "Leave",
+                      "search": f"{(r['nm'] or '')} {r['who']} leave".lower(),
                       "created_at": str(r['d'])} for r in lv]
             if items:
                 sections.append({"title": "Leave approvals", "icon": "bi-calendar-check", "items": items})
                 total += len(items)
+
+    # SL Verification queue (HR approvers only)
+    if is_sl_hr_approver():
+        db = get_db()
+        try:
+            with db.cursor(pymysql.cursors.DictCursor) as cur:
+                cur.execute("""SELECT r.leave_request_id AS lrid,
+                           MIN(r.leave_date) AS d, r.employee_id AS who,
+                           CONCAT_WS(' ', e.emp_firstname, e.emp_lastname) AS nm
+                    FROM leave4day_requests r
+                    LEFT JOIN hs_hr_employee e ON e.emp_number = r.emp_number
+                    WHERE r.leave_type_id=2 AND r.status='pending'
+                      AND r.sl_hr_stage='pending_hr' AND r.deleted_at IS NULL
+                    GROUP BY r.leave_request_id, r.employee_id, e.emp_firstname, e.emp_lastname
+                    ORDER BY MIN(r.filed_at) DESC LIMIT 100""")
+                slv = cur.fetchall()
+        finally:
+            db.close()
+        items = [{"message": f"SL Verify \u00b7 {(r['nm'] or '').strip() or r['who']} \u00b7 {r['d']}",
+                  "link": "/leave/sl-verification",
+                  "type": "SL Verify",
+                  "search": f"{(r['nm'] or '')} {r['who']} sl verification".lower(),
+                  "created_at": str(r['d'])} for r in slv]
+        if items:
+            sections.append({"title": "SL Verification", "icon": "bi-clipboard2-pulse", "items": items})
+            total += len(items)
 
     if is_admin or is_sup:
         emp_ids = [] if is_admin else get_supervisor_central_employees(email)
@@ -13547,32 +13925,35 @@ def api_notifications():
                 with conn.cursor(pymysql.cursors.DictCursor) as cur:
                     def _scope(col):
                         if is_admin: return "", []
-                        ph = ','.join(['%%s'] * len(emp_ids))
+                        ph = ','.join(['%s'] * len(emp_ids))
                         return f"AND {col} IN ({ph})", list(emp_ids)
                     s, p = _scope("employeeID")
                     cur.execute(f"""SELECT id, employee_name AS who, fts_date AS d, 'FTS' AS kind
                         FROM fts_requests WHERE status='Pending' AND deleted_at IS NULL {s}
-                        ORDER BY created_at DESC LIMIT 25""", p)
+                        ORDER BY created_at DESC LIMIT 100""", p)
                     req += cur.fetchall()
                     s, p = _scope("employee_id")
                     cur.execute(f"""SELECT id, employee_id AS who, ot_date AS d, 'OT' AS kind
                         FROM ot_requests WHERE status='Pending' AND deleted_at IS NULL {s}
-                        ORDER BY id DESC LIMIT 25""", p)
+                        ORDER BY id DESC LIMIT 100""", p)
                     req += cur.fetchall()
                     s, p = _scope("employee_id")
                     cur.execute(f"""SELECT id, employee_id AS who, new_date AS d, 'CWS' AS kind
                         FROM cws_requests WHERE status='Pending' AND deleted_at IS NULL {s}
-                        ORDER BY created_at DESC LIMIT 25""", p)
+                        ORDER BY created_at DESC LIMIT 100""", p)
                     req += cur.fetchall()
                     s, p = _scope("employee_id")
                     cur.execute(f"""SELECT id, employee_id AS who, rd_date AS d, 'RDW' AS kind
                         FROM rd_requests WHERE status='Pending' AND deleted_at IS NULL {s}
-                        ORDER BY created_at DESC LIMIT 25""", p)
+                        ORDER BY created_at DESC LIMIT 100""", p)
                     req += cur.fetchall()
             finally:
                 conn.close()
             items = [{"message": f"{r['kind']} · {r['who']} · {r['d']}",
-                      "link": f"/file-requests/approvals?emp_search={r['who']}", "created_at": str(r['d'])} for r in req]
+                      "link": f"/file-requests/approvals?emp_search={r['who']}",
+                      "type": r['kind'],
+                      "search": f"{r['who']} {r['kind']}".lower(),
+                      "created_at": str(r['d'])} for r in req]
             if items:
                 sections.append({"title": "Request approvals", "icon": "bi-clipboard-check", "items": items})
                 total += len(items)
@@ -13586,11 +13967,13 @@ def api_notifications():
                     WHERE q.is_active=1 AND q.is_deleted=0 AND q.audience='All'
                       AND NOT EXISTS (SELECT 1 FROM qa_update_acknowledgments a
                         WHERE a.qa_update_id=q.id AND a.employee_id=%s)
-                    ORDER BY q.is_pinned DESC, q.created_at DESC LIMIT 25""", (eid,))
+                    ORDER BY q.is_pinned DESC, q.created_at DESC LIMIT 100""", (eid,))
                 qa = cur.fetchall()
         finally:
             conn.close()
         items = [{"message": f"QA: {r['title']}", "link": '/qa-updates',
+                  "type": "QA",
+                  "search": f"qa {r['title']}".lower(),
                   "created_at": r['created_at'].strftime('%Y-%m-%d %H:%M') if r['created_at'] else ''}
                  for r in qa]
         if items:
@@ -13627,12 +14010,14 @@ def api_notifications():
             with conn.cursor(pymysql.cursors.DictCursor) as cur:
                 cur.execute(f"""SELECT ir.report_number, ir.status, ir.employee_name, ir.updated_at
                     FROM incident_reports ir WHERE {where}
-                    ORDER BY ir.updated_at DESC LIMIT 25""", params)
+                    ORDER BY ir.updated_at DESC LIMIT 100""", params)
                 irs = cur.fetchall()
         finally:
             conn.close()
         items = [{"message": f"IR {r['status'].replace('_',' ')} · {r['employee_name']}",
                   "link": '/incident-reports/' + r['report_number'],
+                  "type": "IR",
+                  "search": f"{r['employee_name']} {r['status'].replace('_',' ')} ir".lower(),
                   "created_at": r['updated_at'].strftime('%Y-%m-%d %H:%M') if r['updated_at'] else ''}
                  for r in irs]
         if items:
@@ -13640,6 +14025,37 @@ def api_notifications():
             total += len(items)
     except Exception as e:
         app.logger.warning(f"[notif] IR section failed: {e}")
+
+    # --- My coaching action plans ([notif] coaching section) ---
+    if eid:
+        try:
+            conn = get_central_db()
+            try:
+                with conn.cursor(pymysql.cursors.DictCursor) as cur:
+                    cur.execute("""
+                        SELECT cs.id, cs.topic, cs.session_date,
+                               s.schedule_name AS sup
+                        FROM coaching_sessions cs
+                        LEFT JOIN gsheet_employees s
+                          ON s.employee_id = cs.supervisor_id COLLATE utf8mb4_unicode_ci
+                        WHERE cs.agent_id = %s COLLATE utf8mb4_unicode_ci
+                          AND cs.status IN ('pending','for_followup','pending_followup')
+                        ORDER BY cs.session_date DESC LIMIT 100
+                    """, (eid,))
+                    cch = cur.fetchall()
+            finally:
+                conn.close()
+            items = [{"message": f"Coaching: complete your action plan · {r['topic'] or 'Session'}",
+                      "link": f"/coaching/my/{r['id']}",
+                      "type": "Coaching",
+                      "search": f"coaching action plan {r['topic'] or ''}".lower(),
+                      "created_at": str(r['session_date']) if r['session_date'] else ''}
+                     for r in cch]
+            if items:
+                sections.append({"title": "My coaching", "icon": "bi-easel2", "items": items})
+                total += len(items)
+        except Exception as e:
+            app.logger.warning(f"[notif] coaching section failed: {e}")
 
     return jsonify({"sections": sections, "unread": total})
 
@@ -13665,4 +14081,19 @@ def api_notifications_read():
     return jsonify({"ok": True})
 
 if __name__ == '__main__':
-    app.run(debug=True, host='0.0.0.0', port=5001)
+    app.run(debug=False, host='127.0.0.1', port=5001)
+
+@app.route('/whoami')
+@login_required
+def whoami():
+    import os as _os
+    email = ((session.get('user') or {}).get('email') or '')
+    allow = [e.strip().lower() for e in _os.getenv('SL_HR_APPROVER','').split(',') if e.strip()]
+    return jsonify({
+        'email': email,
+        'email_lower': email.lower(),
+        'is_admin': session.get('is_admin'),
+        'in_allow_list': email.lower() in allow,
+        'allow_list': allow,
+        'has_original_admin': 'original_admin' in session,
+    })
