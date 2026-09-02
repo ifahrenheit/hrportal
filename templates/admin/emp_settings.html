@@ -7,6 +7,7 @@
     <span class="small fw-semibold">Bulk Update:</span>
     <form method="POST" class="d-flex gap-2 align-items-center flex-wrap mb-0"
           onsubmit="return confirm('Change all employees in this group?');">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <input type="hidden" name="action" value="bulk">
       <select name="bulk_group" class="form-select form-select-sm" style="width:auto;" required>
         <option value="">Select Group...</option>
@@ -84,6 +85,7 @@
           </td>
           <td>
             <form method="POST" class="d-flex gap-2 align-items-center">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
               <input type="hidden" name="employee_id" value="{{ e.employee_id }}">
               <select name="work_mode" class="form-select form-select-sm" style="width:auto;">
                 <option value="global" {% if not e.individual_mode %}selected{% endif %}>Use Global Default</option>

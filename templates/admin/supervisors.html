@@ -38,6 +38,7 @@
 
 <!-- BATCH ASSIGN / REMOVE FORM -->
 <form method="POST" id="batchForm">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
   <div class="mb-3 d-flex gap-2 align-items-center flex-wrap">
     <!-- Batch Assign Supervisor -->
     <input type="hidden" name="action" value="assign_batch" id="batchAction">

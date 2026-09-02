@@ -128,20 +128,9 @@ app.config['SESSION_COOKIE_SECURE'] = True
 app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
 app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(hours=12)
 
-# --- Scoped CSRF protection for leave-management forms (file-leave, cancel-leave,
-# admin leave-types, admin file-leave). Not applied app-wide to avoid touching
-# unrelated forms across the site.
-def get_csrf_token():
-    if '_csrf_token' not in session:
-        session['_csrf_token'] = secrets.token_hex(16)
-    return session['_csrf_token']
-
+# --- CSRF protection (site-wide rollout in progress, see csrf.py) ---
+from csrf import get_csrf_token, validate_csrf
 app.jinja_env.globals['csrf_token'] = get_csrf_token
-
-def validate_csrf():
-    token = session.get('_csrf_token')
-    submitted = request.form.get('csrf_token', '')
-    return bool(token) and secrets.compare_digest(token, submitted)
 
 # OrangeHRM leave status codes:
 # -1 = REJECTED | 1 = PENDING APPROVAL | 2 = SCHEDULED | 3 = TAKEN
@@ -962,6 +951,9 @@ def auth_callback():
 @app.route('/admin/login-as/<target_emp>', methods=['POST'])
 @admin_required
 def login_as(target_emp):
+    if not validate_csrf():
+        flash('Security check failed, please try again.', 'danger')
+        return redirect(url_for('admin_sub_admins'))
     # Store original admin session
     session['original_admin'] = {
         'emp_number': session['user']['emp_number'],
@@ -1473,6 +1465,9 @@ def admin_holidays():
     db = get_db()
     try:
         if request.method == 'POST':
+            if not validate_csrf():
+                flash('Security check failed, please try again.', 'danger')
+                return redirect(url_for('admin_holidays'))
             action = request.form.get('action')
 
             if action == 'add':
@@ -1741,6 +1736,9 @@ def admin_supervisors():
     tl_filter = request.args.get('tl', '')
     try:
         if request.method == 'POST':
+            if not validate_csrf():
+                flash('Security check failed, please try again.', 'danger')
+                return redirect(url_for('admin_supervisors'))
             action = request.form.get('action')
 
             # ----- SINGLE ASSIGNMENT -----
@@ -1988,6 +1986,9 @@ def admin_sub_admins():
     db = get_db()
     try:
         if request.method == 'POST':
+            if not validate_csrf():
+                flash('Security check failed, please try again.', 'danger')
+                return redirect(url_for('admin_sub_admins'))
             action     = request.form.get('action')
             emp_number = int(request.form.get('emp_number'))
             if action == 'save':
@@ -3353,6 +3354,9 @@ def admin_entitlements():
     db = get_db()
     try:
         if request.method == 'POST':
+            if not validate_csrf():
+                flash('Security check failed, please try again.', 'danger')
+                return redirect(url_for('admin_entitlements'))
             action     = request.form.get('action')
             if action == 'assign':
                 employee_id   = request.form['employee_id']
@@ -3451,6 +3455,9 @@ def admin_entitlements():
 @app.route('/admin/entitlement-source', methods=['POST'])
 @permission_required('can_settings')
 def toggle_entitlement_source():
+    if not validate_csrf():
+        flash('Security check failed, please try again.', 'danger')
+        return redirect(url_for('admin_settings'))
     source = request.form.get('source', 'orangehrm')
     db = get_db()
     try:
@@ -3470,6 +3477,9 @@ def toggle_entitlement_source():
 @permission_required('can_work_mode')
 def admin_emp_settings():
     if request.method == 'POST':
+        if not validate_csrf():
+            flash('Security check failed, please try again.', 'danger')
+            return redirect(url_for('admin_emp_settings'))
         action = request.form.get('action')
         db = get_db()
         try:
@@ -3580,6 +3590,9 @@ def admin_quick_links():
     db = get_db()
     try:
         if request.method == 'POST':
+            if not validate_csrf():
+                flash('Security check failed, please try again.', 'danger')
+                return redirect(url_for('admin_quick_links'))
             action = request.form.get('action')
             if action == 'add':
                 db.cursor().execute("""
@@ -3643,6 +3656,9 @@ def admin_quick_links():
 @permission_required('can_settings')
 def admin_settings():
     if request.method == 'POST':
+        if not validate_csrf():
+            flash('Security check failed, please try again.', 'danger')
+            return redirect(url_for('admin_settings'))
         work_mode = request.form.get('work_mode', '4day')
         db = get_db()
         try:
@@ -3679,6 +3695,9 @@ def admin_settings():
 @app.route('/admin/settings/quick-links', methods=['POST'])
 @permission_required('can_settings')
 def toggle_quick_links():
+    if not validate_csrf():
+        flash('Security check failed, please try again.', 'danger')
+        return redirect(url_for('admin_settings'))
     db = get_db()
     try:
         with db.cursor() as c:

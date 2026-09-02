@@ -4,6 +4,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="csrf-token" content="{{ csrf_token() }}">
   <title>{% block title %}COHERE{% endblock %} | Cohere</title>
   <meta name="color-scheme" content="{{ 'dark light' if theme == 'dark' else 'light dark' }}">
   <style>html[data-theme="dark"]{color-scheme:dark}html[data-theme="light"]{color-scheme:light}</style>

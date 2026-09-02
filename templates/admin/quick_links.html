@@ -13,6 +13,7 @@
       {% if quick_links_visible %}Visible{% else %}Hidden{% endif %}
     </span>
     <form method="POST" action="{{ url_for('toggle_quick_links') }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <button type="submit" class="btn btn-sm {% if quick_links_visible %}btn-outline-danger{% else %}btn-outline-success{% endif %}">
         {% if quick_links_visible %}<i class="bi bi-eye-slash me-1"></i>Hide from Dashboard{% else %}<i class="bi bi-eye me-1"></i>Show on Dashboard{% endif %}
       </button>
@@ -26,6 +27,7 @@
     <div class="card p-4">
       <h6 class="fw-semibold mb-3">Add Quick Link</h6>
       <form method="POST">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <input type="hidden" name="action" value="add">
         <div class="mb-3">
           <label class="form-label small fw-semibold">Title</label>
@@ -106,6 +108,7 @@
               <td class="small">{{ link.sort_order }}</td>
               <td>
                 <form method="POST" class="d-inline">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                   <input type="hidden" name="action" value="toggle">
                   <input type="hidden" name="link_id" value="{{ link.id }}">
                   <button class="btn btn-sm {% if link.is_active %}btn-success{% else %}btn-outline-secondary{% endif %} py-0 px-2">
@@ -120,6 +123,7 @@
                     <i class="bi bi-pencil"></i>
                   </button>
                   <form method="POST" onsubmit="return confirm('Delete this link?');">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                     <input type="hidden" name="action" value="delete">
                     <input type="hidden" name="link_id" value="{{ link.id }}">
                     <button class="btn btn-sm btn-outline-danger py-0 px-2"><i class="bi bi-trash"></i></button>
@@ -146,6 +150,7 @@
         <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
       </div>
       <form method="POST">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <input type="hidden" name="action" value="edit">
         <input type="hidden" name="link_id" id="editId">
         <div class="modal-body">

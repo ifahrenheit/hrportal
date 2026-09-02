@@ -60,6 +60,7 @@
               </button>
               <form method="POST" class="d-inline"
                     onsubmit="return confirm('Delete {{ h.description|e }}?');">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <input type="hidden" name="action" value="delete">
                 <input type="hidden" name="holiday_id" value="{{ h.id }}">
                 <button type="submit" class="btn btn-sm btn-outline-danger">
@@ -86,6 +87,7 @@
   <div class="modal-dialog">
     <div class="modal-content">
       <form method="POST">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <input type="hidden" name="action" value="add">
         <div class="modal-header">
           <h5 class="modal-title">Add Holiday</h5>
@@ -121,6 +123,7 @@
   <div class="modal-dialog">
     <div class="modal-content">
       <form method="POST">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <input type="hidden" name="action" value="edit">
         <input type="hidden" name="holiday_id" id="editHolidayId">
         <div class="modal-header">
