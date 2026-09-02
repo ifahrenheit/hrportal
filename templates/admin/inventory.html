@@ -99,6 +99,7 @@
                     <i class="bi bi-pencil"></i>
                   </button>
                   <form method="POST" onsubmit="return confirm('Deactivate this item?');">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                     <input type="hidden" name="action" value="deactivate">
                     <input type="hidden" name="item_id" value="{{ item.id }}">
                     <button class="btn btn-sm btn-outline-danger py-0 px-2"><i class="bi bi-trash"></i></button>
@@ -171,6 +172,7 @@
             </table>
           </div>
           <form method="POST" enctype="multipart/form-data">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <input type="hidden" name="action" value="upload_excel">
             <input type="file" name="excel_file" class="form-control mb-3" accept=".xlsx" required>
             <button type="submit" class="btn btn-success w-100">
@@ -349,6 +351,7 @@
                     <i class="bi bi-pencil"></i>
                   </button>
                   <form method="POST" onsubmit="return confirm('Remove this special item?');">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                     <input type="hidden" name="action" value="delete_special">
                     <input type="hidden" name="special_id" value="{{ s.id }}">
                     <button class="btn btn-sm btn-outline-danger py-0 px-2"><i class="bi bi-trash"></i></button>
@@ -376,6 +379,7 @@
         <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
       </div>
       <form method="POST">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <input type="hidden" name="action" value="add">
         <div class="modal-body">
           <div class="row g-3">
@@ -441,6 +445,7 @@
         <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
       </div>
       <form method="POST">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <input type="hidden" name="action" value="adjust">
         <input type="hidden" name="item_id" id="adjustItemId">
         <div class="modal-body">
@@ -483,6 +488,7 @@
         <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
       </div>
       <form method="POST">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <input type="hidden" name="action" value="edit">
         <input type="hidden" name="item_id" id="editItemId">
         <div class="modal-body">
@@ -549,6 +555,7 @@
         <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
       </div>
       <form method="POST">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <input type="hidden" name="action" value="add_special">
         <div class="modal-body">
           <div class="mb-3">
@@ -582,6 +589,7 @@
         <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
       </div>
       <form method="POST">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <input type="hidden" name="action" value="edit_special">
         <input type="hidden" name="special_id" id="editSpecialId">
         <div class="modal-body">

@@ -49,6 +49,7 @@
           <td class="text-muted small">{{ r.created_at.strftime('%b %d, %Y %H:%M') }}</td>
           <td style="min-width:220px;">
             <form method="POST" action="{{ url_for('material_final_action') }}">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
               <input type="hidden" name="req_id" value="{{ r.id }}">
               <textarea name="remarks" class="form-control form-control-sm mb-1"
                         rows="1" placeholder="Remarks (optional)"

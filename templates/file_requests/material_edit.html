@@ -11,6 +11,7 @@
         Status: <span class="badge bg-warning text-dark">{{ items[0].status }}</span>
       </div>
       <form method="POST">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <div class="mb-3">
           <label class="form-label small fw-semibold">Items</label>
           {% for item in items %}

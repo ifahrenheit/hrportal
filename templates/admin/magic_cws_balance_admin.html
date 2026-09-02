@@ -10,6 +10,7 @@
     </h5>
     <form method="POST" action="/admin/magic-cws-balance/prepopulate"
           onsubmit="return confirm('Pre-populate from OrangeHRM Magic Leave? Existing rows will be skipped.')">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <button class="btn btn-sm btn-outline-secondary">
         <i class="bi bi-cloud-download me-1"></i>Pre-populate from OrangeHRM
       </button>
@@ -27,6 +28,7 @@
         Tab-separated also works (paste directly from Excel).
       </p>
       <form method="POST" action="/admin/magic-cws-balance/bulk-add">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <div class="row g-3">
           <div class="col-md-6">
             <textarea name="bulk_data" class="form-control font-monospace" rows="6"
@@ -144,6 +146,7 @@
         <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
       </div>
       <form method="POST" action="/admin/magic-cws-balance/edit">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <div class="modal-body">
           <input type="hidden" name="emp_number" id="editEmpNumber">
           <input type="hidden" name="employee_id" id="editEmployeeId">

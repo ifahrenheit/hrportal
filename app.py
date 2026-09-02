@@ -5341,6 +5341,9 @@ def admin_inventory():
     try:
         with cdb.cursor() as c:
             if request.method == 'POST':
+                if not validate_csrf():
+                    flash('Security check failed, please try again.', 'danger')
+                    return redirect(url_for('admin_inventory'))
                 action = request.form.get('action')
 
                 if action == 'add':
@@ -5991,6 +5994,9 @@ def material_edit(group_id):
             flash(f'This request cannot be edited at status: {items[0]["status"]}.', 'warning')
             return redirect(url_for('file_material'))
         if request.method == 'POST':
+            if not validate_csrf():
+                flash('Security check failed, please try again.', 'danger')
+                return redirect(url_for('material_edit', group_id=group_id))
             item_ids    = request.form.getlist('item_id[]')
             item_names  = request.form.getlist('item_name[]')
             quantities  = request.form.getlist('quantity[]')
@@ -6070,6 +6076,9 @@ def file_material():
     try:
         with cdb.cursor() as c:
             if request.method == "POST":
+                if not validate_csrf():
+                    flash('Security check failed, please try again.', 'danger')
+                    return redirect(url_for('file_material'))
                 categories_list = request.form.getlist("category[]")
                 item_names_list = request.form.getlist("item_name[]")
                 quantities_list = request.form.getlist("quantity[]")
@@ -6240,6 +6249,9 @@ def material_som_action():
     if not (session.get('is_supervisor') or session.get('is_admin') or session.get('permissions', {}).get('can_material_requests')):
         flash('Access denied.', 'danger')
         return redirect(url_for('dashboard'))
+    if not validate_csrf():
+        flash('Security check failed, please try again.', 'danger')
+        return redirect(url_for('dashboard'))
 
     req_id   = int(request.form.get('req_id'))
     action   = request.form.get('action')
@@ -6356,6 +6368,9 @@ def material_final_action():
     if not (session['user']['email'].lower() == MATERIAL_FINAL_EMAIL.lower() or session.get('is_admin') or session.get('permissions', {}).get('can_final_approval')):
         flash('Access denied.', 'danger')
         return redirect(url_for('dashboard'))
+    if not validate_csrf():
+        flash('Security check failed, please try again.', 'danger')
+        return redirect(url_for('dashboard'))
 
     req_id  = int(request.form.get('req_id'))
     action  = request.form.get('action')
@@ -6404,6 +6419,9 @@ def material_final_action():
 def material_release_action():
     if not (session.get('is_admin') or session.get('permissions', {}).get('can_material_requests')):
         flash('Access denied.', 'danger')
+        return redirect(url_for('dashboard'))
+    if not validate_csrf():
+        flash('Security check failed, please try again.', 'danger')
         return redirect(url_for('dashboard'))
 
     req_id        = int(request.form.get('req_id'))
@@ -6486,6 +6504,9 @@ def material_release_action():
 def material_mark_payment(req_id):
     if not (session.get('is_admin') or session.get('permissions', {}).get('can_material_requests')):
         flash('Access denied.', 'danger')
+        return redirect(url_for('dashboard'))
+    if not validate_csrf():
+        flash('Security check failed, please try again.', 'danger')
         return redirect(url_for('dashboard'))
     cdb = get_central_db()
     try:
@@ -6584,6 +6605,9 @@ def facilities_review():
 def facilities_review_action():
     if not (session.get('is_admin') or session.get('permissions', {}).get('can_facilities_review')):
         flash('Access denied.', 'danger')
+        return redirect(url_for('dashboard'))
+    if not validate_csrf():
+        flash('Security check failed, please try again.', 'danger')
         return redirect(url_for('dashboard'))
     req_id   = int(request.form.get('req_id'))
     remarks  = request.form.get('reviewer_remarks', '').strip()
@@ -6686,6 +6710,9 @@ def facilities_final_action():
     if not (session.get('is_admin') or session.get('permissions', {}).get('can_facilities_final')):
         flash('Access denied.', 'danger')
         return redirect(url_for('dashboard'))
+    if not validate_csrf():
+        flash('Security check failed, please try again.', 'danger')
+        return redirect(url_for('dashboard'))
     req_id = int(request.form.get('req_id'))
     action = request.form.get('action')
     cdb = get_central_db()
@@ -6733,6 +6760,9 @@ def facilities_final_action():
 def facilities_work_action():
     if not (session.get('is_admin') or session.get('permissions', {}).get('can_facilities_review')):
         flash('Access denied.', 'danger')
+        return redirect(url_for('dashboard'))
+    if not validate_csrf():
+        flash('Security check failed, please try again.', 'danger')
         return redirect(url_for('dashboard'))
     req_id       = int(request.form.get('req_id'))
     work_performed  = request.form.get('work_performed', '').strip()
@@ -7061,6 +7091,9 @@ def send_facilities_email(to, subject, body_html):
 @login_required
 def facilities_request():
     if request.method == 'POST':
+        if not validate_csrf():
+            flash('Security check failed, please try again.', 'danger')
+            return redirect(url_for('facilities_request'))
         dept     = request.form.get('department_location', '').strip()
         last_mnt = request.form.get('last_maintenance', '').strip()
         issue    = request.form.get('issue_description', '').strip()
@@ -7356,6 +7389,9 @@ def material_admin_action():
     if not (session.get('is_admin') or session.get('permissions', {}).get('can_material_requests')):
         flash('Access denied.', 'danger')
         return redirect(url_for('dashboard'))
+    if not validate_csrf():
+        flash('Security check failed, please try again.', 'danger')
+        return redirect(url_for('dashboard'))
     req_id             = int(request.form.get('req_id'))
     admin_remark       = request.form.get('admin_remarks', '').strip()
     action             = request.form.get('action')
@@ -7411,6 +7447,9 @@ def material_admin_action():
 @app.route('/file-requests/cancel/<req_type>/<int:req_id>', methods=['POST'])
 @login_required
 def cancel_file_request(req_type, req_id):
+    if not validate_csrf():
+        flash('Security check failed, please try again.', 'danger')
+        return redirect(request.referrer or url_for('dashboard'))
     employee_id = session['user'].get('employee_id', '')
     is_admin    = session.get('is_admin', False)
 
@@ -10609,6 +10648,9 @@ def magic_cws_form():
     balance   = _init_magic_cws_balance(conn, emp_number, employee_id)
 
     if request.method == "POST":
+        if not validate_csrf():
+            flash('Security check failed, please try again.', 'danger')
+            return redirect(url_for('magic_cws_form'))
         orig_shift = request.form.get("original_shift", "").strip()
         new_shift  = request.form.get("new_shift", "").strip()
         orig_date  = request.form.get("original_date", "").strip()
@@ -10695,6 +10737,9 @@ def _send_magic_cws_email(employee_name, employee_id,
 @app.route("/file-requests/magic-cws/action", methods=["POST"])
 @login_required
 def magic_cws_action():
+    if not validate_csrf():
+        flash('Security check failed, please try again.', 'danger')
+        return redirect(request.form.get('next') or url_for('dashboard'))
     action        = request.form.get("action")
     req_id        = request.form.get("req_id")
     delete_reason = request.form.get("delete_reason", "")
@@ -10800,6 +10845,9 @@ def magic_cws_bulk_add():
     if not session.get("is_admin"):
         flash("Access denied.", "danger")
         return redirect(url_for("magic_cws_balance_admin"))
+    if not validate_csrf():
+        flash('Security check failed, please try again.', 'danger')
+        return redirect(url_for("magic_cws_balance_admin"))
 
     raw      = request.form.get("bulk_data", "").strip()
     reason   = request.form.get("reason", "").strip()
@@ -10873,6 +10921,9 @@ def magic_cws_prepopulate():
     if not session.get("is_admin"):
         flash("Access denied.", "danger")
         return redirect(url_for("magic_cws_balance_admin"))
+    if not validate_csrf():
+        flash('Security check failed, please try again.', 'danger')
+        return redirect(url_for("magic_cws_balance_admin"))
 
     conn = get_central_db()
     c    = conn.cursor()
@@ -10900,6 +10951,9 @@ def magic_cws_prepopulate():
 def magic_cws_balance_edit():
     if not session.get("is_admin"):
         flash("Access denied.", "danger")
+        return redirect(url_for("magic_cws_balance_admin"))
+    if not validate_csrf():
+        flash('Security check failed, please try again.', 'danger')
         return redirect(url_for("magic_cws_balance_admin"))
 
     emp_number  = request.form.get("emp_number")

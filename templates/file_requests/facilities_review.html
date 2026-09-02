@@ -101,6 +101,7 @@
         <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
       </div>
       <form method="POST" action="{{ url_for('facilities_review_action') }}" enctype="multipart/form-data">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <div class="modal-body">
           <input type="hidden" name="req_id" id="reviewReqId">
           <p class="small text-muted mb-3">Employee: <strong id="reviewEmpName"></strong></p>
@@ -194,6 +195,7 @@
         <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
       </div>
       <form method="POST" action="{{ url_for('facilities_work_action') }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <div class="modal-body">
           <input type="hidden" name="req_id" id="workReqId">
           <p class="small text-muted mb-3">Employee: <strong id="workEmpName"></strong></p>

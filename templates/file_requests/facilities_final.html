@@ -73,6 +73,7 @@
             {% if r.status == 'Pending Final Approval' %}
             <div class="d-flex gap-1">
               <form method="POST" action="{{ url_for('facilities_final_action') }}" style="display:contents;">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <input type="hidden" name="req_id" value="{{ r.id }}">
                 <input type="hidden" name="action" value="approve">
                 <button type="submit" class="btn btn-sm btn-success flex-fill">
@@ -80,6 +81,7 @@
                 </button>
               </form>
               <form method="POST" action="{{ url_for('facilities_final_action') }}" style="display:contents;">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <input type="hidden" name="req_id" value="{{ r.id }}">
                 <input type="hidden" name="action" value="reject">
                 <button type="submit" class="btn btn-sm btn-danger"

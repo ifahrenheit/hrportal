@@ -109,6 +109,7 @@
                 <i class="bi bi-cart me-1"></i>Purchase
               </button>
               <form method="POST" action="{{ url_for('material_admin_action') }}" style="display:inline;">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <input type="hidden" name="req_id" value="{{ r.id }}">
                 <input type="hidden" name="action" value="reject">
                 <input type="hidden" name="_filter" value="{{ status_filter }}">
@@ -130,6 +131,7 @@
                   <i class="bi bi-file-earmark-pdf text-danger"></i>
                 </a>
                 <form method="POST" action="{{ url_for('material_admin_action') }}" style="display:inline;">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                   <input type="hidden" name="req_id" value="{{ r.id }}">
                   <input type="hidden" name="action" value="reject">
                   <input type="hidden" name="admin_remarks" value="">
@@ -154,6 +156,7 @@
                   <i class="bi bi-file-earmark-pdf text-danger"></i>
                 </a>
                 <form method="POST" action="{{ url_for('material_admin_action') }}" style="display:inline;">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                   <input type="hidden" name="req_id" value="{{ r.id }}">
                   <input type="hidden" name="action" value="reject">
                   <input type="hidden" name="admin_remarks" value="">
@@ -183,6 +186,7 @@
                   <span class="badge bg-success mb-1">💰 Payment Collected</span><br>
                 {% else %}
                   <form method="POST" action="{{ url_for('material_mark_payment', req_id=r.id) }}" class="mb-1">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                     <button class="btn btn-sm btn-warning" onclick="return confirm('Mark payment as collected?')">
                       <i class="bi bi-cash me-1"></i>Mark Paid
                     </button>
@@ -255,6 +259,7 @@
         <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
       </div>
       <form method="POST" action="{{ url_for('material_admin_action') }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <div class="modal-body">
           <input type="hidden" name="req_id" id="stockReqId">
           <input type="hidden" name="action" value="process">
@@ -280,6 +285,7 @@
         <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
       </div>
       <form method="POST" action="{{ url_for('material_admin_action') }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <div class="modal-body">
           <input type="hidden" name="req_id" id="purchaseReqId">
           <input type="hidden" name="action" value="process">
@@ -365,6 +371,7 @@ function calcTotal() {
         <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
       </div>
       <form method="POST" action="{{ url_for('material_release_action') }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <div class="modal-body">
           <input type="hidden" name="req_id" id="releaseReqId">
           <input type="hidden" name="_filter" id="releaseFilter" value="{{ status_filter }}">
