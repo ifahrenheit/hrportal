@@ -257,7 +257,7 @@ def file_incident_report(cur, employee_id, agent_name, incident_date, summary):
     print(f"[overbreak_notify] Filed IR '{report_number}' for {employee_name} ({employee_id})")
     # Send IR notification email (same as manual filing)
     try:
-        from ir_autofile import _send_ir_notification
+        from helpers.ir_autofile import _send_ir_notification
         _send_ir_notification(cur, report_number, incident_date, employee_id,
                               employee_name, summary, "[overbreak_notify]")
     except Exception as e:

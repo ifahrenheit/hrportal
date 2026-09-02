@@ -25,7 +25,7 @@ from db_core import get_db_connection
 
 # Reuse the admin tardiness engine + payroll helpers verbatim.
 from modules.tardiness import get_late_records_for_range
-from payroll_period import (
+from helpers.payroll_period import (
     get_previous_period,
     get_next_period,
     get_default_payroll_period,

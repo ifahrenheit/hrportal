@@ -731,7 +731,7 @@ def overbreak_review_action():
     if not validate_csrf():
         return jsonify(success=False, error='Security check failed, please try again.'), 403
     from app import get_central_db
-    from ir_autofile import file_incident_report
+    from helpers.ir_autofile import file_incident_report
 
     data = request.get_json(silent=True) or {}
     employee_id = (data.get('employee_id') or '').strip()

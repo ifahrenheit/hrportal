@@ -2354,7 +2354,7 @@ def admin_ot_tickets():
 @permission_required('can_ot_hours')
 def admin_ot_hours():
     from datetime import timedelta as _ot_td, datetime as _ot_dt
-    from payroll_period import get_default_payroll_period
+    from helpers.payroll_period import get_default_payroll_period
 
     _default_start, _default_end = get_default_payroll_period()
     date_from = request.args.get('date_from', _default_start.strftime('%Y-%m-%d'))
@@ -9258,7 +9258,7 @@ def admin_overbreak():
 
     view = request.args.get('view', 'records')
     if view == 'triggers':
-        from payroll_period import get_default_payroll_period
+        from helpers.payroll_period import get_default_payroll_period
         default_period_start, default_period_end = get_default_payroll_period()
         date_from_str = request.args.get('date_from', '').strip()
         date_to_str = request.args.get('date_to', '').strip()
@@ -9383,7 +9383,7 @@ def admin_overbreak():
         # Default to the current payroll period rather than showing every
         # record ever, so Records and Triggers open on the same range and the
         # period arrows have a defined starting point.
-        from payroll_period import get_default_payroll_period
+        from helpers.payroll_period import get_default_payroll_period
         _rec_default_start, _rec_default_end = get_default_payroll_period()
         date_from = request.args.get('date_from', '').strip() or _rec_default_start.isoformat()
         date_to = request.args.get('date_to', '').strip() or _rec_default_end.isoformat()
@@ -10426,7 +10426,7 @@ def admin_absences():
         return redirect(url_for('dashboard'))
 
     from datetime import date, timedelta, datetime as dt
-    from payroll_period import get_default_payroll_period
+    from helpers.payroll_period import get_default_payroll_period
 
     default_period_start, default_period_end = get_default_payroll_period()
 

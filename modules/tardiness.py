@@ -21,7 +21,7 @@ from datetime import datetime, date, timedelta
 
 from flask import Blueprint, render_template, request, session, redirect, url_for, flash
 from db_core import get_db_connection
-from orangehrm_db import get_orangehrm_connection
+from helpers.orangehrm_db import get_orangehrm_connection
 
 tardiness_bp = Blueprint("tardiness", __name__, url_prefix="/tardiness")
 
@@ -385,7 +385,7 @@ _STATUS_ORDER = {"LATE": 0, "INVALID_SCHEDULE": 1, "ABSENT": 2, "ON_TIME": 3}
 # tardiness_notify.py cron script). Imported here for backward compatibility
 # with the rest of this file's code, which calls these names directly.
 # ---------------------------------------------------------------------------
-from payroll_period import (
+from helpers.payroll_period import (
     get_payroll_period_for_date,
     get_previous_period,
     get_next_period,
