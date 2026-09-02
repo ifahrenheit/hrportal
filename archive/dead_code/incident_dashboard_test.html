@@ -1,0 +1,407 @@
+{% extends 'base.html' %}
+{% block title %}Incident Reports{% endblock %}
+
+{% block content %}
+<style>
+  .ir-page-header { display:flex; justify-content:space-between; align-items:center; margin-bottom:24px; }
+  .ir-page-title  { font-family:'Outfit',sans-serif; font-size:22px; font-weight:700; color:var(--text); display:flex; align-items:center; gap:10px; }
+  .ir-page-title i { color:var(--accent); font-size:24px; }
+
+  /* Stats */
+  .ir-stat-grid { display:grid; grid-template-columns:repeat(7,1fr); gap:10px; margin-bottom:24px; }
+  @media(max-width:1200px){ .ir-stat-grid{ grid-template-columns:repeat(4,1fr); } }
+  @media(max-width:576px) { .ir-stat-grid{ grid-template-columns:repeat(2,1fr); } }
+  .ir-stat { background:var(--surface); border-radius:12px; padding:14px 10px; text-align:center;
+              box-shadow:var(--card-shadow); border-top:3px solid var(--border); transition:transform .2s; cursor:pointer; }
+  .ir-stat:hover { transform:translateY(-3px); }
+  .ir-stat-num { font-family:'Outfit',sans-serif; font-size:26px; font-weight:700; margin:4px 0 2px; }
+  .ir-stat-lbl { font-size:10px; text-transform:uppercase; letter-spacing:.5px; color:var(--text-muted); }
+
+  /* Filter */
+  .ir-filter-card { background:var(--surface); border-radius:12px; padding:14px 18px; margin-bottom:18px;
+                    box-shadow:var(--card-shadow); border-left:3px solid var(--accent); }
+  .ir-filter-card .form-control, .ir-filter-card .form-select {
+    background:var(--input-bg); border-color:var(--border); color:var(--text); font-size:13px; }
+  .ir-filter-card label { font-size:11px; font-weight:600; color:var(--text-muted); text-transform:uppercase; letter-spacing:.4px; }
+
+  /* Tabs */
+  .ir-tabs { border-bottom:2px solid var(--border); margin-bottom:18px; display:flex; align-items:center; gap:4px; }
+  .ir-tabs .nav-link { color:var(--text-muted); font-weight:600; font-size:13px; border:none; padding:10px 16px; border-radius:0; }
+  .ir-tabs .nav-link.active { color:var(--accent); border-bottom:2px solid var(--accent); background:none; margin-bottom:-2px; }
+  .ir-tabs .nav-link:hover { color:var(--accent); }
+  .ir-tabs .rwe-tab { color:#ef4444 !important; }
+  .ir-tabs .rwe-tab.active { border-bottom-color:#ef4444 !important; }
+  .rwe-count { background:#ef4444; color:white; border-radius:10px; padding:1px 7px;
+               font-size:10px; font-weight:700; margin-left:4px; }
+
+  /* Cards */
+  .ir-card { background:var(--surface); border-radius:12px; padding:16px 20px; margin-bottom:10px;
+             box-shadow:var(--card-shadow); border-left:3px solid var(--border); transition:all .2s; }
+  .ir-card:hover { border-left-color:var(--accent); transform:translateY(-1px); box-shadow:0 4px 18px rgba(30,95,212,.12); }
+  .ir-card.rwe { border-left-color:#ef4444; }
+  .ir-card.rwe:hover { border-left-color:#dc2626; }
+  .ir-card-num  { font-family:'Outfit',sans-serif; font-weight:700; color:var(--accent); font-size:15px; }
+  .ir-card-meta { color:var(--text-muted); font-size:12px; margin-top:3px; }
+  .ir-card-sum  { color:var(--text); font-size:13px; margin:8px 0 4px;
+                  display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
+
+  /* Badges */
+  .ir-badge { display:inline-block; padding:3px 10px; border-radius:20px;
+              font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.4px; white-space:nowrap; }
+  .ir-badge-pending     { background:#fef3c7; color:#92400e; }
+  .ir-badge-reviewed    { background:#dbeafe; color:#1e40af; }
+  .ir-badge-resolved    { background:#d1fae5; color:#065f46; }
+  .ir-badge-pending_hr  { background:#f3e8ff; color:#6b21a8; }
+  .ir-badge-resolved_hr { background:#f3f4f6; color:#374151; }
+  .ir-badge-rwe_request { background:#fee2e2; color:#991b1b; font-weight:800; }
+  .ir-badge-rwe_served  { background:#d1fae5; color:#065f46; }
+
+  /* Table */
+  .ir-table-wrap { background:var(--surface); border-radius:12px; padding:16px; box-shadow:var(--card-shadow); overflow-x:auto; }
+  .ir-table thead th { background:var(--accent); color:#fff; border:none; font-size:11px;
+                       text-transform:uppercase; letter-spacing:.5px; padding:10px 12px; white-space:nowrap; }
+  .ir-table tbody td { padding:11px 12px; font-size:13px; border-bottom:1px solid var(--border); color:var(--text); }
+  .ir-table tbody tr:hover { background:var(--bg); }
+  .ir-table tbody tr:last-child td { border-bottom:none; }
+
+  /* HR Queue card */
+  .rwe-card { background:var(--surface); border-radius:12px; padding:18px 20px; margin-bottom:12px;
+              box-shadow:var(--card-shadow); border-left:4px solid #ef4444; }
+  .rwe-card-header { display:flex; justify-content:space-between; align-items:flex-start; gap:12px; }
+  .rwe-meta { font-size:12px; color:var(--text-muted); margin-top:4px; }
+  .rwe-summary { font-size:13px; color:var(--text); margin:10px 0 6px;
+                 display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
+  .rwe-since { font-size:11px; color:#ef4444; font-weight:600; margin-top:6px; }
+  .rwe-actions { display:flex; flex-direction:column; gap:6px; flex-shrink:0; min-width:130px; }
+
+  /* Buttons */
+  .btn-ir { background:var(--accent); color:#fff; border:none; padding:7px 16px; border-radius:8px;
+             font-weight:600; font-size:13px; transition:opacity .2s; display:inline-flex; align-items:center; gap:6px; }
+  .btn-ir:hover { opacity:.88; color:#fff; }
+  .btn-ir-sm { background:var(--accent); color:#fff; border:none; padding:4px 12px; border-radius:6px;
+               font-size:12px; font-weight:600; display:inline-flex; align-items:center; gap:4px; }
+  .btn-ir-sm:hover { opacity:.85; color:#fff; }
+  .btn-ir-danger { background:#ef4444; color:#fff; border:none; padding:6px 14px; border-radius:8px;
+                   font-weight:600; font-size:12px; display:inline-flex; align-items:center; gap:5px; }
+  .btn-ir-danger:hover { background:#dc2626; color:#fff; }
+  .btn-ir-success { background:#10b981; color:#fff; border:none; padding:6px 14px; border-radius:8px;
+                    font-weight:600; font-size:12px; display:inline-flex; align-items:center; gap:5px; }
+  .btn-ir-success:hover { background:#059669; color:#fff; }
+  .empty-state { text-align:center; padding:48px 20px; color:var(--text-muted); }
+  .empty-state i { font-size:48px; opacity:.3; display:block; margin-bottom:12px; }
+
+  /* RWE served empty */
+  .rwe-empty { background:var(--surface); border-radius:12px; padding:36px; text-align:center;
+               box-shadow:var(--card-shadow); color:var(--text-muted); }
+  .rwe-empty i { font-size:40px; color:#10b981; opacity:.5; display:block; margin-bottom:10px; }
+</style>
+
+<div class="ir-page-header">
+  <div class="ir-page-title">
+    <i class="bi bi-clipboard2-pulse"></i> Incident Reports
+  </div>
+  <a href="{{ url_for('incident_reports.new_report') }}" class="btn-ir">
+    <i class="bi bi-plus-lg"></i> New Report
+  </a>
+</div>
+
+{# Stats #}
+{% set rwe_req_count = stats.rwe_request or 0 %}
+{% set stat_items = [
+  ('Total',      stats.total,       '#1e5fd4','bi-clipboard2'),
+  ('Pending',    stats.pending,     '#d97706','bi-hourglass-split'),
+  ('Reviewed',   stats.reviewed,    '#1e5fd4','bi-eye'),
+  ('Resolved',   stats.resolved,    '#10b981','bi-check-circle'),
+  ('RWE Queue',  stats.rwe_request, '#ef4444','bi-person-exclamation'),
+  ('RWE Served', stats.rwe_served,  '#10b981','bi-person-check'),
+  ('Resolved HR',stats.resolved_hr, '#6b7280','bi-archive'),
+] %}
+<div class="ir-stat-grid">
+  {% for label,val,color,icon in stat_items %}
+  <div class="ir-stat" style="border-top-color:{{ color }};"
+       onclick="filterByClick('{{ label }}')">
+    <i class="bi {{ icon }}" style="color:{{ color }};font-size:16px;"></i>
+    <div class="ir-stat-num" style="color:{{ color }};">{{ val or 0 }}</div>
+    <div class="ir-stat-lbl">{{ label }}</div>
+  </div>
+  {% endfor %}
+</div>
+
+{# Filters #}
+<div class="ir-filter-card">
+  <form method="GET" class="row g-2 align-items-end">
+    <div class="col-6 col-md-2">
+      <label>Status</label>
+      <select name="status" class="form-select form-select-sm">
+        {% for v,l in [
+          ('all','All Status'),('pending','Pending'),('reviewed','Reviewed'),
+          ('resolved','Resolved'),('rwe_request','🔴 RWE Queue'),
+          ('rwe_served','RWE Served'),('pending_hr','Pending HR'),('resolved_hr','Resolved HR')
+        ] %}
+        <option value="{{ v }}" {{ 'selected' if status_filter==v }}>{{ l }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="col-6 col-md-2">
+      <label>Sort By</label>
+      <select name="sort" class="form-select form-select-sm">
+        <option value="updated"  {{ 'selected' if sort_by=='updated'  }}>Last Updated</option>
+        <option value="incident" {{ 'selected' if sort_by=='incident' }}>Incident Date</option>
+        <option value="created"  {{ 'selected' if sort_by=='created'  }}>Date Created</option>
+      </select>
+    </div>
+    <div class="col-12 col-md-3">
+      <label>Search</label>
+      <input type="text" name="search" class="form-control form-control-sm"
+             placeholder="Report #, agent…" value="{{ search }}">
+    </div>
+    <div class="col-6 col-md-2">
+      <label>From</label>
+      <input type="date" name="start_date" class="form-control form-control-sm" value="{{ start_date }}">
+    </div>
+    <div class="col-6 col-md-2">
+      <label>To</label>
+      <input type="date" name="end_date" class="form-control form-control-sm" value="{{ end_date }}">
+    </div>
+    <div class="col-12 col-md-1">
+      <button type="submit" class="btn-ir w-100" style="padding:6px 0;justify-content:center;">
+        <i class="bi bi-funnel"></i>
+      </button>
+    </div>
+  </form>
+</div>
+
+{# Tabs #}
+<ul class="nav ir-tabs">
+  <li class="nav-item">
+    <button class="nav-link active" data-bs-toggle="tab" data-bs-target="#cards-view">
+      <i class="bi bi-grid-3x3-gap me-1"></i>Cards
+    </button>
+  </li>
+  <li class="nav-item">
+    <button class="nav-link" data-bs-toggle="tab" data-bs-target="#table-view">
+      <i class="bi bi-table me-1"></i>Table
+    </button>
+  </li>
+  {% if user.is_admin or user.is_hr or user.is_sga %}
+  <li class="nav-item">
+    <button class="nav-link rwe-tab" data-bs-toggle="tab" data-bs-target="#rwe-queue">
+      <i class="bi bi-person-exclamation me-1"></i>RWE Queue
+      {% if rwe_req_count > 0 %}
+      <span class="rwe-count">{{ rwe_req_count }}</span>
+      {% endif %}
+    </button>
+  </li>
+  {% endif %}
+</ul>
+
+<div class="tab-content">
+
+  {# Cards #}
+  <div class="tab-pane fade show active" id="cards-view">
+    {% if not reports %}
+    <div class="empty-state"><i class="bi bi-clipboard2-x"></i>No incident reports found.</div>
+    {% else %}
+    {% for r in reports %}
+    {% set is_rwe = r.status == 'rwe_request' %}
+    <div class="ir-card {{ 'rwe' if is_rwe }}">
+      <div class="d-flex justify-content-between align-items-start gap-3">
+        <div class="flex-grow-1 min-w-0">
+          <div class="d-flex align-items-center gap-2 flex-wrap mb-1">
+            <span class="ir-card-num">{{ r.report_number }}</span>
+            <span class="ir-badge ir-badge-{{ r.status }}">
+              {{ {'rwe_request':'🔴 RWE Queue','rwe_served':'✅ RWE Served',
+                  'pending':'Pending','reviewed':'Reviewed','resolved':'Resolved',
+                  'pending_hr':'Pending HR','resolved_hr':'Resolved HR'}.get(r.status, r.status.upper()) }}
+            </span>
+          </div>
+          <div class="ir-card-meta">
+            <i class="bi bi-calendar3 me-1"></i>
+            {{ r.incident_date.strftime('%b %d, %Y') if r.incident_date else '—' }}
+            &nbsp;·&nbsp;<i class="bi bi-person me-1"></i>{{ r.employee_name }}
+          </div>
+          <div class="ir-card-sum">{{ r.summary }}</div>
+          <div style="font-size:11px;color:var(--text-muted);">
+            Filed by {{ r.submitted_by_name or 'N/A' }}
+            · {{ r.created_at.strftime('%b %d, %Y %I:%M %p') if r.created_at else '' }}
+          </div>
+        </div>
+        <a href="{{ url_for('incident_reports.view_report', report_number=r.report_number) }}"
+           class="btn-ir-sm" style="flex-shrink:0;">
+          <i class="bi bi-eye"></i>View
+        </a>
+      </div>
+    </div>
+    {% endfor %}
+    {% endif %}
+  </div>
+
+  {# Table #}
+  <div class="tab-pane fade" id="table-view">
+    {% if not reports %}
+    <div class="empty-state"><i class="bi bi-table"></i>No reports found.</div>
+    {% else %}
+    <div class="mb-2 d-flex align-items-center gap-2">
+      <button class="btn-ir-sm" onclick="copyTable()">
+        <i class="bi bi-clipboard"></i>Copy
+      </button>
+      <span id="copyMsg" style="font-size:12px;color:var(--success);display:none;">
+        <i class="bi bi-check-lg"></i> Copied!
+      </span>
+    </div>
+    <div class="ir-table-wrap">
+      <table class="table ir-table mb-0" id="irTable">
+        <thead><tr>
+          <th>Date</th><th>Agent</th><th>Summary</th>
+          <th>Filed By</th><th>Status</th><th>IR #</th>
+        </tr></thead>
+        <tbody>
+        {% for r in reports %}
+        <tr>
+          <td style="white-space:nowrap;">{{ r.incident_date }}</td>
+          <td>{{ r.employee_name }}</td>
+          <td style="max-width:300px;">{{ r.summary }}</td>
+          <td>{{ r.submitted_by_name or 'N/A' }}</td>
+          <td>
+            <span class="ir-badge ir-badge-{{ r.status }}">
+              {{ {'rwe_request':'RWE Queue','rwe_served':'RWE Served'}.get(r.status, r.status.replace('_',' ').upper()) }}
+            </span>
+          </td>
+          <td>
+            <a href="{{ url_for('incident_reports.view_report', report_number=r.report_number) }}"
+               style="color:var(--accent);font-weight:600;font-size:12px;text-decoration:none;">
+              {{ r.report_number }}
+            </a>
+          </td>
+        </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% endif %}
+  </div>
+
+  {# HR / RWE Queue Tab #}
+  {% if user.is_admin or user.is_hr or user.is_sga %}
+  <div class="tab-pane fade" id="rwe-queue">
+
+    {# Alert banner #}
+    {% if rwe_req_count > 0 %}
+    <div style="background:#fee2e2;border:1px solid #fca5a5;border-radius:10px;padding:12px 16px;
+                margin-bottom:16px;display:flex;align-items:center;gap:10px;color:#991b1b;">
+      <i class="bi bi-exclamation-triangle-fill" style="font-size:18px;"></i>
+      <span style="font-weight:600;">{{ rwe_req_count }} report{{ 's' if rwe_req_count != 1 }} awaiting RWE action</span>
+    </div>
+    {% endif %}
+
+    {% if not rwe_reports %}
+    <div class="rwe-empty">
+      <i class="bi bi-check-circle-fill"></i>
+      No pending RWE requests — all clear!
+    </div>
+    {% else %}
+    {% for r in rwe_reports %}
+    <div class="rwe-card">
+      <div class="rwe-card-header">
+        <div class="flex-grow-1">
+          <div class="d-flex align-items-center gap-2 flex-wrap">
+            <span style="font-family:'Outfit',sans-serif;font-weight:700;color:var(--accent);font-size:15px;">
+              {{ r.report_number }}
+            </span>
+            <span class="ir-badge ir-badge-rwe_request">🔴 RWE Queue</span>
+          </div>
+          <div class="rwe-meta mt-1">
+            <i class="bi bi-person me-1"></i>{{ r.employee_name }}
+            &nbsp;·&nbsp;<i class="bi bi-calendar3 me-1"></i>
+            {{ r.incident_date.strftime('%b %d, %Y') if r.incident_date else '—' }}
+            &nbsp;·&nbsp;Filed by {{ r.submitted_by_name or 'N/A' }}
+          </div>
+          <div class="rwe-summary">{{ r.summary }}</div>
+          <div class="rwe-since">
+            <i class="bi bi-clock me-1"></i>
+            Requested {{ r.updated_at.strftime('%b %d, %Y %I:%M %p') if r.updated_at else '' }}
+          </div>
+        </div>
+        <div class="rwe-actions">
+          <a href="{{ url_for('incident_reports.view_report', report_number=r.report_number) }}"
+             class="btn-ir-sm" style="justify-content:center;">
+            <i class="bi bi-eye"></i>View
+          </a>
+          {% if user.is_admin or user.is_hr or user.is_sga %}
+          <button class="btn-ir-success"
+                  onclick="markRweServed('{{ r.report_number }}', this)">
+            <i class="bi bi-check-lg"></i>Mark RWE Served
+          </button>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+    {% endfor %}
+    {% endif %}
+
+  </div>
+  {% endif %}
+
+</div>
+
+<script>
+function copyTable(){
+  const t=document.getElementById('irTable');
+  let txt=[...t.querySelectorAll('thead th')].map(h=>h.textContent.trim()).join('\t')+'\n';
+  t.querySelectorAll('tbody tr').forEach(r=>{
+    txt+=[...r.querySelectorAll('td')].map(td=>td.textContent.trim().replace(/\s+/g,' ')).join('\t')+'\n';
+  });
+  navigator.clipboard.writeText(txt).then(()=>{
+    const m=document.getElementById('copyMsg');
+    m.style.display='inline';
+    setTimeout(()=>m.style.display='none',2500);
+  });
+}
+
+function filterByClick(label){
+  const map = {
+    'RWE Queue': 'rwe_request',
+    'RWE Served': 'rwe_served',
+    'Pending': 'pending',
+    'Reviewed': 'reviewed',
+    'Resolved': 'resolved',
+  };
+  const status = map[label];
+  if(status){
+    const url = new URL(window.location.href);
+    url.searchParams.set('status', status);
+    window.location.href = url.toString();
+  }
+}
+
+async function markRweServed(reportNumber, btn){
+  if(!confirm(`Mark ${reportNumber} as RWE Served?`)) return;
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span>';
+
+  try {
+    const fd = new FormData();
+    fd.append('report_number', reportNumber);
+    fd.append('comment', 'RWE has been served.');
+    fd.append('status_action', 'rwe_served');
+
+    const r = await fetch('{{ url_for("incident_reports.add_comment") }}',
+                          {method:'POST', body:fd});
+    const d = await r.json();
+    if(d.success){
+      btn.closest('.rwe-card').style.opacity = '0.5';
+      btn.innerHTML = '✅ Done';
+      setTimeout(()=>location.reload(), 800);
+    } else {
+      alert('Error: ' + d.message);
+      btn.disabled = false;
+      btn.innerHTML = '<i class="bi bi-check-lg"></i>Mark RWE Served';
+    }
+  } catch(e){
+    alert('Error: ' + e.message);
+    btn.disabled = false;
+    btn.innerHTML = '<i class="bi bi-check-lg"></i>Mark RWE Served';
+  }
+}
+</script>
+{% endblock %}
