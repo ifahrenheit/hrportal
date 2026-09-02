@@ -25,33 +25,33 @@ def nl2br_filter(s):
     return markupsafe.Markup(markupsafe.escape(s).replace('\n', markupsafe.Markup('<br>\n')))
 
 # ── Incident Reports blueprint ─────────────────────────────────────────
-from incident_reports import ir_bp
+from modules.incident_reports import ir_bp
 app.register_blueprint(ir_bp, url_prefix='/incident-reports')
 
 # Tardiness Blueprint
-from tardiness import tardiness_bp
+from modules.tardiness import tardiness_bp
 app.register_blueprint(tardiness_bp, url_prefix='/tardiness')
-from my_records import my_records_bp
+from modules.my_records import my_records_bp
 app.register_blueprint(my_records_bp)
 
 # ── Incident Reports blueprint (TEST COPY) ────────────────────────────
-from floor_map import floor_map_bp
+from modules.floor_map import floor_map_bp
 app.register_blueprint(floor_map_bp)
-from tl_view import tl_view_bp
+from modules.tl_view import tl_view_bp
 app.register_blueprint(tl_view_bp)
 
 # ── QA Updates blueprint ─────────────────────────────────────────
-from qa_updates import qa_updates_bp, qa_can_manage, qa_can_view_data
+from modules.qa_updates import qa_updates_bp, qa_can_manage, qa_can_view_data
 app.register_blueprint(qa_updates_bp)
 app.jinja_env.globals.update(qa_can_manage=qa_can_manage, qa_can_view_data=qa_can_view_data)
 
 # -- COE Blueprint --
-from coe_requests import coe_bp, coe_can_manage
+from modules.coe_requests import coe_bp, coe_can_manage
 app.register_blueprint(coe_bp)
 app.jinja_env.globals.update(coe_can_manage=coe_can_manage)
 
 # -- Overbreak Sync Blueprint --
-from sync_overbreak import sync_overbreak_bp
+from modules.sync_overbreak import sync_overbreak_bp
 app.register_blueprint(sync_overbreak_bp)
 
 # -- Memo Blueprint --
@@ -59,7 +59,7 @@ from memos import memos_bp
 app.register_blueprint(memos_bp)
 
 # CSR % Blueprint
-from csr_percentage import csr_bp
+from modules.csr_percentage import csr_bp
 app.register_blueprint(csr_bp)
 
 # FTS EMail Blueprint
@@ -67,7 +67,7 @@ from blueprints.fts_automation import fts_bp
 app.register_blueprint(fts_bp)
 
 ## Requirements Blueprint
-from requirements import requirements_bp
+from modules.requirements import requirements_bp
 app.register_blueprint(requirements_bp)
 
 #coaching Blueprint
@@ -118,7 +118,7 @@ def ir_can_view():
 
 app.config.from_object(Config)
 app.register_blueprint(break_log_bp)
-from fts_review import fts_review_bp
+from modules.fts_review import fts_review_bp
 app.register_blueprint(fts_review_bp, url_prefix='/fts-review')
 
 from werkzeug.middleware.proxy_fix import ProxyFix
@@ -14124,7 +14124,7 @@ def api_notifications():
             total += len(items)
 
     try:
-        from incident_reports import ir_user
+        from modules.incident_reports import ir_user
         iru = ir_user()
         conn = get_central_db()
         try:

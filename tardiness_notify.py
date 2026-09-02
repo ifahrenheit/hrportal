@@ -42,7 +42,7 @@ from dotenv import load_dotenv
 
 from db_core import get_db_connection
 from payroll_period import get_current_payroll_period
-from tardiness import get_tardiness_for_date
+from modules.tardiness import get_tardiness_for_date
 from ir_autofile import file_incident_report, ir_notice_html
 
 load_dotenv()

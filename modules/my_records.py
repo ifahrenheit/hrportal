@@ -24,7 +24,7 @@ from flask import (
 from db_core import get_db_connection
 
 # Reuse the admin tardiness engine + payroll helpers verbatim.
-from tardiness import get_late_records_for_range
+from modules.tardiness import get_late_records_for_range
 from payroll_period import (
     get_previous_period,
     get_next_period,
