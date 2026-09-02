@@ -8348,10 +8348,15 @@ def file_requests_approvals():
         if isinstance(obj, (_dt, _date)):
             return obj.isoformat()
         return None
-    combined_safe = _jmod.dumps(combined, default=_json_default)
+    # Round-trip through json.dumps/loads so Decimal/timedelta/date fields become
+    # plain JSON-native values, then let Jinja's | tojson escape it for the
+    # <script> block (raw json.dumps output isn't script-safe: it doesn't
+    # escape '<', '>', '&', so untrusted text fields like a CWS reason could
+    # break out of the tag).
+    combined_native = _json.loads(_jmod.dumps(combined, default=_json_default))
 
     return render_template('file_requests/approvals.html',
-                           combined_safe=combined_safe,
+                           combined_native=combined_native,
                            combined=combined,
                            fts_list=fts_list, ot_list=ot_list,
                            cws_list=cws_list, rdw_list=rdw_list,

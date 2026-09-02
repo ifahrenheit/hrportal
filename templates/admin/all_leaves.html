@@ -155,6 +155,7 @@
               {% if r.status in ['pending', 'scheduled', 'approved'] %}
               <form method="POST" action="{{ url_for('cancel_leave', leave_id=r.id) }}"
                     onsubmit="return confirm('Cancel this leave for {{ r.emp_firstname }}?');">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <button type="submit" class="btn btn-sm btn-outline-danger">Cancel</button>
               </form>
               {% endif %}
