@@ -5423,13 +5423,19 @@ def admin_inventory():
                     c.execute("SELECT current_stock FROM inventory_items WHERE id=%s", (item_id,))
                     row = c.fetchone()
                     if row:
-                        new_stock = row['current_stock'] + qty if adj_type == 'in' else max(0, row['current_stock'] - qty)
+                        if adj_type == 'in':
+                            new_stock   = row['current_stock'] + qty
+                            applied_qty = qty
+                        else:
+                            new_stock   = max(0, row['current_stock'] - qty)
+                            applied_qty = row['current_stock'] - new_stock  # actual amount removed, clamped at available stock
                         c.execute("UPDATE inventory_items SET current_stock=%s WHERE id=%s", (new_stock, item_id))
-                        c.execute("""
-                            INSERT INTO inventory_transactions
-                                (item_id, transaction_type, quantity, reference_type, notes, performed_by)
-                            VALUES (%s,%s,%s,'manual',%s,%s)
-                        """, (item_id, adj_type, qty, notes, session['user']['name']))
+                        if applied_qty > 0:
+                            c.execute("""
+                                INSERT INTO inventory_transactions
+                                    (item_id, transaction_type, quantity, reference_type, notes, performed_by)
+                                VALUES (%s,%s,%s,'manual',%s,%s)
+                            """, (item_id, adj_type, applied_qty, notes, session['user']['name']))
                         cdb.commit()
                         flash(f'Stock adjusted! New stock: {new_stock}', 'success')
 
@@ -5460,6 +5466,7 @@ def admin_inventory():
                         for row in ws.iter_rows(min_row=2, values_only=True):
                             if not row[0] or not row[1]:
                                 continue
+                            stock_qty = int(row[4]) if row[4] else 0
                             c.execute("""
                                 INSERT INTO inventory_items
                                     (category, item_name, description, unit, current_stock,
@@ -5473,7 +5480,7 @@ def admin_inventory():
                                 str(row[1]).strip(),
                                 str(row[2]).strip() if row[2] else '',
                                 str(row[3]).strip() if row[3] else 'pcs',
-                                int(row[4]) if row[4] else 0,
+                                stock_qty,
                                 int(row[5]) if row[5] else 5,
                                 int(row[6]) if row[6] else 0,
                                 int(row[7]) if row[7] else 0,
@@ -5481,6 +5488,16 @@ def admin_inventory():
                                 float(row[9]) if row[9] else None,
                                 str(row[10]).strip() if row[10] else ''
                             ))
+                            # Log a matching ledger entry (same convention as the 'add'
+                            # action above) so get_inventory_as_of() reconstructions
+                            # don't silently drift from current_stock.
+                            item_id = c.lastrowid
+                            if stock_qty > 0:
+                                c.execute("""
+                                    INSERT INTO inventory_transactions
+                                        (item_id, transaction_type, quantity, reference_type, notes, performed_by)
+                                    VALUES (%s,'in',%s,'initial','Initial stock entry (Excel import)',%s)
+                                """, (item_id, stock_qty, session['user']['name']))
                             count += 1
                         cdb.commit()
                         flash(f'Imported {count} items from Excel!', 'success')
@@ -6468,14 +6485,17 @@ def material_release_action():
                         log_note = 'Replenishment by ' + req['employee_name']
                         new_stock = inv['current_stock'] + qty
                         txn_type = 'in'
+                        applied_qty = qty
                     else:
                         log_note = 'Released to ' + req['employee_name']
                         if inv.get('sub_unit') and inv.get('sub_unit_per_unit'):
                             log_note = 'Released to ' + req['employee_name'] + ' (' + str(qty) + ' ' + inv['unit'] + ')'
                         new_stock = max(0, inv['current_stock'] - qty)
                         txn_type = 'out'
+                        applied_qty = inv['current_stock'] - new_stock  # actual amount deducted, clamped at available stock
                     c.execute('UPDATE inventory_items SET current_stock=%s WHERE id=%s', (new_stock, inv['id']))
-                    c.execute('INSERT INTO inventory_transactions (item_id, transaction_type, quantity, reference_type, reference_id, notes, performed_by) VALUES (%s,%s,%s,%s,%s,%s,%s)', (inv['id'], txn_type, qty, 'material_request', req['id'], log_note, session['user']['name']))
+                    if applied_qty > 0:
+                        c.execute('INSERT INTO inventory_transactions (item_id, transaction_type, quantity, reference_type, reference_id, notes, performed_by) VALUES (%s,%s,%s,%s,%s,%s,%s)', (inv['id'], txn_type, applied_qty, 'material_request', req['id'], log_note, session['user']['name']))
                     cdb.commit()
             # Get employee email from central_db
             with cdb.cursor() as c:
