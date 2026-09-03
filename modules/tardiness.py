@@ -17,6 +17,7 @@ Register in app.py:
 """
 
 import re
+import bisect
 from datetime import datetime, date, timedelta
 
 from flask import Blueprint, render_template, request, session, redirect, url_for, flash
@@ -393,35 +394,296 @@ from helpers.payroll_period import (
 )
 
 
+def get_employees_on_leave_for_range(date_from: date, date_to: date):
+    """
+    Bulk/ranged version of get_employees_on_leave(): one query covering the
+    whole [date_from, date_to] range instead of one query per day. Returns
+    a dict of date -> set of companyid/employee_id strings on Pending or
+    Approved leave that day, per ohrm_leave in the orangehrm2 database.
+    """
+    conn = get_orangehrm_connection()
+    cur = conn.cursor()
+    try:
+        cur.execute(
+            """
+            SELECT DISTINCT h.employee_id, ol.date AS leave_date
+            FROM ohrm_leave ol
+            JOIN hs_hr_employee h ON h.emp_number = ol.emp_number
+            WHERE ol.date BETWEEN %s AND %s
+              AND ol.status IN (1, 3)
+            """,
+            (date_from, date_to),
+        )
+        rows = cur.fetchall()
+    finally:
+        cur.close()
+        conn.close()
+
+    by_date = {}
+    for row in rows:
+        by_date.setdefault(row["leave_date"], set()).add(row["employee_id"])
+    return by_date
+
+
+def get_cws_moves_for_range(date_from: date, date_to: date):
+    """
+    Bulk/ranged version of get_cws_moves_for_date(): one query covering the
+    whole [date_from, date_to] range instead of one query per day. Returns
+    (moved_out_by_date, moved_in_by_date), both dicts keyed by date -- the
+    first maps to a set of employee_id moved OUT that date, the second to a
+    dict of employee_id -> new_time (string) for employees moved IN that
+    date. Same semantics as get_cws_moves_for_date, just batched.
+    """
+    conn = get_db_connection()
+    cur = conn.cursor()
+    try:
+        cur.execute(
+            """
+            SELECT employee_id, original_date, new_date, new_time
+            FROM cws_requests
+            WHERE status IN ('Pending', 'Approved')
+              AND (original_date BETWEEN %s AND %s OR new_date BETWEEN %s AND %s)
+            """,
+            (date_from, date_to, date_from, date_to),
+        )
+        rows = cur.fetchall()
+    finally:
+        cur.close()
+        conn.close()
+
+    moved_out_by_date = {}
+    moved_in_by_date = {}
+
+    for row in rows:
+        if date_from <= row["original_date"] <= date_to:
+            moved_out_by_date.setdefault(row["original_date"], set()).add(row["employee_id"])
+        if date_from <= row["new_date"] <= date_to:
+            moved_in_by_date.setdefault(row["new_date"], {})[row["employee_id"]] = row["new_time"]
+
+    return moved_out_by_date, moved_in_by_date
+
+
 def get_late_records_for_range(date_from: date, date_to: date):
     """
-    Loops every day in [date_from, date_to] (inclusive), pulls that day's
-    tardiness records, and keeps only the LATE ones. Each record gets a
-    'record_date' field added so the range view can show which day each
-    late instance happened on.
+    Returns every LATE tardiness record across [date_from, date_to]
+    (inclusive). Each record gets a 'record_date' field added so the range
+    view can show which day each late instance happened on.
 
-    Capped at 60 days to avoid an accidental huge range hammering the DB
-    with one query per day.
+    Same rules as get_tardiness_for_date (rest days, on-leave, CWS
+    moved-out employees are skipped; CWS moved-in employees are evaluated
+    against their new shift time; unparseable shift_time values never
+    count as LATE) -- but evaluated with a fixed, small number of ranged
+    queries (schedules, leave, CWS moves, time punches) covering the whole
+    range at once, instead of looping day-by-day and re-querying per day.
+    This is why there's no cap on how wide a range can be requested: the
+    query cost no longer scales with the number of days.
     """
     if date_to < date_from:
         date_from, date_to = date_to, date_from
 
-    max_days = 60
-    if (date_to - date_from).days > max_days:
-        date_to = date_from + timedelta(days=max_days)
+    conn = get_db_connection()
+    cur = conn.cursor()
 
-    all_late = []
-    current = date_from
-    while current <= date_to:
-        day_records = get_tardiness_for_date(current)
-        for r in day_records:
-            if r["status"] == "LATE":
-                r = dict(r)  # copy, don't mutate the original
-                r["record_date"] = current
-                all_late.append(r)
-        current += timedelta(days=1)
+    try:
+        # 1. Every schedule row for every scheduled employee across the range.
+        cur.execute(
+            """
+            SELECT
+                es.employee_id,
+                es.schedule_date,
+                es.shift_time,
+                es.is_rest_day,
+                u.personid,
+                u.fname,
+                u.lname,
+                ge.tl AS team_lead,
+                ge.group_name AS department,
+                ge.batch AS batch,
+                ge.account AS account,
+                ge.email AS email
+            FROM employee_schedules es
+            JOIN userdata u ON u.companyid = es.employee_id
+            LEFT JOIN gsheet_employees ge ON ge.employee_id = es.employee_id
+            WHERE es.schedule_date BETWEEN %s AND %s
+              AND u.active = 1
+            ORDER BY es.schedule_date, u.lname, u.fname
+            """,
+            (date_from, date_to),
+        )
+        schedule_rows = cur.fetchall()
 
-    return all_late
+        schedules_by_date = {}
+        for row in schedule_rows:
+            schedules_by_date.setdefault(row["schedule_date"], {})[row["employee_id"]] = row
+
+        # 2. Leave and CWS overrides, bulk-fetched for the whole range.
+        leave_by_date = get_employees_on_leave_for_range(date_from, date_to)
+        moved_out_by_date, moved_in_by_date = get_cws_moves_for_range(date_from, date_to)
+
+        # 3. Apply CWS "moved in" overrides per date, synthesizing a schedule
+        #    row (via one bulk userdata/gsheet_employees lookup) for anyone
+        #    moved in who has no employee_schedules row for that date at all
+        #    -- same as get_tardiness_for_date does per-day.
+        missing_employee_ids = set()
+        for d, moved_in in moved_in_by_date.items():
+            day_schedules = schedules_by_date.get(d, {})
+            for employee_id in moved_in:
+                if employee_id not in day_schedules:
+                    missing_employee_ids.add(employee_id)
+
+        synth_lookup = {}
+        if missing_employee_ids:
+            placeholders = ", ".join(["%s"] * len(missing_employee_ids))
+            cur.execute(
+                f"""
+                SELECT
+                    u.companyid AS employee_id,
+                    u.personid,
+                    u.fname,
+                    u.lname,
+                    ge.tl AS team_lead,
+                    ge.group_name AS department,
+                    ge.batch AS batch,
+                    ge.account AS account,
+                    ge.email AS email
+                FROM userdata u
+                LEFT JOIN gsheet_employees ge ON ge.employee_id = u.companyid
+                WHERE u.companyid IN ({placeholders}) AND u.active = 1
+                """,
+                tuple(missing_employee_ids),
+            )
+            for row in cur.fetchall():
+                synth_lookup[row["employee_id"]] = row
+
+        for d, moved_in in moved_in_by_date.items():
+            day_schedules = schedules_by_date.setdefault(d, {})
+            for employee_id, new_time in moved_in.items():
+                if employee_id in day_schedules:
+                    overridden = dict(day_schedules[employee_id])
+                    overridden["shift_time"] = new_time
+                    overridden["is_rest_day"] = 0
+                    day_schedules[employee_id] = overridden
+                else:
+                    base = synth_lookup.get(employee_id)
+                    if base:
+                        day_schedules[employee_id] = {
+                            "employee_id": base["employee_id"],
+                            "schedule_date": d,
+                            "shift_time": new_time,
+                            "is_rest_day": 0,
+                            "personid": base["personid"],
+                            "fname": base["fname"],
+                            "lname": base["lname"],
+                            "team_lead": base["team_lead"],
+                            "department": base["department"],
+                            "batch": base["batch"],
+                            "account": base["account"],
+                            "email": base["email"],
+                        }
+
+        # 4. Filter to employees actually being evaluated for tardiness on
+        #    each date (skip rest days, leave, and CWS moved-out), and parse
+        #    each shift into a start/end datetime.
+        candidates = []
+        for d, day_schedules in schedules_by_date.items():
+            on_leave = leave_by_date.get(d, set())
+            moved_out = moved_out_by_date.get(d, set())
+
+            for employee_id, sched in day_schedules.items():
+                if sched["is_rest_day"]:
+                    continue  # skip rest days entirely
+                if employee_id in on_leave:
+                    continue  # on Pending/Approved leave - don't evaluate tardiness
+                if employee_id in moved_out:
+                    continue  # shift moved to a different date via CWS
+
+                parsed = parse_shift_time(sched["shift_time"], d)
+                if not parsed:
+                    continue  # unparseable shift_time -> INVALID_SCHEDULE, never LATE
+
+                shift_start, shift_end = parsed
+                candidates.append({
+                    "personid": sched["personid"],
+                    "companyid": employee_id,
+                    "fname": sched["fname"],
+                    "lname": sched["lname"],
+                    "team_lead": sched["team_lead"],
+                    "department": sched["department"],
+                    "batch": sched.get("batch"),
+                    "account": sched.get("account"),
+                    "email": sched.get("email"),
+                    "shift_time_raw": sched["shift_time"],
+                    "record_date": d,
+                    "shift_start": shift_start,
+                    # Same 4-hour early-arrival buffer as get_tardiness_for_date.
+                    "window_start": shift_start - timedelta(hours=4),
+                    "window_end": shift_end,
+                })
+
+        if not candidates:
+            return []
+
+        # 5. One bulk query for every relevant 'in' punch spanning the widest
+        #    window any candidate needs, then match each candidate against
+        #    it in memory (mirrors the per-candidate
+        #    "first punch between window_start and window_end" lookup that
+        #    get_tardiness_for_date does per day, just batched).
+        overall_lo = min(c["window_start"] for c in candidates)
+        overall_hi = max(c["window_end"] for c in candidates)
+        personids = {c["personid"] for c in candidates}
+
+        placeholders = ", ".join(["%s"] * len(personids))
+        cur.execute(
+            f"""
+            SELECT personid, date AS punch_time
+            FROM dailytimerecord
+            WHERE type = 'in'
+              AND personid IN ({placeholders})
+              AND date BETWEEN %s AND %s
+            ORDER BY personid, date ASC
+            """,
+            (*personids, overall_lo, overall_hi),
+        )
+        punches_by_personid = {}
+        for row in cur.fetchall():
+            punches_by_personid.setdefault(row["personid"], []).append(row["punch_time"])
+        # Rows already arrive sorted per-personid (ORDER BY personid, date ASC).
+
+        all_late = []
+        for c in candidates:
+            punches = punches_by_personid.get(c["personid"], [])
+            idx = bisect.bisect_left(punches, c["window_start"])
+            time_in = punches[idx] if idx < len(punches) and punches[idx] <= c["window_end"] else None
+
+            if time_in is None:
+                continue  # ABSENT -- not a late record
+
+            minutes_late = int((time_in - c["shift_start"]).total_seconds() // 60)
+            if minutes_late <= 0:
+                continue  # ON_TIME -- not a late record
+
+            all_late.append({
+                "personid": c["personid"],
+                "companyid": c["companyid"],
+                "fname": c["fname"],
+                "lname": c["lname"],
+                "team_lead": c["team_lead"],
+                "department": c["department"],
+                "batch": c["batch"],
+                "account": c["account"],
+                "email": c["email"],
+                "shift_time_raw": c["shift_time_raw"],
+                "shift_start": c["shift_start"],
+                "time_in": time_in,
+                "status": "LATE",
+                "minutes_late": minutes_late,
+                "record_date": c["record_date"],
+            })
+
+        return all_late
+    finally:
+        cur.close()
+        conn.close()
 
 
 def _sort_late_records(records, sort_by, direction):
