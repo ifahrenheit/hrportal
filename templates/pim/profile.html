@@ -357,6 +357,7 @@
                     <span class="badge bg-secondary">${esc(m.category) || 'Memo'}</span>
                     <span class="text-muted small">${esc(m.memo_date)}</span>
                   </div>
+                  ${m.date_of_violation ? `<div class="small text-muted">Date of Violation: ${esc(m.date_of_violation)}</div>` : ''}
                   ${m.violation ? `<div class="small"><strong>Violation:</strong> ${esc(m.violation)}</div>` : ''}
                   ${m.disciplinary_action ? `<div class="small"><strong>Disciplinary Action:</strong> ${esc(m.disciplinary_action)}</div>` : ''}
                   ${m.details ? `<div class="small"><strong>Details:</strong> ${esc(m.details)}</div>` : ''}

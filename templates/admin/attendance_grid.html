@@ -548,7 +548,7 @@ document.addEventListener("DOMContentLoaded", function() {
     saveBtn.disabled = true;
     fetch('{{ url_for("save_attendance_note") }}', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': getCsrfToken() },
       body: JSON.stringify(payload)
     })
     .then(function(r) { return r.json(); })

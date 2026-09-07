@@ -5231,6 +5231,11 @@ def admin_file_leave():
                                    employees=employees, balances=balances, user=session['user'])
 
         duration   = request.form.get('duration', 'full')
+
+        if duration in ('first_half', 'second_half') and start_date != end_date:
+            flash('First Half / Second Half can only be filed for a single day.', 'danger')
+            return render_template('admin/file_leave_admin.html',
+                                   employees=employees, balances=balances, user=session['user'])
         deductions = calculate_deduction(target_emp, start_date, end_date, duration)
         if not deductions:
             flash('No valid working days in selected range.', 'warning')
@@ -5989,9 +5994,10 @@ def send_material_email(to, subject, body_html):
     try:
         from email.mime.multipart import MIMEMultipart
         from email.mime.text import MIMEText
+        from email.utils import formataddr
         msg = MIMEMultipart('alternative')
         msg['Subject'] = subject
-        msg['From']    = f"Cohere HR Portal — Material Requests <{os.getenv('SMTP_USER')}>"
+        msg['From']    = formataddr(("Cohere HR Portal - Material Requests", os.getenv('SMTP_USER')))
         msg['To']      = to
         msg.attach(MIMEText(body_html, 'html'))
         with smtplib.SMTP(os.getenv('SMTP_SERVER'), int(os.getenv('SMTP_PORT', 2525))) as s:
@@ -7113,9 +7119,10 @@ def send_facilities_email(to, subject, body_html):
     try:
         from email.mime.multipart import MIMEMultipart
         from email.mime.text import MIMEText
+        from email.utils import formataddr
         msg = MIMEMultipart('alternative')
         msg['Subject'] = subject
-        msg['From']    = f"Cohere HR Portal — Facilities <{os.getenv('SMTP_USER')}>"
+        msg['From']    = formataddr(("Cohere HR Portal - Facilities", os.getenv('SMTP_USER')))
         msg['To']      = to
         msg.attach(MIMEText(body_html, 'html'))
         with smtplib.SMTP(os.getenv('SMTP_SERVER'), int(os.getenv('SMTP_PORT', 2525))) as s:

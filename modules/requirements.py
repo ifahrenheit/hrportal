@@ -37,7 +37,6 @@ REQUIREMENT_FIELDS = [
     ("sss",       "SSS"),
     ("phic",      "PHIC"),
     ("hdmf",      "HDMF"),
-    ("education", "Education"),
     ("birth",     "Birth"),
     ("xray",      "Xray"),
     ("vax_doc",   "Vax Doc"),

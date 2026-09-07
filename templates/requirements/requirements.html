@@ -142,7 +142,7 @@
       box.disabled = true;
       fetch("{{ url_for('requirements.requirements_toggle') }}", {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': getCsrfToken() },
         body: JSON.stringify({ employee_id: box.dataset.emp, field: box.dataset.field, value: box.checked })
       })
       .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); })

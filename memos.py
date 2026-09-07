@@ -79,11 +79,13 @@ def _parse_memo_date(raw):
                 return datetime.strptime(raw, '%Y-%m-%d').date()
             except ValueError:
                 pass
-        for fmt in ('%m/%d/%Y', '%Y-%m-%d', '%d/%m/%Y'):
+        for fmt in ('%m/%d/%Y', '%Y-%m-%d', '%d/%m/%Y', '%B %d, %Y', '%b %d, %Y'):
             try:
-                return datetime.strptime(raw, fmt).date()
+                return datetime.strptime(raw.strip(), fmt).date()
             except ValueError:
                 continue
+    # Anything else (e.g. "May 1st payroll cycle", "April 2026") isn't a real
+    # date - store NULL rather than raising, since date_of_violation is nullable.
     return None
 
 
@@ -100,6 +102,8 @@ def memo_sync_webhook():
         memos = payload.get('memos', [])
         total = payload.get('total', len(memos))
         logger.info(f'Memo sync received - total: {total}')
+        if memos:
+            logger.info(f'DEBUG first memo row: {memos[0]}')
 
         conn = get_db_connection()
         cursor = conn.cursor(pymysql.cursors.DictCursor)
@@ -116,9 +120,9 @@ def memo_sync_webhook():
 
         insert_sql = """
             INSERT INTO employee_memos
-            (memo_date, employee_id, last_name, first_name, email, supervisor,
+            (memo_date, date_of_violation, employee_id, last_name, first_name, email, supervisor,
              category, violation, disciplinary_action, details)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         """
 
         success_count = 0
@@ -133,11 +137,14 @@ def memo_sync_webhook():
                     skipped_no_date += 1
                     continue
 
+                violation_date_text = (memo.get('Date of Violation') or '').strip() or None
+
                 email = (memo.get('Email') or '').strip()
                 employee_id = email_to_id.get(email.lower()) if email else None
 
                 cursor.execute(insert_sql, (
                     parsed_date,
+                    violation_date_text,
                     employee_id,
                     memo.get('Last Name'),
                     memo.get('First Name'),
@@ -188,7 +195,7 @@ def get_employee_memos(employee_id):
         cursor = conn.cursor(pymysql.cursors.DictCursor)
 
         cursor.execute("""
-            SELECT memo_date, category, violation, disciplinary_action, details, supervisor
+            SELECT memo_date, date_of_violation, category, violation, disciplinary_action, details, supervisor
             FROM employee_memos
             WHERE employee_id = %s
             ORDER BY memo_date DESC
@@ -259,7 +266,7 @@ def memos_list():
         offset = (page - 1) * PER_PAGE
 
         cursor.execute(f"""
-            SELECT memo_date, employee_id, first_name, last_name, email, supervisor,
+            SELECT memo_date, date_of_violation, employee_id, first_name, last_name, email, supervisor,
                    category, violation, disciplinary_action, details
             FROM employee_memos
             {where_clause}

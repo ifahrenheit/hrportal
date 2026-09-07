@@ -44,11 +44,11 @@ window.__APPROVALS__ = {
       </div>
       <div class="col-6 col-md-2">
         <label class="form-label small mb-1">From</label>
-        <input type="date" name="date_from" class="form-control form-control-sm" value="{{ date_from }}">
+        <input type="date" name="date_from" class="form-control form-control-sm" value="{{ date_from }}" onchange="this.form.submit()">
       </div>
       <div class="col-6 col-md-2">
         <label class="form-label small mb-1">To</label>
-        <input type="date" name="date_to" class="form-control form-control-sm" value="{{ date_to }}">
+        <input type="date" name="date_to" class="form-control form-control-sm" value="{{ date_to }}" onchange="this.form.submit()">
       </div>
       <div class="col-6 col-md-2">
         <label class="form-label small mb-1">TL</label>

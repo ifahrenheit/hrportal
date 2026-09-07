@@ -105,7 +105,7 @@
                 <i class="bi bi-box me-1"></i>On Stock
               </button>
               <button class="btn btn-sm btn-warning text-dark flex-fill"
-                      onclick="showPurchaseModal({{ r.id }}, '{{ r.item_name|e }}', {{ r.quantity }})">
+                      onclick='showPurchaseModal({{ r.id }}, {{ r.item_name|tojson }}, {{ r.quantity }})'>
                 <i class="bi bi-cart me-1"></i>Purchase
               </button>
               <form method="POST" action="{{ url_for('material_admin_action') }}" style="display:inline;">
@@ -119,7 +119,7 @@
                   <i class="bi bi-x-lg"></i>
                 </button>
               </form>
-            {% elif r.status == 'Pending' and r.category == 'Medicine' %}
+            {% elif r.status == 'Pending' and r.category == 'Medicine' and not r.is_replenishment %}
               <div class="d-flex gap-1">
                 <button class="btn btn-sm btn-success"
                         onclick="showReleaseModal({{ r.id }}, '{{ r.employee_name|e }}', '{{ r.item_name|e }}')">
@@ -144,7 +144,7 @@
               </div>
             {% elif r.status == "Pending" %}
               <span class="text-muted small">Awaiting SOM recommendation</span>
-            {% elif r.status == 'Recommended' and r.category == 'Medicine' %}
+            {% elif r.status == 'Recommended' and r.category == 'Medicine' and not r.is_replenishment %}
               <div class="d-flex gap-1">
                 <button class="btn btn-sm btn-success"
                         onclick="showReleaseModal({{ r.id }}, '{{ r.employee_name|e }}', '{{ r.item_name|e }}')">

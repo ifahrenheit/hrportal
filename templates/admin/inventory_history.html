@@ -53,7 +53,11 @@
           <td>{{ r.item_name }}</td>
           <td>
             <span class="badge {{ 'bg-danger' if r.stock_as_of <= 0 else ('bg-warning text-dark' if r.stock_as_of <= r.min_stock_alert else 'bg-success') }}">
-              {{ r.stock_as_of }} pcs
+              {% if r.sub_unit and r.sub_unit_per_unit %}
+                {{ r.stock_as_of }} {{ r.unit }} ({{ (r.stock_as_of / r.sub_unit_per_unit)|round(1) }} {{ r.sub_unit }})
+              {% else %}
+                {{ r.stock_as_of }} {{ r.unit }}
+              {% endif %}
             </span>
           </td>
           <td>{{ r.unit or '' }}</td>

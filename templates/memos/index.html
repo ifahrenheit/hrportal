@@ -57,27 +57,34 @@
     <div class="card-body p-0">
       {% if memos %}
       <div class="table-responsive">
-        <table class="table table-hover mb-0 align-middle">
+        <table class="table table-hover mb-0 align-middle text-nowrap">
           <thead class="table-light">
             <tr>
-              <th style="width:100px;">Date</th>
+              <th>Date Filed</th>
+              <th>Date of Violation</th>
               <th>Employee</th>
-              <th style="width:130px;">Category</th>
+              <th>Category</th>
               <th>Violation</th>
               <th>Disciplinary Action</th>
               <th>Details</th>
-              <th style="width:140px;">Supervisor</th>
+              <th>Supervisor</th>
             </tr>
           </thead>
           <tbody>
             {% for m in memos %}
             <tr>
               <td class="small text-muted">{{ m.memo_date }}</td>
+              <td class="small text-muted">{{ m.date_of_violation or '—' }}</td>
               <td>
+                {% if m.employee_id %}
                 <a href="/pim/{{ m.employee_id }}" class="text-decoration-none">
                   {{ m.first_name }} {{ m.last_name }}
                 </a>
-                <div class="small text-muted">{{ m.employee_id }}</div>
+                <span class="small text-muted ms-1">({{ m.employee_id }})</span>
+                {% else %}
+                <span>{{ m.first_name }} {{ m.last_name }}</span>
+                <span class="small text-danger ms-1" title="No employee ID linked"><i class="bi bi-exclamation-triangle"></i></span>
+                {% endif %}
               </td>
               <td><span class="badge bg-secondary">{{ m.category or '—' }}</span></td>
               <td class="small">{{ m.violation or '—' }}</td>
