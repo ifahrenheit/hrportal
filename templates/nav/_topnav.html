@@ -133,6 +133,22 @@
 .tn-notif-sec span { margin-left: auto; background: var(--accent, #2563eb); color: #fff;
   font-size: 10px; padding: 1px 6px; border-radius: 999px; }
 .tn-notif-empty { padding: 22px 13px; text-align: center; color: var(--text-muted, #6b7280); font-size: 12.5px; }
+.tn-notif-search { padding: 9px 12px; border-bottom: 1px solid var(--border, #e4e7ec);
+  position: sticky; top: 0; background: var(--surface, #fff); z-index: 1; }
+.tn-notif-search-in { display: flex; align-items: center; gap: 7px;
+  background: var(--surface-2, #f3f4f6); border: 1px solid var(--border, #e4e7ec);
+  border-radius: 8px; padding: 6px 10px; }
+.tn-notif-search-in i { color: var(--text-muted, #9ca3af); font-size: 13px; }
+.tn-notif-search-in input { border: none; background: transparent; outline: none;
+  width: 100%; font-size: 12.5px; color: var(--text, #111); }
+.tn-notif-pills { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 8px; }
+.tn-notif-pill { flex: 0 0 auto; font-size: 11px; font-weight: 600; padding: 3px 10px;
+  border-radius: 999px; border: 1px solid var(--border, #e4e7ec);
+  background: var(--surface, #fff); color: var(--text-muted, #6b7280);
+  cursor: pointer; white-space: nowrap; user-select: none; }
+.tn-notif-pill.active { background: var(--accent, #2563eb); color: #fff; border-color: var(--accent, #2563eb); }
+.tn-notif-pill.empty { opacity: .38; cursor: default; pointer-events: none; }
+
 
 .tn-userpill {
   display: flex; align-items: center; gap: 7px;
@@ -285,9 +301,61 @@
   var markAll = document.getElementById('tnNotifMarkAll');
   if (!btn) return;
 
+  var _allSections = [];
+  var _typeFilter = 'All';
+  var _q = '';
+
+  function _typeCounts() {
+    var c = {};
+    _allSections.forEach(function (s) {
+      s.items.forEach(function (n) {
+        if (_q && (n.search || n.message || '').toLowerCase().indexOf(_q) === -1) return;
+        var t = n.type || s.title; c[t] = (c[t] || 0) + 1;
+      });
+    });
+    return c;
+  }
+
+  function buildPills() {
+    var pills = document.getElementById('tnNotifPills');
+    if (!pills) return;
+    var counts = _typeCounts();
+    var order = ['All', 'Leave', 'FTS', 'OT', 'CWS', 'RDW', 'QA', 'IR'];
+    var total = 0;
+    Object.keys(counts).forEach(function (k) { total += counts[k]; });
+    pills.innerHTML = order.map(function (t) {
+      var n = t === 'All' ? total : (counts[t] || 0);
+      if (t !== 'All' && n === 0) {
+        if (_q) return '';  // hide empty pills while searching
+        return '<span class="tn-notif-pill empty" data-t="' + t + '">' + t + '</span>';
+      }
+      var cls = 'tn-notif-pill' + (_typeFilter === t ? ' active' : '');
+      return '<span class="' + cls + '" data-t="' + t + '">' + t + ' (' + n + ')</span>';
+    }).join('');
+    Array.prototype.forEach.call(pills.querySelectorAll('.tn-notif-pill:not(.empty)'), function (el) {
+      el.addEventListener('click', function (e) {
+        e.stopPropagation();
+        _typeFilter = el.getAttribute('data-t'); buildPills(); applyFilter();
+      });
+    });
+  }
+
+  function applyFilter() {
+    var filtered = _allSections.map(function (s) {
+      var items = s.items.filter(function (n) {
+        var t = n.type || s.title;
+        if (_typeFilter !== 'All' && t !== _typeFilter) return false;
+        if (_q && (n.search || n.message || '').toLowerCase().indexOf(_q) === -1) return false;
+        return true;
+      });
+      return { title: s.title, icon: s.icon, items: items };
+    }).filter(function (s) { return s.items.length > 0; });
+    render(filtered);
+  }
+
   function render(sections) {
     if (!sections.length) {
-      list.innerHTML = '<div class="tn-notif-empty">Nothing pending</div>';
+      list.innerHTML = '<div class="tn-notif-empty">' + (_q || _typeFilter !== 'All' ? 'No matches' : 'Nothing pending') + '</div>';
       return;
     }
     list.innerHTML = sections.map(function (sec) {
@@ -307,7 +375,9 @@
     fetch('/api/notifications', { credentials: 'same-origin' })
       .then(function (r) { return r.json(); })
       .then(function (d) {
-        render(d.sections || []);
+        _allSections = d.sections || [];
+        buildPills();
+        applyFilter();
         if (d.unread > 0) {
           badge.textContent = d.unread > 99 ? '99+' : d.unread;
           badge.classList.add('show');
@@ -327,7 +397,14 @@
     }
   });
 
-  markAll.addEventListener('click', function (e) {
+  var searchEl = document.getElementById('tnNotifSearch');
+  if (searchEl) {
+    searchEl.addEventListener('input', function () {
+      _q = (searchEl.value || '').trim().toLowerCase(); buildPills(); applyFilter();
+    });
+    searchEl.addEventListener('click', function (e) { e.stopPropagation(); });
+  }
+    markAll.addEventListener('click', function (e) {
     e.stopPropagation();
     load();
   });
@@ -435,6 +512,13 @@
             <span>Notifications</span>
             <button type="button" id="tnNotifMarkAll">Refresh</button>
           </div>
+          <div class="tn-notif-search">
+            <div class="tn-notif-search-in">
+              <i class="bi bi-search"></i>
+              <input type="text" id="tnNotifSearch" placeholder="Search name or ID…" autocomplete="off">
+            </div>
+            <div class="tn-notif-pills" id="tnNotifPills"></div>
+          </div>
           <div id="tnNotifList">
             <div class="tn-notif-empty">Loading…</div>
           </div>
@@ -504,13 +588,21 @@
     {% if SUPER or ADMIN or P.get('can_material_requests') or break_log_supervisor_access() or TL %}
     <div class="tn-panel" data-panel="team">
       <div class="tn-cols">
+        {% if SL_HR_APPROVER %}
+        <a class="tn-item {% if EP == 'sl_verification' %}active{% endif %}" href="{{ url_for('sl_verification') }}">
+          <i class="bi bi-clipboard2-pulse"></i> SL Verification
+          <span id="slVerifyBadge" style="display:none;margin-left:auto;background:#ef4444;color:#fff;font-size:.65rem;font-weight:700;padding:.15rem .45rem;border-radius:999px;min-width:18px;text-align:center;"></span>
+        </a>
+        {% endif %}
         {% if SUPER or ADMIN %}
         <a class="tn-item {% if EP == 'supervisor_active_leaves' %}active{% endif %}" href="{{ url_for('supervisor_active_leaves') }}">
           <i class="bi bi-calendar-check"></i> All Team Leaves</a>
         <a class="tn-item {% if EP == 'supervisor_pending' %}active{% endif %}" href="{{ url_for('supervisor_pending') }}">
           <i class="bi bi-hourglass-split"></i> Leave Approvals
           <span id="pendingBadge" style="display:none;margin-left:auto;background:#ef4444;color:#fff;font-size:.65rem;font-weight:700;padding:.15rem .45rem;border-radius:999px;min-width:18px;text-align:center;"></span></a>
-        <a class="tn-item {% if EP == 'file_requests_approvals' %}active{% endif %}" href="{{ url_for('file_requests_approvals') }}">
+
+        
+          <a class="tn-item {% if EP == 'file_requests_approvals' %}active{% endif %}" href="{{ url_for('file_requests_approvals') }}">
           <i class="bi bi-check2-square"></i> OT / CWS / FTS / RDW
           <span id="fileRequestsBadge" style="display:none;margin-left:auto;background:#ef4444;color:#fff;font-size:.65rem;font-weight:700;padding:.15rem .45rem;border-radius:999px;min-width:18px;text-align:center;"></span></a>
         <a class="tn-item {% if EP == 'supervisor_team_calendar' %}active{% endif %}" href="{{ url_for('supervisor_team_calendar') }}">
@@ -745,6 +837,8 @@
           <i class="bi bi-tag"></i> Leave Types</a>
         <a class="tn-item {% if EP == 'admin_entitlements' %}active{% endif %}" href="{{ url_for('admin_entitlements') }}">
           <i class="bi bi-credit-card"></i> Entitlements</a>
+        <a class="tn-item {% if EP == 'entitlements_audit.can_entitlements_audit' %}active{% endif %}" href="{{ url_for('entitlements_audit.can_entitlements_audit') }}">
+          <i class="bi bi-search"></i> Entitlements Audit</a>
         {% endif %}
         {% if ADMIN %}
         <a class="tn-item {% if EP == 'admin_quick_links' %}active{% endif %}" href="{{ url_for('admin_quick_links') }}">
@@ -946,7 +1040,7 @@
   <a class="tn-subtab {% if EP == 'admin_tickets' %}active{% endif %}" href="{{ url_for('admin_tickets') }}">Ticket Queue</a>
   {% endif %}
 </div></div>
-{% elif EP in ['admin_settings', 'admin_holidays', 'admin_leave_types', 'admin_entitlements', 'admin_emp_settings'] %}
+{% elif EP in ['admin_settings', 'admin_holidays', 'admin_leave_types', 'admin_entitlements', 'admin_emp_settings', 'entitlements_audit.can_entitlements_audit'] %}
 <div class="tn-subnav"><div class="tn-subnav-inner">
   <span class="tn-subnav-label">Settings</span>
   {% if ADMIN or P.get('can_settings') %}
@@ -956,6 +1050,7 @@
   {% if ADMIN or P.get('can_entitlements') %}
   <a class="tn-subtab {% if EP == 'admin_leave_types' %}active{% endif %}" href="{{ url_for('admin_leave_types') }}">Leave Types</a>
   <a class="tn-subtab {% if EP == 'admin_entitlements' %}active{% endif %}" href="{{ url_for('admin_entitlements') }}">Entitlements</a>
+  <a class="tn-subtab {% if EP == 'entitlements_audit.can_entitlements_audit' %}active{% endif %}" href="{{ url_for('entitlements_audit.can_entitlements_audit') }}">Entitlements Audit</a>
   {% endif %}
   {% if ADMIN or P.get('can_work_mode') %}
   <a class="tn-subtab {% if EP == 'admin_emp_settings' %}active{% endif %}" href="{{ url_for('admin_emp_settings') }}">Work Mode</a>
