@@ -1,0 +1,71 @@
+{% extends "base.html" %}
+{% block title %}Entitlements Permission Audit{% endblock %}
+{% block page_title %}Entitlements Permission Audit{% endblock %}
+{% block content %}
+<div class="container-fluid py-4">
+  <div class="row align-items-center mb-3">
+    <div class="col-md-8">
+      <h4 class="mb-0">Who Can Manage Entitlements</h4>
+      <small class="text-muted">Sub-admins currently holding the <code>can_entitlements</code> permission. Read-only &mdash; manage this on the <a href="{{ url_for('admin_sub_admins') }}">Sub-Admins</a> page.</small>
+    </div>
+    <div class="col-md-4 text-end">
+      <a href="{{ url_for('admin_sub_admins') }}" class="btn btn-sm btn-outline-secondary">
+        <i class="bi bi-shield-check me-1"></i>Manage Sub-Admins
+      </a>
+    </div>
+  </div>
+
+  <div class="card mb-3">
+    <div class="card-body">
+      <span class="text-muted small">
+        <i class="bi bi-info-circle me-1"></i>{{ holders|length }} sub-admin{{ '' if holders|length == 1 else 's' }} with access
+      </span>
+    </div>
+  </div>
+
+  <div class="table-responsive">
+    <table class="table table-sm table-hover align-middle">
+      <thead class="table-light">
+        <tr>
+          <th>Name</th>
+          <th>Employee ID</th>
+          <th>Group</th>
+          <th>Assigned By</th>
+          <th>Assigned</th>
+          <th>Last Updated</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for h in holders %}
+        <tr>
+          <td>{{ h.emp_lastname }}, {{ h.emp_firstname }}</td>
+          <td>{{ h.employee_id }}</td>
+          <td>
+            {% if h.group_name %}
+            <span class="badge" style="background:var(--bg);color:var(--text-muted);border:1px solid var(--border);">{{ h.group_name }}</span>
+            {% else %}
+            <span class="text-muted">&mdash;</span>
+            {% endif %}
+          </td>
+          <td>
+            {% if h.assigned_by_firstname or h.assigned_by_lastname %}
+              {{ h.assigned_by_lastname }}, {{ h.assigned_by_firstname }}
+            {% elif h.assigned_by %}
+              #{{ h.assigned_by }}
+            {% else %}
+              <span class="text-muted">&mdash;</span>
+            {% endif %}
+          </td>
+          <td>{{ h.assigned_at.strftime('%b %d, %Y %H:%M') if h.assigned_at else '—' }}</td>
+          <td>{{ h.updated_at.strftime('%b %d, %Y %H:%M') if h.updated_at else '—' }}</td>
+        </tr>
+        {% else %}
+        <tr>
+          <td colspan="6" class="text-center text-muted py-4">No sub-admins currently hold the Entitlements permission.</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

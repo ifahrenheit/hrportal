@@ -545,6 +545,9 @@
         <a class="nav-link {% if request.endpoint == 'admin_sub_admins' %}active{% endif %}" href="{{ url_for('admin_sub_admins') }}">
           <i class="bi bi-shield-check"></i> <span class="nav-label">Sub-Admins</span>
         </a>
+        <a class="nav-link {% if request.endpoint == 'entitlements_audit.can_entitlements_audit' %}active{% endif %}" href="{{ url_for('entitlements_audit.can_entitlements_audit') }}">
+          <i class="bi bi-search"></i> <span class="nav-label">Entitlements Audit</span>
+        </a>
         <a class="nav-link {% if request.endpoint == 'magic_cws_balance_admin' %}active{% endif %}" href="{{ url_for('magic_cws_balance_admin') }}">
           <i class="bi bi-lightning-charge-fill" style="color:#a78bfa"></i> <span class="nav-label">Magic CWS Balance</span>
         </a>

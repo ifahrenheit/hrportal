@@ -70,6 +70,10 @@ app.register_blueprint(fts_bp)
 from modules.requirements import requirements_bp
 app.register_blueprint(requirements_bp)
 
+## Entitlements Permission Audit Blueprint
+from modules.entitlements_audit import entitlements_audit_bp
+app.register_blueprint(entitlements_audit_bp)
+
 #coaching Blueprint
 from coaching import coaching_bp
 app.register_blueprint(coaching_bp)
