@@ -4923,6 +4923,31 @@ def sl_verification_submit():
                     'valid_absence': bool(valid)})
 
 
+@app.route('/api/sl-verification-count')
+@login_required
+def api_sl_verification_count():
+    """Badge count for the SL Verification nav item."""
+    if not is_sl_hr_approver():
+        return jsonify({'count': 0})
+
+    db = get_db()
+    try:
+        with db.cursor() as c:
+            c.execute("""
+                SELECT COUNT(DISTINCT leave_request_id) AS cnt
+                FROM leave4day_requests
+                WHERE leave_type_id = 2
+                  AND status = 'pending'
+                  AND sl_hr_stage = 'pending_hr'
+                  AND deleted_at IS NULL
+            """)
+            row = c.fetchone()
+    finally:
+        db.close()
+
+    return jsonify({'count': row['cnt'] if row else 0})
+
+
 @app.route('/api/leave/bulk-action', methods=['POST'])
 @login_required
 def api_leave_bulk_action():
