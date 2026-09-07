@@ -312,7 +312,8 @@ def get_leave_balances(emp_number):
                              AND r.leave_type_id = le.leave_type_id
                              AND r.status NOT IN ('rejected', 'cancelled', 'Deleted')
                              AND r.is_off_day = 0
-                             AND YEAR(r.leave_date) = YEAR(CURDATE())
+                             AND r.leave_date >= MAKEDATE(YEAR(CURDATE()), 1)
+                             AND r.leave_date <  MAKEDATE(YEAR(CURDATE()) + 1, 1)
                        ), 0) AS used_hours
                 FROM ohrm_leave_entitlement le
                 JOIN ohrm_leave_type lt ON lt.id = le.leave_type_id
