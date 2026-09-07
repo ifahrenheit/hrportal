@@ -1437,6 +1437,21 @@ def file_leave():
                     </ul>
                     <p><a href="https://hrportal.cohere.ph">Approve / Reject on HR Portal</a></p>""")
 
+            # Sick Leave needs HR verification before it reaches the supervisor —
+            # email the SL HR approver(s) so the task doesn't sit unnoticed.
+            if leave_type_id == 2:
+                sl_approvers = [e.strip() for e in os.getenv('SL_HR_APPROVER', '').split(',') if e.strip()]
+                for sl_email in sl_approvers:
+                    send_email(sl_email, f'SL Verification needed: {agent_name}',
+                        f"""<p>Hi,</p>
+                        <p><b>{agent_name}</b> filed a Sick Leave that needs HR verification
+                           before it can proceed to supervisor approval.</p>
+                        <ul>
+                          <li><b>Dates:</b> {dates_str}</li>
+                          <li><b>Hours:</b> {total_hours:.1f} hrs</li>
+                        </ul>
+                        <p><a href="https://hrportal.cohere.ph/leave/sl-verification">Verify on HR Portal</a></p>""")
+
             return redirect(url_for('dashboard'))
         except Exception as e:
             db.rollback()
