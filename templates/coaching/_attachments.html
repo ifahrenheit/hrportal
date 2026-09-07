@@ -1,0 +1,49 @@
+{# params: attachments, side ('tl'|'agent'), my_count, attach_max, locked,
+   upload_url, me. Both sides see ALL images; delete only own, pre-lock. #}
+<style>
+  .att-grid{display:flex;flex-wrap:wrap;gap:10px;margin:6px 0 14px;}
+  .att-thumb{position:relative;width:104px;height:104px;border-radius:8px;overflow:hidden;border:1px solid var(--border);background:var(--surface-2);}
+  .att-thumb img{width:100%;height:100%;object-fit:cover;display:block;}
+  .att-side{position:absolute;left:0;bottom:0;font-size:.6rem;font-weight:700;padding:1px 5px;border-top-right-radius:6px;color:#fff;}
+  .att-side.tl{background:var(--accent);} .att-side.agent{background:#c05621;}
+  .att-del{position:absolute;top:2px;right:2px;background:rgba(0,0,0,.6);color:#fff;border:none;width:20px;height:20px;border-radius:50%;font-size:.75rem;line-height:1;cursor:pointer;padding:0;}
+  .att-up{display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
+</style>
+
+<h6 style="font-size:.9rem;color:var(--accent);font-weight:700;margin:14px 0 6px;">Attachments</h6>
+{% if attachments %}
+  <div class="att-grid">
+    {% for a in attachments %}
+      <div class="att-thumb">
+        <a href="{{ url_for('static', filename=a.file_path) }}" target="_blank" rel="noopener">
+          <img src="{{ url_for('static', filename=a.file_path) }}" alt="attachment" loading="lazy">
+        </a>
+        <span class="att-side {{ a.uploaded_by_side }}">{{ 'TL' if a.uploaded_by_side=='tl' else 'Agent' }}</span>
+        {% if not locked and a.uploaded_by == me %}
+          <form method="post" action="{{ url_for('coaching.attach_delete', att_id=a.id) }}" style="display:inline"
+                onsubmit="return confirm('Remove this image?');">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button type="submit" class="att-del" title="Remove">×</button>
+          </form>
+        {% endif %}
+      </div>
+    {% endfor %}
+  </div>
+{% else %}
+  <p class="text-muted" style="font-size:.85rem;">No attachments yet.</p>
+{% endif %}
+
+{% if not locked %}
+  {% set remaining = attach_max - my_count %}
+  {% if remaining > 0 %}
+    <form method="post" action="{{ upload_url }}" enctype="multipart/form-data" class="att-up">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <input type="file" name="images" accept="image/jpeg,image/png,image/webp" multiple
+             class="form-control form-control-sm" style="max-width:340px;">
+      <button type="submit" class="btn btn-sm btn-outline-primary">Upload</button>
+      <span class="text-muted" style="font-size:.78rem;">{{ remaining }} of {{ attach_max }} slot(s) left · JPG/PNG/WebP</span>
+    </form>
+  {% else %}
+    <p class="text-muted" style="font-size:.78rem;">You've reached your limit of {{ attach_max }} images.</p>
+  {% endif %}
+{% endif %}

@@ -29,14 +29,18 @@ Requires get_db_connection() (central_db) already defined in app.py.
 """
 
 import io
+import os
 import csv
+import uuid
 import pymysql
 from datetime import datetime
 from functools import wraps
+from werkzeug.utils import secure_filename
 from flask import (
     Blueprint, render_template, request, redirect, url_for,
-    session, flash, abort, Response,
+    session, flash, abort, Response, current_app,
 )
+from csrf import validate_csrf
 
 coaching_bp = Blueprint(
     "coaching", __name__,
@@ -49,6 +53,7 @@ COACHING_TYPES = {
     "behavioral": "Behavioral",
     "skill_development": "Skill Development",
     "quality": "Quality",
+    "product_process": "Product Process",
     "other": "Other",
 }
 
@@ -420,6 +425,137 @@ def _get_session(session_id):
         conn.close()
 
 
+# --- Reminder / notification helpers -------------------------------------
+COACHING_SLA_DAYS = 3          # past this, a pending session is "overdue"
+REMINDER_FIRST_DAY = 2         # first auto-reminder fires N days after creation
+PENDING_STATUSES = ("pending", "for_followup", "pending_followup")
+
+
+def _tl_email_for(tl_name):
+    """TL login email from tl_view_map (canonical TL source)."""
+    if not tl_name:
+        return None
+    conn = _db()
+    try:
+        with conn.cursor(pymysql.cursors.DictCursor) as cur:
+            cur.execute("""SELECT login_email FROM tl_view_map
+                           WHERE tl_name = %s LIMIT 1""", (tl_name,))
+            r = cur.fetchone()
+            return r["login_email"] if r else None
+    finally:
+        conn.close()
+
+
+def _recipients(session_id):
+    """Return (agent_email, [cc_emails], ctx) for a session.
+    agent = gsheet_employees.email; SOM = agent's approver;
+    TL = tl_view_map.login_email for the agent's tl name."""
+    conn = _db()
+    try:
+        with conn.cursor(pymysql.cursors.DictCursor) as cur:
+            cur.execute(f"""
+                SELECT cs.id, cs.topic, cs.session_date, cs.status,
+                       cs.reminder_count,
+                       a.schedule_name AS agent_name, a.email AS agent_email,
+                       a.tl AS agent_tl, a.approver AS som_email,
+                       s.schedule_name AS supervisor_name
+                FROM coaching_sessions cs
+                LEFT JOIN gsheet_employees a ON a.employee_id = cs.agent_id {GC}
+                LEFT JOIN gsheet_employees s ON s.employee_id = cs.supervisor_id {GC}
+                WHERE cs.id = %s LIMIT 1
+            """, (session_id,))
+            row = cur.fetchone()
+    finally:
+        conn.close()
+    if not row:
+        return None, [], {}
+    agent_email = (row.get("agent_email") or "").strip()
+    cc = []
+    tl_email = _tl_email_for(row.get("agent_tl"))
+    if tl_email:
+        cc.append(tl_email.strip())
+    som = (row.get("som_email") or "").strip()
+    if som and som not in cc:
+        cc.append(som)
+    return agent_email, cc, row
+
+
+def _coaching_email_html(ctx, overdue):
+    link = url_for("coaching.my_session", session_id=ctx["id"], _external=True)
+    topic = ctx.get("topic") or "Coaching session"
+    sup = ctx.get("supervisor_name") or "your team lead"
+    date = ctx.get("session_date") or ""
+    banner = ("#c05621" if overdue else "#2563eb")
+    head = ("Your coaching action plan is overdue"
+            if overdue else "Action needed: complete your coaching action plan")
+    return f"""\
+<div style="font-family:Segoe UI,Arial,sans-serif;max-width:560px;margin:0 auto;color:#1f2937;">
+  <div style="background:{banner};color:#fff;padding:16px 20px;border-radius:10px 10px 0 0;">
+    <h2 style="margin:0;font-size:1.15rem;">{head}</h2>
+  </div>
+  <div style="border:1px solid #e5e7eb;border-top:none;border-radius:0 0 10px 10px;padding:20px;">
+    <p>Hi {ctx.get('agent_name') or 'there'},</p>
+    <p>{sup} conducted a coaching session with you{(' on ' + str(date)) if date else ''} —
+       topic: <strong>{topic}</strong>.</p>
+    <p>Please log in, review the feedback, and complete your
+       <strong>SMART Action Plan</strong>.</p>
+    <p style="text-align:center;margin:24px 0;">
+      <a href="{link}" style="background:{banner};color:#fff;text-decoration:none;
+         padding:11px 22px;border-radius:8px;font-weight:600;display:inline-block;">
+        Complete My Action Plan</a>
+    </p>
+    <p style="font-size:.85rem;color:#6b7280;">
+      A plan is <strong>SMART</strong> when it's Specific, Measurable, Achievable,
+      Relevant, and Time-bound.</p>
+    {"<p style='font-size:.85rem;color:#c05621;font-weight:600;'>This session is past the "
+     + str(COACHING_SLA_DAYS) + "-day completion window. Please act today.</p>" if overdue else ""}
+    <hr style="border:none;border-top:1px solid #e5e7eb;margin:18px 0;">
+    <p style="font-size:.75rem;color:#9ca3af;">Cohere HR Portal · automated message</p>
+  </div>
+</div>"""
+
+
+def _notify_agent_pending(session_id, kind="auto"):
+    """Email the agent (cc TL + SOM) to complete their action plan.
+    Stamps last_reminder_at + increments reminder_count.
+    kind: 'created' | 'manual' | 'auto'. Returns (ok, message)."""
+    from app import send_email
+    agent_email, cc, ctx = _recipients(session_id)
+    if not agent_email:
+        return False, "No agent email on file."
+    if ctx.get("status") not in PENDING_STATUSES:
+        return False, "Session is not pending."
+
+    # SLA: overdue if created/session older than SLA days.
+    overdue = False
+    try:
+        sd = ctx.get("session_date")
+        if sd:
+            overdue = (datetime.now().date() - sd).days > COACHING_SLA_DAYS
+    except Exception:
+        pass
+
+    subject = ("Overdue: complete your coaching action plan" if overdue
+               else "Action needed: complete your coaching action plan")
+    html = _coaching_email_html(ctx, overdue)
+
+    # send_email(to,...) takes a single string; comma-join so all recipients get it.
+    recipients = ", ".join([agent_email] + cc)
+    send_email(recipients, subject, html)
+
+    conn = _db()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("""UPDATE coaching_sessions
+                           SET last_reminder_at = NOW(),
+                               reminder_count = reminder_count + 1
+                           WHERE id = %s""", (session_id,))
+        conn.commit()
+    finally:
+        conn.close()
+    return True, f"Reminder sent to {agent_email}" + (f" (cc {', '.join(cc)})" if cc else "")
+
+
 @coaching_bp.route("/session/<int:session_id>")
 @coaching_required
 def view_session(session_id):
@@ -428,11 +564,47 @@ def view_session(session_id):
         abort(404)
     if not can_reports() and row["supervisor_id"] != _me():
         abort(403)
+    # Rate-limit the manual reminder button: allow if never sent or >4h ago.
+    can_remind_now = True
+    if row.get("last_reminder_at"):
+        try:
+            can_remind_now = (datetime.now() - row["last_reminder_at"]).total_seconds() > 4*3600
+        except Exception:
+            can_remind_now = True
     return render_template(
         "coaching/view_session.html",
         s=row, types=COACHING_TYPES, statuses=STATUSES,
         can_edit=(can_reports() or row["supervisor_id"] == _me()),
+        attachments=_attachments(session_id),
+        tl_attach_count=_attach_count(session_id, "tl"),
+        attach_max=ATTACH_MAX_PER_SIDE, me=_me(),
+        can_remind=(row["status"] in PENDING_STATUSES),
+        can_remind_now=can_remind_now,
     )
+
+
+@coaching_bp.route("/session/<int:session_id>/remind", methods=["POST"])
+@coaching_required
+def remind_session(session_id):
+    if not validate_csrf():
+        flash('Security check failed, please try again.', 'danger')
+        return redirect(request.referrer or url_for('coaching.my_sessions'))
+    row = _get_session(session_id)
+    if not row:
+        abort(404)
+    if not can_reports() and row["supervisor_id"] != _me():
+        abort(403)
+    # Rate limit: block if a reminder went out in the last 4 hours.
+    if row.get("last_reminder_at"):
+        try:
+            if (datetime.now() - row["last_reminder_at"]).total_seconds() < 4*3600:
+                flash("A reminder was already sent recently. Try again later.", "error")
+                return redirect(url_for("coaching.view_session", session_id=session_id))
+        except Exception:
+            pass
+    ok, msg = _notify_agent_pending(session_id, kind="manual")
+    flash(msg, "success" if ok else "error")
+    return redirect(url_for("coaching.view_session", session_id=session_id))
 
 
 # --- Create / edit --------------------------------------------------------
@@ -468,6 +640,9 @@ def _required_ok(d):
 @coaching_required
 def new_session():
     if request.method == "POST":
+        if not validate_csrf():
+            flash('Security check failed, please try again.', 'danger')
+            return redirect(url_for('coaching.new_session'))
         d = _parse_form()
         if not _required_ok(d):
             flash("Agent, date, time, type, topic, discussion notes, and areas for improvement are required.", "error")
@@ -497,7 +672,24 @@ def new_session():
             conn.commit()
         finally:
             conn.close()
-        flash("Coaching session created.", "success")
+        # Attach any images to the new session (session saves regardless).
+        imgs = request.files.getlist("images")
+        if any(f and f.filename for f in imgs):
+            saved, err = _save_attachments(new_id, "tl", imgs)
+            if err:
+                flash(f"Session created, but image(s) not added: {err}", "warning")
+            elif saved:
+                flash(f"Session created with {saved} image(s).", "success")
+            else:
+                flash("Coaching session created.", "success")
+        else:
+            flash("Coaching session created.", "success")
+        # Notify the agent immediately if this session needs their action plan.
+        if d["status"] in PENDING_STATUSES:
+            try:
+                _notify_agent_pending(new_id, kind="created")
+            except Exception as e:
+                current_app.logger.error(f"coaching create-notify failed: {e}")
         return redirect(url_for("coaching.view_session", session_id=new_id))
 
     return render_template("coaching/session_form.html", mode="new", s={},
@@ -514,6 +706,9 @@ def edit_session(session_id):
         abort(403)
 
     if request.method == "POST":
+        if not validate_csrf():
+            flash('Security check failed, please try again.', 'danger')
+            return redirect(url_for('coaching.edit_session', session_id=session_id))
         d = _parse_form()
         if not _required_ok(d):
             flash("Agent, date, time, type, topic, discussion notes, and areas for improvement are required.", "error")
@@ -554,6 +749,9 @@ def delete_session(session_id):
     """Dual-run-safe 'delete' = mark cancelled (PHP understands this status).
     We do NOT hard-delete: a hard delete would silently vanish from the PHP UI
     with no audit trail, and the PHP FK is ON DELETE CASCADE against Employees."""
+    if not validate_csrf():
+        flash('Security check failed, please try again.', 'danger')
+        return redirect(request.referrer or url_for('coaching.my_sessions'))
     row = _get_session(session_id)
     if not row:
         abort(404)
@@ -573,7 +771,6 @@ def delete_session(session_id):
     return redirect(url_for("coaching.all_sessions"))
 
 
-# --- Agent-facing views ---------------------------------------------------
 def _agent_login_required(view):
     """Any authenticated employee. Agent sees only their own sessions."""
     @wraps(view)
@@ -584,6 +781,170 @@ def _agent_login_required(view):
     return wrapped
 
 
+# --- Attachments ----------------------------------------------------------
+ATTACH_EXTS = {"jpg", "jpeg", "png", "webp"}
+ATTACH_MAX_PER_SIDE = 4
+ATTACH_SUBDIR = os.path.join("uploads", "coaching")   # under static/
+
+
+def _attach_dir():
+    d = os.path.join(current_app.root_path, "static", "uploads", "coaching")
+    os.makedirs(d, exist_ok=True)
+    return d
+
+
+def _attachments(session_id):
+    """All non-deleted attachments for a session, both sides."""
+    conn = _db()
+    try:
+        with conn.cursor(pymysql.cursors.DictCursor) as cur:
+            cur.execute("""
+                SELECT id, session_id, file_name, file_path, file_type,
+                       uploaded_by, uploaded_by_side, uploaded_at
+                FROM coaching_attachments
+                WHERE session_id = %s
+                ORDER BY uploaded_at ASC, id ASC
+            """, (session_id,))
+            return cur.fetchall()
+    finally:
+        conn.close()
+
+
+def _attach_count(session_id, side):
+    conn = _db()
+    try:
+        with conn.cursor(pymysql.cursors.DictCursor) as cur:
+            cur.execute("""SELECT COUNT(*) AS n FROM coaching_attachments
+                           WHERE session_id=%s AND uploaded_by_side=%s""",
+                        (session_id, side))
+            return cur.fetchone()["n"]
+    finally:
+        conn.close()
+
+
+def _save_attachments(session_id, side, files):
+    """Validate + save uploaded images for one side, honoring the 4-per-side cap.
+    Returns (saved_count, error_message_or_None)."""
+    existing = _attach_count(session_id, side)
+    room = ATTACH_MAX_PER_SIDE - existing
+    if room <= 0:
+        return 0, f"You already have {ATTACH_MAX_PER_SIDE} images on this session."
+
+    incoming = [f for f in files if f and f.filename]
+    if not incoming:
+        return 0, None
+    if len(incoming) > room:
+        return 0, f"You can add {room} more image(s); you selected {len(incoming)}."
+
+    saved = 0
+    conn = _db()
+    try:
+        with conn.cursor() as cur:
+            for f in incoming:
+                ext = (f.filename.rsplit(".", 1)[-1].lower() if "." in f.filename else "")
+                if ext not in ATTACH_EXTS:
+                    return saved, f"'{f.filename}' is not an allowed image (jpg, png, webp)."
+                safe = secure_filename(f.filename)
+                fname = f"COACH-{session_id}-{side}-{uuid.uuid4().hex[:8]}-{safe}"
+                f.save(os.path.join(_attach_dir(), fname))
+                rel = f"{ATTACH_SUBDIR}/{fname}".replace("\\", "/")
+                cur.execute("""
+                    INSERT INTO coaching_attachments
+                      (session_id, file_name, file_path, file_type,
+                       file_size, uploaded_by, uploaded_by_side)
+                    VALUES (%s,%s,%s,%s,%s,%s,%s)
+                """, (session_id, fname, rel, ext, 0, _me(), side))
+                saved += 1
+        conn.commit()
+    finally:
+        conn.close()
+    return saved, None
+
+
+@coaching_bp.route("/session/<int:session_id>/attach", methods=["POST"])
+@coaching_required
+def attach_tl(session_id):
+    if not validate_csrf():
+        flash('Security check failed, please try again.', 'danger')
+        return redirect(url_for('coaching.view_session', session_id=session_id))
+    row = _get_session(session_id)
+    if not row:
+        abort(404)
+    if not can_reports() and row["supervisor_id"] != _me() and not session.get("is_tl"):
+        abort(403)
+    if row["status"] == "completed":
+        flash("This session is completed; attachments are locked.", "error")
+        return redirect(url_for("coaching.view_session", session_id=session_id))
+    saved, err = _save_attachments(session_id, "tl", request.files.getlist("images"))
+    flash(err, "error") if err else flash(f"{saved} image(s) added.", "success")
+    return redirect(url_for("coaching.view_session", session_id=session_id))
+
+
+@coaching_bp.route("/my/<int:session_id>/attach", methods=["POST"])
+@_agent_login_required
+def attach_agent(session_id):
+    if not validate_csrf():
+        flash('Security check failed, please try again.', 'danger')
+        return redirect(url_for('coaching.my_session', session_id=session_id))
+    row = _get_session(session_id)
+    if not row:
+        abort(404)
+    if row["agent_id"] != _me():
+        abort(403)
+    if row["status"] == "completed":
+        flash("This session is completed; attachments are locked.", "error")
+        return redirect(url_for("coaching.my_session", session_id=session_id))
+    saved, err = _save_attachments(session_id, "agent", request.files.getlist("images"))
+    flash(err, "error") if err else flash(f"{saved} image(s) added.", "success")
+    return redirect(url_for("coaching.my_session", session_id=session_id))
+
+
+@coaching_bp.route("/attachment/<int:att_id>/delete", methods=["POST"])
+@_agent_login_required
+def attach_delete(att_id):
+    if not validate_csrf():
+        flash('Security check failed, please try again.', 'danger')
+        return redirect(request.referrer or url_for('coaching.my_sessions'))
+    conn = _db()
+    try:
+        with conn.cursor(pymysql.cursors.DictCursor) as cur:
+            cur.execute("""SELECT a.*, cs.status, cs.agent_id, cs.supervisor_id
+                           FROM coaching_attachments a
+                           JOIN coaching_sessions cs ON cs.id = a.session_id
+                           WHERE a.id=%s""", (att_id,))
+            att = cur.fetchone()
+            if not att:
+                abort(404)
+            # Only the uploader may delete, and only before completion.
+            if att["uploaded_by"] != _me():
+                abort(403)
+            if att["status"] == "completed":
+                flash("Session completed; attachments are locked.", "error")
+                return redirect(_attach_back(att))
+            # Remove file then row.
+            try:
+                fp = os.path.join(current_app.root_path, "static",
+                                  *att["file_path"].split("/"))
+                if os.path.isfile(fp):
+                    os.remove(fp)
+            except Exception:
+                pass
+            cur.execute("DELETE FROM coaching_attachments WHERE id=%s", (att_id,))
+        conn.commit()
+    finally:
+        conn.close()
+    flash("Image removed.", "success")
+    return redirect(_attach_back(att))
+
+
+def _attach_back(att):
+    """Return the right page to redirect to after an attachment action."""
+    if att.get("agent_id") == _me() and att.get("uploaded_by_side") == "agent":
+        return url_for("coaching.my_session", session_id=att["session_id"])
+    return url_for("coaching.view_session", session_id=att["session_id"])
+
+
+# --- Agent-facing views ---------------------------------------------------
 @coaching_bp.route("/my")
 @_agent_login_required
 def my_sessions():
@@ -628,6 +989,9 @@ def my_session(session_id):
     locked = (row["status"] == "completed")
 
     if request.method == "POST" and not locked:
+        if not validate_csrf():
+            flash('Security check failed, please try again.', 'danger')
+            return redirect(url_for('coaching.my_session', session_id=session_id))
         action_plan = (request.form.get("action_plan", "") or "").strip()
         do_complete = request.form.get("complete") == "1"
 
@@ -655,7 +1019,10 @@ def my_session(session_id):
         return redirect(url_for("coaching.my_session", session_id=session_id))
 
     return render_template("coaching/my_session.html", s=row, locked=locked,
-                           types=COACHING_TYPES)
+                           types=COACHING_TYPES,
+                           attachments=_attachments(session_id),
+                           agent_attach_count=_attach_count(session_id, "agent"),
+                           attach_max=ATTACH_MAX_PER_SIDE, me=_me())
 
 
 # --- Reports (managers only) ---------------------------------------------
@@ -837,3 +1204,53 @@ def reports_export():
     return Response(buf.getvalue(), mimetype="text/csv",
                     headers={"Content-Disposition":
                              f"attachment; filename=coaching_{rtype}_{stamp}.csv"})
+
+
+# --- Dashboard drill-in: sessions a supervisor conducted -----------------
+@coaching_bp.route("/api/supervisor/<employee_id>/sessions")
+@coaching_required
+def api_supervisor_sessions(employee_id):
+    """JSON list of all sessions this supervisor conducted, for the dashboard
+    drill-in modal. Managers only (matches the Team Performance Overview gate)."""
+    from flask import jsonify
+    if not can_reports():
+        abort(403)
+    conn = _db()
+    try:
+        with conn.cursor(pymysql.cursors.DictCursor) as cur:
+            cur.execute("""
+                SELECT s.schedule_name AS supervisor_name, s.email
+                FROM gsheet_employees s
+                WHERE s.employee_id = %s LIMIT 1
+            """, (employee_id,))
+            sup = cur.fetchone() or {}
+
+            cur.execute(f"""
+                SELECT cs.id, cs.session_date, cs.coaching_type, cs.topic, cs.status,
+                       a.schedule_name AS agent_name, a.employee_id AS agent_id
+                FROM coaching_sessions cs
+                LEFT JOIN gsheet_employees a ON a.employee_id = cs.agent_id {GC}
+                WHERE cs.supervisor_id = %s
+                ORDER BY cs.session_date DESC, cs.id DESC
+            """, (employee_id,))
+            rows = cur.fetchall()
+    finally:
+        conn.close()
+
+    items = [{
+        "id": r["id"],
+        "date": str(r["session_date"]) if r["session_date"] else "",
+        "agent": r["agent_name"] or r["agent_id"] or "—",
+        "type": COACHING_TYPES.get(r["coaching_type"], r["coaching_type"] or "—"),
+        "topic": r["topic"] or "—",
+        "status": r["status"],
+        "status_label": STATUS_LABELS_ALL.get(r["status"], r["status"]),
+        "status_style": STATUS_BADGE.get(r["status"], ""),
+        "url": url_for("coaching.view_session", session_id=r["id"]),
+    } for r in rows]
+
+    return jsonify({
+        "supervisor": sup.get("supervisor_name") or employee_id,
+        "count": len(items),
+        "sessions": items,
+    })

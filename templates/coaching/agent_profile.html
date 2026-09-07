@@ -2,6 +2,7 @@
 {% block title %}{{ agent.schedule_name or agent.employee_id }}{% endblock %}
 {% block page_title %}{{ agent.schedule_name or agent.employee_id }}{% endblock %}
 {% block content %}
+<div class="co-wrap">
 <style>
   .co-stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:14px;}
   .co-stat{background:var(--surface);border:1px solid var(--border);border-left:4px solid var(--accent);
@@ -38,7 +39,7 @@
               <td><span class="badge bg-secondary">{{ types.get(s.coaching_type, s.coaching_type) }}</span></td>
               <td>{{ s.topic or '—' }}</td>
               <td>{{ s.supervisor_name or s.supervisor_id }}</td>
-              <td><span class="badge" style="{{ coaching_status_style.get(s.status,'') }}">{{ statuses.get(s.status, s.status) }}</span></td>
+              <td><span class="badge" style="{{ coaching_status_style.get(s.status,'') }}">{{ coaching_status_label.get(s.status, s.status) }}</span></td>
               <td><a href="{{ url_for('coaching.view_session', session_id=s.id) }}" class="btn btn-sm btn-outline-primary">View</a></td>
             </tr>
           {% else %}
@@ -48,5 +49,6 @@
       </table>
     </div>
   </div>
+</div>
 </div>
 {% endblock %}

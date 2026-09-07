@@ -2,6 +2,8 @@
 {% block title %}My Coaching · #{{ s.id }}{% endblock %}
 {% block page_title %}Coaching Session{% endblock %}
 {% block content %}
+<style>.co-wrap-narrow{max-width:900px;margin:0 auto;width:100%;}</style>
+<div class="co-wrap-narrow">
 <style>
   .co-detail{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:14px;}
   .co-detail .l{font-size:.68rem;text-transform:uppercase;letter-spacing:.03em;color:var(--text-muted);margin-bottom:2px;}
@@ -69,5 +71,15 @@
       {% endif %}
     </div>
   </div>
+
+  <div class="card mt-3">
+    <div class="card-body">
+      {% set side = 'agent' %}
+      {% set my_count = agent_attach_count %}
+      {% set upload_url = url_for('coaching.attach_agent', session_id=s.id) %}
+      {% include "coaching/_attachments.html" with context %}
+    </div>
+  </div>
+</div>
 </div>
 {% endblock %}

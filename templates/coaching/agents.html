@@ -2,6 +2,7 @@
 {% block title %}Agents{% endblock %}
 {% block page_title %}Agents{% endblock %}
 {% block content %}
+<div class="co-wrap">
 {% include "coaching/_nav.html" with context %}
 <div class="card">
   <div class="card-body">
@@ -16,7 +17,8 @@
               <td>{{ r.session_count }}</td>
               <td>{{ r.last_session or '—' }}</td>
               <td>{% if r.pending %}<span class="badge" style="background:var(--danger);color:#fff;">{{ r.pending }}</span>{% else %}0{% endif %}</td>
-              <td><a href="{{ url_for('coaching.agent_profile', employee_id=r.employee_id) }}" class="btn btn-sm btn-outline-primary">Profile</a>
+              <td style="white-space:nowrap;">
+                  <a href="{{ url_for('coaching.agent_profile', employee_id=r.employee_id) }}" class="btn btn-sm btn-outline-primary">Profile</a>
                   <a href="{{ url_for('coaching.new_session') }}?agent={{ r.employee_id }}" class="btn btn-sm btn-outline-secondary">Coach</a></td>
             </tr>
           {% else %}
@@ -26,5 +28,6 @@
       </table>
     </div>
   </div>
+</div>
 </div>
 {% endblock %}

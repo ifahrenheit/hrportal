@@ -3,6 +3,7 @@
 {% block page_title %}{{ 'Edit' if mode=='edit' else 'New' }} Coaching Session{% endblock %}
 
 {% block content %}
+<div class="co-wrap-narrow">
 {% include "coaching/_nav.html" with context %}
 
 <div style="max-width:900px;">
@@ -11,7 +12,7 @@
   {% endwith %}
 
   {% set action = url_for('coaching.edit_session', session_id=s.id) if mode=='edit' else url_for('coaching.new_session') %}
-  <form method="post" action="{{ action }}">
+  <form method="post" action="{{ action }}" enctype="multipart/form-data">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <div class="card mb-3">
       <div class="card-body">
@@ -82,10 +83,22 @@
       </div>
     </div>
 
+    {% if mode != 'edit' %}
+    <div class="card mb-3">
+      <div class="card-body">
+        <h6 class="text-primary fw-bold mb-2" style="border-left:3px solid var(--accent);padding-left:8px;">Attachments <span class="text-muted fw-normal">(optional)</span></h6>
+        <input type="file" name="images" accept="image/jpeg,image/png,image/webp" multiple
+               class="form-control form-control-sm" style="max-width:420px;">
+        <p class="text-muted mt-1" style="font-size:.78rem;">Up to 4 images · JPG/PNG/WebP. You can also add more after creating.</p>
+      </div>
+    </div>
+    {% endif %}
+
     <div class="d-flex gap-2">
       <button type="submit" class="btn btn-primary">{{ 'Save Changes' if mode=='edit' else 'Create Session' }}</button>
       <a href="{{ url_for('coaching.all_sessions') }}" class="btn btn-outline-secondary">Cancel</a>
     </div>
   </form>
+</div>
 </div>
 {% endblock %}

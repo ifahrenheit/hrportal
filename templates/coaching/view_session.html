@@ -2,6 +2,7 @@
 {% block title %}Session #{{ s.id }}{% endblock %}
 {% block page_title %}Session #{{ s.id }}{% endblock %}
 {% block content %}
+<div class="co-wrap-narrow">
 <style>
   .co-detail{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:14px;}
   .co-detail .l{font-size:.68rem;text-transform:uppercase;letter-spacing:.03em;color:var(--text-muted);margin-bottom:2px;}
@@ -43,8 +44,16 @@
         {% if s.areas_for_improvement %}<h6>Areas for Improvement</h6><p>{{ s.areas_for_improvement }}</p>{% endif %}
         {% if s.action_plan %}<h6>Agent Action Plan (SMART)</h6><p>{{ s.action_plan }}</p>{% endif %}
       </div>
+
+      {% set side = 'tl' %}
+      {% set my_count = tl_attach_count %}
+      {% set upload_url = url_for('coaching.attach_tl', session_id=s.id) %}
+      {% set locked = (s.status == 'completed') %}
+      {% include "coaching/_attachments.html" with context %}
+
       <p class="text-muted mt-3" style="font-size:.75rem;">Created {{ s.created_at }}{% if s.updated_at and s.updated_at != s.created_at %} · Updated {{ s.updated_at }}{% endif %}</p>
     </div>
   </div>
+</div>
 </div>
 {% endblock %}

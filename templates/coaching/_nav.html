@@ -1,4 +1,8 @@
 {# Coaching sub-nav toolbar — rendered inside content since base has no header_actions block #}
+<style>
+  .co-wrap{max-width:1200px;margin:0 auto;width:100%;}
+  .co-wrap-narrow{max-width:900px;margin:0 auto;width:100%;}
+</style>
 <div class="d-flex flex-wrap gap-2 align-items-center mb-3">
   <span class="fw-bold me-2" style="font-size:1.1rem;">Coaching</span>
   <a href="{{ url_for('coaching.index') }}" class="btn btn-sm {{ 'btn-primary' if active=='dashboard' else 'btn-outline-secondary' }}">Dashboard</a>
