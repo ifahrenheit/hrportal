@@ -1,0 +1,298 @@
+{% extends "base.html" %}
+{% block title %}SL Verification{% endblock %}
+
+
+{% block content %}
+<style>
+/* ---- SL Verification (scoped) ---- */
+.slv-wrap { max-width: 1080px; margin: 0 auto; }
+.slv-head { display:flex; align-items:center; justify-content:space-between; margin-bottom:14px; }
+.slv-head h4 { margin:0; font-weight:600; letter-spacing:-.01em; }
+.slv-count { font-size:.8rem; color:var(--bs-secondary-color,#6b7280); }
+
+.slv-card {
+  border:1px solid var(--bs-border-color,#e5e7eb);
+  border-radius:12px; background:var(--bs-body-bg,#fff);
+  box-shadow:0 1px 2px rgba(16,24,40,.04);
+  margin-bottom:14px; overflow:hidden;
+}
+.slv-card__top {
+  display:flex; align-items:flex-start; justify-content:space-between;
+  gap:12px; padding:14px 18px;
+  border-bottom:1px solid var(--bs-border-color,#eef0f3);
+  background:var(--bs-tertiary-bg,#fafbfc);
+}
+.slv-emp { font-weight:600; font-size:.98rem; }
+.slv-emp .slv-id { color:var(--bs-secondary-color,#9aa1ab); font-weight:400; margin-left:6px; font-size:.85rem; }
+.slv-meta { display:flex; flex-wrap:wrap; gap:6px 14px; margin-top:5px; font-size:.78rem; color:var(--bs-secondary-color,#6b7280); }
+.slv-pill { display:inline-block; font-size:.68rem; font-weight:600; padding:.15rem .5rem; border-radius:999px; background:#fef3c7; color:#92400e; }
+.slv-hours { text-align:right; white-space:nowrap; }
+.slv-hours b { font-size:1.05rem; }
+.slv-hours span { display:block; font-size:.72rem; color:var(--bs-secondary-color,#9aa1ab); }
+
+.slv-absence { padding:12px 18px 0; }
+.slv-absence .lbl { font-size:.72rem; text-transform:uppercase; letter-spacing:.04em; color:var(--bs-secondary-color,#9aa1ab); margin-right:8px; }
+.slv-date-chip {
+  display:inline-block; font-size:.78rem; padding:.12rem .5rem; margin:0 4px 4px 0;
+  border:1px solid var(--bs-border-color,#e5e7eb); border-radius:6px; background:var(--bs-tertiary-bg,#f7f8fa);
+}
+.slv-note { padding:4px 18px 0; font-size:.8rem; color:var(--bs-secondary-color,#6b7280); }
+
+.slv-body { padding:14px 18px 18px; }
+.slv-grid { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:12px 16px; }
+@media (max-width:900px){ .slv-grid{ grid-template-columns:repeat(2,minmax(0,1fr)); } }
+@media (max-width:560px){ .slv-grid{ grid-template-columns:1fr; } }
+
+.slv-field label { display:block; font-size:.72rem; font-weight:500; margin-bottom:4px; color:var(--bs-secondary-color,#4b5563); }
+.slv-field input[type=text], .slv-field input[type=date] {
+  width:100%; font-size:.86rem; padding:.4rem .55rem; height:36px;
+  border:1px solid var(--bs-border-color,#d7dbe0); border-radius:8px;
+  background:var(--bs-body-bg,#fff); color:var(--bs-body-color,#111827);
+}
+.slv-field input:focus { outline:none; border-color:#3b82f6; box-shadow:0 0 0 3px rgba(59,130,246,.15); }
+
+/* auto valid-absence readout styled as a field, not editable */
+.slv-auto { height:36px; display:flex; align-items:center; padding:0 .6rem; font-size:.86rem; font-weight:600;
+  border:1px dashed var(--bs-border-color,#d7dbe0); border-radius:8px; background:var(--bs-tertiary-bg,#f7f8fa); color:var(--bs-secondary-color,#6b7280); }
+.slv-auto.ok  { color:#047857; border-color:#a7f3d0; background:#ecfdf5; }
+.slv-auto.bad { color:#b91c1c; border-color:#fecaca; background:#fef2f2; }
+
+/* segmented Yes/No toggle */
+.slv-seg { display:inline-flex; border:1px solid var(--bs-border-color,#d7dbe0); border-radius:8px; overflow:hidden; height:36px; }
+.slv-seg input { position:absolute; opacity:0; pointer-events:none; }
+.slv-seg label {
+  margin:0; padding:0 .85rem; display:flex; align-items:center; font-size:.82rem; font-weight:500; cursor:pointer;
+  background:var(--bs-body-bg,#fff); color:var(--bs-secondary-color,#6b7280); border-right:1px solid var(--bs-border-color,#e5e7eb);
+  transition:background .12s,color .12s;
+}
+.slv-seg label:last-of-type { border-right:0; }
+.slv-seg input.pos:checked + label { background:#059669; color:#fff; }
+.slv-seg input.neg:checked + label { background:#4b5563; color:#fff; }
+
+.slv-foot { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-top:16px; padding-top:14px; border-top:1px solid var(--bs-border-color,#eef0f3); }
+.slv-void { font-size:.8rem; color:#b45309; display:none; align-items:center; gap:6px; }
+.slv-btn { border:0; border-radius:8px; padding:.5rem 1.1rem; font-size:.86rem; font-weight:600; color:#fff;
+  background:#2563eb; cursor:pointer; display:inline-flex; align-items:center; gap:7px; }
+.slv-btn:hover { background:#1d4ed8; }
+.slv-btn:disabled { opacity:.55; cursor:not-allowed; }
+
+.slv-empty { text-align:center; padding:48px 20px; color:var(--bs-secondary-color,#6b7280); }
+.slv-empty i { font-size:2rem; color:#10b981; }
+
+[data-theme="dark"] .slv-pill { background:#78350f; color:#fde68a; }
+[data-theme="dark"] .slv-auto.ok  { background:rgba(5,150,105,.12); }
+[data-theme="dark"] .slv-auto.bad { background:rgba(185,28,28,.12); }
+</style>
+<div class="container-fluid py-3">
+ <div class="slv-wrap">
+  <div class="slv-head">
+    <h4><i class="bi bi-clipboard2-pulse me-2"></i>SL Verification</h4>
+    <span class="slv-count">{{ pending|length }} awaiting HR verification</span>
+  </div>
+
+  {% if not pending %}
+    <div class="slv-card slv-empty">
+      <i class="bi bi-check-circle d-block mb-2"></i>
+      No sick-leave filings awaiting verification.
+    </div>
+  {% endif %}
+
+  {% for r in pending %}
+  <div class="slv-card" id="slcard-{{ r.leave_request_id }}">
+    <div class="slv-card__top">
+      <div>
+        <div class="slv-emp">{{ r.emp_lastname }}, {{ r.emp_firstname }}<span class="slv-id">{{ r.employee_id }}</span></div>
+        <div class="slv-meta">
+          <span class="slv-pill">Sick Leave</span>
+          <span><i class="bi bi-clock me-1"></i>Filed {{ r.filed_at }}</span>
+          <span><i class="bi bi-person-badge me-1"></i>TL: {{ r.tl or '—' }}</span>
+        </div>
+      </div>
+      <div class="slv-hours">
+        <b>{{ '%.2f'|format(r.hours_deducted) }} hrs</b>
+        <span>{{ '%.4f'|format(r.days_deducted) }} days</span>
+      </div>
+    </div>
+
+    <div class="slv-absence" data-absence="{{ r.dates }}">
+      <span class="lbl">Dates of absence</span>
+      {% for d in r.dates.split(',') %}<span class="slv-date-chip">{{ d }}</span>{% endfor %}
+    </div>
+    {% if r.notes %}<div class="slv-note"><i class="bi bi-chat-left-text me-1"></i>{{ r.notes }}</div>{% endif %}
+
+    <div class="slv-body">
+      <div class="slv-grid">
+        <div class="slv-field">
+          <label>Date of consultation</label>
+          <input type="date" class="sl-consult" data-lr="{{ r.leave_request_id }}">
+        </div>
+        <div class="slv-field">
+          <label>Date fit to work</label>
+          <input type="date" class="sl-fit" data-lr="{{ r.leave_request_id }}">
+        </div>
+        <div class="slv-field">
+          <label>Valid absence <span style="font-weight:400;color:#9aa1ab">(auto)</span></label>
+          <div class="slv-auto sl-valid" data-lr="{{ r.leave_request_id }}">Enter dates</div>
+        </div>
+        <div class="slv-field">
+          <label>Name of doctor</label>
+          <input type="text" class="sl-doctor" placeholder="LASTNAME, Firstname">
+        </div>
+
+        <div class="slv-field">
+          <label>Specialization</label>
+          <input type="text" class="sl-spec" placeholder="e.g. Physician">
+        </div>
+        <div class="slv-field">
+          <label>Specialization match</label>
+          <div class="slv-seg">
+            <input type="radio" class="btn-check sl-specmatch pos" name="sm-{{ r.leave_request_id }}" id="sm-y-{{ r.leave_request_id }}" value="1">
+            <label for="sm-y-{{ r.leave_request_id }}">Match</label>
+            <input type="radio" class="btn-check sl-specmatch neg" name="sm-{{ r.leave_request_id }}" id="sm-n-{{ r.leave_request_id }}" value="0">
+            <label for="sm-n-{{ r.leave_request_id }}">No match</label>
+          </div>
+        </div>
+        <div class="slv-field">
+          <label>AWOL dates (RD exempted)</label>
+          <input type="text" class="sl-awol" placeholder="N/A">
+        </div>
+        <div class="slv-field">
+          <label>Life &amp; health</label>
+          <div class="slv-seg">
+            <input type="radio" class="btn-check sl-life pos" name="life-{{ r.leave_request_id }}" id="life-y-{{ r.leave_request_id }}" value="1">
+            <label for="life-y-{{ r.leave_request_id }}">Yes</label>
+            <input type="radio" class="btn-check sl-life neg" name="life-{{ r.leave_request_id }}" id="life-n-{{ r.leave_request_id }}" value="0">
+            <label for="life-n-{{ r.leave_request_id }}">No</label>
+          </div>
+        </div>
+        <div class="slv-field">
+          <label>PRC verification</label>
+          <div class="slv-seg">
+            <input type="radio" class="btn-check sl-prc pos" name="prc-{{ r.leave_request_id }}" id="prc-y-{{ r.leave_request_id }}" value="1">
+            <label for="prc-y-{{ r.leave_request_id }}">Verified</label>
+            <input type="radio" class="btn-check sl-prc neg" name="prc-{{ r.leave_request_id }}" id="prc-n-{{ r.leave_request_id }}" value="0">
+            <label for="prc-n-{{ r.leave_request_id }}">Non-verified</label>
+          </div>
+        </div>
+
+        <div class="slv-field">
+          <label>Face-to-face consult</label>
+          <div class="slv-seg">
+            <input type="radio" class="btn-check sl-f2f pos" name="f2f-{{ r.leave_request_id }}" id="f2f-y-{{ r.leave_request_id }}" value="1">
+            <label for="f2f-y-{{ r.leave_request_id }}">Yes</label>
+            <input type="radio" class="btn-check sl-f2f neg" name="f2f-{{ r.leave_request_id }}" id="f2f-n-{{ r.leave_request_id }}" value="0">
+            <label for="f2f-n-{{ r.leave_request_id }}">No</label>
+          </div>
+        </div>
+        <div class="slv-field">
+          <label>Hard copy received</label>
+          <div class="slv-seg">
+            <input type="radio" class="btn-check sl-hard pos" name="hard-{{ r.leave_request_id }}" id="hard-y-{{ r.leave_request_id }}" value="1">
+            <label for="hard-y-{{ r.leave_request_id }}">Yes</label>
+            <input type="radio" class="btn-check sl-hard neg" name="hard-{{ r.leave_request_id }}" id="hard-n-{{ r.leave_request_id }}" value="0">
+            <label for="hard-n-{{ r.leave_request_id }}">No</label>
+          </div>
+        </div>
+      </div>
+
+      <div class="slv-foot">
+        <div class="slv-void">
+          <i class="bi bi-exclamation-triangle"></i>Hard copy not received — the verification email will include the void notice.
+        </div>
+        <button type="button" class="slv-btn" onclick="submitSLVerification('{{ r.leave_request_id }}')">
+          <i class="bi bi-check2-square"></i>Verify &amp; forward to SOM
+        </button>
+      </div>
+    </div>
+  </div>
+  {% endfor %}
+ </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function parseDates(str){ return (str||'').split(',').map(s=>s.trim()).filter(Boolean); }
+
+function recomputeValid(lr){
+  const card = document.getElementById('slcard-'+lr);
+  if(!card) return;
+  const consult = card.querySelector('.sl-consult').value;
+  const fit     = card.querySelector('.sl-fit').value;
+  const box     = card.querySelector('.sl-valid');
+  const absence = parseDates(card.querySelector('[data-absence]').getAttribute('data-absence'));
+  box.classList.remove('ok','bad');
+  if(!consult || !fit || !absence.length){ box.textContent='Enter dates'; return; }
+  const cd=new Date(consult), fd=new Date(fit);
+  let ok = cd <= fd;
+  for(const d of absence){ const dd=new Date(d); if(dd<cd||dd>fd){ ok=false; break; } }
+  box.textContent = ok ? 'Yes — dates covered' : 'No — outside range';
+  box.classList.add(ok ? 'ok' : 'bad');
+}
+
+document.querySelectorAll('.sl-consult, .sl-fit').forEach(el=>{
+  el.addEventListener('change',()=>recomputeValid(el.getAttribute('data-lr')));
+});
+
+document.querySelectorAll('.sl-hard').forEach(el=>{
+  el.addEventListener('change',()=>{
+    const lr = el.name.split('-').slice(1).join('-');
+    const card = document.getElementById('slcard-'+lr);
+    const void_ = card.querySelector('.slv-void');
+    const noChecked = card.querySelector('.sl-hard[value="0"]').checked;
+    void_.style.display = noChecked ? 'flex' : 'none';
+  });
+});
+
+function getRadio(card, cls){ const c=card.querySelector('.'+cls+':checked'); return c?c.value:null; }
+
+function submitSLVerification(lr){
+  const card = document.getElementById('slcard-'+lr);
+  const consult = card.querySelector('.sl-consult').value;
+  const fit     = card.querySelector('.sl-fit').value;
+  const life = getRadio(card,'sl-life'), prc = getRadio(card,'sl-prc');
+  const f2f  = getRadio(card,'sl-f2f'),  hard = getRadio(card,'sl-hard');
+  const smatch = getRadio(card,'sl-specmatch');
+
+  if(!consult || !fit){ alert('Please enter both Date of consultation and Date fit to work.'); return; }
+  if(life===null||prc===null||f2f===null||hard===null||smatch===null){
+    alert('Please answer Life & health, PRC, Specialization match, Face-to-face, and Hard copy received.'); return;
+  }
+
+  const btn = card.querySelector('.slv-btn');
+  btn.disabled = true; btn.innerHTML = '<i class="bi bi-hourglass-split"></i>Saving…';
+
+  const payload = {
+    leave_request_id: lr,
+    date_consultation: consult,
+    date_fit_to_work: fit,
+    doctor_name: card.querySelector('.sl-doctor').value,
+    specialization: card.querySelector('.sl-spec').value,
+    awol_dates: card.querySelector('.sl-awol').value,
+    life_health: life, prc_verified: prc, spec_match: smatch, face_to_face: f2f, hardcopy_received: hard
+  };
+
+  fetch('/leave/sl-verification/submit',{
+    method:'POST', headers:{'Content-Type':'application/json','X-CSRF-Token':getCsrfToken()}, body:JSON.stringify(payload)
+  })
+  .then(r=>r.json())
+  .then(data=>{
+    if(data.success){
+      card.style.transition='opacity .3s, transform .3s';
+      card.style.opacity='0'; card.style.transform='translateY(-6px)';
+      setTimeout(()=>{
+        card.remove();
+        const wrap=document.querySelector('.slv-wrap');
+        if(!wrap.querySelector('.slv-card:not(.slv-empty)')){
+          const c=document.querySelector('.slv-count'); if(c) c.textContent='0 awaiting HR verification';
+        }
+      },300);
+    } else {
+      btn.disabled=false; btn.innerHTML='<i class="bi bi-check2-square"></i>Verify &amp; forward to SOM';
+      alert(data.message||'Error');
+    }
+  })
+  .catch(()=>{ btn.disabled=false; btn.innerHTML='<i class="bi bi-check2-square"></i>Verify &amp; forward to SOM'; alert('Network error'); });
+}
+</script>
+{% endblock %}

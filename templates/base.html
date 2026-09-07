@@ -536,6 +536,14 @@ setInterval(refreshPendingBadge, 60000);
 
 refreshFileRequestsBadge();
 setInterval(refreshFileRequestsBadge, 60000);
+function refreshSLVerifyBadge() {
+  fetch('/api/sl-verification-count').then(r=>r.json()).then(d=>{
+    const b=document.getElementById('slVerifyBadge');
+    if(b){b.textContent=d.count;b.style.display=d.count>0?'inline-block':'none';}
+  }).catch(()=>{});
+}
+refreshSLVerifyBadge();
+setInterval(refreshSLVerifyBadge, 60000);
 {% endif %}
 
 function refreshQaUpdatesBadge() {

@@ -136,7 +136,7 @@
     </div>
 
     {# ── MY TEAM (Supervisors) ────────────────────────────── #}
-    {% if session.get('is_supervisor') or session.get('is_admin') or session.get('permissions', {}).get('can_material_requests') or break_log_supervisor_access() %}
+    {% if session.get('is_supervisor') or session.get('is_admin') or session.get('permissions', {}).get('can_material_requests') or break_log_supervisor_access() or SL_HR_APPROVER %}
     <div class="nav-section-toggle nav-label" onclick="toggleSection('supervisor')" id="supervisor-header">
       <span>My Team</span>
       <i class="bi bi-chevron-down section-arrow" id="supervisor-arrow"></i>
@@ -151,6 +151,8 @@
         <span class="nav-label">Leave Approvals</span>
         <span id="pendingBadge" style="display:none;margin-left:auto;background:#ef4444;color:#fff;font-size:.65rem;font-weight:700;padding:.15rem .45rem;border-radius:999px;min-width:18px;text-align:center;"></span>
       </a>
+
+
       <a class="nav-link {% if request.endpoint == 'file_requests_approvals' %}active{% endif %}"
          href="{{ url_for('file_requests_approvals') }}">
         <i class="bi bi-check2-square"></i>
@@ -159,6 +161,13 @@
               style="display:none;margin-left:auto;background:#ef4444;color:#fff;
                      font-size:.65rem;font-weight:700;padding:.15rem .45rem;
                      border-radius:999px;min-width:18px;text-align:center;"></span>
+      </a>
+      {% endif %}
+
+      {% if SL_HR_APPROVER %}
+      <a class="nav-link {% if EP == 'sl_verification' %}active{% endif %}" href="{{ url_for('sl_verification') }}">
+        <i class="bi bi-clipboard2-pulse"></i> <span class="nav-label">SL Verification</span>
+        <span id="slVerifyBadge" style="display:none;margin-left:auto;background:#ef4444;color:#fff;font-size:.65rem;font-weight:700;padding:.15rem .45rem;border-radius:999px;min-width:18px;text-align:center;"></span>
       </a>
       {% endif %}
       {% if session.get('is_supervisor') or session.get('is_admin') or session.get('permissions', {}).get('can_material_requests') %}
