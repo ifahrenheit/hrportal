@@ -183,7 +183,7 @@
       {% endif %}
       {% if session.get('is_supervisor') or session.get('is_admin') or session.get('permissions', {}).get('can_team_calendar') %}
       <a class="nav-link {% if request.endpoint == 'supervisor_team_calendar' %}active{% endif %}" href="{{ url_for('supervisor_team_calendar') }}">
-        <i class="bi bi-calendar3"></i> <span class="nav-label">Team Calendar</span>
+        <i class="bi bi-calendar3"></i> <span class="nav-label">Leave Calendar</span>
       </a>
       {% endif %}
       {% if session.get('is_supervisor') or session.get('is_admin') or session.get('permissions', {}).get('can_coaching') or session.get('permissions', {}).get('can_coaching_reports') %}

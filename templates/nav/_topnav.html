@@ -608,7 +608,7 @@
         {% endif %}
         {% if SUPER or ADMIN or P.get('can_team_calendar') %}
         <a class="tn-item {% if EP == 'supervisor_team_calendar' %}active{% endif %}" href="{{ url_for('supervisor_team_calendar') }}">
-          <i class="bi bi-calendar3"></i> Team Calendar</a>
+          <i class="bi bi-calendar3"></i> Leave Calendar</a>
         {% endif %}
         {% if ADMIN or P.get('can_coaching') or P.get('can_coaching_reports') %}
         <a class="tn-item {% if EP and EP.startswith('coaching.') %}active{% endif %}" href="{{ url_for('coaching.index') }}">
