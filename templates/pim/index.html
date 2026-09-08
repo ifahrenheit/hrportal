@@ -1,22 +1,48 @@
 {% extends "base.html" %}
 {% block title %}Employee Database{% endblock %}
 {% block content %}
+<style>
+  .pim-avatar {
+    width: 30px; height: 30px; border-radius: 50%; flex-shrink: 0;
+    display: flex; align-items: center; justify-content: center;
+    font-size: .7rem; font-weight: 700; color: #fff;
+  }
+  .pim-chip {
+    display: inline-block; padding: .2rem .55rem; border-radius: 999px;
+    font-size: .74rem; background: var(--bg); color: var(--text-muted);
+    border: 1px solid var(--border); white-space: nowrap;
+  }
+  #pimTableWrap { max-height: 70vh; overflow-y: auto; }
+  #pimTable thead th {
+    position: sticky; top: 0; z-index: 2; cursor: pointer; user-select: none;
+  }
+  #pimTable thead th:hover { color: var(--accent); }
+  #pimTable thead th .sort-arrow { opacity: .35; font-size: .7rem; margin-left: .25rem; }
+  #pimTable thead th.sorted .sort-arrow { opacity: 1; color: var(--accent); }
+  #pimTable tbody tr.clickable-row { cursor: pointer; }
+  #pimTable tbody tr.clickable-row:hover { background: var(--bg) !important; }
+  #pimTable tbody tr.no-match { display: none; }
+  #pimTable td { white-space: nowrap; }
+  .pim-chevron { color: var(--border); }
+  #pimTable tbody tr.clickable-row:hover .pim-chevron { color: var(--accent); }
+</style>
+
 <div class="container-fluid px-4 py-3">
   <div class="d-flex align-items-center justify-content-between mb-3">
     <div>
       <h4 class="mb-0 fw-bold">Employee Database</h4>
       <small class="text-muted">Synced from Google Sheets &mdash; read-only</small>
     </div>
-    <span class="badge bg-secondary fs-6">{{ employees|length }} record(s)</span>
+    <span class="badge bg-secondary fs-6" id="pimCount">{{ employees|length }} record(s)</span>
   </div>
 
   <form method="get" class="row g-2 mb-3">
     <div class="col-md-5">
       <div class="input-group">
         <span class="input-group-text"><i class="bi bi-search"></i></span>
-        <input type="text" name="search" class="form-control"
-               placeholder="Search name, email, employee ID..."
-               value="{{ search }}">
+        <input type="text" id="pimSearch" name="search" class="form-control"
+               placeholder="Search name, email, employee ID, TL, group, account..."
+               value="{{ search }}" autocomplete="off">
       </div>
     </div>
     <div class="col-md-3">
@@ -39,25 +65,38 @@
   </form>
 
   <div class="card shadow-sm">
-    <div class="table-responsive">
-      <table class="table table-hover table-sm align-middle mb-0">
-        <thead class="table-dark">
+    <div class="table-responsive" id="pimTableWrap">
+      <table class="table table-hover table-sm align-middle mb-0" id="pimTable">
+        <thead>
           <tr>
-            <th>Employee ID</th>
-            <th>Name</th>
-            <th>Email</th>
-            <th>Status</th>
-            <th>Team Lead</th>
-            <th>Group</th>
-            <th>Account</th>
+            <th data-col="0">Employee ID <i class="bi bi-arrow-down-up sort-arrow"></i></th>
+            <th data-col="1">Name <i class="bi bi-arrow-down-up sort-arrow"></i></th>
+            <th data-col="2">Email <i class="bi bi-arrow-down-up sort-arrow"></i></th>
+            <th data-col="3">Status <i class="bi bi-arrow-down-up sort-arrow"></i></th>
+            <th data-col="4">Team Lead <i class="bi bi-arrow-down-up sort-arrow"></i></th>
+            <th data-col="5">Group <i class="bi bi-arrow-down-up sort-arrow"></i></th>
+            <th data-col="6">Account <i class="bi bi-arrow-down-up sort-arrow"></i></th>
+            <th style="width:2rem;"></th>
           </tr>
         </thead>
         <tbody>
+          {% set avatar_colors = ['#1e5fd4', '#f59e0b', '#10b981', '#8b5cf6', '#ef4444', '#06b6d4', '#ec4899', '#84cc16'] %}
           {% for emp in employees %}
-          <tr style="cursor:pointer;" onclick="window.location='{{ url_for('pim_profile', employee_id=emp.employee_id) }}'">
-            <td><code>{{ emp.employee_id }}</code></td>
-            <td>{{ emp.schedule_name or '—' }}</td>
-            <td>{{ emp.email or '—' }}</td>
+          {% set display_name = emp.schedule_name or '—' %}
+          {% set initials = (display_name.split()|map('first')|list|join(''))[:2]|upper if display_name != '—' else '?' %}
+          <tr class="clickable-row"
+              data-href="{{ url_for('pim_profile', employee_id=emp.employee_id) }}"
+              data-name="{{ ([emp.employee_id, emp.schedule_name, emp.email, emp.tl, emp.group_name, emp.account]|select|join(' '))|lower }}">
+            <td>
+              <span class="text-muted small emp-id-copy" onclick="event.stopPropagation(); copyEmpId(this,'{{ emp.employee_id }}')" title="Click to copy">{{ emp.employee_id }}</span>
+            </td>
+            <td>
+              <div class="d-flex align-items-center gap-2">
+                <span class="pim-avatar" style="background:{{ avatar_colors[loop.index0 % avatar_colors|length] }};">{{ initials }}</span>
+                <span class="fw-semibold">{{ display_name }}</span>
+              </div>
+            </td>
+            <td class="text-muted">{{ emp.email or '—' }}</td>
             <td>
               {% set sc = {'Active': 'success', 'Training': 'info', 'Pending': 'warning', 'Separated': 'secondary'} %}
               <span class="badge bg-{{ sc.get(emp.status, 'secondary') }} {% if emp.status == 'Pending' %}text-dark{% endif %}">
@@ -65,15 +104,76 @@
               </span>
             </td>
             <td>{{ emp.tl or '—' }}</td>
-            <td>{{ emp.group_name or '—' }}</td>
-            <td>{{ emp.account or '—' }}</td>
+            <td>{% if emp.group_name %}<span class="pim-chip">{{ emp.group_name }}</span>{% else %}—{% endif %}</td>
+            <td>{% if emp.account %}<span class="pim-chip">{{ emp.account }}</span>{% else %}—{% endif %}</td>
+            <td><i class="bi bi-chevron-right pim-chevron"></i></td>
           </tr>
           {% else %}
           <tr><td colspan="8" class="text-center text-muted py-4">No employees found.</td></tr>
           {% endfor %}
         </tbody>
       </table>
+      <div id="pimNoMatch" class="text-center text-muted py-4" style="display:none;">
+        <i class="bi bi-search me-1"></i>No employees match your search.
+      </div>
     </div>
   </div>
 </div>
+
+<script>
+(function () {
+  const table   = document.getElementById('pimTable');
+  if (!table) return;
+  const tbody   = table.tBodies[0];
+  const rows    = Array.from(tbody.querySelectorAll('tr.clickable-row'));
+  const total   = rows.length;
+
+  // Row click -> profile (matches copy-ID click stopping propagation above)
+  rows.forEach(row => {
+    row.addEventListener('click', () => { window.location = row.dataset.href; });
+  });
+
+  // Live search across employee ID / name / email / TL / group / account
+  const searchInput = document.getElementById('pimSearch');
+  const noMatch      = document.getElementById('pimNoMatch');
+  const countBadge   = document.getElementById('pimCount');
+
+  function applySearch() {
+    const q = searchInput.value.trim().toLowerCase();
+    let visible = 0;
+    rows.forEach(row => {
+      const match = !q || row.dataset.name.includes(q);
+      row.classList.toggle('no-match', !match);
+      if (match) visible++;
+    });
+    noMatch.style.display = (q && visible === 0) ? 'block' : 'none';
+    countBadge.textContent = q ? `${visible} of ${total} shown` : `${total} record(s)`;
+  }
+  searchInput?.addEventListener('input', applySearch);
+  if (searchInput && searchInput.value) applySearch();
+
+  // Click-to-sort columns (client-side, stable, toggles asc/desc)
+  const headers = Array.from(table.querySelectorAll('thead th[data-col]'));
+  let sortState = { col: null, dir: 1 };
+
+  headers.forEach(th => {
+    th.addEventListener('click', () => {
+      const col = parseInt(th.dataset.col, 10);
+      sortState.dir = (sortState.col === col) ? -sortState.dir : 1;
+      sortState.col = col;
+
+      headers.forEach(h => { h.classList.remove('sorted'); h.querySelector('.sort-arrow').className = 'bi bi-arrow-down-up sort-arrow'; });
+      th.classList.add('sorted');
+      th.querySelector('.sort-arrow').className = sortState.dir === 1 ? 'bi bi-arrow-down sort-arrow' : 'bi bi-arrow-up sort-arrow';
+
+      const sorted = rows.slice().sort((a, b) => {
+        const av = a.cells[col].innerText.trim().toLowerCase();
+        const bv = b.cells[col].innerText.trim().toLowerCase();
+        return av < bv ? -sortState.dir : av > bv ? sortState.dir : 0;
+      });
+      sorted.forEach(row => tbody.appendChild(row));
+    });
+  });
+})();
+</script>
 {% endblock %}
