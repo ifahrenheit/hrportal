@@ -585,7 +585,7 @@
     </div>
 
     {# ── MY TEAM ──────────────────────────────────────────── #}
-    {% if SUPER or ADMIN or P.get('can_material_requests') or break_log_supervisor_access() or TL %}
+    {% if SUPER or ADMIN or P.get('can_material_requests') or P.get('can_team_calendar') or break_log_supervisor_access() or TL %}
     <div class="tn-panel" data-panel="team">
       <div class="tn-cols">
         {% if SL_HR_APPROVER %}
@@ -605,6 +605,8 @@
           <a class="tn-item {% if EP == 'file_requests_approvals' %}active{% endif %}" href="{{ url_for('file_requests_approvals') }}">
           <i class="bi bi-check2-square"></i> OT / CWS / FTS / RDW
           <span id="fileRequestsBadge" style="display:none;margin-left:auto;background:#ef4444;color:#fff;font-size:.65rem;font-weight:700;padding:.15rem .45rem;border-radius:999px;min-width:18px;text-align:center;"></span></a>
+        {% endif %}
+        {% if SUPER or ADMIN or P.get('can_team_calendar') %}
         <a class="tn-item {% if EP == 'supervisor_team_calendar' %}active{% endif %}" href="{{ url_for('supervisor_team_calendar') }}">
           <i class="bi bi-calendar3"></i> Team Calendar</a>
         {% endif %}
@@ -897,6 +899,8 @@
   <a class="tn-subtab {% if EP == 'supervisor_active_leaves' %}active{% endif %}" href="{{ url_for('supervisor_active_leaves') }}">Team Leaves</a>
   <a class="tn-subtab {% if EP == 'supervisor_pending' %}active{% endif %}" href="{{ url_for('supervisor_pending') }}">Leave Approvals<span class="tn-subbadge" data-src="pendingBadge"></span></a>
   <a class="tn-subtab {% if EP == 'file_requests_approvals' %}active{% endif %}" href="{{ url_for('file_requests_approvals') }}">OT/CWS/FTS/RDW<span class="tn-subbadge" data-src="fileRequestsBadge"></span></a>
+  {% endif %}
+  {% if SUPER or ADMIN or P.get('can_team_calendar') %}
   <a class="tn-subtab {% if EP == 'supervisor_team_calendar' %}active{% endif %}" href="{{ url_for('supervisor_team_calendar') }}">Calendar</a>
   {% endif %}
   {% if SUPER or ADMIN or P.get('can_material_requests') %}

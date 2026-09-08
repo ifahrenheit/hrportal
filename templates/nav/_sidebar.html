@@ -136,7 +136,7 @@
     </div>
 
     {# ── MY TEAM (Supervisors) ────────────────────────────── #}
-    {% if session.get('is_supervisor') or session.get('is_admin') or session.get('permissions', {}).get('can_material_requests') or break_log_supervisor_access() or SL_HR_APPROVER %}
+    {% if session.get('is_supervisor') or session.get('is_admin') or session.get('permissions', {}).get('can_material_requests') or session.get('permissions', {}).get('can_team_calendar') or break_log_supervisor_access() or SL_HR_APPROVER %}
     <div class="nav-section-toggle nav-label" onclick="toggleSection('supervisor')" id="supervisor-header">
       <span>My Team</span>
       <i class="bi bi-chevron-down section-arrow" id="supervisor-arrow"></i>
@@ -181,7 +181,7 @@
                      border-radius:999px;min-width:18px;text-align:center;"></span>
       </a>
       {% endif %}
-      {% if session.get('is_supervisor') or session.get('is_admin') %}
+      {% if session.get('is_supervisor') or session.get('is_admin') or session.get('permissions', {}).get('can_team_calendar') %}
       <a class="nav-link {% if request.endpoint == 'supervisor_team_calendar' %}active{% endif %}" href="{{ url_for('supervisor_team_calendar') }}">
         <i class="bi bi-calendar3"></i> <span class="nav-label">Team Calendar</span>
       </a>
