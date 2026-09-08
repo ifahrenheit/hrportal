@@ -90,7 +90,7 @@
             <td>
               <span class="text-muted small emp-id-copy" onclick="event.stopPropagation(); copyEmpId(this,'{{ emp.employee_id }}')" title="Click to copy">{{ emp.employee_id }}</span>
             </td>
-            <td>
+            <td data-sort="{{ display_name|lower }}">
               <div class="d-flex align-items-center gap-2">
                 <span class="pim-avatar" style="background:{{ avatar_colors[loop.index0 % avatar_colors|length] }};">{{ initials }}</span>
                 <span class="fw-semibold">{{ display_name }}</span>
@@ -166,9 +166,13 @@
       th.classList.add('sorted');
       th.querySelector('.sort-arrow').className = sortState.dir === 1 ? 'bi bi-arrow-down sort-arrow' : 'bi bi-arrow-up sort-arrow';
 
+      const cellValue = (row) => {
+        const cell = row.cells[col];
+        return (cell.dataset.sort !== undefined ? cell.dataset.sort : cell.innerText).trim().toLowerCase();
+      };
       const sorted = rows.slice().sort((a, b) => {
-        const av = a.cells[col].innerText.trim().toLowerCase();
-        const bv = b.cells[col].innerText.trim().toLowerCase();
+        const av = cellValue(a);
+        const bv = cellValue(b);
         return av < bv ? -sortState.dir : av > bv ? sortState.dir : 0;
       });
       sorted.forEach(row => tbody.appendChild(row));
