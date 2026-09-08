@@ -3,9 +3,13 @@
 {% block content %}
 <style>
   .pim-avatar {
-    width: 30px; height: 30px; border-radius: 50%; flex-shrink: 0;
+    position: relative; width: 30px; height: 30px; border-radius: 50%; flex-shrink: 0;
     display: flex; align-items: center; justify-content: center;
-    font-size: .7rem; font-weight: 700; color: #fff;
+    font-size: .7rem; font-weight: 700; color: #fff; overflow: hidden;
+  }
+  .pim-avatar img {
+    position: absolute; inset: 0; width: 100%; height: 100%;
+    object-fit: cover; border-radius: 50%;
   }
   .pim-chip {
     display: inline-block; padding: .2rem .55rem; border-radius: 999px;
@@ -92,7 +96,11 @@
             </td>
             <td data-sort="{{ display_name|lower }}">
               <div class="d-flex align-items-center gap-2">
-                <span class="pim-avatar" style="background:{{ avatar_colors[loop.index0 % avatar_colors|length] }};">{{ initials }}</span>
+                <span class="pim-avatar" style="background:{{ avatar_colors[loop.index0 % avatar_colors|length] }};">
+                  {{ initials }}
+                  <img src="{{ url_for('pim_employee_photo', employee_id=emp.employee_id) }}"
+                       loading="lazy" alt="" onerror="this.remove()">
+                </span>
                 <span class="fw-semibold">{{ display_name }}</span>
               </div>
             </td>

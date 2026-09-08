@@ -11518,6 +11518,8 @@ def pim_profile(employee_id):
 
 @app.route('/pim/<employee_id>/photo')
 def pim_employee_photo(employee_id):
+    if not (session.get('is_admin') or session.get('permissions', {}).get('can_pim')):
+        abort(403)
     db = get_db()
     try:
         with db.cursor() as c:
