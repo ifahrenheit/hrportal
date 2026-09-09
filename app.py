@@ -5098,7 +5098,7 @@ def cancel_leave(leave_id):
             # Permission check
             subordinates = get_subordinates(emp_number)
             is_owner = leave['emp_number'] == emp_number
-            is_manager_of_owner = (is_admin or session.get('is_supervisor')) and leave['emp_number'] in subordinates
+            is_manager_of_owner = is_admin or (session.get('is_supervisor') and leave['emp_number'] in subordinates)
             if not (is_owner or is_manager_of_owner):
                 flash('You do not have permission to cancel this leave.', 'danger')
                 return redirect(url_for('dashboard'))
@@ -5188,7 +5188,7 @@ def api_leave_cancel(leave_id):
                 return jsonify({'success': False, 'message': 'Leave request not found'}), 404
             subordinates = get_subordinates(emp_number)
             is_owner = leave['emp_number'] == emp_number
-            is_manager_of_owner = (is_admin or session.get('is_supervisor')) and leave['emp_number'] in subordinates
+            is_manager_of_owner = is_admin or (session.get('is_supervisor') and leave['emp_number'] in subordinates)
             if not (is_owner or is_manager_of_owner):
                 return jsonify({'success': False, 'message': 'Permission denied'}), 403
             allowed_statuses = ['scheduled', 'pending']
