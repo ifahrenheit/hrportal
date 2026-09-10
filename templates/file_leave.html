@@ -37,6 +37,10 @@
         <div class="mb-3">
           <label class="form-label">Start Date</label>
           <input type="date" class="form-control" name="start_date" id="startDate" required>
+          <div id="holidayNote" class="small mt-2" style="display:none; padding:.5rem .75rem; border-radius:.375rem; background:var(--bg); border:1px solid var(--accent2); color:var(--text);">
+            <i class="bi bi-calendar-event me-1" style="color:var(--accent2);"></i>
+            <span id="holidayNoteText"></span>
+          </div>
         </div>
         <div class="mb-3" id="endDateWrap">
           <label class="form-label">End Date</label>
@@ -148,7 +152,17 @@ const _endWrap = document.getElementById('endDateWrap');
 function _awolOption() {
   return Array.from(_sel.options).find(o => o.getAttribute('data-awol') === '1');
 }
-function _applyAwolUI(isHoliday) {
+function _applyAwolUI(isHoliday, holidayName) {
+  const note = document.getElementById('holidayNote');
+  const noteText = document.getElementById('holidayNoteText');
+  if (note && noteText) {
+    if (isHoliday) {
+      noteText.textContent = 'Holiday' + (holidayName ? ': ' + holidayName : '') + ' — most leave types are unavailable for this date.';
+      note.style.display = '';
+    } else {
+      note.style.display = 'none';
+    }
+  }
   const awol = _awolOption();
   Array.from(_sel.options).forEach(o => {
     if (!o.value) return; // keep placeholder
@@ -180,7 +194,7 @@ async function _checkHolidayAndToggle() {
   try {
     const r = await fetch('/api/is-holiday?start=' + encodeURIComponent(_start.value));
     const j = await r.json();
-    _applyAwolUI(!!j.holiday);
+    _applyAwolUI(!!j.holiday, j.name);
   } catch (e) {
     _applyAwolUI(false);
   }
