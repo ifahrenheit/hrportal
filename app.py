@@ -10458,11 +10458,30 @@ def build_attendance_map(personids, window_start, window_end):
                     previous_in = log_dt
 
             elif log_type == 'out':
-                log_time_secs = log_dt.hour * 3600 + log_dt.minute * 60 + log_dt.second
-                # Attribution logic for before-noon OUT punches:
+                if previous_in and (log_ts - previous_in.timestamp()) <= MAX_HOURS:
+                    # Valid IN/OUT pairing -- always attribute to the day the
+                    # shift STARTED. Overtime can push the checkout well past
+                    # noon on an overnight shift, so the OUT punch's own
+                    # time-of-day must never decide the date here (it used to,
+                    # via the noon heuristic below, which silently dropped the
+                    # true start date whenever OT pushed checkout past
+                    # 12:00:00 -- e.g. an 8:29pm IN paired with a 12:03pm OUT
+                    # the next day got logged as Present on the OUT's date
+                    # instead of the IN's, leaving the actual shift date with
+                    # no attendance record at all).
+                    attendance_map[(pid, previous_in.date())] = {
+                        'status': 'Present', 'time_in': previous_in.strftime('%b %d %H:%M'), 'time_out': log_dt.strftime('%b %d %H:%M'),
+                    }
+                    previous_in = None
+                    continue
+
+                # No usable previous_in (none at all, or the gap was too large
+                # to be one shift) -- fall back to the noon heuristic to guess
+                # which calendar day this orphaned OUT punch belongs to.
                 # - Same-day IN+OUT (e.g. 1am-10am): use that day directly
                 # - Overnight crossing midnight (e.g. 7pm-6am): attribute to previous day
                 # - Orphan OUT with no prior IN (FTS IN case): attribute to previous day
+                log_time_secs = log_dt.hour * 3600 + log_dt.minute * 60 + log_dt.second
                 if log_time_secs < NOON_SECONDS:
                     if previous_in and previous_in.date() == log_date:
                         record_date = log_date
@@ -10471,22 +10490,8 @@ def build_attendance_map(personids, window_start, window_end):
                 else:
                     record_date = log_date
 
-                if previous_in:
-                    in_ts     = previous_in.timestamp()
-                    time_diff = log_ts - in_ts
-                    if time_diff <= MAX_HOURS:
-                        pair_date = record_date
-                        attendance_map[(pid, pair_date)] = {
-                            'status': 'Present', 'time_in': previous_in.strftime('%b %d %H:%M'), 'time_out': log_dt.strftime('%b %d %H:%M'),
-                        }
-                        previous_in = None
-                    else:
-                        attendance_map[(pid, record_date)] = {
-                            'status': 'FTS IN', 'time_in': None, 'time_out': log_dt.strftime('%b %d %H:%M'),
-                        }
-                else:
-                    attendance_map[(pid, record_date)] = {
-                        'status': 'FTS IN', 'time_in': None, 'time_out': log_dt.strftime('%b %d %H:%M'),
+                attendance_map[(pid, record_date)] = {
+                    'status': 'FTS IN', 'time_in': None, 'time_out': log_dt.strftime('%b %d %H:%M'),
                     }
 
         if previous_in:
