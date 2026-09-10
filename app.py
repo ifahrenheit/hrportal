@@ -10590,6 +10590,30 @@ def admin_absences():
         window_end   = date_to   + timedelta(days=1)
         attendance_map = build_attendance_map(personids, window_start, window_end)
 
+        # ── Step 3b: Approved OT requests, so a long overnight shift that
+        # trips build_attendance_map's MAX_HOURS cutoff (flagged FTS IN/FTS
+        # OUT/Absent) can be recognized as legitimate filed OT instead of a
+        # real attendance problem. Checked against the scheduled date +/- 1
+        # day, since the anomaly can land on either the shift's start date
+        # or its end date depending on which side triggered the flag. ──
+        ot_dates_by_emp = {}
+        all_emp_ids = list({row['employee_id'] for row in scheduled})
+        if all_emp_ids:
+            placeholders_ot = ','.join(['%s'] * len(all_emp_ids))
+            cdb_ot = get_central_db()
+            try:
+                with cdb_ot.cursor() as c:
+                    c.execute(f"""
+                        SELECT employee_id, ot_date FROM ot_requests
+                        WHERE employee_id IN ({placeholders_ot})
+                          AND status = 'Approved'
+                          AND ot_date BETWEEN %s AND %s
+                    """, all_emp_ids + [date_from - timedelta(days=1), date_to + timedelta(days=1)])
+                    for row in c.fetchall():
+                        ot_dates_by_emp.setdefault(row['employee_id'], set()).add(row['ot_date'])
+            finally:
+                cdb_ot.close()
+
         # ── Step 4: Match scheduled rows to attendance_map ──
         for row in scheduled:
             pid        = int(row['personid']) if row['personid'] else None
@@ -10608,6 +10632,12 @@ def admin_absences():
                 status   = att['status']
                 time_in  = att['time_in']
                 time_out = att['time_out']
+
+            emp_ot_dates = ot_dates_by_emp.get(row['employee_id'])
+            if emp_ot_dates and (sched_date in emp_ot_dates
+                                  or (sched_date - timedelta(days=1)) in emp_ot_dates
+                                  or (sched_date + timedelta(days=1)) in emp_ot_dates):
+                continue  # explained by an approved OT request; exclude from report
 
             r = dict(row)
             r['attendance_status'] = status
