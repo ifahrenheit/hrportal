@@ -1228,31 +1228,55 @@ def file_leave():
                                        portal_balances=portal_balances, user=session['user'])
         notes         = request.form.get('notes', '').strip()
         duration      = request.form.get('duration', 'full')
+        # --- MAGIC_LEAVE_CUSTOM_PATCH --- raw custom-hours input, Magic Leave only
+        custom_hours_raw = request.form.get('custom_hours', '').strip()
 
         # Map duration to shift_half enum
         duration_map = {
             'first_half': '1st Half',
             'second_half': '2nd Half',
             'full': None,
-            'remaining': None
+            'remaining': None,
+            'custom': None,
         }
         shift_value = duration_map.get(duration)
         use_remaining = (duration == 'remaining')
+        use_custom    = (duration == 'custom')
 
         # Basic validations
         if start_date > end_date:
             flash('Start date must be before or equal to end date.', 'danger')
             return render_template('file_leave.html', balances=balances, user=session['user'])
 
-        if duration in ('first_half', 'second_half') and start_date != end_date:
-            flash('First Half / Second Half can only be filed for a single day.', 'danger')
+        if duration in ('first_half', 'second_half', 'custom') and start_date != end_date:
+            flash('First Half / Second Half / Custom Hours can only be filed for a single day.', 'danger')
             return render_template('file_leave.html', balances=balances, user=session['user'])
+
+        # --- MAGIC_LEAVE_CUSTOM_PATCH --- Custom Hours is Magic Leave only, and must be a whole,
+        # positive number of hours. (Whether it also fits the remaining balance is checked further
+        # down, alongside the existing Full Day / Half Day balance check.)
+        custom_hours_value = None
+        if use_custom:
+            _magic_leave_type_id = _get_magic_leave_type_id()
+            if not _magic_leave_type_id or leave_type_id != _magic_leave_type_id:
+                flash('Custom hours is only available for Magic Leave.', 'danger')
+                return render_template('file_leave.html', balances=balances, user=session['user'])
+            if not custom_hours_raw.isdigit() or int(custom_hours_raw) <= 0:
+                flash('Custom hours must be a whole number greater than 0.', 'danger')
+                return render_template('file_leave.html', balances=balances, user=session['user'])
+            custom_hours_value = int(custom_hours_raw)
 
         # Calculate deductions
         deductions = calculate_deduction(emp_number, start_date, end_date, duration)
 # --- AWOL_PATCH --- AWOL: single 8h/1day row on the holiday, bypass calc
         if is_awol:
             deductions = [{'date': start_date, 'hours': 8.0, 'days': 1.0, 'is_off_day': False}]
+        # --- MAGIC_LEAVE_CUSTOM_PATCH --- override the single-day deduction with the exact
+        # whole-hour amount the employee typed, bypassing the half-day/remaining ratio-scaling
+        # logic below entirely. Off-day/holiday days still deduct 0, same as every other duration.
+        if use_custom and deductions and not deductions[0]['is_off_day']:
+            deductions[0]['hours'] = float(custom_hours_value)
+            deductions[0]['days']  = round(custom_hours_value / OHRM_HOURS_PER_DAY, 4)
         # Check holidays first before generic error
         from datetime import timedelta as _td
         check_date = start_date

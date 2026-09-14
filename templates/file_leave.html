@@ -14,12 +14,14 @@
             <option value="">— Select —</option>
             {% for b in balances %}
             <option value="{{ b.leave_type_id }}" data-hrs="{{ b.remaining_hours }}" data-days="{{ b.remaining_days }}"
-                    {% if b.is_awol %}data-awol="1"{% endif %}>
+                    {% if b.is_awol %}data-awol="1"{% endif %}
+                    {% if b.leave_type_name == 'Magic Leave' %}data-magic="1"{% endif %}>
               {{ b.leave_type_name }}{% if not b.is_awol %} ({{ "%.1f"|format(b.remaining_hours) }} hrs left){% else %} (holidays only){% endif %}
             </option>
             {% endfor %}
             {% for b in portal_balances %}
-            <option value="{{ b.leave_type_id }}" data-hrs="{{ b.remaining_hours }}" data-days="{{ b.remaining_days }}">
+            <option value="{{ b.leave_type_id }}" data-hrs="{{ b.remaining_hours }}" data-days="{{ b.remaining_days }}"
+                    {% if b.leave_type_name == 'Magic Leave' %}data-magic="1"{% endif %}>
               {{ b.leave_type_name }} ({{ "%.1f"|format(b.remaining_hours) }} hrs left) [Portal]
             </option>
             {% endfor %}
@@ -32,7 +34,16 @@
             <option value="first_half">1st Half of the Shift Leave</option>
             <option value="second_half">2nd Half of the Shift Leave</option>
             <option value="remaining" id="remainingOption" style="display:none;">Use Remaining Balance (<span id="remainingHrsLabel">0</span> hrs)</option>
+            <option value="custom" id="customOption" style="display:none;">Custom Hours</option>
           </select>
+        </div>
+        <div class="mb-3" id="customHoursWrap" style="display:none;">
+          <label class="form-label">Custom Hours <span class="text-muted">(whole hours only)</span></label>
+          <input type="number" class="form-control" name="custom_hours" id="customHoursInput"
+                 min="1" step="1" inputmode="numeric" pattern="[0-9]+"
+                 placeholder="e.g. 3">
+          <div class="form-text">Must be a whole number of hours, up to your remaining Magic Leave balance
+            (<span id="customHoursMaxLabel">0</span> hrs).</div>
         </div>
         <div class="mb-3">
           <label class="form-label">Start Date</label>
@@ -127,8 +138,11 @@ function updateRemainingOption() {
   const sel = document.getElementById('leaveTypeId');
   const opt = sel.options[sel.selectedIndex];
   const remainingOpt = document.getElementById('remainingOption');
+  const customOpt = document.getElementById('customOption');
+  const dur = document.getElementById('durationSelect');
   if (!opt || !remainingOpt) return;
   const hrs = parseFloat(opt.getAttribute('data-hrs') || 0);
+  const isMagic = opt.getAttribute('data-magic') === '1';
   if (hrs > 0 && hrs < 10) {
     remainingOpt.style.display = '';
     document.getElementById('remainingHrsLabel').textContent = hrs.toFixed(1);
@@ -136,13 +150,57 @@ function updateRemainingOption() {
   } else {
     remainingOpt.style.display = 'none';
     // Reset to full if remaining was selected but no longer valid
-    const dur = document.getElementById('durationSelect');
     if (dur.value === 'remaining') dur.value = 'full';
+  }
+  // --- MAGIC_LEAVE_CUSTOM --- Custom Hours option: Magic Leave only, same <10hrs window
+  if (customOpt) {
+    if (isMagic && hrs > 0 && hrs < 10) {
+      customOpt.style.display = '';
+      const maxWhole = Math.floor(hrs);
+      const input = document.getElementById('customHoursInput');
+      if (input) input.setAttribute('max', maxWhole);
+      const maxLabel = document.getElementById('customHoursMaxLabel');
+      if (maxLabel) maxLabel.textContent = maxWhole;
+    } else {
+      customOpt.style.display = 'none';
+      if (dur.value === 'custom') dur.value = 'full';
+    }
+  }
+  updateCustomHoursWrap();
+}
+function updateCustomHoursWrap() {
+  const dur = document.getElementById('durationSelect');
+  const wrap = document.getElementById('customHoursWrap');
+  const input = document.getElementById('customHoursInput');
+  if (!dur || !wrap || !input) return;
+  if (dur.value === 'custom') {
+    wrap.style.display = '';
+    input.setAttribute('required', 'required');
+  } else {
+    wrap.style.display = 'none';
+    input.removeAttribute('required');
   }
 }
 document.getElementById('leaveTypeId').addEventListener('change', checkForm);
 document.getElementById('startDate').addEventListener('change', checkForm);
 document.getElementById('endDate').addEventListener('change', checkForm);
+document.getElementById('durationSelect').addEventListener('change', updateCustomHoursWrap);
+
+// --- MAGIC_LEAVE_CUSTOM --- client-side whole-number / balance guard on submit
+// (server re-validates this independently — see file_leave() in app.py)
+document.getElementById('leaveForm').addEventListener('submit', function (e) {
+  const dur = document.getElementById('durationSelect');
+  if (!dur || dur.value !== 'custom') return;
+  const input = document.getElementById('customHoursInput');
+  const raw = (input.value || '').trim();
+  const max = parseFloat(input.getAttribute('max') || '0');
+  const isWhole = /^[0-9]+$/.test(raw);
+  const val = parseInt(raw, 10);
+  if (!isWhole || val <= 0 || val > max) {
+    e.preventDefault();
+    alert('Custom hours must be a whole number between 1 and ' + max + '.');
+  }
+});
 
 // --- AWOL_TPL --- holiday-aware AWOL toggle
 const _sel = document.getElementById('leaveTypeId');
