@@ -224,8 +224,9 @@ function recomputeValid(lr){
   box.classList.remove('ok','bad');
   if(!consult || !fit || !absence.length){ box.textContent='Enter dates'; return; }
   const cd=new Date(consult), fd=new Date(fit);
+  const cdMinus1 = new Date(cd); cdMinus1.setDate(cdMinus1.getDate()-1);
   let ok = cd <= fd;
-  for(const d of absence){ const dd=new Date(d); if(dd<cd||dd>fd){ ok=false; break; } }
+  for(const d of absence){ const dd=new Date(d); if(dd<cdMinus1||dd>fd){ ok=false; break; } }
   box.textContent = ok ? 'Yes — dates covered' : 'No — outside range';
   box.classList.add(ok ? 'ok' : 'bad');
 }

@@ -4891,15 +4891,19 @@ def sl_verification_submit():
             if not rows:
                 return jsonify({'success': False, 'message': 'No pending SL rows found'}), 404
 
-            # Valid Absence: every absence date within [consult, fit] inclusive
+            # Valid Absence: every absence date within [consult, fit] inclusive.
+            # Allow consult to be 1 day after the absence date too -- an
+            # overnight/night-shift absence is logged against the shift's
+            # start date, but the employee may not see a doctor until after
+            # midnight, i.e. the calendar day following that start date.
             valid = 0
             if consult and fit:
                 try:
-                    from datetime import datetime as _dt
+                    from datetime import datetime as _dt, timedelta as _td
                     cd = _dt.strptime(consult, '%Y-%m-%d').date()
                     fd = _dt.strptime(fit, '%Y-%m-%d').date()
                     absns = [r['leave_date'] for r in rows]
-                    valid = 1 if all(cd <= d <= fd for d in absns) and cd <= fd else 0
+                    valid = 1 if all((cd - _td(days=1)) <= d <= fd for d in absns) and cd <= fd else 0
                 except ValueError:
                     valid = 0
 
@@ -10406,15 +10410,38 @@ def hrportal_offboard(employee_id):
         app.logger.error(f'❌ Offboarding error: {e}', exc_info=True)
         return jsonify({'error': str(e)}), 500
 
-def build_attendance_map(personids, window_start, window_end):
+def build_attendance_map(personids, window_start, window_end, shift_starts=None):
     """
     Returns {(personid, date): {'status': 'Present'|'FTS IN'|'FTS OUT', 'time_in':..., 'time_out':...}}
     Reused by /admin/absences and /admin/attendance-grid so both stay consistent.
     window_start/window_end should include a 1-day buffer on each side to catch
     overnight-shift punches crossing the boundary.
+
+    shift_starts: optional {(personid, date): start_hour} built from each
+    employee's scheduled shift for that date (e.g. 1.0 for a "1am-12nn"
+    shift). Needed to correctly attribute a shift where the employee clocked
+    in a little early, before midnight, for a shift scheduled to start
+    shortly after midnight the following calendar day -- otherwise that
+    early IN's own (earlier) calendar date gets credited instead of the
+    actual scheduled shift day, leaving the real day looking unworked.
     """
     MAX_HOURS    = 18 * 3600
     NOON_SECONDS = 12 * 3600
+    EARLY_CLOCKIN_HOUR    = 20.0  # an IN at/after 8pm is "late evening"
+    EARLY_CLOCKIN_MAX_GAP = 3.0   # hours of early arrival tolerated before a next-day shift
+    shift_starts = shift_starts or {}
+
+    def shift_date_for(pid, in_dt):
+        d = in_dt.date()
+        in_hour = in_dt.hour + in_dt.minute / 60 + in_dt.second / 3600
+        if in_hour >= EARLY_CLOCKIN_HOUR:
+            next_d = d + timedelta(days=1)
+            next_start = shift_starts.get((pid, next_d))
+            if next_start is not None and 0 <= next_start <= 4:
+                gap = (24 - in_hour) + next_start
+                if gap <= EARLY_CLOCKIN_MAX_GAP:
+                    return next_d
+        return d
 
     raw_logs = {}
     if personids:
@@ -10449,7 +10476,7 @@ def build_attendance_map(personids, window_start, window_end):
                     prev_ts   = previous_in.timestamp()
                     time_diff = log_ts - prev_ts
                     if time_diff > MAX_HOURS:
-                        prev_date = previous_in.date()
+                        prev_date = shift_date_for(pid, previous_in)
                         attendance_map[(pid, prev_date)] = {
                             'status': 'FTS OUT', 'time_in': previous_in.strftime('%b %d %H:%M'), 'time_out': None,
                         }
@@ -10469,7 +10496,7 @@ def build_attendance_map(personids, window_start, window_end):
                     # the next day got logged as Present on the OUT's date
                     # instead of the IN's, leaving the actual shift date with
                     # no attendance record at all).
-                    attendance_map[(pid, previous_in.date())] = {
+                    attendance_map[(pid, shift_date_for(pid, previous_in))] = {
                         'status': 'Present', 'time_in': previous_in.strftime('%b %d %H:%M'), 'time_out': log_dt.strftime('%b %d %H:%M'),
                     }
                     previous_in = None
@@ -10490,12 +10517,18 @@ def build_attendance_map(personids, window_start, window_end):
                 else:
                     record_date = log_date
 
-                attendance_map[(pid, record_date)] = {
-                    'status': 'FTS IN', 'time_in': None, 'time_out': log_dt.strftime('%b %d %H:%M'),
+                # Don't let an orphaned/duplicate OUT punch (e.g. a double
+                # biometric tap) clobber an already-valid Present entry for
+                # the same day.
+                key = (pid, record_date)
+                existing = attendance_map.get(key)
+                if not (existing and existing['status'] == 'Present'):
+                    attendance_map[key] = {
+                        'status': 'FTS IN', 'time_in': None, 'time_out': log_dt.strftime('%b %d %H:%M'),
                     }
 
         if previous_in:
-            prev_date = previous_in.date()
+            prev_date = shift_date_for(pid, previous_in)
             if prev_date <= window_end:
                 attendance_map[(pid, prev_date)] = {
                     'status': 'FTS OUT', 'time_in': previous_in.strftime('%b %d %H:%M'), 'time_out': None,
@@ -10586,9 +10619,18 @@ def admin_absences():
 
         # ── Step 2-3: Build attendance map using shared helper (also used by
         # /admin/attendance-grid), so both pages stay consistent ──
+        shift_starts = {}
+        for row in scheduled:
+            spid = int(row['personid']) if row['personid'] else None
+            if not spid:
+                continue
+            start_h, _ = parse_shift_time(row['shift_time'])
+            if start_h is not None:
+                shift_starts[(spid, row['absent_date'])] = start_h
+
         window_start = date_from - timedelta(days=1)
         window_end   = date_to   + timedelta(days=1)
-        attendance_map = build_attendance_map(personids, window_start, window_end)
+        attendance_map = build_attendance_map(personids, window_start, window_end, shift_starts)
 
         # ── Step 3b: Approved OT requests, so a long overnight shift that
         # trips build_attendance_map's MAX_HOURS cutoff (flagged FTS IN/FTS
@@ -13422,7 +13464,7 @@ def admin_attendance_grid():
                     g.employee_id, g.schedule_name, COALESCE(g.tl,'-') AS tl,
                     COALESCE(g.group_name,'No Group') AS group_name,
                     g.status, g.exit_date,
-                    es.schedule_date, es.is_rest_day, u.personid
+                    es.schedule_date, es.is_rest_day, es.shift_time, u.personid
                 FROM employee_schedules es
                 JOIN gsheet_employees g
                     ON g.employee_id COLLATE utf8mb4_unicode_ci = es.employee_id COLLATE utf8mb4_unicode_ci
@@ -13540,9 +13582,18 @@ def admin_attendance_grid():
                                user=session['user'])
 
     personids = list({int(r['personid']) for r in rows if r['personid']})
+    shift_starts = {}
+    for r in rows:
+        rpid = int(r['personid']) if r['personid'] else None
+        if not rpid:
+            continue
+        start_h, _ = parse_shift_time(r['shift_time'])
+        if start_h is not None:
+            shift_starts[(rpid, r['schedule_date'])] = start_h
+
     window_start = month_start - timedelta(days=1)
     window_end   = month_end + timedelta(days=1)
-    attendance_map = build_attendance_map(personids, window_start, window_end)
+    attendance_map = build_attendance_map(personids, window_start, window_end, shift_starts)
 
     # Build per-employee day grid
     emp_map = {}
