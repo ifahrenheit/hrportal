@@ -39,22 +39,40 @@
         <div class="mb-2">
           <label class="form-label small fw-semibold">Items <span class="text-danger">*</span></label>
           <div id="itemsContainer">
-            <div class="item-row d-flex gap-2 mb-2 align-items-center">
-              <select name="category[]" class="form-select form-select-sm cat-select" style="width:140px;flex-shrink:0;" required onchange="categoryChanged(this)">
-                <option value="">Category</option>
-                {% for cat in categories %}
-                <option value="{{ cat }}">{{ cat }}</option>
-                {% endfor %}
-              </select>
-              <select name="item_name[]" class="form-select form-select-sm item-select" required disabled onchange="itemChanged(this)">
-                <option value="">Select category first</option>
-              </select>
+            <div class="item-row mb-2 border rounded p-2">
+              <div class="d-flex gap-2 align-items-center">
+                <div class="position-relative flex-grow-1 material-search-wrap">
+                  <input type="text" class="form-control form-control-sm material-search-input"
+                         placeholder="🔍 Search for an item..." autocomplete="off">
+                  <div class="material-selected-chip d-none align-items-center justify-content-between border rounded px-2 bg-light" style="height:31px;">
+                    <span class="chip-label small text-truncate"></span>
+                    <a href="#" class="chip-clear text-danger small ms-2 flex-shrink-0">change</a>
+                  </div>
+                  <div class="material-search-results position-absolute bg-white border rounded shadow-sm w-100" style="z-index:999;display:none;max-height:220px;overflow-y:auto;"></div>
+                </div>
+                <input type="number" name="quantity[]" class="form-control form-control-sm"
+                       style="width:65px;flex-shrink:0;" min="1" value="1" required>
+                <button type="button" class="btn btn-outline-danger btn-sm px-2" onclick="removeItem(this)" disabled>
+                  <i class="bi bi-trash"></i>
+                </button>
+              </div>
               <div class="payment-info"></div>
-              <input type="number" name="quantity[]" class="form-control form-control-sm"
-                     style="width:65px;flex-shrink:0;" min="1" value="1" required>
-              <button type="button" class="btn btn-outline-danger btn-sm px-2" onclick="removeItem(this)" disabled>
-                <i class="bi bi-trash"></i>
-              </button>
+              <div class="mt-1">
+                <a href="#" class="small text-muted material-manual-toggle-link">
+                  <i class="bi bi-list-ul me-1"></i>Browse by category instead
+                </a>
+              </div>
+              <div class="material-manual-picker d-none gap-2 mt-1">
+                <select name="category[]" class="form-select form-select-sm cat-select" style="width:140px;flex-shrink:0;" onchange="categoryChanged(this)">
+                  <option value="">Category</option>
+                  {% for cat in categories %}
+                  <option value="{{ cat }}">{{ cat }}</option>
+                  {% endfor %}
+                </select>
+                <select name="item_name[]" class="form-select form-select-sm item-select" disabled onchange="itemChanged(this)">
+                  <option value="">Select category first</option>
+                </select>
+              </div>
             </div>
           </div>
           <button type="button" class="btn btn-outline-secondary btn-sm mt-1" onclick="addItem()">
@@ -189,7 +207,7 @@ function itemChanged(itemSelect) {
       }
     });
 }
-function categoryChanged(catSelect) {
+function categoryChanged(catSelect, preselectItemName) {
   var row = catSelect.closest('.item-row');
   var itemSelect = row.querySelector('.item-select');
   var info = row.querySelector('.payment-info');
@@ -230,13 +248,167 @@ function categoryChanged(catSelect) {
       otherOpt.textContent = 'Others - Please Specify';
       itemSelect.appendChild(otherOpt);
       itemSelect.disabled = false;
+      if (preselectItemName) {
+        itemSelect.value = preselectItemName;
+        itemChanged(itemSelect);
+      }
     });
 }
 
-// On submit, replace __other__ with hidden input
+// ── Item search (type-to-find, auto-fills category) ─────────────────
+var materialItemsCache = [];
+fetch('/api/inventory-items')
+  .then(function(r) { return r.json(); })
+  .then(function(data) { materialItemsCache = data || []; })
+  .catch(function() { materialItemsCache = []; });
+
+function materialSearchResults(row) {
+  return row.querySelector('.material-search-results');
+}
+
+function renderMaterialSuggestions(input) {
+  var row = input.closest('.item-row');
+  var box = materialSearchResults(row);
+  var q = input.value.trim().toLowerCase();
+  if (!q) { box.style.display = 'none'; box.innerHTML = ''; return; }
+  var matches = materialItemsCache.filter(function(item) {
+    return item.item_name.toLowerCase().indexOf(q) !== -1;
+  }).sort(function(a, b) {
+    var aStarts = a.item_name.toLowerCase().indexOf(q) === 0 ? 0 : 1;
+    var bStarts = b.item_name.toLowerCase().indexOf(q) === 0 ? 0 : 1;
+    return aStarts - bStarts || a.item_name.localeCompare(b.item_name);
+  }).slice(0, 8);
+
+  box.innerHTML = '';
+  if (!matches.length) {
+    var empty = document.createElement('div');
+    empty.className = 'px-3 py-2 small text-muted';
+    empty.innerHTML = 'No items found. <a href="#" class="material-manual-toggle-link">Browse by category instead &rarr;</a>';
+    box.appendChild(empty);
+    box.style.display = 'block';
+    return;
+  }
+  matches.forEach(function(item) {
+    var div = document.createElement('div');
+    div.className = 'px-3 py-2 small material-suggestion-item';
+    div.style.cursor = 'pointer';
+    div.dataset.itemName = item.item_name;
+    div.dataset.category = item.category || '';
+    var stockText = item.current_stock + ' ' + item.unit + ' in stock';
+    div.innerHTML = '<div>' + item.item_name + '</div>' +
+      '<div class="text-muted" style="font-size:.75rem;">' + (item.category || '') + ' &middot; ' + stockText +
+      (item.low_stock ? ' <span class="text-warning">(low stock)</span>' : '') + '</div>';
+    div.onmouseenter = function() { this.style.background = '#f0f4ff'; };
+    div.onmouseleave = function() { this.style.background = ''; };
+    box.appendChild(div);
+  });
+  box.style.display = 'block';
+}
+
+function selectMaterialItem(row, itemName, category) {
+  var catSelect = row.querySelector('.cat-select');
+  catSelect.value = category;
+  categoryChanged(catSelect, itemName);
+  showMaterialChip(row, itemName, category);
+  materialSearchResults(row).style.display = 'none';
+}
+
+function showMaterialChip(row, itemName, category) {
+  var wrap = row.querySelector('.material-search-wrap');
+  var input = wrap.querySelector('.material-search-input');
+  var chip = wrap.querySelector('.material-selected-chip');
+  input.classList.add('d-none');
+  chip.classList.remove('d-none');
+  chip.classList.add('d-flex');
+  chip.querySelector('.chip-label').textContent = itemName + ' (' + category + ')';
+}
+
+function clearMaterialChip(row) {
+  var wrap = row.querySelector('.material-search-wrap');
+  var input = wrap.querySelector('.material-search-input');
+  var chip = wrap.querySelector('.material-selected-chip');
+  input.classList.remove('d-none');
+  input.value = '';
+  chip.classList.add('d-none');
+  chip.classList.remove('d-flex');
+  var catSelect = row.querySelector('.cat-select');
+  var itemSelect = row.querySelector('.item-select');
+  catSelect.value = '';
+  itemSelect.innerHTML = '<option value="">Select category first</option>';
+  itemSelect.disabled = true;
+  row.querySelector('.payment-info').innerHTML = '';
+  var otherInput = row.querySelector('.other-item-input');
+  if (otherInput) otherInput.remove();
+  input.focus();
+}
+
+function toggleManualPicker(link) {
+  var row = link.closest('.item-row');
+  var manual = row.querySelector('.material-manual-picker');
+  var searchWrap = row.querySelector('.material-search-wrap');
+  var showingManual = manual.classList.contains('d-none');
+  manual.classList.toggle('d-none', !showingManual);
+  manual.classList.toggle('d-flex', showingManual);
+  searchWrap.classList.toggle('d-none', showingManual);
+  link.innerHTML = showingManual
+    ? '<i class="bi bi-search me-1"></i>Use search instead'
+    : '<i class="bi bi-list-ul me-1"></i>Browse by category instead';
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+  var container = document.getElementById('itemsContainer');
+  container.addEventListener('input', function(e) {
+    if (e.target.classList.contains('material-search-input')) {
+      renderMaterialSuggestions(e.target);
+    }
+  });
+  container.addEventListener('click', function(e) {
+    var toggleLink = e.target.closest('.material-manual-toggle-link');
+    if (toggleLink) {
+      e.preventDefault();
+      toggleManualPicker(toggleLink);
+      return;
+    }
+    var suggestion = e.target.closest('.material-suggestion-item');
+    if (suggestion) {
+      e.preventDefault();
+      selectMaterialItem(suggestion.closest('.item-row'), suggestion.dataset.itemName, suggestion.dataset.category);
+      return;
+    }
+    var chipClear = e.target.closest('.chip-clear');
+    if (chipClear) {
+      e.preventDefault();
+      clearMaterialChip(chipClear.closest('.item-row'));
+      return;
+    }
+  });
+  document.addEventListener('click', function(e) {
+    document.querySelectorAll('.material-search-results').forEach(function(box) {
+      if (!box.closest('.material-search-wrap').contains(e.target)) box.style.display = 'none';
+    });
+  });
+});
+
+// On submit: validate every row has a category+item (search or manual picked
+// it, since the selects lost their `required` attr — a required attribute on
+// a CSS-hidden element still blocks native validation but can't be seen/
+// focused by the user, so we validate explicitly here instead), then replace
+// __other__ with a hidden input.
 document.addEventListener('DOMContentLoaded', function() {
   var form = document.querySelector('form[method="POST"]');
   if (form) form.addEventListener('submit', function(e) {
+    var rows = document.querySelectorAll('.item-row');
+    for (var i = 0; i < rows.length; i++) {
+      var catSelect = rows[i].querySelector('.cat-select');
+      var itemSelect = rows[i].querySelector('.item-select');
+      if (!catSelect.value || !itemSelect.value) {
+        e.preventDefault();
+        alert('Please select an item for every row (use search or "Browse by category").');
+        var searchInput = rows[i].querySelector('.material-search-input');
+        if (searchInput && !searchInput.classList.contains('d-none')) searchInput.focus();
+        return;
+      }
+    }
     document.querySelectorAll('.item-select').forEach(function(sel) {
       if (sel.value === '__other__') {
         var inp = sel.closest('.item-row').querySelector('.other-item-input');
@@ -257,16 +429,29 @@ document.addEventListener('DOMContentLoaded', function() {
 function addItem() {
   var container = document.getElementById('itemsContainer');
   var row = document.createElement('div');
-  row.className = 'item-row d-flex gap-2 mb-2 align-items-center';
+  row.className = 'item-row mb-2 border rounded p-2';
   var catOptions = categories.map(function(c) {
     return '<option value="' + c + '">' + c + '</option>';
   }).join('');
   row.innerHTML =
-    '<select name="category[]" class="form-select form-select-sm cat-select" style="width:140px;flex-shrink:0;" required onchange="categoryChanged(this)"><option value="">Category</option>' + catOptions + '</select>' +
-    '<select name="item_name[]" class="form-select form-select-sm item-select" required disabled onchange="itemChanged(this)"><option value="">Select category first</option></select>' +
+    '<div class="d-flex gap-2 align-items-center">' +
+      '<div class="position-relative flex-grow-1 material-search-wrap">' +
+        '<input type="text" class="form-control form-control-sm material-search-input" placeholder="🔍 Search for an item..." autocomplete="off">' +
+        '<div class="material-selected-chip d-none align-items-center justify-content-between border rounded px-2 bg-light" style="height:31px;">' +
+          '<span class="chip-label small text-truncate"></span>' +
+          '<a href="#" class="chip-clear text-danger small ms-2 flex-shrink-0">change</a>' +
+        '</div>' +
+        '<div class="material-search-results position-absolute bg-white border rounded shadow-sm w-100" style="z-index:999;display:none;max-height:220px;overflow-y:auto;"></div>' +
+      '</div>' +
+      '<input type="number" name="quantity[]" class="form-control form-control-sm" style="width:65px;flex-shrink:0;" min="1" value="1" required>' +
+      '<button type="button" class="btn btn-outline-danger btn-sm px-2" onclick="removeItem(this)"><i class="bi bi-trash"></i></button>' +
+    '</div>' +
     '<div class="payment-info"></div>' +
-    '<input type="number" name="quantity[]" class="form-control form-control-sm" style="width:65px;flex-shrink:0;" min="1" value="1" required>' +
-    '<button type="button" class="btn btn-outline-danger btn-sm px-2" onclick="removeItem(this)"><i class="bi bi-trash"></i></button>';
+    '<div class="mt-1"><a href="#" class="small text-muted material-manual-toggle-link"><i class="bi bi-list-ul me-1"></i>Browse by category instead</a></div>' +
+    '<div class="material-manual-picker d-none gap-2 mt-1">' +
+      '<select name="category[]" class="form-select form-select-sm cat-select" style="width:140px;flex-shrink:0;" onchange="categoryChanged(this)"><option value="">Category</option>' + catOptions + '</select>' +
+      '<select name="item_name[]" class="form-select form-select-sm item-select" disabled onchange="itemChanged(this)"><option value="">Select category first</option></select>' +
+    '</div>';
   container.appendChild(row);
   updateRemoveButtons();
 }

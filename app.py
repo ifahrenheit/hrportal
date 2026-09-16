@@ -6010,6 +6010,7 @@ def api_inventory_items():
     return jsonify([{
         'id': r['id'],
         'item_name': r['item_name'],
+        'category': r.get('category'),
         'current_stock': r['current_stock'],
         'min_stock_alert': r['min_stock_alert'],
         'unit': r['unit'],
