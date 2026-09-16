@@ -10766,6 +10766,229 @@ def admin_absences():
                            cws_map=cws_map,
                            summary=summary)
 
+@app.route('/admin/awol-report')
+def admin_awol_report():
+    # AWOL = a scheduled-but-absent occurrence (no punch record at all --
+    # not FTS IN/FTS OUT, those are different attendance anomalies) with
+    # NO leave of any type/status (other than Rejected/Cancelled/Deleted)
+    # filed by that employee covering that date. Sibling tab of the
+    # Absence Report; reuses the same permission flag as its audience is
+    # identical. This route deliberately duplicates admin_absences()'s
+    # Steps 1-5 rather than importing from it, to avoid touching the
+    # already-live absences route.
+    if not session.get('is_admin') and not session.get('permissions', {}).get('can_absences'):
+        return redirect(url_for('dashboard'))
+
+    from datetime import date, timedelta, datetime as dt
+    from helpers.payroll_period import get_default_payroll_period
+
+    default_period_start, default_period_end = get_default_payroll_period()
+
+    TODAY_CUTOFF_HOUR = 13  # matches the 1 PM absence-report cron / Today button logic
+    now = dt.now()
+    if now.hour < TODAY_CUTOFF_HOUR:
+        safe_last_day = date.today() - timedelta(days=2)
+    else:
+        safe_last_day = date.today() - timedelta(days=1)
+
+    def parse_date(val, fallback):
+        try:
+            return date.fromisoformat(val) if val else fallback
+        except ValueError:
+            return fallback
+
+    date_from = parse_date(request.args.get('date_from'), default_period_start)
+    date_to   = parse_date(request.args.get('date_to'),   default_period_end)
+    if date_to < date_from:
+        date_to = date_from
+    # Never show data beyond the last fully-completed day, even if the
+    # selected payroll period (or a manually-entered date) extends further.
+    if date_to > safe_last_day:
+        date_to = safe_last_day
+    if date_from > date_to:
+        date_from = date_to
+
+    # ── Step 1: All scheduled active employees in date range ──
+    scheduled = []
+    cdb = get_central_db()
+    try:
+        with cdb.cursor() as c:
+            c.execute("""
+                SELECT
+                    g.employee_id,
+                    g.schedule_name,
+                    COALESCE(g.tl, '-')                AS tl,
+                    COALESCE(g.group_name, 'No Group') AS group_name,
+                    es.shift_time,
+                    es.schedule_date                   AS absent_date,
+                    u.personid
+                FROM employee_schedules es
+                JOIN gsheet_employees g
+                    ON g.employee_id COLLATE utf8mb4_unicode_ci = es.employee_id COLLATE utf8mb4_unicode_ci
+                JOIN (
+                    SELECT companyid,
+                           SUBSTRING_INDEX(GROUP_CONCAT(personid ORDER BY personid DESC), ',', 1) AS personid
+                    FROM userdata
+                    GROUP BY companyid
+                ) u ON u.companyid COLLATE utf8mb4_unicode_ci = es.employee_id COLLATE utf8mb4_unicode_ci
+                WHERE es.schedule_date BETWEEN %s AND %s
+                    AND es.is_rest_day   = 0
+                    AND es.shift_time   IS NOT NULL
+                    AND g.status         = 'Active'
+                ORDER BY g.group_name, g.tl, es.schedule_date, g.schedule_name
+            """, (date_from, date_to))
+            scheduled = c.fetchall()
+    finally:
+        cdb.close()
+
+    records               = []
+    unverified_candidates = []
+    leave_map             = {}
+
+    if scheduled:
+        # Build lookup: personid -> employee info
+        personid_map = {}
+        for row in scheduled:
+            pid = int(row['personid']) if row['personid'] else None
+            if pid:
+                personid_map.setdefault(pid, row)
+
+        personids = list(personid_map.keys())
+
+        # ── Step 2-3: Build attendance map using shared helper (also used by
+        # /admin/absences and /admin/attendance-grid), so all three pages
+        # stay consistent ──
+        shift_starts = {}
+        for row in scheduled:
+            spid = int(row['personid']) if row['personid'] else None
+            if not spid:
+                continue
+            start_h, _ = parse_shift_time(row['shift_time'])
+            if start_h is not None:
+                shift_starts[(spid, row['absent_date'])] = start_h
+
+        window_start = date_from - timedelta(days=1)
+        window_end   = date_to   + timedelta(days=1)
+        attendance_map = build_attendance_map(personids, window_start, window_end, shift_starts)
+
+        # ── Step 3b: Approved OT requests. build_attendance_map() only
+        # ever returns Present/FTS IN/FTS OUT -- it never returns Absent --
+        # so an overnight shift that trips its MAX_HOURS cutoff can leave
+        # the scheduled day with no attendance_map entry at all, which
+        # Step 4 would otherwise treat as a no-show. This lets that be
+        # recognized as legitimate filed OT instead. Checked against the
+        # scheduled date +/- 1 day, since the anomaly can land on either
+        # the shift's start date or its end date depending on which side
+        # triggered the gap. ──
+        ot_dates_by_emp = {}
+        all_emp_ids = list({row['employee_id'] for row in scheduled})
+        if all_emp_ids:
+            placeholders_ot = ','.join(['%s'] * len(all_emp_ids))
+            cdb_ot = get_central_db()
+            try:
+                with cdb_ot.cursor() as c:
+                    c.execute(f"""
+                        SELECT employee_id, ot_date FROM ot_requests
+                        WHERE employee_id IN ({placeholders_ot})
+                          AND status = 'Approved'
+                          AND ot_date BETWEEN %s AND %s
+                    """, all_emp_ids + [date_from - timedelta(days=1), date_to + timedelta(days=1)])
+                    for row in c.fetchall():
+                        ot_dates_by_emp.setdefault(row['employee_id'], set()).add(row['ot_date'])
+            finally:
+                cdb_ot.close()
+
+        # ── Step 4: Match scheduled rows to attendance_map, keep Absent
+        # only. Present, FTS IN and FTS OUT are all cases where a punch
+        # record exists -- they're attendance anomalies, not no-shows, and
+        # are out of scope for AWOL. ──
+        for row in scheduled:
+            pid        = int(row['personid']) if row['personid'] else None
+            sched_date = row['absent_date']
+
+            if pid is None:
+                # No personid mapping in `userdata` for this employee, so
+                # there's no way to check their attendance at all -- this is
+                # a data gap, not evidence of a no-show. Unlike the generic
+                # Absence Report, this page names people as AWOL, so don't
+                # let a mapping gap turn into an accusation. Still run these
+                # through the Step 5 leave-coverage check below (a filed
+                # leave fully explains the day regardless of whether
+                # attendance could be verified) -- only the ones leave
+                # *doesn't* explain end up surfaced as Unverified.
+                r = dict(row)
+                r['attendance_status'] = 'Unverified'
+                unverified_candidates.append(r)
+                continue
+
+            att = attendance_map.get((pid, sched_date))
+            if att is not None:
+                continue  # a punch record exists (Present/FTS IN/FTS OUT) -- not a no-show
+
+            emp_ot_dates = ot_dates_by_emp.get(row['employee_id'])
+            if emp_ot_dates and (sched_date in emp_ot_dates
+                                  or (sched_date - timedelta(days=1)) in emp_ot_dates
+                                  or (sched_date + timedelta(days=1)) in emp_ot_dates):
+                continue  # explained by an approved OT request; exclude from report
+
+            r = dict(row)
+            r['attendance_status'] = 'Absent'
+            records.append(r)
+
+        # ── Step 5: Leave coverage. Any filed leave of ANY type/status
+        # (other than Rejected/Cancelled/Deleted, matched case-insensitively
+        # so a future status-value casing change can't silently slip
+        # through) covering the date clears the AWOL flag --
+        # leave4day_requests already stores one row per calendar day even
+        # for multi-day requests, so a plain per-day key match is
+        # sufficient without extra date-range logic. Also checked for the
+        # Unverified (NULL-personid) candidates, so a filed leave still
+        # fully explains those days even though attendance couldn't be
+        # checked. ──
+        emp_ids = list({r['employee_id'] for r in records + unverified_candidates})
+        if emp_ids:
+            placeholders = ','.join(['%s'] * len(emp_ids))
+
+            odb = get_db()
+            try:
+                with odb.cursor() as c:
+                    c.execute(f"""
+                        SELECT lr.employee_id, lt.name AS leave_type_name,
+                               lr.status, lr.leave_date
+                        FROM leave4day_requests lr
+                        JOIN ohrm_leave_type lt ON lt.id = lr.leave_type_id
+                        WHERE lr.employee_id IN ({placeholders})
+                          AND lr.leave_date BETWEEN %s AND %s
+                          AND LOWER(lr.status) NOT IN ('rejected','cancelled','deleted')
+                    """, emp_ids + [date_from, date_to])
+                    for row in c.fetchall():
+                        key = '{}|{}'.format(row['employee_id'], row['leave_date'])
+                        leave_map.setdefault(key, []).append(row)
+            finally:
+                odb.close()
+
+    # ── Final filter: AWOL = Absent AND no filed leave covering that date.
+    # Unverified candidates get the same leave check -- a filed leave fully
+    # explains the day, so only the ones leave doesn't explain are worth
+    # surfacing (never as AWOL, since attendance couldn't be verified). ──
+    def _uncovered(r):
+        return not leave_map.get('{}|{}'.format(r['employee_id'], r['absent_date']))
+
+    awol_records = [r for r in records if _uncovered(r)]
+    unverified   = [r for r in unverified_candidates if _uncovered(r)]
+
+    summary = {
+        'awol':       len(awol_records),
+        'unverified': len(unverified),
+    }
+
+    return render_template('admin/awol_report.html',
+                           records=awol_records,
+                           unverified=unverified,
+                           date_from=str(date_from),
+                           date_to=str(date_to),
+                           summary=summary)
+
 # MAGIC CWS
 # ─────────────────────────────────────────────────────────────
 
