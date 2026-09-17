@@ -160,6 +160,11 @@
 .tn-userpill i { font-size: 14px; color: var(--text-muted, #6b7280); }
 .tn-userpill .tn-empid { font-size: 11px; color: var(--text-muted, #6b7280); }
 @media (max-width: 1240px) { .tn-userpill .tn-empid { display: none; } }
+.tn-headcount-pill { cursor: pointer; }
+.tn-headcount-pill:hover { background: var(--surface-2, rgba(0,0,0,.04)); }
+.tn-hc-dot { width: 6px; height: 6px; border-radius: 50%; background: #22c55e; flex-shrink: 0; }
+@media (max-width: 1360px) { .tn-headcount-pill .tn-empid { display: none; } }
+@media (max-width: 1240px) { .tn-headcount-pill { display: none; } }
 @media (max-width: 1120px) { .tn-userpill { display: none; } }
 /* the sidebar-era topbar is fully redundant under the top nav:
    title is duplicated by page headings, controls moved to tn-header */
@@ -524,12 +529,34 @@
           </div>
         </div>
       </div>
+      <a class="tn-userpill tn-headcount-pill" id="tnHeadcountPill"
+         href="{{ url_for('on_shift') }}" title="People currently on shift — click for details">
+        <span class="tn-hc-dot"></span>
+        <i class="bi bi-people-fill"></i>
+        <strong id="tnHeadcountNum">&mdash;</strong>
+        <span class="tn-empid">on shift</span>
+      </a>
       <a class="tn-iconbtn" href="{{ url_for('logout') }}" title="Logout">
         <i class="bi bi-box-arrow-left"></i>
       </a>
       <button class="tn-iconbtn tn-burger" id="tnBurger" type="button"><i class="bi bi-list"></i></button>
     </div>
   </div>
+
+  <script>
+  (function () {
+    var numEl = document.getElementById('tnHeadcountNum');
+    if (!numEl) return;
+    function refresh() {
+      fetch('/api/current-headcount', { credentials: 'same-origin' })
+        .then(function (r) { return r.ok ? r.json() : null; })
+        .then(function (d) { if (d) numEl.textContent = d.count; })
+        .catch(function () { /* silent — keep last known value */ });
+    }
+    refresh();
+    setInterval(refresh, 30000);
+  })();
+  </script>
 
   <div class="tn-mega" id="tnMega">
 

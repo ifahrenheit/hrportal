@@ -1,13 +1,13 @@
 {% extends "base.html" %}
-{% block title %}Absence Report{% endblock %}
-{% block page_title %}Absence Report{% endblock %}
+{% block title %}Undertime Report{% endblock %}
+{% block page_title %}Undertime Report{% endblock %}
 
 {% block content %}
 
 {# ── Page Tabs ───────────────────────────────────────────── #}
 <ul class="nav nav-tabs mb-3">
   <li class="nav-item">
-    <a class="nav-link active" href="{{ url_for('admin_absences') }}">
+    <a class="nav-link" href="{{ url_for('admin_absences') }}">
       <i class="bi bi-person-x me-1"></i>Absence Report
     </a>
   </li>
@@ -22,7 +22,7 @@
     </a>
   </li>
   <li class="nav-item">
-    <a class="nav-link" href="{{ url_for('admin_undertime_report') }}">
+    <a class="nav-link active" href="{{ url_for('admin_undertime_report') }}">
       <i class="bi bi-hourglass-split me-1"></i>Undertime Report
     </a>
   </li>
@@ -78,20 +78,12 @@
   {% endif %}
 </div>
 
-{# Summary pills #}
+{# Summary pill #}
 {% if records %}
 <div class="d-flex gap-2 mb-3 flex-wrap">
   <span class="badge rounded-pill px-3 py-2"
-        style="background:#fef2f2;color:#991b1b;border:1px solid #fecaca;font-size:.8rem;">
-    <i class="bi bi-x-circle me-1"></i>Absent: <strong>{{ summary.absent }}</strong>
-  </span>
-  <span class="badge rounded-pill px-3 py-2"
         style="background:#fff7ed;color:#9a3412;border:1px solid #fed7aa;font-size:.8rem;">
-    <i class="bi bi-box-arrow-in-right me-1"></i>FTS IN: <strong>{{ summary.fts_in }}</strong>
-  </span>
-  <span class="badge rounded-pill px-3 py-2"
-        style="background:#faf5ff;color:#6b21a8;border:1px solid #e9d5ff;font-size:.8rem;">
-    <i class="bi bi-box-arrow-right me-1"></i>FTS OUT: <strong>{{ summary.fts_out }}</strong>
+    <i class="bi bi-hourglass-split me-1"></i>Undertime: <strong>{{ summary.undertime }}</strong>
   </span>
   <span class="text-muted ms-2" style="font-size:.83rem;align-self:center;">
     {% if date_from == date_to %}{{ date_from }}{% else %}{{ date_from }} &rarr; {{ date_to }}{% endif %}
@@ -103,62 +95,70 @@
 {% if not records %}
 <div class="card p-4 text-center">
   <i class="bi bi-check-circle text-success" style="font-size:2.5rem;"></i>
-  <div class="mt-2 fw-semibold">No issues found for the selected date range</div>
-  <div class="text-muted" style="font-size:.85rem;">All scheduled employees are accounted for.</div>
+  <div class="mt-2 fw-semibold">No undertime occurrences found for the selected date range</div>
+  <div class="text-muted" style="font-size:.85rem;">Every clocked shift met or exceeded its scheduled length (or the shortfall is explained by filed leave).</div>
 </div>
 {% else %}
 
-{% set ns = namespace(current_group='') %}
+{# A single flat table, ranked by shortfall (biggest first) -- unlike the
+   sibling reports' per-group cards, this report's whole point is a global
+   severity ranking, which is fundamentally incompatible with splitting rows
+   into per-department blocks (the sort would scatter each department across
+   several non-contiguous cards). Department/supervisor is still shown, just
+   as its own column instead of a section grouping. #}
+<div class="card mb-3">
+  <div class="table-responsive">
+    <table class="table table-hover mb-0 undertime-table">
+      <thead>
+        <tr>
+          <th class="sortable" data-col="0" style="cursor:pointer;user-select:none;">
+            Employee <span class="sort-icon">&#8597;</span>
+          </th>
+          <th class="sortable" data-col="1" style="cursor:pointer;user-select:none;">
+            Employee ID <span class="sort-icon">&#8597;</span>
+          </th>
+          <th class="sortable" data-col="2" style="cursor:pointer;user-select:none;">
+            Group <span class="sort-icon">&#8597;</span>
+          </th>
+          <th>Team Lead</th>
+          <th class="sortable" data-col="4" style="cursor:pointer;user-select:none;">
+            Date <span class="sort-icon">&#8597;</span>
+          </th>
+          <th>Day of Week</th>
+          <th>Scheduled Shift</th>
+          <th>Time In</th>
+          <th>Time Out</th>
+          <th class="sortable" data-col="9" style="cursor:pointer;user-select:none;">
+            Hours Worked <span class="sort-icon">&#8597;</span>
+          </th>
+          <th class="sortable" data-col="10" style="cursor:pointer;user-select:none;">
+            Undertime <span class="sort-icon">&#8597;</span>
+          </th>
+        </tr>
+      </thead>
+      <tbody>
 {% for row in records %}
-  {% set remark_key = row.employee_id ~ '|' ~ row.absent_date %}
-  {% if row.group_name != ns.current_group %}
-    {% if ns.current_group != '' %}</tbody></table></div></div>{% endif %}
-    {% set ns.current_group = row.group_name %}
-    <div class="card mb-3">
-      <div class="card-header d-flex align-items-center gap-2 py-2"
-           style="background:var(--bg);border-bottom:1px solid var(--border);">
-        <i class="bi bi-people-fill" style="color:var(--accent);"></i>
-        <span class="fw-semibold" style="font-size:.92rem;">{{ row.group_name or 'No Group' }}</span>
-        <span class="badge rounded-pill ms-1"
-              style="background:var(--accent);color:#fff;font-size:.72rem;">
-          {{ records | selectattr('group_name','eq',row.group_name) | list | length }}
-        </span>
-      </div>
-      <div class="table-responsive">
-        <table class="table table-hover mb-0 absence-table">
-          <thead>
-            <tr>
-              <th class="sortable" data-col="0" style="cursor:pointer;user-select:none;">
-                Employee <span class="sort-icon">&#8597;</span>
-              </th>
-              <th class="sortable" data-col="1" style="cursor:pointer;user-select:none;">
-                Employee ID <span class="sort-icon">&#8597;</span>
-              </th>
-              <th class="sortable" data-col="2" style="cursor:pointer;user-select:none;">
-                Absent Date <span class="sort-icon">&#8597;</span>
-              </th>
-              <th>Team Lead</th>
-              <th>Shift</th>
-              <th>Time In</th>
-              <th>Time Out</th>
-              <th>Status</th>
-              <th>Remarks</th>
-            </tr>
-          </thead>
-          <tbody>
-  {% endif %}
-
-  {% set emp_leaves = leave_map.get(remark_key, []) %}
-  {% set emp_cws    = cws_map.get(remark_key, []) %}
+  {# Round to the nearest total minute FIRST, then split into h/m -- rounding
+     the fractional part after truncating hours can overflow to "60m" (e.g.
+     7.9999h -> 7h, 59.994m -> rounds to 60m -> "7h 60m"). #}
+  {% set hw_total_min = (row.hours_worked * 60) | round | int %}
+  {% set hw_h = hw_total_min // 60 %}
+  {% set hw_m = hw_total_min % 60 %}
+  {% set sf_total_min = (row.shortfall_hours * 60) | round | int %}
+  {% set sf_h = sf_total_min // 60 %}
+  {% set sf_m = sf_total_min % 60 %}
 
   <tr>
     <td class="fw-semibold">{{ row.schedule_name }}</td>
     <td>
       <span class="text-muted" style="font-size:.8rem;cursor:pointer;"
-            onclick="copyEmpId(this, '{{ row.employee_id }}')">{{ row.employee_id }}</span>
+            data-emp-id="{{ row.employee_id }}"
+            onclick="copyEmpId(this, this.dataset.empId)">{{ row.employee_id }}</span>
     </td>
+    <td style="font-size:.85rem;">{{ row.group_name or 'No Group' }}</td>
+    <td style="font-size:.85rem;">{{ row.tl or '—' }}</td>
     <td style="font-size:.85rem;white-space:nowrap;">{{ row.absent_date }}</td>
-    <td style="font-size:.85rem;">{{ row.tl or '&mdash;' }}</td>
+    <td style="font-size:.85rem;white-space:nowrap;">{{ row.absent_date.strftime('%A') }}</td>
     <td>
       <span class="badge rounded-pill"
             style="background:#fef3c7;color:#92400e;border:1px solid #fde68a;font-size:.75rem;">
@@ -166,65 +166,43 @@
       </span>
     </td>
     <td style="font-size:.83rem;white-space:nowrap;">
-      {% if row.time_in %}
-        <span class="text-success fw-semibold">{{ row.time_in }}</span>
-      {% else %}
-        <span class="text-muted">&mdash;</span>
-      {% endif %}
+      <span class="text-success fw-semibold">{{ row.time_in }}</span>
     </td>
     <td style="font-size:.83rem;white-space:nowrap;">
-      {% if row.time_out %}
-        <span class="text-primary fw-semibold">{{ row.time_out }}</span>
-      {% else %}
-        <span class="text-muted">&mdash;</span>
-      {% endif %}
+      <span class="text-primary fw-semibold">{{ row.time_out }}</span>
     </td>
-    <td>
-      {% if row.attendance_status == 'Absent' %}
-        <span class="badge rounded-pill"
-              style="background:#fef2f2;color:#991b1b;border:1px solid #fecaca;font-size:.75rem;">
-          <i class="bi bi-x-circle me-1"></i>Absent
-        </span>
-      {% elif row.attendance_status == 'FTS IN' %}
-        <span class="badge rounded-pill"
-              style="background:#fff7ed;color:#9a3412;border:1px solid #fed7aa;font-size:.75rem;">
-          <i class="bi bi-box-arrow-in-right me-1"></i>FTS IN
-        </span>
-      {% elif row.attendance_status == 'FTS OUT' %}
-        <span class="badge rounded-pill"
-              style="background:#faf5ff;color:#6b21a8;border:1px solid #e9d5ff;font-size:.75rem;">
-          <i class="bi bi-box-arrow-right me-1"></i>FTS OUT
-        </span>
-      {% endif %}
+    <td style="font-size:.85rem;white-space:nowrap;" data-hours="{{ row.hours_worked }}">
+      {{ hw_h }}h {{ '%02d'|format(hw_m) }}m
     </td>
-    <td>
-      <div class="d-flex flex-wrap gap-1 align-items-center">
-        {% for lv in emp_leaves %}
-          <span class="badge rounded-pill"
-                style="background:#eff6ff;color:#1d4ed8;border:1px solid #bfdbfe;font-size:.72rem;">
-            <i class="bi bi-calendar-check me-1"></i>On Leave
-            {% if lv.leave_type_name %}&mdash; {{ lv.leave_type_name }}{% endif %}
-            <span style="opacity:.7;">({{ lv.status | title }})</span>
-          </span>
-        {% endfor %}
-        {% for cw in emp_cws %}
-          <span class="badge rounded-pill"
-                style="background:#f0fdf4;color:#15803d;border:1px solid #bbf7d0;font-size:.72rem;">
-            <i class="bi bi-arrow-left-right me-1"></i>CWS
-            {% if cw.new_date %}&rarr; {{ cw.new_date }}{% endif %}
-            {% if cw.new_time %}{{ cw.new_time }}{% endif %}
-            <span style="opacity:.7;">({{ cw.status }})</span>
-          </span>
-        {% endfor %}
-        {% if not emp_leaves and not emp_cws %}
-          <span class="text-muted" style="font-size:.8rem;">&mdash;</span>
-        {% endif %}
-      </div>
+    <td data-shortfall="{{ row.shortfall_hours }}">
+      <span class="badge rounded-pill"
+            style="background:#fef2f2;color:#991b1b;border:1px solid #fecaca;font-size:.75rem;">
+        <i class="bi bi-hourglass-split me-1"></i>-{{ sf_h }}h {{ '%02d'|format(sf_m) }}m
+      </span>
     </td>
   </tr>
 {% endfor %}
-</tbody></table></div></div>
+      </tbody>
+    </table>
+  </div>
+</div>
 
+{% endif %}
+
+{% if implausible_shifts %}
+<div class="alert alert-warning mt-3" style="font-size:.85rem;">
+  <i class="bi bi-exclamation-triangle me-1"></i>
+  <strong>{{ implausible_shifts|length }} scheduled shift(s) skipped</strong>
+  as implausible and excluded from the report above — the shift string in
+  <code>employee_schedules</code> parses to more than 16 scheduled hours,
+  which usually means a typo (e.g. an AM/PM mix-up) rather than a real
+  shift length. These need a schedule-data fix, not an undertime flag.
+  <ul class="mb-0 mt-1">
+    {% for row in implausible_shifts %}
+    <li>{{ row.schedule_name }} ({{ row.employee_id }}) — {{ row.absent_date }} — shift "{{ row.shift_time }}" parses to {{ '%.1f'|format(row.scheduled_hours) }}h</li>
+    {% endfor %}
+  </ul>
+</div>
 {% endif %}
 {% endblock %}
 
@@ -308,8 +286,8 @@ document.addEventListener('DOMContentLoaded', function () {
 
   // Today button: defaults to the last day whose shifts have fully
   // completed (per TODAY_CUTOFF_HOUR), to avoid showing incomplete
-  // FTS/Absent/Late counts for a day still in progress. The date inputs
-  // can still be manually set to the actual current date if needed.
+  // undertime counts for a day still in progress. The date inputs can
+  // still be manually set to the actual current date if needed.
   const TODAY_CUTOFF_HOUR = 13; // matches the 1 PM absence-report cron
   document.getElementById('todayBtn')?.addEventListener('click', () => {
     const now = new Date();
@@ -333,10 +311,10 @@ document.addEventListener('DOMContentLoaded', function () {
     dateToInput.value = safeDate;
     form.submit();
   });
-});  
+});
 // ── Column sort ──
 (function() {
-  // Track sort state per table (by index among .absence-table)
+  // Track sort state per table (by index among .undertime-table)
   const state = {};
 
   document.addEventListener('click', function(e) {
@@ -344,7 +322,7 @@ document.addEventListener('DOMContentLoaded', function () {
     if (!th) return;
 
     const table   = th.closest('table');
-    const tables  = [...document.querySelectorAll('.absence-table')];
+    const tables  = [...document.querySelectorAll('.undertime-table')];
     const tIdx    = tables.indexOf(table);
     const colIdx  = parseInt(th.dataset.col);
     const key     = tIdx + '-' + colIdx;
@@ -362,17 +340,29 @@ document.addEventListener('DOMContentLoaded', function () {
     const rows  = [...tbody.querySelectorAll('tr')];
 
     rows.sort((a, b) => {
-      const aText = (a.querySelectorAll('td')[colIdx]?.textContent || '').trim();
-      const bText = (b.querySelectorAll('td')[colIdx]?.textContent || '').trim();
+      const aCell = a.querySelectorAll('td')[colIdx];
+      const bCell = b.querySelectorAll('td')[colIdx];
 
-      // Date column (col 2) — sort as date
-      if (colIdx === 2) {
-        const aD = new Date(aText), bD = new Date(bText);
+      // Date column (col 4) — sort as date
+      if (colIdx === 4) {
+        const aD = new Date(aCell.textContent.trim()), bD = new Date(bCell.textContent.trim());
         if (!isNaN(aD) && !isNaN(bD)) {
           return dir === 'asc' ? aD - bD : bD - aD;
         }
       }
+      // Hours Worked (col 9) / Undertime (col 10) — sort numerically using the
+      // raw hours stashed in data-hours/data-shortfall, not the "Hh MMm" text
+      if (colIdx === 9 || colIdx === 10) {
+        const attr = colIdx === 9 ? 'hours' : 'shortfall';
+        const aN = parseFloat(aCell.dataset[attr]);
+        const bN = parseFloat(bCell.dataset[attr]);
+        if (!isNaN(aN) && !isNaN(bN)) {
+          return dir === 'asc' ? aN - bN : bN - aN;
+        }
+      }
       // String sort
+      const aText = (aCell?.textContent || '').trim();
+      const bText = (bCell?.textContent || '').trim();
       return dir === 'asc'
         ? aText.localeCompare(bText)
         : bText.localeCompare(aText);
@@ -383,29 +373,13 @@ document.addEventListener('DOMContentLoaded', function () {
 })();
 
 function copyTable() {
-  const headers = ['Employee','Employee ID','Absent Date','Group','Team Lead','Shift','Time In','Time Out','Status','Remarks'];
+  const headers = ['Employee','Employee ID','Group','Team Lead','Date','Day of Week','Scheduled Shift','Time In','Time Out','Hours Worked','Undertime'];
   const rows    = [headers.join('\t')];
-  document.querySelectorAll('.absence-table').forEach(table => {
-    const cardHeader = table.closest('.card').querySelector('.card-header .fw-semibold');
-    const group = cardHeader ? cardHeader.textContent.trim() : '';
+  document.querySelectorAll('.undertime-table').forEach(table => {
     table.querySelectorAll('tbody tr').forEach(tr => {
       const cells = tr.querySelectorAll('td');
-      if (cells.length < 9) return;
-      const remarks = [...cells[8].querySelectorAll('.badge')]
-                        .map(b => b.textContent.replace(/\s+/g,' ').trim())
-                        .join('; ') || '-';
-      rows.push([
-        cells[0].textContent.trim(),
-        cells[1].textContent.trim(),
-        cells[2].textContent.trim(),
-        group,
-        cells[3].textContent.trim(),
-        cells[4].textContent.trim(),
-        cells[5].textContent.trim(),
-        cells[6].textContent.trim(),
-        cells[7].textContent.trim(),
-        remarks
-      ].join('\t'));
+      if (cells.length < 11) return;
+      rows.push([...cells].map(td => td.textContent.trim()).join('\t'));
     });
   });
   navigator.clipboard.writeText(rows.join('\n')).then(() => {

@@ -1,13 +1,13 @@
 {% extends "base.html" %}
-{% block title %}Absence Report{% endblock %}
-{% block page_title %}Absence Report{% endblock %}
+{% block title %}Attendance Stack Rank{% endblock %}
+{% block page_title %}Attendance Stack Rank{% endblock %}
 
 {% block content %}
 
 {# ── Page Tabs ───────────────────────────────────────────── #}
 <ul class="nav nav-tabs mb-3">
   <li class="nav-item">
-    <a class="nav-link active" href="{{ url_for('admin_absences') }}">
+    <a class="nav-link" href="{{ url_for('admin_absences') }}">
       <i class="bi bi-person-x me-1"></i>Absence Report
     </a>
   </li>
@@ -27,7 +27,7 @@
     </a>
   </li>
   <li class="nav-item">
-    <a class="nav-link" href="{{ url_for('admin_attendance_stack_rank') }}">
+    <a class="nav-link active" href="{{ url_for('admin_attendance_stack_rank') }}">
       <i class="bi bi-trophy me-1"></i>Attendance Stack Rank
     </a>
   </li>
@@ -50,7 +50,7 @@
 </style>
 
 <div class="filter-bar">
-  <form method="get" id="dateForm" class="d-flex align-items-center gap-2 flex-wrap" style="flex:1;">
+  <form method="get" id="dateForm" class="d-flex align-items-end gap-2 flex-wrap" style="flex:1;">
     <div class="date-nav">
       <button type="button" class="btn-icon" id="prevPeriodBtn" title="Previous payroll period">
         <i class="bi bi-chevron-left"></i>
@@ -67,163 +67,146 @@
       <button type="button" class="btn btn-outline-secondary btn-sm" id="currentPeriodBtn">Current Period</button>
       <button type="button" class="btn btn-outline-secondary btn-sm" id="todayBtn">Today</button>
     </div>
+
+    <div>
+      <label class="d-block mb-1" for="group">Group</label>
+      <select name="group" id="group" class="form-select form-select-sm" onchange="this.form.submit()">
+        <option value="">All Groups</option>
+        {% for g in groups %}
+        <option value="{{ g }}" {% if g == group_filter %}selected{% endif %}>{{ g }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div>
+      <label class="d-block mb-1" for="tl">Team Lead</label>
+      <select name="tl" id="tl" class="form-select form-select-sm" onchange="this.form.submit()">
+        <option value="">All TLs</option>
+        {% for t in tls %}
+        <option value="{{ t }}" {% if t == tl_filter %}selected{% endif %}>{{ t }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div>
+      <label class="d-block mb-1" for="emp_search">Employee</label>
+      <input type="text" name="emp_search" id="emp_search" class="form-control form-control-sm"
+             placeholder="Name or ID..." value="{{ emp_search }}">
+    </div>
+
+    <div class="form-check form-switch mb-0 pb-1" style="padding-left:2.75em;">
+      <input class="form-check-input" type="checkbox" role="switch"
+             name="include_inactive" id="include_inactive" value="1"
+             {% if include_inactive %}checked{% endif %} onchange="this.form.submit()">
+      <label class="form-check-label" for="include_inactive" style="font-size:.82rem;color:var(--text-muted);">
+        Include inactive
+      </label>
+    </div>
+
     <button class="btn btn-primary btn-sm" type="submit">
-      <i class="bi bi-search me-1"></i>Check
+      <i class="bi bi-search me-1"></i>Apply
     </button>
+    <a href="{{ url_for('admin_attendance_stack_rank') }}" class="btn btn-outline-secondary btn-sm">
+      <i class="bi bi-x-circle me-1"></i>Clear
+    </a>
   </form>
-  {% if records %}
+  {% if employees %}
   <button class="btn btn-outline-secondary btn-sm" id="copyTableBtn" onclick="copyTable()">
     <i class="bi bi-clipboard me-1"></i>Copy Table
   </button>
   {% endif %}
 </div>
 
-{# Summary pills #}
-{% if records %}
-<div class="d-flex gap-2 mb-3 flex-wrap">
-  <span class="badge rounded-pill px-3 py-2"
-        style="background:#fef2f2;color:#991b1b;border:1px solid #fecaca;font-size:.8rem;">
-    <i class="bi bi-x-circle me-1"></i>Absent: <strong>{{ summary.absent }}</strong>
-  </span>
-  <span class="badge rounded-pill px-3 py-2"
-        style="background:#fff7ed;color:#9a3412;border:1px solid #fed7aa;font-size:.8rem;">
-    <i class="bi bi-box-arrow-in-right me-1"></i>FTS IN: <strong>{{ summary.fts_in }}</strong>
-  </span>
-  <span class="badge rounded-pill px-3 py-2"
-        style="background:#faf5ff;color:#6b21a8;border:1px solid #e9d5ff;font-size:.8rem;">
-    <i class="bi bi-box-arrow-right me-1"></i>FTS OUT: <strong>{{ summary.fts_out }}</strong>
-  </span>
-  <span class="text-muted ms-2" style="font-size:.83rem;align-self:center;">
+{# Summary stat row #}
+{% if employees %}
+<div class="d-flex gap-3 mb-3 flex-wrap">
+  <div class="card p-3 flex-shrink-0" style="background:var(--surface);border:1px solid var(--border);min-width:200px;">
+    <div class="d-flex align-items-center gap-2 mb-1">
+      <i class="bi bi-trophy" style="color:var(--accent);"></i>
+      <span class="text-muted" style="font-size:.75rem;">
+        Overall Attendance Rate{% if tl_filter %} — {{ tl_filter }}{% elif group_filter %} — {{ group_filter }}{% endif %}
+      </span>
+    </div>
+    <div class="fw-bold" style="font-size:1.4rem;
+      {% if summary.avg_pct is none %}color:var(--text-muted);
+      {% elif summary.avg_pct >= 90 %}color:#15803d;
+      {% elif summary.avg_pct >= 75 %}color:#b45309;
+      {% else %}color:#b91c1c;{% endif %}">
+      {{ summary.avg_pct if summary.avg_pct is not none else '—' }}{% if summary.avg_pct is not none %}%{% endif %}
+    </div>
+    <div class="text-muted mt-1" style="font-size:.7rem;">Team-wide (present/scheduled) across {{ summary.ranked_count }} ranked employee{{ 's' if summary.ranked_count != 1 }}</div>
+  </div>
+  <div class="text-muted align-self-center" style="font-size:.83rem;">
     {% if date_from == date_to %}{{ date_from }}{% else %}{{ date_from }} &rarr; {{ date_to }}{% endif %}
-    &mdash; {{ records|length }} record(s)
-  </span>
+    &mdash; {{ employees|length }} employee{{ 's' if employees|length != 1 }}
+  </div>
 </div>
 {% endif %}
 
-{% if not records %}
+{% if not employees %}
 <div class="card p-4 text-center">
-  <i class="bi bi-check-circle text-success" style="font-size:2.5rem;"></i>
-  <div class="mt-2 fw-semibold">No issues found for the selected date range</div>
-  <div class="text-muted" style="font-size:.85rem;">All scheduled employees are accounted for.</div>
+  <i class="bi bi-calendar-x text-muted" style="font-size:2.5rem;"></i>
+  <div class="mt-2 fw-semibold">No scheduled employees found for the selected date range</div>
+  <div class="text-muted" style="font-size:.85rem;">Try widening the date range or clearing the Group/Team Lead/Employee filters.</div>
 </div>
 {% else %}
 
-{% set ns = namespace(current_group='') %}
-{% for row in records %}
-  {% set remark_key = row.employee_id ~ '|' ~ row.absent_date %}
-  {% if row.group_name != ns.current_group %}
-    {% if ns.current_group != '' %}</tbody></table></div></div>{% endif %}
-    {% set ns.current_group = row.group_name %}
-    <div class="card mb-3">
-      <div class="card-header d-flex align-items-center gap-2 py-2"
-           style="background:var(--bg);border-bottom:1px solid var(--border);">
-        <i class="bi bi-people-fill" style="color:var(--accent);"></i>
-        <span class="fw-semibold" style="font-size:.92rem;">{{ row.group_name or 'No Group' }}</span>
-        <span class="badge rounded-pill ms-1"
-              style="background:var(--accent);color:#fff;font-size:.72rem;">
-          {{ records | selectattr('group_name','eq',row.group_name) | list | length }}
-        </span>
-      </div>
-      <div class="table-responsive">
-        <table class="table table-hover mb-0 absence-table">
-          <thead>
-            <tr>
-              <th class="sortable" data-col="0" style="cursor:pointer;user-select:none;">
-                Employee <span class="sort-icon">&#8597;</span>
-              </th>
-              <th class="sortable" data-col="1" style="cursor:pointer;user-select:none;">
-                Employee ID <span class="sort-icon">&#8597;</span>
-              </th>
-              <th class="sortable" data-col="2" style="cursor:pointer;user-select:none;">
-                Absent Date <span class="sort-icon">&#8597;</span>
-              </th>
-              <th>Team Lead</th>
-              <th>Shift</th>
-              <th>Time In</th>
-              <th>Time Out</th>
-              <th>Status</th>
-              <th>Remarks</th>
-            </tr>
-          </thead>
-          <tbody>
-  {% endif %}
-
-  {% set emp_leaves = leave_map.get(remark_key, []) %}
-  {% set emp_cws    = cws_map.get(remark_key, []) %}
-
-  <tr>
-    <td class="fw-semibold">{{ row.schedule_name }}</td>
-    <td>
-      <span class="text-muted" style="font-size:.8rem;cursor:pointer;"
-            onclick="copyEmpId(this, '{{ row.employee_id }}')">{{ row.employee_id }}</span>
-    </td>
-    <td style="font-size:.85rem;white-space:nowrap;">{{ row.absent_date }}</td>
-    <td style="font-size:.85rem;">{{ row.tl or '&mdash;' }}</td>
-    <td>
-      <span class="badge rounded-pill"
-            style="background:#fef3c7;color:#92400e;border:1px solid #fde68a;font-size:.75rem;">
-        <i class="bi bi-clock me-1"></i>{{ row.shift_time }}
-      </span>
-    </td>
-    <td style="font-size:.83rem;white-space:nowrap;">
-      {% if row.time_in %}
-        <span class="text-success fw-semibold">{{ row.time_in }}</span>
-      {% else %}
-        <span class="text-muted">&mdash;</span>
-      {% endif %}
-    </td>
-    <td style="font-size:.83rem;white-space:nowrap;">
-      {% if row.time_out %}
-        <span class="text-primary fw-semibold">{{ row.time_out }}</span>
-      {% else %}
-        <span class="text-muted">&mdash;</span>
-      {% endif %}
-    </td>
-    <td>
-      {% if row.attendance_status == 'Absent' %}
-        <span class="badge rounded-pill"
-              style="background:#fef2f2;color:#991b1b;border:1px solid #fecaca;font-size:.75rem;">
-          <i class="bi bi-x-circle me-1"></i>Absent
-        </span>
-      {% elif row.attendance_status == 'FTS IN' %}
-        <span class="badge rounded-pill"
-              style="background:#fff7ed;color:#9a3412;border:1px solid #fed7aa;font-size:.75rem;">
-          <i class="bi bi-box-arrow-in-right me-1"></i>FTS IN
-        </span>
-      {% elif row.attendance_status == 'FTS OUT' %}
-        <span class="badge rounded-pill"
-              style="background:#faf5ff;color:#6b21a8;border:1px solid #e9d5ff;font-size:.75rem;">
-          <i class="bi bi-box-arrow-right me-1"></i>FTS OUT
-        </span>
-      {% endif %}
-    </td>
-    <td>
-      <div class="d-flex flex-wrap gap-1 align-items-center">
-        {% for lv in emp_leaves %}
-          <span class="badge rounded-pill"
-                style="background:#eff6ff;color:#1d4ed8;border:1px solid #bfdbfe;font-size:.72rem;">
-            <i class="bi bi-calendar-check me-1"></i>On Leave
-            {% if lv.leave_type_name %}&mdash; {{ lv.leave_type_name }}{% endif %}
-            <span style="opacity:.7;">({{ lv.status | title }})</span>
-          </span>
+<div class="card mb-3">
+  <div class="table-responsive">
+    <table class="table table-hover mb-0 stack-rank-table">
+      <thead>
+        <tr>
+          <th class="sortable" data-col="0" style="cursor:pointer;user-select:none;">
+            Rank <span class="sort-icon">&#8597;</span>
+          </th>
+          <th class="sortable" data-col="1" style="cursor:pointer;user-select:none;">
+            Employee <span class="sort-icon">&#8597;</span>
+          </th>
+          <th class="sortable" data-col="2" style="cursor:pointer;user-select:none;">
+            Employee ID <span class="sort-icon">&#8597;</span>
+          </th>
+          <th class="sortable" data-col="3" style="cursor:pointer;user-select:none;">
+            Group <span class="sort-icon">&#8597;</span>
+          </th>
+          <th class="sortable" data-col="4" style="cursor:pointer;user-select:none;">
+            Team Lead <span class="sort-icon">&#8597;</span>
+          </th>
+          <th class="sortable" data-col="5" style="cursor:pointer;user-select:none;">
+            Days Scheduled <span class="sort-icon">&#8597;</span>
+          </th>
+          <th class="sortable" data-col="6" style="cursor:pointer;user-select:none;">
+            Days Present <span class="sort-icon">&#8597;</span>
+          </th>
+          <th class="sortable" data-col="7" style="cursor:pointer;user-select:none;">
+            Attendance % <span class="sort-icon">&#8597;</span>
+          </th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in employees %}
+        <tr>
+          <td class="fw-semibold">{{ row.rank if row.rank is not none else '—' }}</td>
+          <td class="fw-semibold">{{ row.name }}</td>
+          <td>
+            <span class="text-muted" style="font-size:.8rem;cursor:pointer;"
+                  data-emp-id="{{ row.employee_id }}"
+                  onclick="copyEmpId(this, this.dataset.empId)">{{ row.employee_id }}</span>
+          </td>
+          <td style="font-size:.85rem;">{{ row.group_name or 'No Group' }}</td>
+          <td style="font-size:.85rem;">{{ row.tl or '—' }}</td>
+          <td style="font-size:.85rem;">{{ row.scheduled_count }}</td>
+          <td style="font-size:.85rem;">{{ row.present_count }}</td>
+          <td class="fw-semibold"
+              style="{% if row.attendance_pct is none %}color:var(--text-muted);
+                     {% elif row.attendance_pct >= 90 %}color:#15803d;
+                     {% elif row.attendance_pct >= 75 %}color:#b45309;
+                     {% else %}color:#b91c1c;{% endif %}">
+            {{ row.attendance_pct if row.attendance_pct is not none else '—' }}{% if row.attendance_pct is not none %}%{% endif %}
+          </td>
+        </tr>
         {% endfor %}
-        {% for cw in emp_cws %}
-          <span class="badge rounded-pill"
-                style="background:#f0fdf4;color:#15803d;border:1px solid #bbf7d0;font-size:.72rem;">
-            <i class="bi bi-arrow-left-right me-1"></i>CWS
-            {% if cw.new_date %}&rarr; {{ cw.new_date }}{% endif %}
-            {% if cw.new_time %}{{ cw.new_time }}{% endif %}
-            <span style="opacity:.7;">({{ cw.status }})</span>
-          </span>
-        {% endfor %}
-        {% if not emp_leaves and not emp_cws %}
-          <span class="text-muted" style="font-size:.8rem;">&mdash;</span>
-        {% endif %}
-      </div>
-    </td>
-  </tr>
-{% endfor %}
-</tbody></table></div></div>
+      </tbody>
+    </table>
+  </div>
+</div>
 
 {% endif %}
 {% endblock %}
@@ -308,8 +291,8 @@ document.addEventListener('DOMContentLoaded', function () {
 
   // Today button: defaults to the last day whose shifts have fully
   // completed (per TODAY_CUTOFF_HOUR), to avoid showing incomplete
-  // FTS/Absent/Late counts for a day still in progress. The date inputs
-  // can still be manually set to the actual current date if needed.
+  // counts for a day still in progress. The date inputs can still
+  // be manually set to the actual current date if needed.
   const TODAY_CUTOFF_HOUR = 13; // matches the 1 PM absence-report cron
   document.getElementById('todayBtn')?.addEventListener('click', () => {
     const now = new Date();
@@ -318,8 +301,6 @@ document.addEventListener('DOMContentLoaded', function () {
 
     let target = new Date(now);
     if (now < todayCutoff) {
-      // Yesterday's overnight shifts haven't hit their completion deadline yet
-      // (today's 1 PM cutoff), so the last SAFE day is two days back.
       target.setDate(target.getDate() - 2);
     } else {
       target.setDate(target.getDate() - 1);
@@ -333,10 +314,10 @@ document.addEventListener('DOMContentLoaded', function () {
     dateToInput.value = safeDate;
     form.submit();
   });
-});  
+});
+
 // ── Column sort ──
 (function() {
-  // Track sort state per table (by index among .absence-table)
   const state = {};
 
   document.addEventListener('click', function(e) {
@@ -344,35 +325,34 @@ document.addEventListener('DOMContentLoaded', function () {
     if (!th) return;
 
     const table   = th.closest('table');
-    const tables  = [...document.querySelectorAll('.absence-table')];
+    const tables  = [...document.querySelectorAll('.stack-rank-table')];
     const tIdx    = tables.indexOf(table);
     const colIdx  = parseInt(th.dataset.col);
     const key     = tIdx + '-' + colIdx;
 
-    // Toggle direction
     const dir = (state[key] === 'asc') ? 'desc' : 'asc';
     state[key] = dir;
 
-    // Reset all sort icons in this table
     th.closest('tr').querySelectorAll('.sort-icon').forEach(ic => ic.innerHTML = '&#8597;');
     th.querySelector('.sort-icon').innerHTML = dir === 'asc' ? '&#8593;' : '&#8595;';
 
-    // Sort rows
     const tbody = table.querySelector('tbody');
     const rows  = [...tbody.querySelectorAll('tr')];
+
+    // Numeric columns: Rank(0), Days Scheduled(5), Days Present(6), Attendance %(7)
+    const numericCols = [0, 5, 6, 7];
 
     rows.sort((a, b) => {
       const aText = (a.querySelectorAll('td')[colIdx]?.textContent || '').trim();
       const bText = (b.querySelectorAll('td')[colIdx]?.textContent || '').trim();
 
-      // Date column (col 2) — sort as date
-      if (colIdx === 2) {
-        const aD = new Date(aText), bD = new Date(bText);
-        if (!isNaN(aD) && !isNaN(bD)) {
-          return dir === 'asc' ? aD - bD : bD - aD;
+      if (numericCols.includes(colIdx)) {
+        const aNum = aText === '—' ? -Infinity : parseFloat(aText);
+        const bNum = bText === '—' ? -Infinity : parseFloat(bText);
+        if (!isNaN(aNum) && !isNaN(bNum)) {
+          return dir === 'asc' ? aNum - bNum : bNum - aNum;
         }
       }
-      // String sort
       return dir === 'asc'
         ? aText.localeCompare(bText)
         : bText.localeCompare(aText);
@@ -382,29 +362,26 @@ document.addEventListener('DOMContentLoaded', function () {
   });
 })();
 
+function copyEmpId(el, empId) {
+  navigator.clipboard.writeText(empId).catch(() => {});
+}
+
 function copyTable() {
-  const headers = ['Employee','Employee ID','Absent Date','Group','Team Lead','Shift','Time In','Time Out','Status','Remarks'];
+  const headers = ['Rank','Employee','Employee ID','Group','Team Lead','Days Scheduled','Days Present','Attendance %'];
   const rows    = [headers.join('\t')];
-  document.querySelectorAll('.absence-table').forEach(table => {
-    const cardHeader = table.closest('.card').querySelector('.card-header .fw-semibold');
-    const group = cardHeader ? cardHeader.textContent.trim() : '';
+  document.querySelectorAll('.stack-rank-table').forEach(table => {
     table.querySelectorAll('tbody tr').forEach(tr => {
       const cells = tr.querySelectorAll('td');
-      if (cells.length < 9) return;
-      const remarks = [...cells[8].querySelectorAll('.badge')]
-                        .map(b => b.textContent.replace(/\s+/g,' ').trim())
-                        .join('; ') || '-';
+      if (cells.length < 8) return;
       rows.push([
         cells[0].textContent.trim(),
         cells[1].textContent.trim(),
         cells[2].textContent.trim(),
-        group,
         cells[3].textContent.trim(),
         cells[4].textContent.trim(),
         cells[5].textContent.trim(),
         cells[6].textContent.trim(),
-        cells[7].textContent.trim(),
-        remarks
+        cells[7].textContent.trim()
       ].join('\t'));
     });
   });

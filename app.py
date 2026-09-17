@@ -29,7 +29,7 @@ from modules.incident_reports import ir_bp
 app.register_blueprint(ir_bp, url_prefix='/incident-reports')
 
 # Tardiness Blueprint
-from modules.tardiness import tardiness_bp
+from modules.tardiness import tardiness_bp, get_late_records_for_range
 app.register_blueprint(tardiness_bp, url_prefix='/tardiness')
 from modules.my_records import my_records_bp
 app.register_blueprint(my_records_bp)
@@ -1095,6 +1095,33 @@ def logout():
     )
     return redirect(keycloak_logout_url)
 
+def get_on_shift_rows(cdb):
+    """
+    Returns raw rows for everyone currently "on shift": their most recent
+    punch (within the last 18 hours) was an 'in' with no later punch after
+    it in that same window. Ported from the legacy standalone headcount
+    dashboard (cohere_dashboard/headcount.php). Shared by the main
+    dashboard's headcount card, /api/current-headcount, and /on-shift so
+    the "on shift" definition can't drift between the three -- it used to
+    be copy-pasted in all three places.
+    """
+    with cdb.cursor() as c:
+        c.execute("""
+            SELECT personid, date AS time_in,
+                   TIMESTAMPDIFF(MINUTE, date, NOW()) AS minutes_on_shift
+            FROM dailytimerecordsfiltered d1
+            WHERE type = 'in'
+              AND date >= DATE_SUB(NOW(), INTERVAL 18 HOUR)
+              AND NOT EXISTS (
+                SELECT 1 FROM dailytimerecordsfiltered d2
+                WHERE d2.personid = d1.personid
+                  AND d2.date > d1.date
+                  AND d2.date >= DATE_SUB(NOW(), INTERVAL 18 HOUR)
+              )
+            ORDER BY date DESC
+        """)
+        return c.fetchall()
+
 @app.route('/dashboard')
 @login_required
 def dashboard():
@@ -1771,6 +1798,18 @@ def api_pending_count():
             return jsonify({'count': row['cnt'] if row else 0})
     finally:
         db.close()
+
+@app.route('/api/current-headcount')
+@login_required
+def api_current_headcount():
+    # "Who's on shift right now" — see get_on_shift_rows() for the shared
+    # definition (ported from the legacy standalone PHP headcount dashboard).
+    cdb = get_central_db()
+    try:
+        count = len(get_on_shift_rows(cdb))
+    finally:
+        cdb.close()
+    return jsonify({'count': count, 'timestamp': datetime.now().strftime('%I:%M:%S %p')})
 
 @app.route('/admin/supervisors', methods=['GET', 'POST'])
 @admin_required
@@ -10523,6 +10562,7 @@ def build_attendance_map(personids, window_start, window_end, shift_starts=None)
                     # no attendance record at all).
                     attendance_map[(pid, shift_date_for(pid, previous_in))] = {
                         'status': 'Present', 'time_in': previous_in.strftime('%b %d %H:%M'), 'time_out': log_dt.strftime('%b %d %H:%M'),
+                        'hours_worked': round((log_dt - previous_in).total_seconds() / 3600, 4),
                     }
                     previous_in = None
                     continue
@@ -10988,6 +11028,270 @@ def admin_awol_report():
                            date_from=str(date_from),
                            date_to=str(date_to),
                            summary=summary)
+
+@app.route('/admin/undertime-report')
+def admin_undertime_report():
+    # Undertime = a scheduled shift where the employee clocked BOTH in and
+    # out (attendance_map status == 'Present' -- not FTS IN/FTS OUT, which
+    # mean only one punch exists) but the actual worked duration fell short
+    # of the scheduled shift length for that date. Sibling tab of
+    # Absence/Attendance-Grid/AWOL; reuses the same permission flag as its
+    # audience is identical. This route deliberately duplicates
+    # admin_awol_report()'s Steps 1-5 rather than importing from it, to
+    # avoid touching the already-live absences/awol/attendance-grid routes.
+    if not session.get('is_admin') and not session.get('permissions', {}).get('can_absences'):
+        return redirect(url_for('dashboard'))
+
+    from datetime import date, timedelta, datetime as dt
+    from helpers.payroll_period import get_default_payroll_period
+
+    default_period_start, default_period_end = get_default_payroll_period()
+
+    TODAY_CUTOFF_HOUR = 13  # matches the 1 PM absence-report cron / Today button logic
+    now = dt.now()
+    if now.hour < TODAY_CUTOFF_HOUR:
+        safe_last_day = date.today() - timedelta(days=2)
+    else:
+        safe_last_day = date.today() - timedelta(days=1)
+
+    def parse_date(val, fallback):
+        try:
+            return date.fromisoformat(val) if val else fallback
+        except ValueError:
+            return fallback
+
+    date_from = parse_date(request.args.get('date_from'), default_period_start)
+    date_to   = parse_date(request.args.get('date_to'),   default_period_end)
+    if date_to < date_from:
+        date_to = date_from
+    # Never show data beyond the last fully-completed day, even if the
+    # selected payroll period (or a manually-entered date) extends further.
+    if date_to > safe_last_day:
+        date_to = safe_last_day
+    if date_from > date_to:
+        date_from = date_to
+
+    # How much shortfall (in minutes) to tolerate before a Present shift
+    # counts as "undertime". 0 = flag any shortfall at all. No break/lunch
+    # deduction convention exists anywhere else in this codebase for
+    # scheduled-vs-actual hour comparisons, so this is a plain, full-shift
+    # comparison -- kept as a named constant so the tolerance is trivially
+    # tunable later without hunting through the route.
+    UNDERTIME_GRACE_MINUTES = 0
+
+    # A parsed shift span longer than this is treated as implausible source
+    # data (e.g. a typo'd shift_time like '6pm-3pm' instead of '6pm-3am',
+    # which the overnight-wraparound math would otherwise compute as a
+    # 21-hour scheduled shift) rather than a real shortfall -- confirmed
+    # live in employee_schedules. Flagged separately below instead of
+    # silently dropped, so the underlying schedule row can actually get
+    # fixed rather than just vanishing from the report.
+    MAX_PLAUSIBLE_SHIFT_HOURS = 16
+
+    # ── Step 1: All scheduled active employees in date range ──
+    scheduled = []
+    cdb = get_central_db()
+    try:
+        with cdb.cursor() as c:
+            c.execute("""
+                SELECT
+                    g.employee_id,
+                    g.schedule_name,
+                    COALESCE(g.tl, '-')                AS tl,
+                    COALESCE(g.group_name, 'No Group') AS group_name,
+                    es.shift_time,
+                    es.schedule_date                   AS absent_date,
+                    u.personid
+                FROM employee_schedules es
+                JOIN gsheet_employees g
+                    ON g.employee_id COLLATE utf8mb4_unicode_ci = es.employee_id COLLATE utf8mb4_unicode_ci
+                JOIN (
+                    SELECT companyid,
+                           SUBSTRING_INDEX(GROUP_CONCAT(personid ORDER BY personid DESC), ',', 1) AS personid
+                    FROM userdata
+                    GROUP BY companyid
+                ) u ON u.companyid COLLATE utf8mb4_unicode_ci = es.employee_id COLLATE utf8mb4_unicode_ci
+                WHERE es.schedule_date BETWEEN %s AND %s
+                    AND es.is_rest_day   = 0
+                    AND es.shift_time   IS NOT NULL
+                    AND g.status         = 'Active'
+                ORDER BY g.group_name, g.tl, es.schedule_date, g.schedule_name
+            """, (date_from, date_to))
+            scheduled = c.fetchall()
+    finally:
+        cdb.close()
+
+    records            = []
+    implausible_shifts = []
+    leave_map          = {}
+
+    if scheduled:
+        # Build lookup: personid -> employee info
+        personid_map = {}
+        for row in scheduled:
+            pid = int(row['personid']) if row['personid'] else None
+            if pid:
+                personid_map.setdefault(pid, row)
+
+        personids = list(personid_map.keys())
+
+        # ── Step 2-3: Build attendance map using shared helper (also used
+        # by /admin/absences, /admin/attendance-grid and /admin/awol-report),
+        # so all four pages stay consistent ──
+        shift_starts = {}
+        for row in scheduled:
+            spid = int(row['personid']) if row['personid'] else None
+            if not spid:
+                continue
+            start_h, _ = parse_shift_time(row['shift_time'])
+            if start_h is not None:
+                shift_starts[(spid, row['absent_date'])] = start_h
+
+        window_start = date_from - timedelta(days=1)
+        window_end   = date_to   + timedelta(days=1)
+        attendance_map = build_attendance_map(personids, window_start, window_end, shift_starts)
+
+        # ── Step 4: Match scheduled rows to attendance_map, keep only
+        # Present occurrences (both an IN and an OUT punch exist -- FTS
+        # IN/FTS OUT/no record are different attendance anomalies, out of
+        # scope here) whose actual worked duration fell short of the
+        # scheduled shift length. Unlike AWOL, there's no accusation risk
+        # in silently skipping a row that can't be verified (no personid
+        # mapping) or whose shift string can't be parsed -- the burden here
+        # is proving a shortfall happened, not that the employee was
+        # absent, so those rows are simply out of scope rather than
+        # surfaced as "unverified". ──
+        for row in scheduled:
+            pid        = int(row['personid']) if row['personid'] else None
+            sched_date = row['absent_date']
+
+            if pid is None:
+                continue
+
+            att = attendance_map.get((pid, sched_date))
+            if att is None or att['status'] != 'Present':
+                continue  # no punch, or only one punch -- out of scope for undertime
+
+            start_h, end_h = parse_shift_time(row['shift_time'])
+            if start_h is None or end_h is None:
+                continue  # can't compute a shortfall without a scheduled length
+
+            scheduled_hours = end_h - start_h if end_h > start_h else (end_h + 24 - start_h)
+
+            if scheduled_hours > MAX_PLAUSIBLE_SHIFT_HOURS:
+                r = dict(row)
+                r['scheduled_hours'] = scheduled_hours
+                implausible_shifts.append(r)
+                continue
+
+            shortfall_hours = scheduled_hours - att['hours_worked']
+
+            if shortfall_hours > (UNDERTIME_GRACE_MINUTES / 60):
+                r = dict(row)
+                r['attendance_status'] = 'Present'
+                r['time_in']           = att['time_in']
+                r['time_out']          = att['time_out']
+                r['hours_worked']      = att['hours_worked']
+                r['scheduled_hours']   = scheduled_hours
+                r['shortfall_hours']   = shortfall_hours
+                records.append(r)
+
+        # ── Step 5: Leave coverage. Any filed leave of ANY type/status
+        # (other than Rejected/Cancelled/Deleted, matched case-insensitively
+        # so a future status-value casing change can't silently slip
+        # through) covering the date excludes the day from this report --
+        # e.g. approved half-day leave plus a shorter worked shift is an
+        # explained, legitimate partial day, not concerning "undertime".
+        # leave4day_requests already stores one row per calendar day even
+        # for multi-day requests, so a plain per-day key match is
+        # sufficient without extra date-range logic. ──
+        emp_ids = list({r['employee_id'] for r in records})
+        if emp_ids:
+            placeholders = ','.join(['%s'] * len(emp_ids))
+
+            odb = get_db()
+            try:
+                with odb.cursor() as c:
+                    c.execute(f"""
+                        SELECT lr.employee_id, lt.name AS leave_type_name,
+                               lr.status, lr.leave_date
+                        FROM leave4day_requests lr
+                        JOIN ohrm_leave_type lt ON lt.id = lr.leave_type_id
+                        WHERE lr.employee_id IN ({placeholders})
+                          AND lr.leave_date BETWEEN %s AND %s
+                          AND LOWER(lr.status) NOT IN ('rejected','cancelled','deleted')
+                    """, emp_ids + [date_from, date_to])
+                    for row in c.fetchall():
+                        key = '{}|{}'.format(row['employee_id'], row['leave_date'])
+                        leave_map.setdefault(key, []).append(row)
+            finally:
+                odb.close()
+
+    # ── Final filter: exclude any day with filed-leave coverage (see Step
+    # 5), then sort by shortfall descending (biggest shortfalls first) --
+    # the template's client-side column-sort JS still lets this be
+    # re-sorted afterward. ──
+    def _uncovered(r):
+        return not leave_map.get('{}|{}'.format(r['employee_id'], r['absent_date']))
+
+    undertime_records = [r for r in records if _uncovered(r)]
+    undertime_records.sort(key=lambda r: r['shortfall_hours'], reverse=True)
+
+    summary = {
+        'undertime': len(undertime_records),
+    }
+
+    return render_template('admin/undertime_report.html',
+                           records=undertime_records,
+                           implausible_shifts=implausible_shifts,
+                           date_from=str(date_from),
+                           date_to=str(date_to),
+                           summary=summary)
+
+@app.route('/on-shift')
+def on_shift():
+    # Details page behind the dashboard's Current Headcount card. Sibling
+    # of the Absence/Attendance-Grid/AWOL/Undertime report family; reuses
+    # the same permission flag as its audience is identical.
+    if not session.get('is_admin') and not session.get('permissions', {}).get('can_absences'):
+        return redirect(url_for('dashboard'))
+
+    cdb = get_central_db()
+    try:
+        shift_rows = get_on_shift_rows(cdb)
+        with cdb.cursor() as c:
+            # Batch-resolve personid -> identity (companyid/schedule_name/tl/group_name)
+            # in one query rather than per-row.
+            identity_by_personid = {}
+            personids = [r['personid'] for r in shift_rows]
+            if personids:
+                placeholders = ','.join(['%s'] * len(personids))
+                c.execute("""
+                    SELECT u.personid, u.companyid AS employee_id, g.schedule_name, g.tl, g.group_name
+                    FROM userdata u
+                    LEFT JOIN gsheet_employees g ON g.employee_id COLLATE utf8mb4_unicode_ci = u.companyid COLLATE utf8mb4_unicode_ci
+                    WHERE u.personid IN ({})
+                """.format(placeholders), personids)
+                for row in c.fetchall():
+                    identity_by_personid[row['personid']] = row
+    finally:
+        cdb.close()
+
+    on_shift_records = []
+    for r in shift_rows:
+        identity = identity_by_personid.get(r['personid'])
+        minutes_total = r['minutes_on_shift'] or 0
+        on_shift_records.append({
+            'personid': r['personid'],
+            'employee_name': identity['schedule_name'] if identity and identity.get('schedule_name') else r['personid'],
+            'employee_id': identity['employee_id'] if identity else None,
+            'tl': identity['tl'] if identity else None,
+            'time_in': r['time_in'],
+            'duration_hours': minutes_total // 60,
+            'duration_minutes': minutes_total % 60,
+        })
+
+    return render_template('admin/on_shift.html', records=on_shift_records)
 
 # MAGIC CWS
 # ─────────────────────────────────────────────────────────────
@@ -11785,6 +12089,326 @@ def pim_index():
                            statuses=statuses)
 
 
+def _perf_scope_data(conn, employee_id, date_from, date_to, perf_safe_last_day, label):
+    """
+    Computes the Attendance Performance Summary (Absences / FTS / Overbreaks /
+    Tardiness) for ONE date range -- shared by pim_profile()'s Month and Year
+    views so both scopes stay identical apart from window size. Returns both
+    a count and the full list of per-occurrence dicts for each metric (the
+    stat pills need the count, the inline detail tables need the list),
+    every list sorted most-recent-first.
+
+    date_to is clamped by `min(date_to, perf_safe_last_day)` -- the exact
+    same safe-cutoff already used for the Month view (see pim_profile()).
+    build_attendance_map() treats "no punch record" as evidence of absence,
+    and a day whose shift hasn't happened yet (future, or today before its
+    shift has had a chance to complete) has no punch record simply because
+    it hasn't happened, not because the employee no-showed. Applying the
+    clamp here guards the Year scope's Dec 31 exactly like it already guards
+    the Month scope's month-end: for the current, still-in-progress year
+    this clamps date_to down to perf_safe_last_day; for a fully past year,
+    perf_safe_last_day (always in the current year) is later than that
+    year's Dec 31, so min() leaves date_to untouched -- no separate
+    past-year-vs-current-year branch needed.
+    """
+    attendance_date_to = min(date_to, perf_safe_last_day)
+
+    # Step 1: this employee's personid, the same userdata->gsheet_employees
+    # join pattern used by admin_absences()/admin_awol_report()/
+    # admin_undertime_report(), simplified to a single employee instead of
+    # a date-range-of-all-employees query.
+    perf_cursor = conn.cursor(pymysql.cursors.DictCursor)
+    perf_cursor.execute("""
+        SELECT es.schedule_date, es.shift_time, es.is_rest_day, u.personid
+        FROM employee_schedules es
+        JOIN (
+            SELECT companyid,
+                   SUBSTRING_INDEX(GROUP_CONCAT(personid ORDER BY personid DESC), ',', 1) AS personid
+            FROM userdata
+            GROUP BY companyid
+        ) u ON u.companyid COLLATE utf8mb4_unicode_ci = es.employee_id COLLATE utf8mb4_unicode_ci
+        WHERE es.employee_id = %s
+          AND es.schedule_date BETWEEN %s AND %s
+    """, (employee_id, date_from, date_to))
+    perf_schedule_rows = perf_cursor.fetchall()
+
+    personid = None
+    for row in perf_schedule_rows:
+        if row['personid']:
+            personid = int(row['personid'])
+            break
+
+    # Absences + FTS via the shared build_attendance_map() helper (also used
+    # by /admin/absences, /admin/attendance-grid and /admin/awol-report). No
+    # personid mapping at all -> leave both as None ("--" in the template)
+    # rather than 0/[], since 0 would wrongly imply a verified clean record
+    # instead of "couldn't check".
+    absences = None
+    fts = None
+    if personid is not None:
+        shift_starts_perf = {}
+        for row in perf_schedule_rows:
+            start_h, _ = parse_shift_time(row['shift_time'])
+            if start_h is not None:
+                shift_starts_perf[(personid, row['schedule_date'])] = start_h
+
+        window_start = date_from - timedelta(days=1)
+        window_end   = date_to   + timedelta(days=1)
+        attendance_map_perf = build_attendance_map([personid], window_start, window_end, shift_starts_perf)
+
+        absences = []
+        fts = []
+        for row in perf_schedule_rows:
+            if row['is_rest_day'] or not row['shift_time']:
+                continue  # only scheduled working days count
+            if row['schedule_date'] > attendance_date_to:
+                continue  # shift hasn't happened yet (future, or today before its cutoff) -- not evaluable
+            att = attendance_map_perf.get((personid, row['schedule_date']))
+            if att is None:
+                absences.append({
+                    'date': row['schedule_date'],
+                    'day_of_week': row['schedule_date'].strftime('%A'),
+                    'shift_time': row['shift_time'],
+                })
+            elif att['status'] in ('FTS IN', 'FTS OUT'):
+                fts.append({
+                    'date': row['schedule_date'],
+                    'day_of_week': row['schedule_date'].strftime('%A'),
+                    'fts_type': att['status'],
+                    'time_in': att['time_in'],
+                    'time_out': att['time_out'],
+                })
+        absences.sort(key=lambda r: r['date'], reverse=True)
+        fts.sort(key=lambda r: r['date'], reverse=True)
+
+    # Absence tagging: for each absence date, check whether a leave was
+    # filed covering it (leave4day_requests, orangehrm2 -- a different
+    # database than the schedule/attendance data above, so this uses
+    # get_db() rather than `conn`). Same lookup pattern as
+    # admin_awol_report()'s Step 5, simplified to a single employee instead
+    # of an IN (...) list of all scheduled employees. leave4day_requests
+    # already stores one row per calendar day even for multi-day requests,
+    # so a plain per-day dict key is sufficient. A date with no covering
+    # leave record is tagged AWOL; awol_count feeds the stat pill so the
+    # AWOL-vs-on-leave split is visible without expanding the detail table.
+    awol_count = None
+    if absences is not None:
+        awol_count = 0
+        if absences:
+            leave_by_date = {}
+            leave_db = get_db()
+            try:
+                with leave_db.cursor(pymysql.cursors.DictCursor) as leave_cursor:
+                    leave_cursor.execute("""
+                        SELECT lr.leave_date, lt.name AS leave_type_name
+                        FROM leave4day_requests lr
+                        JOIN ohrm_leave_type lt ON lt.id = lr.leave_type_id
+                        WHERE lr.employee_id = %s
+                          AND lr.leave_date BETWEEN %s AND %s
+                          AND LOWER(lr.status) NOT IN ('rejected','cancelled','deleted')
+                    """, (employee_id, date_from, date_to))
+                    for row in leave_cursor.fetchall():
+                        leave_by_date[row['leave_date']] = row['leave_type_name']
+            finally:
+                leave_db.close()
+
+            for a in absences:
+                leave_type_name = leave_by_date.get(a['date'])
+                if leave_type_name:
+                    a['leave_code'] = get_leave_code(leave_type_name)
+                    a['leave_type_name'] = leave_type_name
+                else:
+                    a['leave_code'] = 'AWOL'
+                    a['leave_type_name'] = None
+                    awol_count += 1
+
+    # Overbreaks: full rows (not just COUNT(*)) so the detail table can list
+    # each occurrence's date + minutes over. break_duration is a
+    # TIME/duration-typed column -- converted to minutes with the exact same
+    # logic as get_overbreak_trigger_events_for_period()'s local
+    # _duration_to_minutes() (that helper is a nested function, not
+    # importable, so its logic is replicated here rather than reimplemented
+    # differently).
+    perf_cursor.execute("""
+        SELECT record_date, break_duration FROM overbreak_records
+        WHERE employee_id = %s AND validity = 'Valid'
+          AND record_date BETWEEN %s AND %s
+        ORDER BY record_date DESC
+    """, (employee_id, date_from, date_to))
+    overbreak_rows = perf_cursor.fetchall()
+    perf_cursor.close()
+
+    def _duration_to_minutes(val):
+        if val is None:
+            return 0
+        total_seconds = getattr(val, 'total_seconds', None)
+        if total_seconds:
+            return int(val.total_seconds() // 60)
+        return 0
+
+    overbreaks = [{
+        'date': r['record_date'],
+        'minutes': _duration_to_minutes(r['break_duration']),
+    } for r in overbreak_rows]  # already ORDER BY record_date DESC
+
+    # Tardiness: reuse the shared modules.tardiness range helper (its own
+    # central_db connection via db_core's get_db_connection()), filtered to
+    # this employee. Its records use 'companyid' as the employee_id-
+    # equivalent field name. Kept as the full list (not collapsed to a
+    # count) so the detail table has per-occurrence rows.
+    late_records_perf = get_late_records_for_range(date_from, date_to)
+    tardiness = [{
+        'date': r['record_date'],
+        'shift_start': r['shift_start'],
+        'time_in': r['time_in'],
+        'minutes_late': r['minutes_late'],
+    } for r in late_records_perf if r['companyid'] == employee_id]
+    tardiness.sort(key=lambda r: r['date'], reverse=True)
+    tardiness_minutes = sum(r['minutes_late'] or 0 for r in tardiness)
+
+    return {
+        'label': label,
+        'absences': absences,
+        'absence_count': (len(absences) if absences is not None else None),
+        # Split of absence_count into unexplained (AWOL) vs covered by a
+        # filed leave -- lets the stat pill show the breakdown at a glance
+        # instead of a raw count that reads as more alarming than it is.
+        'awol_count': awol_count,
+        'on_leave_count': ((len(absences) - awol_count) if absences is not None else None),
+        'fts': fts,
+        'fts_count': (len(fts) if fts is not None else None),
+        'overbreaks': overbreaks,
+        'overbreak_count': len(overbreaks),
+        'tardiness': tardiness,
+        'tardiness_count': len(tardiness),
+        'tardiness_minutes': tardiness_minutes,
+        # Only set when THIS scope's window got truncated by the safe-cutoff
+        # (i.e. it's the current, still-in-progress month, or the current,
+        # still-in-progress year) -- lets the template make clear the
+        # absence/FTS counts don't cover the whole window yet.
+        'cutoff_note': attendance_date_to if attendance_date_to < date_to else None,
+    }
+
+
+def _csat_scope_data(conn, agent_email, date_from, date_to):
+    """
+    Computes the CSAT Performance Summary (Volume Weighted CSAT + per-channel
+    breakdown + response detail list) for ONE date range -- shared by
+    pim_profile()'s Month and Year views, mirroring _perf_scope_data()'s
+    architecture: both scopes are computed server-side in the same request,
+    no AJAX/lazy-loading.
+
+    Keyed by agent_email (== employee['email'] from gsheet_employees), a
+    direct match against csat_responses.agent_email / resolve_counts.
+    agent_email -- no personid mapping needed here, unlike the Attendance
+    card (which has to bridge companyid -> personid via userdata first).
+
+    Uses the exact same "Volume Weighted CSAT%" formula as api_my_csat()'s
+    MONTHLY branch: each channel's average csat_score (from csat_responses),
+    weighted by that channel's resolved-ticket count (from resolve_counts,
+    NOT survey-response count) -- the house-standard definition used
+    consistently across the /csat dashboard, its trend chart, and the
+    self-service "my CSAT" view.
+
+    No safe-cutoff clamp here (unlike Attendance's perf_safe_last_day) --
+    CSAT responses only exist for tickets that actually happened, so future
+    dates naturally contribute nothing; there's no "no record yet = looks
+    bad" inversion risk like Attendance's absence detection has.
+
+    weighted/per-channel pct come back as None (not 0) when there's no
+    resolved/response data for that scope -- 0% would misleadingly read as
+    "satisfied 0% of the time" instead of "nothing to measure" (e.g. a
+    non-CS role, or a new hire with no tickets yet).
+    """
+    empty_channel = {'pct': None, 'responses': 0, 'resolved': 0}
+    if not agent_email:
+        return {
+            'weighted': None,
+            'total_responses': 0,
+            'total_resolved': 0,
+            'by_channel': {'Chat': dict(empty_channel), 'Email': dict(empty_channel), 'Phone': dict(empty_channel)},
+            'responses': [],
+        }
+
+    csat_cursor = conn.cursor(pymysql.cursors.DictCursor)
+
+    # Per-channel average score + response count.
+    csat_cursor.execute("""
+        SELECT channel_type, AVG(csat_score) pct, COUNT(*) n
+        FROM csat_responses
+        WHERE agent_email = %s AND performed_at_date BETWEEN %s AND %s
+        GROUP BY channel_type
+    """, (agent_email, date_from, date_to))
+    pct = {}
+    cnt = {}
+    total_responses = 0
+    for row in csat_cursor.fetchall():
+        pct[row['channel_type']] = float(row['pct'] or 0)
+        cnt[row['channel_type']] = int(row['n'])
+        total_responses += int(row['n'])
+
+    # Per-channel resolved-ticket weights.
+    csat_cursor.execute("""
+        SELECT COALESCE(SUM(chat_resolved),0) chat, COALESCE(SUM(email_resolved),0) email,
+               COALESCE(SUM(phone_resolved),0) phone
+        FROM resolve_counts
+        WHERE agent_email = %s AND performed_at_date BETWEEN %s AND %s
+    """, (agent_email, date_from, date_to))
+    w = csat_cursor.fetchone() or {}
+    chat_resolved  = int(w.get('chat')  or 0)
+    email_resolved = int(w.get('email') or 0)
+    phone_resolved = int(w.get('phone') or 0)
+    total_resolved = chat_resolved + email_resolved + phone_resolved
+
+    weighted = None
+    if total_resolved:
+        weighted = (pct.get('Chat', 0) * chat_resolved
+                    + pct.get('Email', 0) * email_resolved
+                    + pct.get('Phone', 0) * phone_resolved) / total_resolved * 100
+
+    def _channel(name, resolved):
+        return {
+            'pct': (round(pct[name] * 100, 2) if name in pct else None),
+            'responses': cnt.get(name, 0),
+            'resolved': resolved,
+        }
+
+    by_channel = {
+        'Chat':  _channel('Chat',  chat_resolved),
+        'Email': _channel('Email', email_resolved),
+        'Phone': _channel('Phone', phone_resolved),
+    }
+
+    # Detail rows for the expandable table -- same query as
+    # api_csat_agent_responses(), simplified from that route's general
+    # filter-condition builder (_csat_filters()) to a direct agent_email
+    # match since this is already scoped to one specific employee.
+    csat_cursor.execute("""
+        SELECT performed_at_date, ticket_id, channel_type, csat_rate, csat_score, qa_comment, qa_name
+        FROM csat_responses
+        WHERE agent_email = %s AND performed_at_date BETWEEN %s AND %s
+        ORDER BY performed_at_date DESC
+    """, (agent_email, date_from, date_to))
+    responses = [{
+        'date': row['performed_at_date'],
+        'ticket_id': row['ticket_id'] or '',
+        'channel': row['channel_type'] or '',
+        'rate': row['csat_rate'] or '',
+        'score': row['csat_score'],
+        'qa_comment': row['qa_comment'] or '',
+        'qa_name': row['qa_name'] or '',
+    } for row in csat_cursor.fetchall()]
+    csat_cursor.close()
+
+    return {
+        'weighted': (round(weighted, 2) if weighted is not None else None),
+        'total_responses': total_responses,
+        'total_resolved': total_resolved,
+        'by_channel': by_channel,
+        'responses': responses,
+    }
+
+
 @app.route('/pim/<employee_id>')
 def pim_profile(employee_id):
     if not (session.get('is_admin') or session.get('permissions', {}).get('can_pim')):
@@ -11818,6 +12442,45 @@ def pim_profile(employee_id):
     month_name = _date(year, month, 1).strftime('%B %Y')
     prev_year, prev_month = (year-1, 12) if month == 1 else (year, month-1)
     next_year, next_month = (year+1, 1)  if month == 12 else (year, month+1)
+
+    # ── Attendance Performance Summary (Absences / FTS / Overbreaks /
+    # Tardiness), computed for BOTH the currently-viewed month and the
+    # currently-viewed year in this same request -- a single employee's data
+    # for a year is cheap, so the Month/Year toggle in the template is pure
+    # client-side show/hide, no AJAX/lazy-loading round-trip. ──
+    date_from = _date(year, month, 1)
+    date_to   = _date(year, month, _cal.monthrange(year, month)[1])
+    year_date_from = _date(year, 1, 1)
+    year_date_to   = _date(year, 12, 31)
+
+    # Absence/FTS evaluation must never look past the last day whose shift
+    # has actually had a chance to complete -- build_attendance_map() treats
+    # "no punch record" as evidence of absence, and a future or still-in-
+    # progress scheduled day has no punch record simply because it hasn't
+    # happened yet, not because the employee no-showed. Same cutoff as
+    # admin_absences()/admin_awol_report()/admin_undertime_report(), and
+    # applied to BOTH scopes below via _perf_scope_data() -- a still-in-
+    # progress current YEAR needs exactly the same guard a still-in-progress
+    # current month already gets.
+    _PERF_CUTOFF_HOUR = 13  # matches the 1 PM absence-report cron / Today button logic
+    if datetime.now().hour < _PERF_CUTOFF_HOUR:
+        perf_safe_last_day = _date.today() - timedelta(days=2)
+    else:
+        perf_safe_last_day = _date.today() - timedelta(days=1)
+
+    perf_month = _perf_scope_data(conn, employee_id, date_from, date_to, perf_safe_last_day, month_name)
+    perf_year  = _perf_scope_data(conn, employee_id, year_date_from, year_date_to, perf_safe_last_day, str(year))
+
+    # ── CSAT Performance Summary, same Month/Year server-side-both-scopes
+    # architecture as Attendance above, but keyed directly on agent_email
+    # (== employee['email']) rather than a personid mapping -- see
+    # _csat_scope_data()'s docstring. Reuses the same date_from/date_to /
+    # year_date_from/year_date_to windows already computed for Attendance. ──
+    agent_email = employee.get('email')
+    csat_month = _csat_scope_data(conn, agent_email, date_from, date_to)
+    csat_year  = _csat_scope_data(conn, agent_email, year_date_from, year_date_to)
+    conn.close()
+
     ohrm = get_db()
     ocur = ohrm.cursor(pymysql.cursors.DictCursor)
     ocur.execute("SELECT emp_number FROM hs_hr_employee WHERE employee_id = %s LIMIT 1", (employee_id,))
@@ -11838,7 +12501,11 @@ def pim_profile(employee_id):
                            next_year=next_year, next_month=next_month,
                            today=_date.today(),
                            employee_id=employee_id,
-                           photo_url=photo_url)
+                           photo_url=photo_url,
+                           perf_month=perf_month,
+                           perf_year=perf_year,
+                           csat_month=csat_month,
+                           csat_year=csat_year)
 
 
 @app.route('/pim/<employee_id>/photo')
@@ -13959,6 +14626,227 @@ def admin_attendance_grid():
                            team_present=team_present, team_scheduled=team_scheduled,
                            holiday_map=holiday_map, is_current_month=is_current_month,
                            team_forecast_rate=team_forecast_rate, team_remaining=team_remaining,
+                           user=session['user'])
+
+
+@app.route('/admin/attendance-stack-rank')
+def admin_attendance_stack_rank():
+    # Ranks agents by attendance % (present / scheduled) over a date range.
+    # Sibling tab of /admin/absences, /admin/attendance-grid and
+    # /admin/awol-report; reuses the same permission flag and the same
+    # scheduled/present precedence as admin_attendance_grid() so the numbers
+    # stay consistent across all four pages.
+    if not session.get('is_admin') and not session.get('permissions', {}).get('can_absences'):
+        return redirect(url_for('dashboard'))
+
+    from datetime import date, timedelta, datetime as dt
+    from helpers.payroll_period import get_default_payroll_period
+
+    default_period_start, default_period_end = get_default_payroll_period()
+
+    TODAY_CUTOFF_HOUR = 13  # matches the 1 PM absence-report cron / Today button logic
+    now = dt.now()
+    if now.hour < TODAY_CUTOFF_HOUR:
+        safe_last_day = date.today() - timedelta(days=2)
+    else:
+        safe_last_day = date.today() - timedelta(days=1)
+
+    def parse_date(val, fallback):
+        try:
+            return date.fromisoformat(val) if val else fallback
+        except ValueError:
+            return fallback
+
+    date_from = parse_date(request.args.get('date_from'), default_period_start)
+    date_to   = parse_date(request.args.get('date_to'),   default_period_end)
+    if date_to < date_from:
+        date_to = date_from
+    # Never show data beyond the last fully-completed day, even if the
+    # selected payroll period (or a manually-entered date) extends further.
+    if date_to > safe_last_day:
+        date_to = safe_last_day
+    if date_from > date_to:
+        date_from = date_to
+
+    group_filter     = request.args.get('group', '')
+    tl_filter        = request.args.get('tl', '')
+    emp_search       = request.args.get('emp_search', '').strip()
+    # Default view is Active employees only; the "Include inactive" slider
+    # in the UI opts into showing separated/inactive employees too.
+    include_inactive = request.args.get('include_inactive') == '1'
+
+    cdb = get_central_db()
+    try:
+        with cdb.cursor() as c:
+            c.execute("""SELECT DISTINCT group_name FROM gsheet_employees
+                         WHERE group_name IS NOT NULL AND status != 'Separated'
+                         ORDER BY group_name""")
+            groups = [r['group_name'] for r in c.fetchall()]
+
+            c.execute("""SELECT DISTINCT tl FROM gsheet_employees
+                         WHERE tl IS NOT NULL AND tl != '' AND status != 'Separated'
+                         ORDER BY tl""")
+            tls = [r['tl'] for r in c.fetchall()]
+
+            where  = ['es.schedule_date BETWEEN %s AND %s']
+            params = [date_from, date_to]
+
+            if not include_inactive:
+                where.append("g.status = 'Active'")
+            if group_filter:
+                where.append('g.group_name = %s')
+                params.append(group_filter)
+            if tl_filter:
+                where.append('g.tl = %s')
+                params.append(tl_filter)
+            if emp_search:
+                where.append('(g.employee_id LIKE %s OR g.schedule_name LIKE %s)')
+                params += [f'%{emp_search}%', f'%{emp_search}%']
+
+            c.execute(f"""
+                SELECT
+                    g.employee_id, g.schedule_name, COALESCE(g.tl,'-') AS tl,
+                    COALESCE(g.group_name,'No Group') AS group_name,
+                    g.status, g.exit_date,
+                    es.schedule_date, es.is_rest_day, es.shift_time, u.personid
+                FROM employee_schedules es
+                JOIN gsheet_employees g
+                    ON g.employee_id COLLATE utf8mb4_unicode_ci = es.employee_id COLLATE utf8mb4_unicode_ci
+                JOIN (
+                    SELECT companyid,
+                           SUBSTRING_INDEX(GROUP_CONCAT(personid ORDER BY personid DESC), ',', 1) AS personid
+                    FROM userdata GROUP BY companyid
+                ) u ON u.companyid COLLATE utf8mb4_unicode_ci = es.employee_id COLLATE utf8mb4_unicode_ci
+                WHERE {' AND '.join(where)}
+                ORDER BY g.group_name, g.tl, g.schedule_name, es.schedule_date
+            """, params)
+            rows = c.fetchall()
+    finally:
+        cdb.close()
+
+    if not rows:
+        return render_template('admin/attendance_stack_rank.html',
+                               employees=[], groups=groups, tls=tls,
+                               group_filter=group_filter, tl_filter=tl_filter,
+                               emp_search=emp_search, include_inactive=include_inactive,
+                               date_from=str(date_from), date_to=str(date_to),
+                               summary={'ranked_count': 0, 'avg_pct': None},
+                               user=session['user'])
+
+    personid_map = {}
+    for r in rows:
+        pid = int(r['personid']) if r['personid'] else None
+        if pid:
+            personid_map.setdefault(pid, r)
+    personids = list(personid_map.keys())
+
+    shift_starts = {}
+    for r in rows:
+        rpid = int(r['personid']) if r['personid'] else None
+        if not rpid:
+            continue
+        start_h, _ = parse_shift_time(r['shift_time'])
+        if start_h is not None:
+            shift_starts[(rpid, r['schedule_date'])] = start_h
+
+    window_start = date_from - timedelta(days=1)
+    window_end   = date_to   + timedelta(days=1)
+    attendance_map = build_attendance_map(personids, window_start, window_end, shift_starts)
+
+    # Leave map: employee_id|date -> {code, pending}
+    emp_ids = list({r['employee_id'] for r in rows})
+    leave_map = {}
+    if emp_ids:
+        odb = get_db()
+        try:
+            with odb.cursor() as lc:
+                lc.execute("""
+                    SELECT e.employee_id, lr.leave_date,
+                           lt.name AS leave_type_name, lr.status
+                    FROM leave4day_requests lr
+                    JOIN hs_hr_employee e ON e.emp_number = lr.emp_number
+                    JOIN ohrm_leave_type lt ON lt.id = lr.leave_type_id
+                    WHERE lr.leave_date BETWEEN %s AND %s
+                      AND lr.status NOT IN ('Rejected','Cancelled','Deleted','rejected','cancelled')
+                """, [date_from, date_to])
+                emp_ids_set = set(emp_ids)
+                for lv in lc.fetchall():
+                    if lv['employee_id'] not in emp_ids_set:
+                        continue
+                    key = f"{lv['employee_id']}|{lv['leave_date']}"
+                    leave_map[key] = {
+                        'name': lv['leave_type_name'],
+                        'code': get_leave_code(lv['leave_type_name']),
+                        'pending': lv['status'] in ('Pending Approval', 'pending', 'Scheduled')
+                    }
+        finally:
+            odb.close()
+
+    # Aggregate per employee, following admin_attendance_grid's exact
+    # scheduled/present precedence: rest days excluded entirely, days past
+    # exit_date skipped, Present/FTS IN/FTS OUT count as present, non-PL/ML
+    # leave counts as scheduled-but-absent, PL/ML excluded entirely.
+    emp_map = {}
+    for r in rows:
+        eid = r['employee_id']
+        if eid not in emp_map:
+            emp_map[eid] = {
+                'employee_id': eid, 'name': r['schedule_name'] or eid,
+                'group_name': r['group_name'], 'tl': r['tl'],
+                'personid': int(r['personid']) if r['personid'] else None,
+                'exit_date': r['exit_date'],
+                'scheduled_count': 0, 'present_count': 0,
+            }
+        emp = emp_map[eid]
+        d = r['schedule_date']
+        is_rest = bool(r['is_rest_day'])
+
+        if emp['exit_date'] and d > emp['exit_date']:
+            continue
+        if is_rest:
+            continue
+
+        att = attendance_map.get((emp['personid'], d)) if emp['personid'] else None
+        lv  = leave_map.get(f"{eid}|{d}")
+        emp['scheduled_count'] += 1
+        if att and att['status'] in ('Present', 'FTS IN', 'FTS OUT'):
+            emp['present_count'] += 1
+        elif lv:
+            if lv['code'] in ('PL', 'ML'):
+                emp['scheduled_count'] -= 1  # PL and ML excluded from rate entirely
+            # All other leave types count as scheduled-but-absent — no present_count increment
+        # else: absent — scheduled_count already incremented, no present_count increment
+
+    employees = list(emp_map.values())
+    for emp in employees:
+        emp['attendance_pct'] = round(
+            (emp['present_count'] / emp['scheduled_count'] * 100), 1
+        ) if emp['scheduled_count'] > 0 else None
+
+    ranked   = [e for e in employees if e['scheduled_count'] > 0]
+    unranked = [e for e in employees if e['scheduled_count'] == 0]
+
+    ranked.sort(key=lambda e: (-e['attendance_pct'], -e['scheduled_count'], e['name']))
+    unranked.sort(key=lambda e: e['name'])
+
+    for i, emp in enumerate(ranked, start=1):
+        emp['rank'] = i
+    for emp in unranked:
+        emp['rank'] = None
+
+    employees = ranked + unranked
+
+    total_present   = sum(e['present_count'] for e in ranked)
+    total_scheduled = sum(e['scheduled_count'] for e in ranked)
+    avg_pct = round(total_present / total_scheduled * 100, 1) if total_scheduled > 0 else None
+    summary = {'ranked_count': len(ranked), 'avg_pct': avg_pct}
+
+    return render_template('admin/attendance_stack_rank.html',
+                           employees=employees, groups=groups, tls=tls,
+                           group_filter=group_filter, tl_filter=tl_filter,
+                           emp_search=emp_search, include_inactive=include_inactive,
+                           date_from=str(date_from), date_to=str(date_to),
+                           summary=summary,
                            user=session['user'])
 
 

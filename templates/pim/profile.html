@@ -284,6 +284,314 @@
         </div>
       </div>
 
+      <!-- Attendance Performance Summary -->
+      {% macro perf_scope_block(scope_key, perf, visible) %}
+      <div class="perf-scope-block" data-perf-scope="{{ scope_key }}"{% if not visible %} style="display:none;"{% endif %}>
+        <div class="text-muted mb-2" style="font-size:.8rem;">for {{ perf.label }}</div>
+        <div class="d-flex gap-2 flex-wrap">
+          <span class="badge rounded-pill px-3 py-2{% if perf.absences %} perf-pill-clickable{% endif %}"
+                style="background:#fef2f2;color:#991b1b;border:1px solid #fecaca;font-size:.8rem;{% if perf.absences %}cursor:pointer;{% endif %}"
+                {% if perf.absences %}data-perf-toggle="perf-detail-{{ scope_key }}-absences" role="button" tabindex="0"{% endif %}>
+            <i class="bi bi-x-circle me-1"></i>Absences:
+            <strong>{{ perf.absence_count if perf.absence_count is not none else '—' }}</strong>
+            {% if perf.absence_count %}
+            <span class="text-muted">({{ perf.awol_count }} AWOL &middot; {{ perf.on_leave_count }} on leave)</span>
+            {% endif %}
+            {% if perf.absences %}<i class="bi bi-chevron-down ms-1 perf-chevron" style="font-size:.7rem;transition:transform .15s;"></i>{% endif %}
+          </span>
+          <span class="badge rounded-pill px-3 py-2{% if perf.fts %} perf-pill-clickable{% endif %}"
+                style="background:#faf5ff;color:#6b21a8;border:1px solid #e9d5ff;font-size:.8rem;{% if perf.fts %}cursor:pointer;{% endif %}"
+                {% if perf.fts %}data-perf-toggle="perf-detail-{{ scope_key }}-fts" role="button" tabindex="0"{% endif %}>
+            <i class="bi bi-box-arrow-in-right me-1"></i>FTS:
+            <strong>{{ perf.fts_count if perf.fts_count is not none else '—' }}</strong>
+            {% if perf.fts %}<i class="bi bi-chevron-down ms-1 perf-chevron" style="font-size:.7rem;transition:transform .15s;"></i>{% endif %}
+          </span>
+          <span class="badge rounded-pill px-3 py-2{% if perf.overbreaks %} perf-pill-clickable{% endif %}"
+                style="background:#fff7ed;color:#9a3412;border:1px solid #fed7aa;font-size:.8rem;{% if perf.overbreaks %}cursor:pointer;{% endif %}"
+                {% if perf.overbreaks %}data-perf-toggle="perf-detail-{{ scope_key }}-overbreaks" role="button" tabindex="0"{% endif %}>
+            <i class="bi bi-cup-hot me-1"></i>Overbreaks:
+            <strong>{{ perf.overbreak_count }}</strong>
+            {% if perf.overbreaks %}<i class="bi bi-chevron-down ms-1 perf-chevron" style="font-size:.7rem;transition:transform .15s;"></i>{% endif %}
+          </span>
+          <span class="badge rounded-pill px-3 py-2{% if perf.tardiness %} perf-pill-clickable{% endif %}"
+                style="background:#eff6ff;color:#1e40af;border:1px solid #bfdbfe;font-size:.8rem;{% if perf.tardiness %}cursor:pointer;{% endif %}"
+                {% if perf.tardiness %}data-perf-toggle="perf-detail-{{ scope_key }}-tardiness" role="button" tabindex="0"{% endif %}>
+            <i class="bi bi-clock-history me-1"></i>Tardiness:
+            <strong>{{ perf.tardiness_count }}</strong>
+            {% if perf.tardiness_count %}
+            <span class="text-muted">({{ perf.tardiness_minutes }} min late total)</span>
+            {% endif %}
+            {% if perf.tardiness %}<i class="bi bi-chevron-down ms-1 perf-chevron" style="font-size:.7rem;transition:transform .15s;"></i>{% endif %}
+          </span>
+        </div>
+
+        {% if perf.absences %}
+        <div id="perf-detail-{{ scope_key }}-absences" class="perf-detail-table mt-2" style="display:none;">
+          <div class="border rounded" style="max-height:280px;overflow-y:auto;">
+            <table class="table table-sm table-striped mb-0">
+              <thead><tr><th>Date</th><th>Day</th><th>Scheduled Shift</th><th>Tag</th></tr></thead>
+              <tbody>
+              {% for a in perf.absences %}
+                <tr>
+                  <td>{{ a.date.strftime('%b %d, %Y') }}</td>
+                  <td>{{ a.day_of_week }}</td>
+                  <td>{{ a.shift_time }}</td>
+                  <td>
+                    {% if a.leave_code == 'AWOL' %}
+                    <span class="badge" style="background:#fef2f2;color:#991b1b;border:1px solid #fecaca;">AWOL</span>
+                    {% else %}
+                    <span class="badge" style="background:#eff6ff;color:#1e40af;border:1px solid #bfdbfe;"{% if a.leave_type_name %} title="{{ a.leave_type_name }}"{% endif %}>{{ a.leave_code }}</span>
+                    {% endif %}
+                  </td>
+                </tr>
+              {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </div>
+        {% endif %}
+
+        {% if perf.fts %}
+        <div id="perf-detail-{{ scope_key }}-fts" class="perf-detail-table mt-2" style="display:none;">
+          <div class="border rounded" style="max-height:280px;overflow-y:auto;">
+            <table class="table table-sm table-striped mb-0">
+              <thead><tr><th>Date</th><th>Day</th><th>Type</th><th>Time In</th><th>Time Out</th></tr></thead>
+              <tbody>
+              {% for f in perf.fts %}
+                <tr>
+                  <td>{{ f.date.strftime('%b %d, %Y') }}</td>
+                  <td>{{ f.day_of_week }}</td>
+                  <td>
+                    {% if f.fts_type == 'FTS IN' %}
+                    <span class="badge bg-success-subtle text-success-emphasis">FTS IN</span>
+                    {% else %}
+                    <span class="badge bg-warning-subtle text-warning-emphasis">FTS OUT</span>
+                    {% endif %}
+                  </td>
+                  <td>{{ f.time_in if f.time_in else '—' }}</td>
+                  <td>{{ f.time_out if f.time_out else '—' }}</td>
+                </tr>
+              {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </div>
+        {% endif %}
+
+        {% if perf.overbreaks %}
+        <div id="perf-detail-{{ scope_key }}-overbreaks" class="perf-detail-table mt-2" style="display:none;">
+          <div class="border rounded" style="max-height:280px;overflow-y:auto;">
+            <table class="table table-sm table-striped mb-0">
+              <thead><tr><th>Date</th><th>Minutes Over</th></tr></thead>
+              <tbody>
+              {% for o in perf.overbreaks %}
+                <tr>
+                  <td>{{ o.date.strftime('%b %d, %Y') }}</td>
+                  <td>{{ o.minutes }}</td>
+                </tr>
+              {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </div>
+        {% endif %}
+
+        {% if perf.tardiness %}
+        <div id="perf-detail-{{ scope_key }}-tardiness" class="perf-detail-table mt-2" style="display:none;">
+          <div class="border rounded" style="max-height:280px;overflow-y:auto;">
+            <table class="table table-sm table-striped mb-0">
+              <thead><tr><th>Date</th><th>Scheduled Start</th><th>Actual Time In</th><th>Minutes Late</th></tr></thead>
+              <tbody>
+              {% for t in perf.tardiness %}
+                <tr>
+                  <td>{{ t.date.strftime('%b %d, %Y') }}</td>
+                  <td>{{ t.shift_start.strftime('%I:%M %p') if t.shift_start else '—' }}</td>
+                  <td>{{ t.time_in.strftime('%I:%M %p') if t.time_in else '—' }}</td>
+                  <td>{{ t.minutes_late }}</td>
+                </tr>
+              {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </div>
+        {% endif %}
+
+        {% if perf.absences is none or perf.fts is none %}
+        <div class="text-muted mt-2" style="font-size:.78rem;">
+          <i class="bi bi-info-circle me-1"></i>Absences/FTS not computable for this {{ 'month' if scope_key == 'month' else 'year' }} — no schedule or attendance-system mapping found for this employee.
+        </div>
+        {% elif perf.cutoff_note %}
+        <div class="text-muted mt-2" style="font-size:.78rem;">
+          <i class="bi bi-info-circle me-1"></i>Absences/FTS cover shifts through {{ perf.cutoff_note }} only — later dates this {{ 'month' if scope_key == 'month' else 'year' }} haven't happened yet.
+        </div>
+        {% endif %}
+      </div>
+      {% endmacro %}
+
+      <div class="card shadow-sm mb-3" id="perfSummaryCard">
+        <div class="card-header fw-semibold d-flex align-items-center justify-content-between flex-wrap gap-2">
+          <span><i class="bi bi-graph-up me-2"></i>Attendance Performance Summary</span>
+          <div class="btn-group btn-group-sm" role="group" aria-label="Performance summary scope">
+            <button type="button" class="btn btn-outline-secondary active" data-perf-scope-btn="month">Month</button>
+            <button type="button" class="btn btn-outline-secondary" data-perf-scope-btn="year">Year</button>
+          </div>
+        </div>
+        <div class="card-body py-3 px-3">
+          {{ perf_scope_block('month', perf_month, true) }}
+          {{ perf_scope_block('year', perf_year, false) }}
+        </div>
+      </div>
+      <script>
+      (function(){
+        var card = document.getElementById('perfSummaryCard');
+        if (!card) return;
+
+        var scopeBtns = card.querySelectorAll('[data-perf-scope-btn]');
+        scopeBtns.forEach(function(btn){
+          btn.addEventListener('click', function(){
+            var scope = btn.dataset.perfScopeBtn;
+            scopeBtns.forEach(function(b){ b.classList.toggle('active', b === btn); });
+            card.querySelectorAll('.perf-scope-block').forEach(function(block){
+              block.style.display = (block.dataset.perfScope === scope) ? 'block' : 'none';
+            });
+          });
+        });
+
+        card.querySelectorAll('[data-perf-toggle]').forEach(function(pill){
+          function toggle(){
+            var detail = document.getElementById(pill.dataset.perfToggle);
+            if (!detail) return;
+            var isOpen = detail.style.display === 'block';
+            detail.style.display = isOpen ? 'none' : 'block';
+            var chevron = pill.querySelector('.perf-chevron');
+            if (chevron) chevron.style.transform = isOpen ? '' : 'rotate(180deg)';
+          }
+          pill.addEventListener('click', toggle);
+          pill.addEventListener('keydown', function(e){
+            if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(); }
+          });
+        });
+      })();
+      </script>
+
+      <!-- CSAT Performance Summary -->
+      {% macro csat_scope_block(scope_key, csat, visible) %}
+      <div class="csat-scope-block" data-csat-scope="{{ scope_key }}"{% if not visible %} style="display:none;"{% endif %}>
+        <div class="d-flex flex-wrap align-items-stretch gap-3 mb-2">
+          <div class="rounded-3 px-3 py-2" style="background:#ecfdf5;border:1px solid #a7f3d0;min-width:180px;">
+            <div class="text-uppercase" style="font-size:.68rem;letter-spacing:.06em;color:#065f46;">Volume Weighted CSAT</div>
+            <div class="fw-bold" style="font-size:1.9rem;line-height:1.15;color:#065f46;">
+              {{ '%.1f'|format(csat.weighted) ~ '%' if csat.weighted is not none else '—' }}
+            </div>
+          </div>
+          <div class="d-flex flex-column justify-content-center" style="gap:.3rem;">
+            <div class="text-muted" style="font-size:.8rem;">Total Responses: <strong class="text-body">{{ csat.total_responses }}</strong></div>
+            <div class="text-muted" style="font-size:.8rem;">Total Resolved: <strong class="text-body">{{ csat.total_resolved }}</strong></div>
+          </div>
+        </div>
+
+        <div class="d-flex gap-2 flex-wrap">
+          <span class="badge rounded-pill px-3 py-2" style="background:#ecfeff;color:#155e75;border:1px solid #a5f3fc;font-size:.8rem;">
+            <i class="bi bi-chat-dots me-1"></i>Chat:
+            <strong>{{ '%.1f'|format(csat.by_channel.Chat.pct) ~ '%' if csat.by_channel.Chat.pct is not none else '—' }}</strong>
+            <span class="text-muted">({{ csat.by_channel.Chat.resolved }} resolved)</span>
+          </span>
+          <span class="badge rounded-pill px-3 py-2" style="background:#fdf2f8;color:#9d174d;border:1px solid #fbcfe8;font-size:.8rem;">
+            <i class="bi bi-envelope me-1"></i>Email:
+            <strong>{{ '%.1f'|format(csat.by_channel.Email.pct) ~ '%' if csat.by_channel.Email.pct is not none else '—' }}</strong>
+            <span class="text-muted">({{ csat.by_channel.Email.resolved }} resolved)</span>
+          </span>
+          <span class="badge rounded-pill px-3 py-2" style="background:#f0fdfa;color:#115e59;border:1px solid #99f6e4;font-size:.8rem;">
+            <i class="bi bi-telephone me-1"></i>Phone:
+            <strong>{{ '%.1f'|format(csat.by_channel.Phone.pct) ~ '%' if csat.by_channel.Phone.pct is not none else '—' }}</strong>
+            <span class="text-muted">({{ csat.by_channel.Phone.resolved }} resolved)</span>
+          </span>
+        </div>
+
+        {% if csat.responses %}
+        <div class="mt-2">
+          <span class="badge rounded-pill px-3 py-2 perf-pill-clickable"
+                style="background:#f8fafc;color:#334155;border:1px solid #e2e8f0;font-size:.8rem;cursor:pointer;"
+                data-csat-toggle="csat-detail-{{ scope_key }}" role="button" tabindex="0">
+            <i class="bi bi-table me-1"></i>View Responses:
+            <strong>{{ csat.responses|length }}</strong>
+            <i class="bi bi-chevron-down ms-1 perf-chevron" style="font-size:.7rem;transition:transform .15s;"></i>
+          </span>
+        </div>
+        <div id="csat-detail-{{ scope_key }}" class="csat-detail-table mt-2" style="display:none;">
+          <div class="border rounded" style="max-height:280px;overflow-y:auto;">
+            <table class="table table-sm table-striped mb-0">
+              <thead><tr><th>Date</th><th>Ticket ID</th><th>Channel</th><th>Rating</th><th>Score</th><th>QA Comment</th><th>QA Name</th></tr></thead>
+              <tbody>
+              {% for r in csat.responses %}
+                <tr>
+                  <td>{{ r.date.strftime('%b %d, %Y') if r.date else '—' }}</td>
+                  <td>{{ r.ticket_id if r.ticket_id else '—' }}</td>
+                  <td>{{ r.channel if r.channel else '—' }}</td>
+                  <td>{{ r.rate if r.rate else '—' }}</td>
+                  <td>{{ r.score if r.score is not none else '—' }}</td>
+                  <td>{{ r.qa_comment if r.qa_comment else '—' }}</td>
+                  <td>{{ r.qa_name if r.qa_name else '—' }}</td>
+                </tr>
+              {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </div>
+        {% else %}
+        <div class="text-muted mt-2" style="font-size:.78rem;">
+          <i class="bi bi-info-circle me-1"></i>No CSAT responses recorded for this {{ 'month' if scope_key == 'month' else 'year' }}.
+        </div>
+        {% endif %}
+      </div>
+      {% endmacro %}
+
+      <div class="card shadow-sm mb-3" id="csatSummaryCard">
+        <div class="card-header fw-semibold d-flex align-items-center justify-content-between flex-wrap gap-2">
+          <span><i class="bi bi-emoji-smile me-2"></i>CSAT Performance Summary</span>
+          <div class="btn-group btn-group-sm" role="group" aria-label="CSAT summary scope">
+            <button type="button" class="btn btn-outline-secondary active" data-csat-scope-btn="month">Month</button>
+            <button type="button" class="btn btn-outline-secondary" data-csat-scope-btn="year">Year</button>
+          </div>
+        </div>
+        <div class="card-body py-3 px-3">
+          {{ csat_scope_block('month', csat_month, true) }}
+          {{ csat_scope_block('year', csat_year, false) }}
+        </div>
+      </div>
+      <script>
+      (function(){
+        var card = document.getElementById('csatSummaryCard');
+        if (!card) return;
+
+        var scopeBtns = card.querySelectorAll('[data-csat-scope-btn]');
+        scopeBtns.forEach(function(btn){
+          btn.addEventListener('click', function(){
+            var scope = btn.dataset.csatScopeBtn;
+            scopeBtns.forEach(function(b){ b.classList.toggle('active', b === btn); });
+            card.querySelectorAll('.csat-scope-block').forEach(function(block){
+              block.style.display = (block.dataset.csatScope === scope) ? 'block' : 'none';
+            });
+          });
+        });
+
+        card.querySelectorAll('[data-csat-toggle]').forEach(function(pill){
+          function toggle(){
+            var detail = document.getElementById(pill.dataset.csatToggle);
+            if (!detail) return;
+            var isOpen = detail.style.display === 'block';
+            detail.style.display = isOpen ? 'none' : 'block';
+            var chevron = pill.querySelector('.perf-chevron');
+            if (chevron) chevron.style.transform = isOpen ? '' : 'rotate(180deg)';
+          }
+          pill.addEventListener('click', toggle);
+          pill.addEventListener('keydown', function(e){
+            if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(); }
+          });
+        });
+      })();
+      </script>
+
       <!-- Basic Info + Key Dates -->
       <div class="row g-3">
         <div class="col-md-6">
