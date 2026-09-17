@@ -8,27 +8,27 @@
 <ul class="nav nav-tabs mb-3">
   <li class="nav-item">
     <a class="nav-link" href="{{ url_for('admin_absences') }}">
-      <i class="bi bi-person-x me-1"></i>Absence Report
+      <i class="me-1" data-lucide="user-x"></i>Absence Report
     </a>
   </li>
   <li class="nav-item">
     <a class="nav-link" href="{{ url_for('admin_attendance_grid') }}">
-      <i class="bi bi-grid-3x3 me-1"></i>Attendance Grid
+      <i class="me-1" data-lucide="grid-3x3"></i>Attendance Grid
     </a>
   </li>
   <li class="nav-item">
     <a class="nav-link" href="{{ url_for('admin_awol_report') }}">
-      <i class="bi bi-person-dash me-1"></i>AWOL Report
+      <i class="me-1" data-lucide="user-minus"></i>AWOL Report
     </a>
   </li>
   <li class="nav-item">
     <a class="nav-link" href="{{ url_for('admin_undertime_report') }}">
-      <i class="bi bi-hourglass-split me-1"></i>Undertime Report
+      <i class="me-1" data-lucide="hourglass"></i>Undertime Report
     </a>
   </li>
   <li class="nav-item">
     <a class="nav-link active" href="{{ url_for('admin_attendance_stack_rank') }}">
-      <i class="bi bi-trophy me-1"></i>Attendance Stack Rank
+      <i class="me-1" data-lucide="trophy"></i>Attendance Stack Rank
     </a>
   </li>
 </ul>
@@ -53,7 +53,7 @@
   <form method="get" id="dateForm" class="d-flex align-items-end gap-2 flex-wrap" style="flex:1;">
     <div class="date-nav">
       <button type="button" class="btn-icon" id="prevPeriodBtn" title="Previous payroll period">
-        <i class="bi bi-chevron-left"></i>
+        <i data-lucide="chevron-left"></i>
       </button>
       <label for="date_from">From</label>
       <input type="date" id="date_from" name="date_from" value="{{ date_from }}"
@@ -62,7 +62,7 @@
       <input type="date" id="date_to" name="date_to" value="{{ date_to }}"
              class="form-control form-control-sm" style="width:auto;">
       <button type="button" class="btn-icon" id="nextPeriodBtn" title="Next payroll period">
-        <i class="bi bi-chevron-right"></i>
+        <i data-lucide="chevron-right"></i>
       </button>
       <button type="button" class="btn btn-outline-secondary btn-sm" id="currentPeriodBtn">Current Period</button>
       <button type="button" class="btn btn-outline-secondary btn-sm" id="todayBtn">Today</button>
@@ -102,15 +102,15 @@
     </div>
 
     <button class="btn btn-primary btn-sm" type="submit">
-      <i class="bi bi-search me-1"></i>Apply
+      <i class="me-1" data-lucide="search"></i>Apply
     </button>
     <a href="{{ url_for('admin_attendance_stack_rank') }}" class="btn btn-outline-secondary btn-sm">
-      <i class="bi bi-x-circle me-1"></i>Clear
+      <i class="me-1" data-lucide="circle-x"></i>Clear
     </a>
   </form>
   {% if employees %}
   <button class="btn btn-outline-secondary btn-sm" id="copyTableBtn" onclick="copyTable()">
-    <i class="bi bi-clipboard me-1"></i>Copy Table
+    <i class="me-1" data-lucide="clipboard"></i>Copy Table
   </button>
   {% endif %}
 </div>
@@ -120,7 +120,7 @@
 <div class="d-flex gap-3 mb-3 flex-wrap">
   <div class="card p-3 flex-shrink-0" style="background:var(--surface);border:1px solid var(--border);min-width:200px;">
     <div class="d-flex align-items-center gap-2 mb-1">
-      <i class="bi bi-trophy" style="color:var(--accent);"></i>
+      <i data-lucide="trophy" style="color:var(--accent);"></i>
       <span class="text-muted" style="font-size:.75rem;">
         Overall Attendance Rate{% if tl_filter %} — {{ tl_filter }}{% elif group_filter %} — {{ group_filter }}{% endif %}
       </span>
@@ -143,7 +143,7 @@
 
 {% if not employees %}
 <div class="card p-4 text-center">
-  <i class="bi bi-calendar-x text-muted" style="font-size:2.5rem;"></i>
+  <i class="text-muted" data-lucide="calendar-x" style="font-size:2.5rem;"></i>
   <div class="mt-2 fw-semibold">No scheduled employees found for the selected date range</div>
   <div class="text-muted" style="font-size:.85rem;">Try widening the date range or clearing the Group/Team Lead/Employee filters.</div>
 </div>
@@ -155,28 +155,28 @@
       <thead>
         <tr>
           <th class="sortable" data-col="0" style="cursor:pointer;user-select:none;">
-            Rank <span class="sort-icon">&#8597;</span>
+            Rank <i class="sort-icon" data-lucide="arrow-up-down"></i>
           </th>
           <th class="sortable" data-col="1" style="cursor:pointer;user-select:none;">
-            Employee <span class="sort-icon">&#8597;</span>
+            Employee <i class="sort-icon" data-lucide="arrow-up-down"></i>
           </th>
           <th class="sortable" data-col="2" style="cursor:pointer;user-select:none;">
-            Employee ID <span class="sort-icon">&#8597;</span>
+            Employee ID <i class="sort-icon" data-lucide="arrow-up-down"></i>
           </th>
           <th class="sortable" data-col="3" style="cursor:pointer;user-select:none;">
-            Group <span class="sort-icon">&#8597;</span>
+            Group <i class="sort-icon" data-lucide="arrow-up-down"></i>
           </th>
           <th class="sortable" data-col="4" style="cursor:pointer;user-select:none;">
-            Team Lead <span class="sort-icon">&#8597;</span>
+            Team Lead <i class="sort-icon" data-lucide="arrow-up-down"></i>
           </th>
           <th class="sortable" data-col="5" style="cursor:pointer;user-select:none;">
-            Days Scheduled <span class="sort-icon">&#8597;</span>
+            Days Scheduled <i class="sort-icon" data-lucide="arrow-up-down"></i>
           </th>
           <th class="sortable" data-col="6" style="cursor:pointer;user-select:none;">
-            Days Present <span class="sort-icon">&#8597;</span>
+            Days Present <i class="sort-icon" data-lucide="arrow-up-down"></i>
           </th>
           <th class="sortable" data-col="7" style="cursor:pointer;user-select:none;">
-            Attendance % <span class="sort-icon">&#8597;</span>
+            Attendance % <i class="sort-icon" data-lucide="arrow-up-down"></i>
           </th>
         </tr>
       </thead>
@@ -333,8 +333,9 @@ document.addEventListener('DOMContentLoaded', function () {
     const dir = (state[key] === 'asc') ? 'desc' : 'asc';
     state[key] = dir;
 
-    th.closest('tr').querySelectorAll('.sort-icon').forEach(ic => ic.innerHTML = '&#8597;');
-    th.querySelector('.sort-icon').innerHTML = dir === 'asc' ? '&#8593;' : '&#8595;';
+    th.closest('tr').querySelectorAll('.sort-icon').forEach(ic => ic.setAttribute('data-lucide', 'arrow-up-down'));
+    th.querySelector('.sort-icon').setAttribute('data-lucide', dir === 'asc' ? 'arrow-up' : 'arrow-down');
+    if (window.lucide) lucide.createIcons();
 
     const tbody = table.querySelector('tbody');
     const rows  = [...tbody.querySelectorAll('tr')];
@@ -388,7 +389,7 @@ function copyTable() {
   navigator.clipboard.writeText(rows.join('\n')).then(() => {
     const btn = document.getElementById('copyTableBtn');
     const orig = btn.innerHTML;
-    btn.innerHTML = '<i class="bi bi-check2 me-1"></i>Copied!';
+    btn.innerHTML = '<i class="me-1" data-lucide="check"></i>Copied!';
     btn.classList.replace('btn-outline-secondary','btn-success');
     setTimeout(() => { btn.innerHTML = orig; btn.classList.replace('btn-success','btn-outline-secondary'); }, 2000);
   }).catch(() => alert('Copy failed — please select the table manually.'));

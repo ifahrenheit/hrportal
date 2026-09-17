@@ -78,7 +78,7 @@
 
 <div class="container-fluid py-3">
   <div class="d-flex flex-wrap justify-content-between align-items-center mb-3">
-    <h3 class="mb-0"><i class="bi bi-person-exclamation"></i> CSR Percentage
+    <h3 class="mb-0"><i data-lucide="circle-alert"></i> CSR Percentage
       {% if scoped_tl %}<span class="badge bg-secondary">{{ scoped_tl }} team</span>{% endif %}
     </h3>
   </div>
@@ -86,7 +86,7 @@
   <div class="csr-card mb-3 csr-filters">
     <div class="d-flex flex-wrap align-items-start" style="gap:1rem;">
       <div>
-        <div class="filter-group-label"><i class="bi bi-calendar3"></i> Period</div>
+        <div class="filter-group-label"><i data-lucide="calendar"></i> Period</div>
         <div class="d-flex flex-wrap align-items-end" style="gap:.5rem;">
           <div class="filter-col narrow">
             <label class="form-label small">View by</label>
@@ -113,7 +113,7 @@
       <div class="filter-divider"></div>
 
       <div>
-        <div class="filter-group-label"><i class="bi bi-people"></i> Segment</div>
+        <div class="filter-group-label"><i data-lucide="users"></i> Segment</div>
         <div class="d-flex flex-wrap" style="gap:.5rem;">
           {% if not is_tl_view %}
           <div class="filter-col">
@@ -131,7 +131,7 @@
       <div class="filter-divider"></div>
 
       <div>
-        <div class="filter-group-label"><i class="bi bi-funnel"></i> Scope</div>
+        <div class="filter-group-label"><i data-lucide="funnel"></i> Scope</div>
         <div class="d-flex flex-column" style="gap:.35rem; padding-top:.15rem;">
           <div class="form-check form-switch mb-0">
             <input class="form-check-input" type="checkbox" id="csrActive" checked>
@@ -148,7 +148,7 @@
     <div class="mt-2 d-flex align-items-center gap-2 flex-wrap">
       <button id="csrReset" class="btn btn-outline-secondary btn-sm">Reset</button>
       <button id="csrExport" class="btn btn-outline-secondary btn-sm">
-        <i class="bi bi-download"></i> CSV
+        <i data-lucide="download"></i> CSV
       </button>
       <input type="text" id="csrSearch" class="form-control form-control-sm"
              style="max-width:240px" placeholder="Search name / email / TL…">
@@ -277,12 +277,12 @@
 
   function renderHead(){
     const head = $('csrHead');
-    let html = '<th class="sortable" data-key="name">Name<span class="sort-arrow">&#8597;</span></th>' +
-               '<th class="sortable" data-key="email">Email<span class="sort-arrow">&#8597;</span></th>' +
-               '<th class="sortable" data-key="tl">TL<span class="sort-arrow">&#8597;</span></th>';
+    let html = '<th class="sortable" data-key="name">Name<i class="sort-arrow" data-lucide="arrow-up-down"></i></th>' +
+               '<th class="sortable" data-key="email">Email<i class="sort-arrow" data-lucide="arrow-up-down"></i></th>' +
+               '<th class="sortable" data-key="tl">TL<i class="sort-arrow" data-lucide="arrow-up-down"></i></th>';
     csrData.periods.forEach(function(m){
       html += '<th class="sortable csr-cell" data-key="' + m + '" title="' + periodLabelFull(m) + '">' +
-              periodLabel(m) + '<span class="sort-arrow">&#8597;</span></th>';
+              periodLabel(m) + '<i class="sort-arrow" data-lucide="arrow-up-down"></i></th>';
     });
     head.innerHTML = html;
     head.querySelectorAll('th.sortable').forEach(function(th){

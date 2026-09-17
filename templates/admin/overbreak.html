@@ -45,11 +45,11 @@
 <div class="btn-group btn-group-sm mb-3" role="group">
   <a href="{{ url_for('admin_overbreak') }}"
      class="btn {% if view != 'triggers' %}btn-primary{% else %}btn-outline-secondary{% endif %}">
-    <i class="bi bi-table"></i> Records
+    <i data-lucide="table"></i> Records
   </a>
   <a href="{{ url_for('admin_overbreak', view='triggers') }}"
      class="btn {% if view == 'triggers' %}btn-primary{% else %}btn-outline-secondary{% endif %}">
-    <i class="bi bi-exclamation-triangle"></i> IR Triggers
+    <i data-lucide="triangle-alert"></i> IR Triggers
   </a>
 </div>
 
@@ -57,21 +57,21 @@
 
   <div class="summary-row">
     <div class="summary-card rule1" title="Rule 1 - 3 or more overbreak instances in a payroll cycle">
-      <div class="icon"><i class="bi bi-arrow-repeat"></i></div>
+      <div class="icon"><i data-lucide="repeat"></i></div>
       <div>
         <div class="num">{{ rule1_total }}</div>
         <div class="lbl">Rule 1</div>
       </div>
     </div>
     <div class="summary-card rule2" title="Rule 2 - 2 instances totalling more than 3.5 hours">
-      <div class="icon"><i class="bi bi-hourglass-split"></i></div>
+      <div class="icon"><i data-lucide="hourglass"></i></div>
       <div>
         <div class="num">{{ rule2_total }}</div>
         <div class="lbl">Rule 2</div>
       </div>
     </div>
     <div class="summary-card rule3" title="Rule 3 - a single instance longer than 2 hours">
-      <div class="icon"><i class="bi bi-exclamation-octagon"></i></div>
+      <div class="icon"><i data-lucide="octagon-alert"></i></div>
       <div>
         <div class="num">{{ rule3_total }}</div>
         <div class="lbl">Rule 3</div>
@@ -84,14 +84,14 @@
         <input type="hidden" name="view" value="triggers">
         <div class="d-flex align-items-center gap-2">
           <button type="button" class="btn btn-outline-secondary btn-sm" id="prevPeriodBtn" title="Previous payroll period">
-            <i class="bi bi-chevron-left"></i>
+            <i data-lucide="chevron-left"></i>
           </button>
           <label for="date_from" class="form-label small text-muted mb-0">From</label>
           <input type="date" id="date_from" name="date_from" value="{{ date_from }}" class="form-control form-control-sm" style="width:auto;">
           <label for="date_to" class="form-label small text-muted mb-0">To</label>
           <input type="date" id="date_to" name="date_to" value="{{ date_to }}" class="form-control form-control-sm" style="width:auto;">
           <button type="button" class="btn btn-outline-secondary btn-sm" id="nextPeriodBtn" title="Next payroll period">
-            <i class="bi bi-chevron-right"></i>
+            <i data-lucide="chevron-right"></i>
           </button>
           <button type="button" class="btn btn-outline-secondary btn-sm" id="currentPeriodBtn">Current Period</button>
           <button type="button" class="btn btn-outline-secondary btn-sm" id="todayBtn">Today</button>
@@ -110,7 +110,7 @@
           {% endfor %}
         </select>
         <button type="button" id="copyTableBtn" class="btn btn-outline-secondary btn-sm">
-          <i class="bi bi-clipboard"></i> <span id="copyTableBtnLabel">Copy Table</span>
+          <i data-lucide="clipboard"></i> <span id="copyTableBtnLabel">Copy Table</span>
         </button>
         <div class="ms-auto" style="position:relative;">
           <input type="text" id="employeeSearch" class="form-control form-control-sm"
@@ -127,14 +127,14 @@
         <table class="table table-hover table-sm mb-0" id="triggersTable">
           <thead class="table-light">
             <tr>
-              <th class="sortable" data-type="date" onclick="sortTriggersTable(0, this)">Date <i class="bi bi-arrow-down-up small"></i></th>
-              <th class="sortable" data-type="text" onclick="sortTriggersTable(1, this)">Agent Name <i class="bi bi-arrow-down-up small"></i></th>
-              <th class="sortable" data-type="text" onclick="sortTriggersTable(2, this)">Employee ID <i class="bi bi-arrow-down-up small"></i></th>
-              <th class="sortable" data-type="text" onclick="sortTriggersTable(3, this)">TL <i class="bi bi-arrow-down-up small"></i></th>
-              <th class="sortable" data-type="text" onclick="sortTriggersTable(4, this)">Batch <i class="bi bi-arrow-down-up small"></i></th>
-              <th class="sortable" data-type="text" onclick="sortTriggersTable(5, this)">Rule <i class="bi bi-arrow-down-up small"></i></th>
+              <th class="sortable" data-type="date" onclick="sortTriggersTable(0, this)">Date <i class="small" data-lucide="arrow-up-down"></i></th>
+              <th class="sortable" data-type="text" onclick="sortTriggersTable(1, this)">Agent Name <i class="small" data-lucide="arrow-up-down"></i></th>
+              <th class="sortable" data-type="text" onclick="sortTriggersTable(2, this)">Employee ID <i class="small" data-lucide="arrow-up-down"></i></th>
+              <th class="sortable" data-type="text" onclick="sortTriggersTable(3, this)">TL <i class="small" data-lucide="arrow-up-down"></i></th>
+              <th class="sortable" data-type="text" onclick="sortTriggersTable(4, this)">Batch <i class="small" data-lucide="arrow-up-down"></i></th>
+              <th class="sortable" data-type="text" onclick="sortTriggersTable(5, this)">Rule <i class="small" data-lucide="arrow-up-down"></i></th>
               <th>Detail</th>
-              <th class="sortable" data-type="text" onclick="sortTriggersTable(7, this)">Excess <i class="bi bi-arrow-down-up small"></i></th>
+              <th class="sortable" data-type="text" onclick="sortTriggersTable(7, this)">Excess <i class="small" data-lucide="arrow-up-down"></i></th>
             </tr>
           </thead>
           <tbody>
@@ -185,7 +185,7 @@
     <form method="get" id="recordsFilterForm" class="d-flex align-items-center flex-wrap gap-2 w-100">
       <div class="date-nav">
         <button type="button" class="btn-icon" id="recPrevPeriodBtn" title="Previous payroll period">
-          <i class="bi bi-chevron-left"></i>
+          <i data-lucide="chevron-left"></i>
         </button>
       </div>
       <label for="rec_date_from">From</label>
@@ -196,7 +196,7 @@
              class="form-control form-control-sm" style="width:auto;">
       <div class="date-nav">
         <button type="button" class="btn-icon" id="recNextPeriodBtn" title="Next payroll period">
-          <i class="bi bi-chevron-right"></i>
+          <i data-lucide="chevron-right"></i>
         </button>
       </div>
       <button type="button" class="btn btn-outline-secondary btn-sm" id="recCurrentPeriodBtn">Current Period</button>
@@ -214,10 +214,10 @@
         {% endfor %}
       </select>
       <button type="button" id="recCopyTableBtn" class="btn btn-outline-secondary btn-sm">
-        <i class="bi bi-clipboard"></i> <span id="recCopyTableBtnLabel">Copy Table</span>
+        <i data-lucide="clipboard"></i> <span id="recCopyTableBtnLabel">Copy Table</span>
       </button>
       <div class="search-wrap ms-auto">
-        <i class="bi bi-search"></i>
+        <i data-lucide="search"></i>
         <input type="text" name="search" value="{{ filters.search }}"
                class="form-control form-control-sm" placeholder="Filter by agent or employee ID...">
       </div>
@@ -230,16 +230,16 @@
         <table class="table table-hover table-sm mb-0" id="overbreakTable">
           <thead class="table-light">
             <tr>
-              <th class="sortable" data-type="date" onclick="sortTable(0, this)">Date <i class="bi bi-arrow-down-up small"></i></th>
-              <th class="sortable" data-type="text" onclick="sortTable(1, this)">Agent Name <i class="bi bi-arrow-down-up small"></i></th>
-              <th class="sortable" data-type="text" onclick="sortTable(2, this)">Employee ID <i class="bi bi-arrow-down-up small"></i></th>
-              <th class="sortable" data-type="time" onclick="sortTable(3, this)">Break Duration <i class="bi bi-arrow-down-up small"></i></th>
-              <th class="sortable" data-type="time" onclick="sortTable(4, this)">Excess <i class="bi bi-arrow-down-up small"></i></th>
-              <th class="sortable" data-type="text" onclick="sortTable(5, this)">Submitted <i class="bi bi-arrow-down-up small"></i></th>
-              <th class="sortable" data-type="text" onclick="sortTable(6, this)">Payroll Month <i class="bi bi-arrow-down-up small"></i></th>
-              <th class="sortable" data-type="text" onclick="sortTable(7, this)">Cycle <i class="bi bi-arrow-down-up small"></i></th>
-              <th class="sortable" data-type="text" onclick="sortTable(8, this)">TL <i class="bi bi-arrow-down-up small"></i></th>
-              <th class="sortable" data-type="text" onclick="sortTable(9, this)">Batch <i class="bi bi-arrow-down-up small"></i></th>
+              <th class="sortable" data-type="date" onclick="sortTable(0, this)">Date <i class="small" data-lucide="arrow-up-down"></i></th>
+              <th class="sortable" data-type="text" onclick="sortTable(1, this)">Agent Name <i class="small" data-lucide="arrow-up-down"></i></th>
+              <th class="sortable" data-type="text" onclick="sortTable(2, this)">Employee ID <i class="small" data-lucide="arrow-up-down"></i></th>
+              <th class="sortable" data-type="time" onclick="sortTable(3, this)">Break Duration <i class="small" data-lucide="arrow-up-down"></i></th>
+              <th class="sortable" data-type="time" onclick="sortTable(4, this)">Excess <i class="small" data-lucide="arrow-up-down"></i></th>
+              <th class="sortable" data-type="text" onclick="sortTable(5, this)">Submitted <i class="small" data-lucide="arrow-up-down"></i></th>
+              <th class="sortable" data-type="text" onclick="sortTable(6, this)">Payroll Month <i class="small" data-lucide="arrow-up-down"></i></th>
+              <th class="sortable" data-type="text" onclick="sortTable(7, this)">Cycle <i class="small" data-lucide="arrow-up-down"></i></th>
+              <th class="sortable" data-type="text" onclick="sortTable(8, this)">TL <i class="small" data-lucide="arrow-up-down"></i></th>
+              <th class="sortable" data-type="text" onclick="sortTable(9, this)">Batch <i class="small" data-lucide="arrow-up-down"></i></th>
               <th>Incident Report Info</th>
             </tr>
           </thead>
@@ -362,7 +362,7 @@ function copyTable() {
     window.getSelection().removeAllRanges();
     const btn = event.target.closest('button');
     const original = btn.innerHTML;
-    btn.innerHTML = '<i class="bi bi-check2"></i> Copied!';
+    btn.innerHTML = '<i data-lucide="check"></i> Copied!';
     setTimeout(() => { btn.innerHTML = original; }, 1500);
   } catch (err) {
     alert('Copy failed. Please select and copy manually.');

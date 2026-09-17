@@ -3,7 +3,7 @@
 <div class="container-fluid py-3">
 
   <div class="d-flex flex-wrap align-items-center justify-content-between mb-3 gap-2">
-    <h4 class="mb-0"><i class="bi bi-fingerprint"></i> FTS Review <span class="text-muted fs-6">(Path B)</span></h4>
+    <h4 class="mb-0"><i data-lucide="fingerprint-pattern"></i> FTS Review <span class="text-muted fs-6">(Path B)</span></h4>
 
     {% if not denied %}
     <form id="periodForm" method="get" class="d-flex align-items-center gap-2">
@@ -60,7 +60,7 @@
         {% for g in t.groups %}
         <div class="card mb-3 shadow-sm">
           <div class="card-header bg-light fw-bold">
-            <i class="bi bi-person-badge"></i> TL: {{ g.tl }}
+            <i data-lucide="id-card"></i> TL: {{ g.tl }}
             <span class="badge bg-secondary ms-2">{{ g['items']|length }}</span>
           </div>
           <div class="table-responsive">
@@ -91,7 +91,7 @@
                   </td>
                   <td class="filed-cell" data-filed="{{ '1' if r.fts_filed else '0' }}">
                     {% if r.fts_filed %}
-                      <span class="badge bg-success" title="{{ r.fts_filed }}"><i class="bi bi-check-lg"></i> {{ r.fts_filed }}</span>
+                      <span class="badge bg-success" title="{{ r.fts_filed }}"><i data-lucide="check"></i> {{ r.fts_filed }}</span>
                     {% else %}
                       <span class="badge bg-warning text-dark">Not filed</span>
                     {% endif %}
@@ -109,10 +109,10 @@
                   </td>
                   <td class="text-end text-nowrap action-cell">
                     {% if r.review_status == 'pending' %}
-                      <button class="btn btn-sm btn-success" onclick="ftsAct({{ r.id }},'confirm')"><i class="bi bi-check-lg"></i> Confirm</button>
-                      <button class="btn btn-sm btn-outline-secondary" onclick="ftsAct({{ r.id }},'dismiss')"><i class="bi bi-x-lg"></i> Dismiss</button>
+                      <button class="btn btn-sm btn-success" onclick="ftsAct({{ r.id }},'confirm')"><i data-lucide="check"></i> Confirm</button>
+                      <button class="btn btn-sm btn-outline-secondary" onclick="ftsAct({{ r.id }},'dismiss')"><i data-lucide="x"></i> Dismiss</button>
                     {% else %}
-                      <button class="btn btn-sm btn-outline-secondary" onclick="ftsAct({{ r.id }},'reset')"><i class="bi bi-arrow-counterclockwise"></i> Undo</button>
+                      <button class="btn btn-sm btn-outline-secondary" onclick="ftsAct({{ r.id }},'reset')"><i data-lucide="refresh-ccw"></i> Undo</button>
                     {% endif %}
                   </td>
                 </tr>
@@ -162,9 +162,9 @@ async function ftsAct(id, action){
       statusCell.innerHTML = '<span class="badge bg-light text-dark border">Pending</span>';
       actionCell.innerHTML =
         '<button class="btn btn-sm btn-success" onclick="ftsAct('+id+",'confirm')\">"+
-        '<i class=\"bi bi-check-lg\"></i> Confirm</button> '+
+        '<i data-lucide=\"check\"></i> Confirm</button> '+
         '<button class="btn btn-sm btn-outline-secondary" onclick="ftsAct('+id+",'dismiss')\">"+
-        '<i class=\"bi bi-x-lg\"></i> Dismiss</button>';
+        '<i data-lucide=\"x\"></i> Dismiss</button>';
     } else {
       const badge = d.status==='confirmed' ? 'bg-success\">Confirmed' : 'bg-secondary\">Dismissed';
       statusCell.innerHTML = '<span class="badge '+badge+'</span>'+
@@ -172,7 +172,7 @@ async function ftsAct(id, action){
         (d.reviewed_at? ' · '+d.reviewed_at : '')+'</small>';
       actionCell.innerHTML =
         '<button class="btn btn-sm btn-outline-secondary" onclick="ftsAct('+id+",'reset')\">"+
-        '<i class=\"bi bi-arrow-counterclockwise\"></i> Undo</button>';
+        '<i data-lucide=\"refresh-ccw\"></i> Undo</button>';
     }
   }catch(e){ alert('Request failed: '+e); }
 }

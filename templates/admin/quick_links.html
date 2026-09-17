@@ -15,7 +15,7 @@
     <form method="POST" action="{{ url_for('toggle_quick_links') }}">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <button type="submit" class="btn btn-sm {% if quick_links_visible %}btn-outline-danger{% else %}btn-outline-success{% endif %}">
-        {% if quick_links_visible %}<i class="bi bi-eye-slash me-1"></i>Hide from Dashboard{% else %}<i class="bi bi-eye me-1"></i>Show on Dashboard{% endif %}
+        {% if quick_links_visible %}<i class="me-1" data-lucide="eye-off"></i>Hide from Dashboard{% else %}<i class="me-1" data-lucide="eye"></i>Show on Dashboard{% endif %}
       </button>
     </form>
   </div>
@@ -38,9 +38,9 @@
           <input type="url" name="url" class="form-control" required placeholder="https://...">
         </div>
         <div class="mb-3">
-          <label class="form-label small fw-semibold">Icon <span class="text-muted">(Bootstrap Icons)</span></label>
-          <input type="text" name="icon" class="form-control" value="bi-link-45deg" placeholder="bi-envelope-fill">
-          <div class="form-text">Browse icons at <a href="https://icons.getbootstrap.com" target="_blank">icons.getbootstrap.com</a></div>
+          <label class="form-label small fw-semibold">Icon <span class="text-muted">(Lucide)</span></label>
+          <input type="text" name="icon" class="form-control" value="link" placeholder="mail">
+          <div class="form-text">Browse icons at <a href="https://lucide.dev/icons" target="_blank">lucide.dev/icons</a></div>
         </div>
         <div class="row g-2 mb-3">
           <div class="col-6">
@@ -76,13 +76,13 @@
           <a href="{{ link.url }}" target="_blank"
              style="display:flex;align-items:center;gap:.75rem;padding:.75rem 1rem;background:var(--surface);border:1px solid var(--border);border-radius:12px;text-decoration:none;color:var(--text);">
             <div style="width:38px;height:38px;border-radius:10px;background:linear-gradient(135deg,{{ link.color_from }},{{ link.color_to }});display:flex;align-items:center;justify-content:center;flex-shrink:0;">
-              <i class="bi {{ link.icon }}" style="color:#fff;font-size:1rem;"></i>
+              <i data-lucide="{{ link.icon }}" style="color:#fff;font-size:1rem;"></i>
             </div>
             <div>
               <div style="font-weight:600;font-size:.88rem;">{{ link.title }}</div>
               <div style="font-size:.75rem;color:var(--text-muted);">{{ link.url }}</div>
             </div>
-            <i class="bi bi-box-arrow-up-right ms-auto" style="color:var(--text-muted);font-size:.75rem;"></i>
+            <i class="ms-auto" data-lucide="external-link" style="color:var(--text-muted);font-size:.75rem;"></i>
           </a>
           {% endfor %}
         </div>
@@ -100,7 +100,7 @@
               <td class="small text-muted">{{ link.id }}</td>
               <td>
                 <div style="width:32px;height:32px;border-radius:8px;background:linear-gradient(135deg,{{ link.color_from }},{{ link.color_to }});display:flex;align-items:center;justify-content:center;">
-                  <i class="bi {{ link.icon }}" style="color:#fff;font-size:.9rem;"></i>
+                  <i data-lucide="{{ link.icon }}" style="color:#fff;font-size:.9rem;"></i>
                 </div>
               </td>
               <td class="fw-semibold small">{{ link.title }}</td>
@@ -120,13 +120,13 @@
                 <div class="d-flex gap-1">
                   <button class="btn btn-sm btn-outline-secondary py-0 px-2"
                           onclick="openEdit({{ link | tojson | e }})">
-                    <i class="bi bi-pencil"></i>
+                    <i data-lucide="pencil"></i>
                   </button>
                   <form method="POST" onsubmit="return confirm('Delete this link?');">
                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                     <input type="hidden" name="action" value="delete">
                     <input type="hidden" name="link_id" value="{{ link.id }}">
-                    <button class="btn btn-sm btn-outline-danger py-0 px-2"><i class="bi bi-trash"></i></button>
+                    <button class="btn btn-sm btn-outline-danger py-0 px-2"><i data-lucide="trash"></i></button>
                   </form>
                 </div>
               </td>

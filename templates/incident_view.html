@@ -127,14 +127,14 @@
 <div class="ir-view-wrap">
 
   <a href="{{ url_for('incident_reports.dashboard') }}" class="ir-back">
-    <i class="bi bi-arrow-left"></i> Back to Dashboard
+    <i data-lucide="arrow-left"></i> Back to Dashboard
   </a>
 
   {# Header #}
   <div class="ir-view-header">
     <div>
       <div class="ir-report-num">
-        <i class="bi bi-clipboard2-pulse me-2" style="color:var(--accent);font-size:20px;"></i>
+        <i class="me-2" data-lucide="activity" style="color:var(--accent);font-size:20px;"></i>
         {{ report.report_number }}
       </div>
       <div class="mt-2">
@@ -145,25 +145,25 @@
     </div>
     <div class="d-flex gap-2 d-print-none flex-wrap">
       <button class="btn-sm-outline" onclick="window.print()">
-        <i class="bi bi-printer me-1"></i>Print
+        <i class="me-1" data-lucide="printer"></i>Print
       </button>
     </div>
   </div>
 
   {# Details #}
   <div class="ir-section">
-    <div class="ir-section-title"><i class="bi bi-info-circle"></i>Report Details</div>
+    <div class="ir-section-title"><i data-lucide="info"></i>Report Details</div>
     <div class="row g-4">
       <div class="col-md-6">
         <div class="ir-field-lbl">Date of Incident</div>
         <div id="date-display">
           <div class="ir-field-val">
-            <i class="bi bi-calendar3 me-1" style="color:var(--accent);"></i>
+            <i class="me-1" data-lucide="calendar" style="color:var(--accent);"></i>
             {{ report.incident_date.strftime('%B %d, %Y') if report.incident_date else '—' }}
           </div>
           {% if can_edit_report %}
           <button class="btn-ir-edit mt-1 d-print-none" onclick="toggleEdit('date',true)">
-            <i class="bi bi-pencil"></i>Edit
+            <i data-lucide="pencil"></i>Edit
           </button>
           {% endif %}
         </div>
@@ -179,14 +179,14 @@
       <div class="col-md-6">
         <div class="ir-field-lbl">Reported On</div>
         <div class="ir-field-val">
-          <i class="bi bi-clock me-1" style="color:var(--accent);"></i>
+          <i class="me-1" data-lucide="clock" style="color:var(--accent);"></i>
           {{ report.created_at.strftime('%B %d, %Y %I:%M %p') if report.created_at else '—' }}
         </div>
       </div>
       <div class="col-md-6">
         <div class="ir-field-lbl">Agent Involved</div>
         <div class="ir-field-val">
-          <i class="bi bi-person me-1" style="color:var(--accent);"></i>
+          <i class="me-1" data-lucide="user" style="color:var(--accent);"></i>
           {{ report.employee_name }}
           <span style="color:var(--text-muted);font-size:12px;">({{ report.employee_id }})</span>
         </div>
@@ -194,7 +194,7 @@
       <div class="col-md-6">
         <div class="ir-field-lbl">Filed By</div>
         <div class="ir-field-val">
-          <i class="bi bi-pencil-square me-1" style="color:var(--accent);"></i>
+          <i class="me-1" data-lucide="square-pen" style="color:var(--accent);"></i>
           {{ report.submitted_by_name or 'N/A' }}
           <span style="color:var(--text-muted);font-size:12px;">({{ report.submitted_by_id or '' }})</span>
         </div>
@@ -205,7 +205,7 @@
   {# Summary #}
   <div class="ir-section">
     <div class="ir-section-title">
-      <i class="bi bi-file-text"></i>Incident Summary
+      <i data-lucide="file-text"></i>Incident Summary
       {% if report.edited_at %}
       <span class="edited-note">
         Edited {{ report.edited_at.strftime('%b %d, %Y %I:%M %p') if report.edited_at else '' }}
@@ -218,7 +218,7 @@
     </div>
     {% if can_edit_report %}
     <button class="btn-ir-edit mt-2 d-print-none" id="editSumBtn" onclick="toggleEdit('summary',true)">
-      <i class="bi bi-pencil"></i>Edit Summary
+      <i data-lucide="pencil"></i>Edit Summary
     </button>
     {% endif %}
     <div id="summary-edit" style="display:none;" class="mt-2">
@@ -234,7 +234,7 @@
   {% if attachments %}
   <div class="ir-section">
     <div class="ir-section-title">
-      <i class="bi bi-paperclip"></i>Attachments ({{ attachments|length }})
+      <i data-lucide="paperclip"></i>Attachments ({{ attachments|length }})
     </div>
     <div class="attach-grid">
       {% for att in attachments %}
@@ -249,7 +249,7 @@
 
   {# Comments #}
   <div class="ir-section d-print-none">
-    <div class="ir-section-title"><i class="bi bi-chat-dots"></i>Comments & Updates</div>
+    <div class="ir-section-title"><i data-lucide="message-circle"></i>Comments & Updates</div>
 
     {% if not comments %}
     <p style="color:var(--text-muted);font-size:13px;font-style:italic;">No comments yet.</p>
@@ -270,7 +270,7 @@
           <span class="c-date">{{ c.created_at.strftime('%b %d, %Y %I:%M %p') if c.created_at else '' }}</span>
           {% if user.is_admin or c.employee_id == user.employee_id %}
           <button class="btn-c-edit" onclick="toggleCEdit({{ c.id }},true)">
-            <i class="bi bi-pencil"></i>
+            <i data-lucide="pencil"></i>
           </button>
           {% endif %}
         </div>
@@ -286,7 +286,7 @@
       {% if comment_attachments.get(c.id) %}
       <div class="c-attach-wrap">
         <div style="font-size:11px;color:var(--text-muted);font-weight:600;margin-bottom:4px;">
-          <i class="bi bi-paperclip me-1"></i>Attachments
+          <i class="me-1" data-lucide="paperclip"></i>Attachments
         </div>
         {% for ca in comment_attachments[c.id] %}
         <div class="c-thumb" onclick="openLB('{{ url_for('incident_reports.serve_upload', filename=ca.file_name) }}')">
@@ -301,7 +301,7 @@
 
     {# Add Comment #}
     <div class="comment-form mt-3">
-      <div class="comment-form-title"><i class="bi bi-chat-left-text me-2"></i>Add a Comment</div>
+      <div class="comment-form-title"><i class="me-2" data-lucide="message-square-text"></i>Add a Comment</div>
       <form id="commentForm">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <input type="hidden" name="report_number" value="{{ report.report_number }}">
@@ -311,7 +311,7 @@
         </div>
         <div class="mb-3">
           <label style="font-size:12px;font-weight:600;color:var(--text-muted);">
-            <i class="bi bi-paperclip me-1"></i>Attachments (optional, up to 4)
+            <i class="me-1" data-lucide="paperclip"></i>Attachments (optional, up to 4)
           </label>
           <input type="file" class="form-control form-control-sm mt-1" id="cAttachInput"
                  multiple accept="image/*">
@@ -320,7 +320,7 @@
  {% if user.is_admin or user.is_hr or user.is_sga or user.is_supervisor or ir_can_view() %}
         <div class="mb-3">
           <label style="font-size:12px;font-weight:600;color:var(--text-muted);">
-            <i class="bi bi-arrow-repeat me-1"></i>Update Status (optional)
+            <i class="me-1" data-lucide="repeat"></i>Update Status (optional)
           </label>
           <select class="form-select form-select-sm mt-1" name="status_action">
             <option value="">Post comment only</option>
@@ -417,7 +417,7 @@
         <div class="mb-3" id="resolveFields" style="display:none;">
           <div class="mb-2">
             <label style="font-size:12px;font-weight:600;color:var(--text-muted);">
-              <i class="bi bi-folder me-1"></i>Memo Category <span style="color:var(--danger);">*</span>
+              <i class="me-1" data-lucide="folder"></i>Memo Category <span style="color:var(--danger);">*</span>
             </label>
             <select class="form-select form-select-sm mt-1" name="memo_category" id="memoCategory">
               <option value="">— Select category —</option>
@@ -430,7 +430,7 @@
           </div>
           <div>
             <label style="font-size:12px;font-weight:600;color:var(--text-muted);">
-              <i class="bi bi-shield-exclamation me-1"></i>Disciplinary Action <span style="color:var(--danger);">*</span>
+              <i class="me-1" data-lucide="shield-alert"></i>Disciplinary Action <span style="color:var(--danger);">*</span>
             </label>
             <select class="form-select form-select-sm mt-1" name="disciplinary_action" id="disciplinaryAction">
               <option value="">— Select action —</option>
@@ -450,7 +450,7 @@
         {# Waived by field — shown only when Mark as Waived is selected #}
         <div class="mb-3" id="waivedByField" style="display:none;">
           <label style="font-size:12px;font-weight:600;color:var(--text-muted);">
-            <i class="bi bi-person-check me-1"></i>Waived By (for documentation)
+            <i class="me-1" data-lucide="user-check"></i>Waived By (for documentation)
           </label>
           <input type="text" class="form-control form-control-sm mt-1"
                  name="waived_by_name" id="waivedByName"
@@ -463,7 +463,7 @@
         {% endif %}
         <div class="d-flex justify-content-end">
           <button type="submit" class="btn-ir-submit" id="commentBtn">
-            <span id="cBtnText"><i class="bi bi-send"></i>Post Comment</span>
+            <span id="cBtnText"><i data-lucide="send"></i>Post Comment</span>
             <span id="cBtnSpin" class="spinner-border spinner-border-sm d-none"></span>
           </button>
         </div>
@@ -484,7 +484,7 @@
   <div class="modal-dialog modal-lg">
     <div class="modal-content" style="background:var(--surface);color:var(--text);border:1px solid var(--border);">
       <div class="modal-header" style="background:var(--accent);color:#fff;border:none;">
-        <h6 class="modal-title fw-bold"><i class="bi bi-clock-history me-2"></i>Edit History</h6>
+        <h6 class="modal-title fw-bold"><i class="me-2" data-lucide="clock-arrow-up"></i>Edit History</h6>
         <button class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
       </div>
       <div class="modal-body" id="historyBody">

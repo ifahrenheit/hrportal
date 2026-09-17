@@ -1,11 +1,11 @@
 {% extends "base.html" %}
 {% block title %}Offboarding{% endblock %}
-{% block page_title %}<i class="bi bi-person-dash-fill me-2" style="color:var(--danger)"></i>Employee Offboarding{% endblock %}
+{% block page_title %}<i class="me-2" data-lucide="user-minus" style="color:var(--danger)"></i>Employee Offboarding{% endblock %}
 
 {% block content %}
 
 <div class="alert alert-warning d-flex align-items-center gap-2 mb-4 py-2" style="font-size:.84rem">
-  <i class="bi bi-exclamation-triangle-fill fs-5"></i>
+  <i class="fs-5" data-lucide="triangle-alert"></i>
   <span><strong>Disable only — do not delete.</strong> All accounts are disabled and retained for audit.
   Keycloak is disabled first to immediately block SSO access across all systems.</span>
 </div>
@@ -17,7 +17,7 @@
 
     <div class="card p-4 mb-3">
       <h6 class="fw-semibold mb-3" style="font-family:Outfit,sans-serif;">
-        <i class="bi bi-search me-2" style="color:var(--accent)"></i>Find Employee
+        <i class="me-2" data-lucide="search" style="color:var(--accent)"></i>Find Employee
       </h6>
       <div class="position-relative">
         <input type="text" id="searchInput" class="form-control form-control-sm"
@@ -61,7 +61,7 @@
 
     <div class="card p-4" id="offboardForm" style="display:none">
       <h6 class="fw-semibold mb-3" style="font-family:Outfit,sans-serif;">
-        <i class="bi bi-clipboard-x me-2" style="color:var(--danger)"></i>Exit Details
+        <i class="me-2" data-lucide="clipboard-x" style="color:var(--danger)"></i>Exit Details
       </h6>
 
       <div class="mb-3">
@@ -90,7 +90,7 @@
 
       <div class="rounded-3 p-3 mb-4" style="background:#fef2f2;border:1px solid #fecaca">
         <div class="fw-500 mb-2" style="font-size:.82rem;color:#991b1b">
-          <i class="bi bi-shield-exclamation me-1"></i>Confirm before proceeding
+          <i class="me-1" data-lucide="shield-alert"></i>Confirm before proceeding
         </div>
         <div class="form-check mb-1">
           <input class="form-check-input" type="checkbox" id="chk1" onchange="updateOffboardBtn()">
@@ -107,7 +107,7 @@
       </div>
 
       <button class="btn btn-danger w-100" id="offboardBtn" onclick="runOffboarding()" disabled>
-        <i class="bi bi-door-open me-1"></i>Process Offboarding
+        <i class="me-1" data-lucide="door-open"></i>Process Offboarding
       </button>
       <p class="text-center mt-2 mb-0" style="font-size:.75rem;color:var(--text-muted)">
         Check all boxes above to enable
@@ -121,7 +121,7 @@
     <div class="card p-4" id="resultsCard" style="display:none">
       <div class="d-flex justify-content-between align-items-center mb-3">
         <h6 class="fw-semibold mb-0" style="font-family:Outfit,sans-serif;">
-          <i class="bi bi-list-check me-2" style="color:var(--danger)"></i>Offboarding Status
+          <i class="me-2" data-lucide="list-check" style="color:var(--danger)"></i>Offboarding Status
         </h6>
         <span id="offOverallBadge" class="badge rounded-pill px-3" style="font-size:.78rem"></span>
       </div>
@@ -129,9 +129,9 @@
            style="background:var(--bg);border:1px solid var(--border);font-size:.83rem"></div>
       <div id="offStepList"></div>
       <div class="alert alert-info py-2 px-3 mt-3 mb-0" style="font-size:.82rem">
-        <i class="bi bi-fingerprint me-1"></i>
+        <i class="me-1" data-lucide="fingerprint-pattern"></i>
         <strong>Biometrics:</strong> Deactivate in the biometric admin panel — do not delete (preserves attendance history).
-        &nbsp;<i class="bi bi-slack me-1"></i>
+        &nbsp;<i class="me-1" data-lucide="message-square"></i>
         <strong>Slack:</strong> Deactivate manually via workspace admin (free plan).
       </div>
     </div>
@@ -139,7 +139,7 @@
     <div class="card p-4 d-flex align-items-center justify-content-center" id="offPlaceholder"
          style="min-height:300px;border-style:dashed;border-color:var(--border);">
       <div class="text-center" style="color:var(--text-muted)">
-        <i class="bi bi-person-dash" style="font-size:2.5rem;opacity:.3"></i>
+        <i data-lucide="user-minus" style="font-size:2.5rem;opacity:.3"></i>
         <p class="mt-2 mb-1" style="font-size:.87rem">Search for an employee to begin offboarding</p>
         <p class="mb-0" style="font-size:.78rem;opacity:.7">Results will appear here after processing</p>
       </div>
@@ -152,7 +152,7 @@
 <div class="card mt-4">
   <div class="card-body">
     <h6 class="fw-semibold mb-3" style="font-family:Outfit,sans-serif;">
-      <i class="bi bi-clock-history me-2" style="color:var(--danger)"></i>Recent Offboardings
+      <i class="me-2" data-lucide="clock-arrow-up" style="color:var(--danger)"></i>Recent Offboardings
     </h6>
     <div class="table-responsive">
       <table class="table table-hover mb-0">
@@ -188,16 +188,16 @@ let selectedEmployee = null;
 let searchTimeout    = null;
 
 const OFF_STEPS = [
-  { key: 'keycloak_disabled',     icon: 'bi-key-fill',         label: 'Keycloak SSO',        note: 'Blocks all SSO logins immediately' },
-  { key: 'ad_disabled',           icon: 'bi-hdd-network-fill', label: 'Active Directory',     note: 'Domain access revoked' },
-  { key: 'email_suspended',       icon: 'bi-envelope-fill',    label: 'Email locked',         note: 'Password rotated, mailbox retained' },
-  { key: 'dashboard_disabled',    icon: 'bi-speedometer2',     label: 'Dashboard disabled',   note: 'Login account deactivated' },
-  { key: 'orangehrm_updated',     icon: 'bi-people-fill',      label: 'OrangeHRM updated',    note: 'Termination record created' },
-  { key: 'status_updated',        icon: 'bi-person-x-fill',    label: 'Status → Separated',   note: 'Employee status updated' },
-  { key: 'biometric_deactivated', icon: 'bi-fingerprint',      label: 'Biometrics disabled',  note: 'Deactivated on all local servers + blade' },
+  { key: 'keycloak_disabled',     icon: 'key',         label: 'Keycloak SSO',        note: 'Blocks all SSO logins immediately' },
+  { key: 'ad_disabled',           icon: 'server', label: 'Active Directory',     note: 'Domain access revoked' },
+  { key: 'email_suspended',       icon: 'mail',    label: 'Email locked',         note: 'Password rotated, mailbox retained' },
+  { key: 'dashboard_disabled',    icon: 'gauge',     label: 'Dashboard disabled',   note: 'Login account deactivated' },
+  { key: 'orangehrm_updated',     icon: 'users',      label: 'OrangeHRM updated',    note: 'Termination record created' },
+  { key: 'status_updated',        icon: 'user-x',    label: 'Status → Separated',   note: 'Employee status updated' },
+  { key: 'biometric_deactivated', icon: 'fingerprint-pattern',      label: 'Biometrics disabled',  note: 'Deactivated on all local servers + blade' },
 ];
 const OFF_MANUAL = [
-  { icon: 'bi-slack', label: 'Slack', note: 'Deactivate via workspace admin' },
+  { icon: 'message-square', label: 'Slack', note: 'Deactivate via workspace admin' },
 ];
 
 function searchEmployee(q) {
@@ -292,7 +292,7 @@ async function runOffboarding() {
     if (data.error) {
       toast(data.error, 'danger');
       btn.disabled  = false;
-      btn.innerHTML = '<i class="bi bi-door-open me-1"></i>Process Offboarding';
+      btn.innerHTML = '<i class="me-1" data-lucide="door-open"></i>Process Offboarding';
       return;
     }
     renderOffResults(data);
@@ -300,7 +300,7 @@ async function runOffboarding() {
   } catch(e) {
     toast('Network error: ' + e.message, 'danger');
     btn.disabled  = false;
-    btn.innerHTML = '<i class="bi bi-door-open me-1"></i>Process Offboarding';
+    btn.innerHTML = '<i class="me-1" data-lucide="door-open"></i>Process Offboarding';
   }
 }
 
@@ -308,7 +308,7 @@ function loadingRowsOff() {
   return OFF_STEPS.map(s => `
     <div class="d-flex align-items-center gap-3 py-2" style="border-bottom:1px solid var(--border)">
       <div class="spinner-border spinner-border-sm" style="color:var(--danger);flex-shrink:0"></div>
-      <i class="bi ${s.icon}" style="font-size:.95rem;color:var(--text-muted);flex-shrink:0"></i>
+      <i data-lucide="${s.icon}" style="font-size:.95rem;color:var(--text-muted);flex-shrink:0"></i>
       <span style="font-size:.87rem">${s.label}</span>
     </div>`).join('');
 }
@@ -322,9 +322,9 @@ function renderOffResults(data) {
 
   let html = OFF_STEPS.map(s => `
     <div class="d-flex align-items-center gap-3 py-2" style="border-bottom:1px solid var(--border)">
-      <i class="bi ${data[s.key] ? 'bi-check-circle-fill' : 'bi-x-circle-fill'}"
+      <i data-lucide="${data[s.key] ? 'circle-check' : 'circle-x'}"
          style="font-size:1rem;color:${data[s.key] ? 'var(--success)' : 'var(--danger)'};flex-shrink:0"></i>
-      <i class="bi ${s.icon}" style="font-size:.95rem;color:var(--text-muted);flex-shrink:0"></i>
+      <i data-lucide="${s.icon}" style="font-size:.95rem;color:var(--text-muted);flex-shrink:0"></i>
       <div style="flex:1">
         <div style="font-size:.87rem">${s.label}</div>
         <div style="font-size:.75rem;color:var(--text-muted)">${s.note}</div>
@@ -334,8 +334,8 @@ function renderOffResults(data) {
   OFF_MANUAL.forEach(m => {
     html += `
     <div class="d-flex align-items-center gap-3 py-2" style="border-bottom:1px solid var(--border)">
-      <i class="bi bi-hand-index-thumb" style="font-size:1rem;color:var(--warning);flex-shrink:0"></i>
-      <i class="bi ${m.icon}" style="font-size:.95rem;color:var(--text-muted);flex-shrink:0"></i>
+      <i data-lucide="hand" style="font-size:1rem;color:var(--warning);flex-shrink:0"></i>
+      <i data-lucide="${m.icon}" style="font-size:.95rem;color:var(--text-muted);flex-shrink:0"></i>
       <div style="flex:1">
         <div style="font-size:.87rem">${m.label}</div>
         <div style="font-size:.75rem;color:var(--text-muted)">${m.note}</div>
@@ -348,7 +348,7 @@ function renderOffResults(data) {
   const btn = document.getElementById('offboardBtn');
   btn.disabled  = false;
   btn.className = 'btn btn-outline-secondary w-100';
-  btn.innerHTML = '<i class="bi bi-arrow-counterclockwise me-1"></i>Offboard Another';
+  btn.innerHTML = '<i class="me-1" data-lucide="refresh-ccw"></i>Offboard Another';
   btn.onclick   = () => {
     selectedEmployee = null;
     document.getElementById('searchInput').value          = '';
@@ -357,7 +357,7 @@ function renderOffResults(data) {
     document.getElementById('resultsCard').style.display  = 'none';
     document.getElementById('offPlaceholder').style.display = null;
     btn.className = 'btn btn-danger w-100';
-    btn.innerHTML = '<i class="bi bi-door-open me-1"></i>Process Offboarding';
+    btn.innerHTML = '<i class="me-1" data-lucide="door-open"></i>Process Offboarding';
     btn.onclick   = runOffboarding;
     btn.disabled  = true;
   };
@@ -374,8 +374,8 @@ async function loadRecentOff() {
     if (!rows.length) { tbody.innerHTML = noRows(13, 'No offboardings yet'); return; }
 
     const tick = v => v
-      ? '<i class="bi bi-check-circle-fill" style="color:var(--success)"></i>'
-      : '<i class="bi bi-x-circle-fill" style="color:var(--danger)"></i>';
+      ? '<i data-lucide="circle-check" style="color:var(--success)"></i>'
+      : '<i data-lucide="circle-x" style="color:var(--danger)"></i>';
 
     tbody.innerHTML = rows.map(r => `
       <tr>
@@ -409,8 +409,9 @@ function toast(msg, type) {
   const t = document.createElement('div');
   t.className = `alert alert-${type} position-fixed shadow`;
   t.style.cssText = 'top:1.25rem;right:1.25rem;z-index:9999;min-width:300px;font-size:.87rem';
-  t.innerHTML = `<i class="bi bi-${type==='success'?'check-circle-fill':'exclamation-triangle-fill'} me-2"></i>${esc(msg)}`;
+  t.innerHTML = `<i class="me-2" data-lucide="${type==='success'?'circle-check':'triangle-alert'}"></i>${esc(msg)}`;
   document.body.appendChild(t);
+  if (window.lucide) lucide.createIcons();
   setTimeout(() => t.remove(), 4500);
 }
 

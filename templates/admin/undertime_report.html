@@ -8,27 +8,27 @@
 <ul class="nav nav-tabs mb-3">
   <li class="nav-item">
     <a class="nav-link" href="{{ url_for('admin_absences') }}">
-      <i class="bi bi-person-x me-1"></i>Absence Report
+      <i class="me-1" data-lucide="user-x"></i>Absence Report
     </a>
   </li>
   <li class="nav-item">
     <a class="nav-link" href="{{ url_for('admin_attendance_grid') }}">
-      <i class="bi bi-grid-3x3 me-1"></i>Attendance Grid
+      <i class="me-1" data-lucide="grid-3x3"></i>Attendance Grid
     </a>
   </li>
   <li class="nav-item">
     <a class="nav-link" href="{{ url_for('admin_awol_report') }}">
-      <i class="bi bi-person-dash me-1"></i>AWOL Report
+      <i class="me-1" data-lucide="user-minus"></i>AWOL Report
     </a>
   </li>
   <li class="nav-item">
     <a class="nav-link active" href="{{ url_for('admin_undertime_report') }}">
-      <i class="bi bi-hourglass-split me-1"></i>Undertime Report
+      <i class="me-1" data-lucide="hourglass"></i>Undertime Report
     </a>
   </li>
   <li class="nav-item">
     <a class="nav-link" href="{{ url_for('admin_attendance_stack_rank') }}">
-      <i class="bi bi-trophy me-1"></i>Attendance Stack Rank
+      <i class="me-1" data-lucide="trophy"></i>Attendance Stack Rank
     </a>
   </li>
 </ul>
@@ -53,7 +53,7 @@
   <form method="get" id="dateForm" class="d-flex align-items-center gap-2 flex-wrap" style="flex:1;">
     <div class="date-nav">
       <button type="button" class="btn-icon" id="prevPeriodBtn" title="Previous payroll period">
-        <i class="bi bi-chevron-left"></i>
+        <i data-lucide="chevron-left"></i>
       </button>
       <label for="date_from">From</label>
       <input type="date" id="date_from" name="date_from" value="{{ date_from }}"
@@ -62,18 +62,18 @@
       <input type="date" id="date_to" name="date_to" value="{{ date_to }}"
              class="form-control form-control-sm" style="width:auto;">
       <button type="button" class="btn-icon" id="nextPeriodBtn" title="Next payroll period">
-        <i class="bi bi-chevron-right"></i>
+        <i data-lucide="chevron-right"></i>
       </button>
       <button type="button" class="btn btn-outline-secondary btn-sm" id="currentPeriodBtn">Current Period</button>
       <button type="button" class="btn btn-outline-secondary btn-sm" id="todayBtn">Today</button>
     </div>
     <button class="btn btn-primary btn-sm" type="submit">
-      <i class="bi bi-search me-1"></i>Check
+      <i class="me-1" data-lucide="search"></i>Check
     </button>
   </form>
   {% if records %}
   <button class="btn btn-outline-secondary btn-sm" id="copyTableBtn" onclick="copyTable()">
-    <i class="bi bi-clipboard me-1"></i>Copy Table
+    <i class="me-1" data-lucide="clipboard"></i>Copy Table
   </button>
   {% endif %}
 </div>
@@ -83,7 +83,7 @@
 <div class="d-flex gap-2 mb-3 flex-wrap">
   <span class="badge rounded-pill px-3 py-2"
         style="background:#fff7ed;color:#9a3412;border:1px solid #fed7aa;font-size:.8rem;">
-    <i class="bi bi-hourglass-split me-1"></i>Undertime: <strong>{{ summary.undertime }}</strong>
+    <i class="me-1" data-lucide="hourglass"></i>Undertime: <strong>{{ summary.undertime }}</strong>
   </span>
   <span class="text-muted ms-2" style="font-size:.83rem;align-self:center;">
     {% if date_from == date_to %}{{ date_from }}{% else %}{{ date_from }} &rarr; {{ date_to }}{% endif %}
@@ -94,7 +94,7 @@
 
 {% if not records %}
 <div class="card p-4 text-center">
-  <i class="bi bi-check-circle text-success" style="font-size:2.5rem;"></i>
+  <i class="text-success" data-lucide="circle-check" style="font-size:2.5rem;"></i>
   <div class="mt-2 fw-semibold">No undertime occurrences found for the selected date range</div>
   <div class="text-muted" style="font-size:.85rem;">Every clocked shift met or exceeded its scheduled length (or the shortfall is explained by filed leave).</div>
 </div>
@@ -112,27 +112,27 @@
       <thead>
         <tr>
           <th class="sortable" data-col="0" style="cursor:pointer;user-select:none;">
-            Employee <span class="sort-icon">&#8597;</span>
+            Employee <i class="sort-icon" data-lucide="arrow-up-down"></i>
           </th>
           <th class="sortable" data-col="1" style="cursor:pointer;user-select:none;">
-            Employee ID <span class="sort-icon">&#8597;</span>
+            Employee ID <i class="sort-icon" data-lucide="arrow-up-down"></i>
           </th>
           <th class="sortable" data-col="2" style="cursor:pointer;user-select:none;">
-            Group <span class="sort-icon">&#8597;</span>
+            Group <i class="sort-icon" data-lucide="arrow-up-down"></i>
           </th>
           <th>Team Lead</th>
           <th class="sortable" data-col="4" style="cursor:pointer;user-select:none;">
-            Date <span class="sort-icon">&#8597;</span>
+            Date <i class="sort-icon" data-lucide="arrow-up-down"></i>
           </th>
           <th>Day of Week</th>
           <th>Scheduled Shift</th>
           <th>Time In</th>
           <th>Time Out</th>
           <th class="sortable" data-col="9" style="cursor:pointer;user-select:none;">
-            Hours Worked <span class="sort-icon">&#8597;</span>
+            Hours Worked <i class="sort-icon" data-lucide="arrow-up-down"></i>
           </th>
           <th class="sortable" data-col="10" style="cursor:pointer;user-select:none;">
-            Undertime <span class="sort-icon">&#8597;</span>
+            Undertime <i class="sort-icon" data-lucide="arrow-up-down"></i>
           </th>
         </tr>
       </thead>
@@ -162,7 +162,7 @@
     <td>
       <span class="badge rounded-pill"
             style="background:#fef3c7;color:#92400e;border:1px solid #fde68a;font-size:.75rem;">
-        <i class="bi bi-clock me-1"></i>{{ row.shift_time }}
+        <i class="me-1" data-lucide="clock"></i>{{ row.shift_time }}
       </span>
     </td>
     <td style="font-size:.83rem;white-space:nowrap;">
@@ -177,7 +177,7 @@
     <td data-shortfall="{{ row.shortfall_hours }}">
       <span class="badge rounded-pill"
             style="background:#fef2f2;color:#991b1b;border:1px solid #fecaca;font-size:.75rem;">
-        <i class="bi bi-hourglass-split me-1"></i>-{{ sf_h }}h {{ '%02d'|format(sf_m) }}m
+        <i class="me-1" data-lucide="hourglass"></i>-{{ sf_h }}h {{ '%02d'|format(sf_m) }}m
       </span>
     </td>
   </tr>
@@ -191,7 +191,7 @@
 
 {% if implausible_shifts %}
 <div class="alert alert-warning mt-3" style="font-size:.85rem;">
-  <i class="bi bi-exclamation-triangle me-1"></i>
+  <i class="me-1" data-lucide="triangle-alert"></i>
   <strong>{{ implausible_shifts|length }} scheduled shift(s) skipped</strong>
   as implausible and excluded from the report above — the shift string in
   <code>employee_schedules</code> parses to more than 16 scheduled hours,
@@ -332,8 +332,9 @@ document.addEventListener('DOMContentLoaded', function () {
     state[key] = dir;
 
     // Reset all sort icons in this table
-    th.closest('tr').querySelectorAll('.sort-icon').forEach(ic => ic.innerHTML = '&#8597;');
-    th.querySelector('.sort-icon').innerHTML = dir === 'asc' ? '&#8593;' : '&#8595;';
+    th.closest('tr').querySelectorAll('.sort-icon').forEach(ic => ic.setAttribute('data-lucide', 'arrow-up-down'));
+    th.querySelector('.sort-icon').setAttribute('data-lucide', dir === 'asc' ? 'arrow-up' : 'arrow-down');
+    if (window.lucide) lucide.createIcons();
 
     // Sort rows
     const tbody = table.querySelector('tbody');
@@ -385,7 +386,7 @@ function copyTable() {
   navigator.clipboard.writeText(rows.join('\n')).then(() => {
     const btn = document.getElementById('copyTableBtn');
     const orig = btn.innerHTML;
-    btn.innerHTML = '<i class="bi bi-check2 me-1"></i>Copied!';
+    btn.innerHTML = '<i class="me-1" data-lucide="check"></i>Copied!';
     btn.classList.replace('btn-outline-secondary','btn-success');
     setTimeout(() => { btn.innerHTML = orig; btn.classList.replace('btn-success','btn-outline-secondary'); }, 2000);
   }).catch(() => alert('Copy failed — please select the table manually.'));

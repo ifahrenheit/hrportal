@@ -115,7 +115,7 @@
 </style>
 
 <div class="qa-header">
-  <h2><i class="bi bi-megaphone"></i> QA Updates</h2>
+  <h2><i data-lucide="megaphone"></i> QA Updates</h2>
   <span id="qaUnackBadge" style="display:none;background:#fde8e8;color:#c0392b;font-size:0.8rem;font-weight:700;padding:4px 12px;border-radius:20px;"></span>
 </div>
 
@@ -133,7 +133,7 @@
 
 <div id="qaList"></div>
 <div id="qaEmpty" class="qa-empty" style="display:none;">
-  <i class="bi bi-clipboard2-check"></i>
+  <i data-lucide="clipboard-check"></i>
   <div>No QA updates match your filters.</div>
 </div>
 
@@ -226,10 +226,10 @@ function qaLinkify(escapedText) {
 }
 
 function qaRenderCard(u) {
-  const pin = u.is_pinned ? '<i class="bi bi-pin-angle-fill qa-pin-icon" title="Pinned"></i>' : '';
+  const pin = u.is_pinned ? '<i class="qa-pin-icon" data-lucide="pin" title="Pinned"></i>' : '';
 
   const implDate = u.implementation_date
-    ? `<span class="qa-badge-category" style="background:#fff0e0;color:#b8580b;"><i class="bi bi-calendar-event"></i> Effective ${qaImplDate(u.implementation_date)}</span>`
+    ? `<span class="qa-badge-category" style="background:#fff0e0;color:#b8580b;"><i data-lucide="calendar-clock"></i> Effective ${qaImplDate(u.implementation_date)}</span>`
     : '';
 
   const linkedDescription = qaLinkify(qaEscape(u.description));
@@ -240,13 +240,13 @@ function qaRenderCard(u) {
         data-url="/qa-updates/uploads/${encodeURIComponent(a.filename)}"
         data-name="${qaEscape(a.original_filename)}"
         data-ext="${qaGetExtension(a.original_filename)}">
-        <i class="bi bi-paperclip"></i> ${qaEscape(a.original_filename)}
+        <i data-lucide="paperclip"></i> ${qaEscape(a.original_filename)}
      </a>`
   ).join('');
 
   const ackBtn = u.acknowledged_by_me
-    ? `<button class="qa-ack-btn acked" disabled><i class="bi bi-check2"></i> Acknowledged</button>`
-    : `<button class="qa-ack-btn" onclick="qaAcknowledge(${u.id}, this)"><i class="bi bi-check2"></i> Acknowledge</button>`;
+    ? `<button class="qa-ack-btn acked" disabled><i data-lucide="check"></i> Acknowledged</button>`
+    : `<button class="qa-ack-btn" onclick="qaAcknowledge(${u.id}, this)"><i data-lucide="check"></i> Acknowledge</button>`;
 
   return `
     <div class="qa-card" data-id="${u.id}">
@@ -256,7 +256,7 @@ function qaRenderCard(u) {
             ${pin}
             <span class="qa-title">${qaEscape(u.title)}</span>
             ${u.category ? `<span class="qa-badge-category">${qaEscape(u.category)}</span>` : ''}
-            ${(u.audience && u.audience !== 'All' && u.audience !== 'CS') ? `<span class="qa-badge-category" style="background:#fff0e0;color:#b8580b;"><i class="bi bi-people-fill"></i> ${qaEscape(u.audience)} only</span>` : ''}
+            ${(u.audience && u.audience !== 'All' && u.audience !== 'CS') ? `<span class="qa-badge-category" style="background:#fff0e0;color:#b8580b;"><i data-lucide="users"></i> ${qaEscape(u.audience)} only</span>` : ''}
           </div>
           <div style="margin-top: 5px;">${implDate}</div>
           <div class="qa-meta">Posted by ${qaEscape(u.author_name || 'Unknown')} &middot; ${qaTimeAgo(u.created_at)}</div>
@@ -300,7 +300,7 @@ function qaAcknowledge(id, btn) {
     .then(r => r.json())
     .then(data => {
       if (data.success) {
-        btn.outerHTML = '<button class="qa-ack-btn acked" disabled><i class="bi bi-check2"></i> Acknowledged</button>';
+        btn.outerHTML = '<button class="qa-ack-btn acked" disabled><i data-lucide="check"></i> Acknowledged</button>';
         document.getElementById('ack-count-' + id).textContent = data.ack_count + ' acknowledged';
         qaRefreshUnackBadge();
         if (typeof refreshQaUpdatesBadge === 'function') refreshQaUpdatesBadge();

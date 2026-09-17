@@ -3687,7 +3687,7 @@ def admin_quick_links():
                 """, (
                     request.form.get('title'),
                     request.form.get('url'),
-                    request.form.get('icon', 'bi-link-45deg'),
+                    request.form.get('icon', 'link'),
                     request.form.get('color_from', '#3b82f6'),
                     request.form.get('color_to', '#1d4ed8'),
                     int(request.form.get('sort_order', 0))
@@ -3704,7 +3704,7 @@ def admin_quick_links():
                     """, (
                         request.form.get('title'),
                         request.form.get('url'),
-                        request.form.get('icon', 'bi-link-45deg'),
+                        request.form.get('icon', 'link'),
                         request.form.get('color_from', '#3b82f6'),
                         request.form.get('color_to', '#1d4ed8'),
                         int(request.form.get('sort_order', 0)),
@@ -10938,6 +10938,32 @@ def admin_awol_report():
             finally:
                 cdb_ot.close()
 
+        # ── Step 3c: Suspension (SUS) dates from central_db.absence_records,
+        # same definition/table/code as the SUS lookup in admin_attendance_grid()
+        # so the two pages agree on what counts as suspended. A suspension
+        # fully explains the scheduled absence -- excluded from AWOL entirely
+        # (and from the Unverified list below), not just relabeled. ──
+        sus_lookup = {}
+        try:
+            cdb_sus = get_central_db()
+            try:
+                with cdb_sus.cursor() as c:
+                    c.execute("""
+                        SELECT employee_id, DATE_FORMAT(absence_date, '%%Y-%%m-%%d') AS d
+                        FROM absence_records
+                        WHERE code = 'SUS'
+                          AND employee_id IS NOT NULL
+                          AND absence_date IS NOT NULL
+                          AND absence_date BETWEEN %s AND %s
+                    """, (date_from, date_to))
+                    for row in c.fetchall():
+                        sus_lookup.setdefault(row['employee_id'], set()).add(row['d'])
+            finally:
+                cdb_sus.close()
+        except Exception as e:
+            app.logger.warning(f"awol-report: SUS lookup failed, continuing without it: {e}")
+            sus_lookup = {}
+
         # ── Step 4: Match scheduled rows to attendance_map, keep Absent
         # only. Present, FTS IN and FTS OUT are all cases where a punch
         # record exists -- they're attendance anomalies, not no-shows, and
@@ -10945,6 +10971,9 @@ def admin_awol_report():
         for row in scheduled:
             pid        = int(row['personid']) if row['personid'] else None
             sched_date = row['absent_date']
+
+            if str(sched_date) in sus_lookup.get(row['employee_id'], ()):
+                continue  # suspended that day -- fully explains the absence, not AWOL
 
             if pid is None:
                 # No personid mapping in `userdata` for this employee, so
@@ -11007,6 +11036,35 @@ def admin_awol_report():
             finally:
                 odb.close()
 
+        # ── Step 6: Related Incident Reports. Matched by employee_id +
+        # exact date (an IR is filed against the specific day of the
+        # incident, so no leave-style multi-day expansion is needed). Same
+        # central_db.incident_reports table and incident_reports.view_report
+        # route the rest of the IR system already uses -- reuse the report
+        # number as-is rather than building a new URL pattern. No COLLATE
+        # needed here (unlike the join-based COLLATE guards elsewhere in
+        # modules/incident_reports.py) -- this is a column-IN-params
+        # comparison, not a cross-table join, same as the sibling OT/leave
+        # IN-clauses in this same function. If more than one IR was filed
+        # for the same employee/date, the most recently created one wins. ──
+        ir_map = {}
+        if emp_ids:
+            cdb_ir = get_central_db()
+            try:
+                with cdb_ir.cursor() as c:
+                    c.execute(f"""
+                        SELECT employee_id, incident_date, report_number
+                        FROM incident_reports
+                        WHERE employee_id IN ({placeholders})
+                          AND incident_date BETWEEN %s AND %s
+                        ORDER BY created_at DESC, id DESC
+                    """, emp_ids + [date_from, date_to])
+                    for row in c.fetchall():
+                        key = '{}|{}'.format(row['employee_id'], row['incident_date'])
+                        ir_map.setdefault(key, row['report_number'])
+            finally:
+                cdb_ir.close()
+
     # ── Final filter: AWOL = Absent AND no filed leave covering that date.
     # Unverified candidates get the same leave check -- a filed leave fully
     # explains the day, so only the ones leave doesn't explain are worth
@@ -11016,6 +11074,9 @@ def admin_awol_report():
 
     awol_records = [r for r in records if _uncovered(r)]
     unverified   = [r for r in unverified_candidates if _uncovered(r)]
+
+    for r in awol_records:
+        r['ir_report_number'] = ir_map.get('{}|{}'.format(r['employee_id'], r['absent_date']))
 
     summary = {
         'awol':       len(awol_records),
@@ -15332,7 +15393,7 @@ def api_notifications():
                       "search": f"{(r['nm'] or '')} {r['who']} leave".lower(),
                       "created_at": str(r['d'])} for r in lv]
             if items:
-                sections.append({"title": "Leave approvals", "icon": "bi-calendar-check", "items": items})
+                sections.append({"title": "Leave approvals", "icon": "calendar-check", "items": items})
                 total += len(items)
 
     # SL Verification queue (HR approvers only)
@@ -15358,7 +15419,7 @@ def api_notifications():
                   "search": f"{(r['nm'] or '')} {r['who']} sl verification".lower(),
                   "created_at": str(r['d'])} for r in slv]
         if items:
-            sections.append({"title": "SL Verification", "icon": "bi-clipboard2-pulse", "items": items})
+            sections.append({"title": "SL Verification", "icon": "activity", "items": items})
             total += len(items)
 
     if is_admin or is_sup:
@@ -15400,7 +15461,7 @@ def api_notifications():
                       "search": f"{r['who']} {r['kind']}".lower(),
                       "created_at": str(r['d'])} for r in req]
             if items:
-                sections.append({"title": "Request approvals", "icon": "bi-clipboard-check", "items": items})
+                sections.append({"title": "Request approvals", "icon": "clipboard-check", "items": items})
                 total += len(items)
 
     if eid:
@@ -15422,7 +15483,7 @@ def api_notifications():
                   "created_at": r['created_at'].strftime('%Y-%m-%d %H:%M') if r['created_at'] else ''}
                  for r in qa]
         if items:
-            sections.append({"title": "QA to acknowledge", "icon": "bi-patch-question", "items": items})
+            sections.append({"title": "QA to acknowledge", "icon": "badge-question-mark", "items": items})
             total += len(items)
 
     try:
@@ -15466,7 +15527,7 @@ def api_notifications():
                   "created_at": r['updated_at'].strftime('%Y-%m-%d %H:%M') if r['updated_at'] else ''}
                  for r in irs]
         if items:
-            sections.append({"title": "Incident reports", "icon": "bi-exclamation-triangle", "items": items})
+            sections.append({"title": "Incident reports", "icon": "triangle-alert", "items": items})
             total += len(items)
     except Exception as e:
         app.logger.warning(f"[notif] IR section failed: {e}")
@@ -15497,7 +15558,7 @@ def api_notifications():
                       "created_at": str(r['session_date']) if r['session_date'] else ''}
                      for r in cch]
             if items:
-                sections.append({"title": "My coaching", "icon": "bi-easel2", "items": items})
+                sections.append({"title": "My coaching", "icon": "presentation", "items": items})
                 total += len(items)
         except Exception as e:
             app.logger.warning(f"[notif] coaching section failed: {e}")

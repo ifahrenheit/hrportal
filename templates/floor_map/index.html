@@ -8,10 +8,10 @@
     <div>
       <h4 class="mb-0 fw-semibold">Floor Map
         <button class="btn btn-sm btn-outline-secondary ms-2" id="fullscreen-btn" onclick="toggleFullscreen()" title="Fullscreen">
-          <i class="bi bi-fullscreen"></i>
+          <i data-lucide="fullscreen"></i>
         </button>
         <button class="btn btn-sm btn-outline-secondary ms-1" id="darkmode-btn" onclick="toggleDark()" title="Dark mode">
-          <i class="bi bi-moon-fill"></i>
+          <i data-lucide="moon-star"></i>
         </button>
       </h4>
       <small class="text-muted" id="last-updated">Loading...</small>
@@ -22,9 +22,9 @@
     <div class="d-flex gap-2 align-items-center flex-wrap">
       <!-- Search -->
       <div class="input-group input-group-sm" style="width:220px">
-        <span class="input-group-text"><i class="bi bi-search"></i></span>
+        <span class="input-group-text"><i data-lucide="search"></i></span>
         <input type="text" class="form-control" id="search-input" placeholder="Search agent..." oninput="searchAgent(this.value)">
-        <button class="btn btn-outline-secondary" onclick="clearSearch()" title="Clear"><i class="bi bi-x"></i></button>
+        <button class="btn btn-outline-secondary" onclick="clearSearch()" title="Clear"><i data-lucide="x"></i></button>
       </div>
       <!-- Team Filter -->
       <select class="form-select form-select-sm" style="width:130px" id="team-filter" onchange="filterTeam(this.value)">
@@ -42,9 +42,9 @@
       <span class="badge rounded-pill bg-secondary px-3" id="badge-vacant">0 Vacant</span>
       <span class="badge rounded-pill bg-warning text-dark px-3" id="badge-unmapped">0 Unmapped</span>
       <button class="btn btn-sm btn-outline-secondary" onclick="loadPresence()">
-        <i class="bi bi-arrow-clockwise"></i> Refresh
+        <i data-lucide="refresh-cw"></i> Refresh
       </button>
-      <span class="badge bg-danger px-2" id="live-badge"><i class="bi bi-circle-fill" style="font-size:8px"></i> LIVE</span>
+      <span class="badge bg-danger px-2" id="live-badge"><i data-lucide="circle" style="font-size:8px"></i> LIVE</span>
     </div>
   </div>
 
@@ -90,7 +90,7 @@
       <div class="modal-body pt-2" id="modal-body"></div>
       <div class="modal-footer border-0 pt-0" id="modal-footer" style="display:none">
         <a href="#" class="btn btn-sm btn-outline-primary" id="modal-profile-link" target="_blank">
-          <i class="bi bi-person-badge"></i> View Profile
+          <i data-lucide="id-card"></i> View Profile
         </a>
       </div>
     </div>
@@ -274,7 +274,7 @@ function buildMap(rows) {
     if (area === 'bottom') {
       const cc = document.createElement('div');
       cc.className = 'cc-block';
-      cc.innerHTML = '<i class="bi bi-display me-0" style="font-size:16px;margin-bottom:6px"></i><br>Command<br>Center';
+      cc.innerHTML = '<i class="me-0" data-lucide="monitor" style="font-size:16px;margin-bottom:6px"></i><br>Command<br>Center';
       cc.style.writingMode = 'horizontal-tb';
       cc.style.height = 'auto';
       cc.style.width = '70px';
@@ -336,33 +336,33 @@ function showModal(row) {
       </div>
       <hr class="my-2">
       <div class="d-flex gap-3" style="font-size:12px;color:#555">
-        ${row.login_time ? `<span><i class="bi bi-clock me-1"></i>${row.login_time}</span>` : ''}
-        ${row.ip_address ? `<span><i class="bi bi-wifi me-1"></i>${row.ip_address}</span>` : ''}
+        ${row.login_time ? `<span><i class="me-1" data-lucide="clock"></i>${row.login_time}</span>` : ''}
+        ${row.ip_address ? `<span><i class="me-1" data-lucide="wifi"></i>${row.ip_address}</span>` : ''}
       </div>
     </div>`;
   } else if (row.computer_name) {
     html += `<div class="presence-card vacant-card">
       <div class="d-flex align-items-center gap-2 text-muted">
-        <i class="bi bi-person-slash" style="font-size:24px"></i>
+        <i data-lucide="user-x" style="font-size:24px"></i>
         <div>
           <div style="font-size:14px;font-weight:500">No one logged in</div>
-          ${row.ip_address ? `<div class="small"><i class="bi bi-wifi me-1"></i>${row.ip_address}</div>` : ''}
+          ${row.ip_address ? `<div class="small"><i class="me-1" data-lucide="wifi"></i>${row.ip_address}</div>` : ''}
         </div>
       </div>
     </div>`;
   } else {
     html += `<div class="presence-card vacant-card">
-      <div class="text-muted small"><i class="bi bi-hdd me-1"></i>No computer assigned to this seat yet</div>
+      <div class="text-muted small"><i class="me-1" data-lucide="hard-drive"></i>No computer assigned to this seat yet</div>
     </div>`;
   }
 
   if (row.last_user_display || row.last_user) {
     html += `<div class="presence-card last-card">
       <div style="font-size:11px;font-weight:600;color:#92400e;text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px">
-        <i class="bi bi-clock-history me-1"></i>Last Session
+        <i class="me-1" data-lucide="clock-arrow-up"></i>Last Session
       </div>
       <div style="font-size:14px;font-weight:500">${row.last_user_display || row.last_user}</div>
-      ${row.logoff_time ? `<div class="text-muted small mt-1"><i class="bi bi-box-arrow-right me-1"></i>Logged off: ${row.logoff_time}</div>` : ''}
+      ${row.logoff_time ? `<div class="text-muted small mt-1"><i class="me-1" data-lucide="log-out"></i>Logged off: ${row.logoff_time}</div>` : ''}
     </div>`;
   }
 
@@ -422,7 +422,7 @@ function toggleDark() {
   isDark = !isDark;
   document.body.classList.toggle('dark-floor', isDark);
   const btn = document.getElementById('darkmode-btn');
-  btn.innerHTML = isDark ? '<i class="bi bi-sun-fill"></i>' : '<i class="bi bi-moon-fill"></i>';
+  btn.innerHTML = isDark ? '<i data-lucide="sun"></i>' : '<i data-lucide="moon-star"></i>';
   localStorage.setItem('floorDark', isDark);
 }
 
@@ -431,8 +431,8 @@ function toggleFullscreen() {
   app.classList.toggle('fullscreen-mode');
   const btn = document.getElementById('fullscreen-btn');
   btn.innerHTML = app.classList.contains('fullscreen-mode')
-    ? '<i class="bi bi-fullscreen-exit"></i>'
-    : '<i class="bi bi-fullscreen"></i>';
+    ? '<i data-lucide="minimize"></i>'
+    : '<i data-lucide="fullscreen"></i>';
 }
 
 function startCountdown() {

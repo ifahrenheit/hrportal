@@ -30,7 +30,7 @@
           <div class="form-check">
             <input class="form-check-input" type="checkbox" name="is_replenishment" id="isReplenishment" value="1">
             <label class="form-check-label small fw-semibold text-warning" for="isReplenishment">
-              <i class="bi bi-arrow-up-circle me-1"></i>This is a stock replenishment request
+              <i class="me-1" data-lucide="circle-arrow-up"></i>This is a stock replenishment request
             </label>
           </div>
           <small class="text-muted">Check this if you are restocking inventory — items will be added instead of deducted on release.</small>
@@ -53,13 +53,13 @@
                 <input type="number" name="quantity[]" class="form-control form-control-sm"
                        style="width:65px;flex-shrink:0;" min="1" value="1" required>
                 <button type="button" class="btn btn-outline-danger btn-sm px-2" onclick="removeItem(this)" disabled>
-                  <i class="bi bi-trash"></i>
+                  <i data-lucide="trash"></i>
                 </button>
               </div>
               <div class="payment-info"></div>
               <div class="mt-1">
                 <a href="#" class="small text-muted material-manual-toggle-link">
-                  <i class="bi bi-list-ul me-1"></i>Browse by category instead
+                  <i class="me-1" data-lucide="list"></i>Browse by category instead
                 </a>
               </div>
               <div class="material-manual-picker d-none gap-2 mt-1">
@@ -76,11 +76,11 @@
             </div>
           </div>
           <button type="button" class="btn btn-outline-secondary btn-sm mt-1" onclick="addItem()">
-            <i class="bi bi-plus-circle me-1"></i>Add Item
+            <i class="me-1" data-lucide="circle-plus"></i>Add Item
           </button>
         </div>
         <button type="submit" class="btn btn-primary btn-sm w-100 mt-2">
-          <i class="bi bi-send me-1"></i>Submit Request
+          <i class="me-1" data-lucide="send"></i>Submit Request
         </button>
       </form>
     </div>
@@ -134,13 +134,13 @@
                 <a href="{{ url_for('material_confirm_receipt', token=r.confirmation_token) }}"
                    class="btn btn-sm py-0 px-2"
                    style="background:#065f46;color:#fff;font-size:.75rem;">
-                  <i class="bi bi-check-circle"></i> Confirm Receipt
+                  <i data-lucide="circle-check"></i> Confirm Receipt
                 </a>
                 {% elif r.status not in ('Recommended', 'Pending Final Approval', 'Approved', 'Awaiting Confirmation', 'Released', 'Rejected', 'Served') and r.request_group_id %}
                 <a href="{{ url_for('material_edit', group_id=r.request_group_id) }}"
                    class="btn btn-outline-secondary btn-sm py-0 px-2"
                    style="font-size:.75rem;">
-                  <i class="bi bi-pencil"></i> Edit
+                  <i data-lucide="pencil"></i> Edit
                 </a>
                 {% endif %}
               </td>
@@ -351,8 +351,8 @@ function toggleManualPicker(link) {
   manual.classList.toggle('d-flex', showingManual);
   searchWrap.classList.toggle('d-none', showingManual);
   link.innerHTML = showingManual
-    ? '<i class="bi bi-search me-1"></i>Use search instead'
-    : '<i class="bi bi-list-ul me-1"></i>Browse by category instead';
+    ? '<i class="me-1" data-lucide="search"></i>Use search instead'
+    : '<i class="me-1" data-lucide="list"></i>Browse by category instead';
 }
 
 document.addEventListener('DOMContentLoaded', function() {
@@ -444,10 +444,10 @@ function addItem() {
         '<div class="material-search-results position-absolute bg-white border rounded shadow-sm w-100" style="z-index:999;display:none;max-height:220px;overflow-y:auto;"></div>' +
       '</div>' +
       '<input type="number" name="quantity[]" class="form-control form-control-sm" style="width:65px;flex-shrink:0;" min="1" value="1" required>' +
-      '<button type="button" class="btn btn-outline-danger btn-sm px-2" onclick="removeItem(this)"><i class="bi bi-trash"></i></button>' +
+      '<button type="button" class="btn btn-outline-danger btn-sm px-2" onclick="removeItem(this)"><i data-lucide="trash"></i></button>' +
     '</div>' +
     '<div class="payment-info"></div>' +
-    '<div class="mt-1"><a href="#" class="small text-muted material-manual-toggle-link"><i class="bi bi-list-ul me-1"></i>Browse by category instead</a></div>' +
+    '<div class="mt-1"><a href="#" class="small text-muted material-manual-toggle-link"><i class="me-1" data-lucide="list"></i>Browse by category instead</a></div>' +
     '<div class="material-manual-picker d-none gap-2 mt-1">' +
       '<select name="category[]" class="form-select form-select-sm cat-select" style="width:140px;flex-shrink:0;" onchange="categoryChanged(this)"><option value="">Category</option>' + catOptions + '</select>' +
       '<select name="item_name[]" class="form-select form-select-sm item-select" disabled onchange="itemChanged(this)"><option value="">Select category first</option></select>' +

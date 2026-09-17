@@ -31,7 +31,7 @@
       </div>
       <div class="col-6 col-md-1">
         <button class="btn btn-primary btn-sm w-100 mt-3">
-          <i class="bi bi-search"></i>
+          <i data-lucide="search"></i>
         </button>
       </div>
       {% if tl_filter or emp_search %}
@@ -52,7 +52,7 @@
           </a>
         </div>
         <button type="button" class="btn btn-outline-secondary btn-sm" onclick="copyNDTable('ndTable')">
-          <i class="bi bi-clipboard me-1"></i>Copy Table
+          <i class="me-1" data-lucide="clipboard"></i>Copy Table
         </button>
       </div>
     </form>
@@ -60,7 +60,7 @@
 </div>
 
 <div class="alert alert-info d-flex gap-2 align-items-start mb-4 small">
-  <i class="bi bi-info-circle-fill mt-1"></i>
+  <i class="mt-1" data-lucide="info"></i>
   Night differential covers hours worked between <strong>10:00 PM – 6:00 AM</strong>.
   Shifts ending at <strong>1AM, 2AM, or 3AM</strong> are in a separate tab.
 </div>
@@ -147,7 +147,7 @@
   <!-- Special Tab -->
   <div class="tab-pane fade" id="tab-special">
     <div class="alert alert-warning small mb-3">
-      <i class="bi bi-exclamation-triangle-fill me-1"></i>
+      <i class="me-1" data-lucide="triangle-alert"></i>
       Shifts ending at <strong>1AM, 2AM, or 3AM</strong> — verify applicable rate with HR/Payroll.
     </div>
     <div class="card">
@@ -225,7 +225,7 @@ function copyNDTable(tableId) {
   navigator.clipboard.writeText(text).then(() => {
     const btn = document.querySelector('[onclick*="copyNDTable"]');
     const orig = btn.innerHTML;
-    btn.innerHTML = '<i class="bi bi-check-lg me-1"></i>Copied!';
+    btn.innerHTML = '<i class="me-1" data-lucide="check"></i>Copied!';
     btn.classList.add('btn-success');
     btn.classList.remove('btn-outline-secondary');
     setTimeout(() => { btn.innerHTML = orig; btn.classList.remove('btn-success'); btn.classList.add('btn-outline-secondary'); }, 2000);

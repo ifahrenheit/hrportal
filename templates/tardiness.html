@@ -82,25 +82,25 @@
 <div class="btn-group btn-group-sm mb-3" role="group">
   <a href="{{ url_for('tardiness.tardiness_page', date_from=date_from, date_to=date_to, view='late') }}"
      class="btn {% if view != 'triggers' %}btn-primary{% else %}btn-outline-secondary{% endif %}">
-    <i class="bi bi-clock-history"></i> Late Records
+    <i data-lucide="clock-arrow-up"></i> Late Records
   </a>
   <a href="{{ url_for('tardiness.tardiness_page', date_from=date_from, date_to=date_to, view='triggers') }}"
      class="btn {% if view == 'triggers' %}btn-primary{% else %}btn-outline-secondary{% endif %}">
-    <i class="bi bi-envelope-exclamation"></i> IR Triggers
+    <i data-lucide="mail-warning"></i> IR Triggers
   </a>
 </div>
 
 <div class="summary-row">
   {% if view == 'triggers' %}
   <div class="summary-card late" style="flex:0 0 220px;">
-    <div class="icon"><i class="bi bi-arrow-repeat"></i></div>
+    <div class="icon"><i data-lucide="repeat"></i></div>
     <div>
       <div class="num">{{ count_trigger_total }}</div>
       <div class="lbl">3+ Lates Memos</div>
     </div>
   </div>
   <div class="summary-card late" style="flex:0 0 220px;">
-    <div class="icon"><i class="bi bi-stopwatch"></i></div>
+    <div class="icon"><i data-lucide="timer"></i></div>
     <div>
       <div class="num">{{ minutes_trigger_total }}</div>
       <div class="lbl">31+ Minutes Memos</div>
@@ -108,7 +108,7 @@
   </div>
   {% else %}
   <div class="summary-card late" style="flex:0 0 260px;">
-    <div class="icon"><i class="bi bi-clock-history"></i></div>
+    <div class="icon"><i data-lucide="clock-arrow-up"></i></div>
     <div>
       <div class="num">{{ total_late }}</div>
       <div class="lbl">Late Instances ({{ date_from }} to {{ date_to }})</div>
@@ -122,14 +122,14 @@
     <input type="hidden" name="view" value="{{ view }}">
     <div id="rangeDateGroup" class="d-flex align-items-center gap-2">
       <button type="button" class="btn-icon" id="prevPeriodBtn" title="Previous payroll period">
-        <i class="bi bi-chevron-left"></i>
+        <i data-lucide="chevron-left"></i>
       </button>
       <label for="date_from">From</label>
       <input type="date" id="date_from" name="date_from" value="{{ date_from }}" class="form-control form-control-sm" style="width:auto;">
       <label for="date_to">To</label>
       <input type="date" id="date_to" name="date_to" value="{{ date_to }}" class="form-control form-control-sm" style="width:auto;">
       <button type="button" class="btn-icon" id="nextPeriodBtn" title="Next payroll period">
-        <i class="bi bi-chevron-right"></i>
+        <i data-lucide="chevron-right"></i>
       </button>
       <button type="button" class="btn btn-outline-secondary btn-sm" id="currentPeriodBtn">Current Period</button>
       <button type="button" class="btn btn-outline-secondary btn-sm" id="todayBtn">Today</button>
@@ -146,11 +146,11 @@
     <input type="hidden" name="dir" value="{{ current_dir }}">
 
     <button type="button" id="copyTableBtn" class="btn btn-outline-secondary btn-sm">
-      <i class="bi bi-clipboard"></i> <span id="copyTableBtnLabel">Copy Table</span>
+      <i data-lucide="clipboard"></i> <span id="copyTableBtnLabel">Copy Table</span>
     </button>
 
     <div class="search-wrap ms-auto">
-      <i class="bi bi-search"></i>
+      <i data-lucide="search"></i>
       <input type="text" id="employeeSearch" class="form-control form-control-sm" placeholder="Filter by employee or TL name...">
     </div>
   </form>
@@ -166,9 +166,9 @@
             <a href="{{ url_for('tardiness.tardiness_page', date_from=date_from, date_to=date_to, view='triggers', sort='DATE', dir=next_dir if current_sort == 'DATE' else 'asc') }}">
               Date
               {% if current_sort == 'DATE' %}
-              <i class="bi bi-arrow-{{ 'down' if current_dir == 'asc' else 'up' }} sort-icon"></i>
+              <i class="sort-icon" data-lucide="{{ 'arrow-down' if current_dir == 'asc' else 'arrow-up' }}"></i>
               {% else %}
-              <i class="bi bi-arrow-down-up sort-icon"></i>
+              <i class="sort-icon" data-lucide="arrow-up-down"></i>
               {% endif %}
             </a>
           </th>
@@ -176,9 +176,9 @@
             <a href="{{ url_for('tardiness.tardiness_page', date_from=date_from, date_to=date_to, view='triggers', sort='TYPE', dir=next_dir if current_sort == 'TYPE' else 'asc') }}">
               Trigger Type
               {% if current_sort == 'TYPE' %}
-              <i class="bi bi-arrow-{{ 'down' if current_dir == 'asc' else 'up' }} sort-icon"></i>
+              <i class="sort-icon" data-lucide="{{ 'arrow-down' if current_dir == 'asc' else 'arrow-up' }}"></i>
               {% else %}
-              <i class="bi bi-arrow-down-up sort-icon"></i>
+              <i class="sort-icon" data-lucide="arrow-up-down"></i>
               {% endif %}
             </a>
           </th>
@@ -186,9 +186,9 @@
             <a href="{{ url_for('tardiness.tardiness_page', date_from=date_from, date_to=date_to, view='triggers', sort='lname', dir=next_dir if current_sort == 'lname' else 'asc') }}">
               Employee
               {% if current_sort == 'lname' %}
-              <i class="bi bi-arrow-{{ 'down' if current_dir == 'asc' else 'up' }} sort-icon"></i>
+              <i class="sort-icon" data-lucide="{{ 'arrow-down' if current_dir == 'asc' else 'arrow-up' }}"></i>
               {% else %}
-              <i class="bi bi-arrow-down-up sort-icon"></i>
+              <i class="sort-icon" data-lucide="arrow-up-down"></i>
               {% endif %}
             </a>
           </th>
@@ -196,9 +196,9 @@
             <a href="{{ url_for('tardiness.tardiness_page', date_from=date_from, date_to=date_to, view='triggers', sort='TL', dir=next_dir if current_sort == 'TL' else 'asc') }}">
               Team Lead
               {% if current_sort == 'TL' %}
-              <i class="bi bi-arrow-{{ 'down' if current_dir == 'asc' else 'up' }} sort-icon"></i>
+              <i class="sort-icon" data-lucide="{{ 'arrow-down' if current_dir == 'asc' else 'arrow-up' }}"></i>
               {% else %}
-              <i class="bi bi-arrow-down-up sort-icon"></i>
+              <i class="sort-icon" data-lucide="arrow-up-down"></i>
               {% endif %}
             </a>
           </th>
@@ -206,9 +206,9 @@
             <a href="{{ url_for('tardiness.tardiness_page', date_from=date_from, date_to=date_to, view='triggers', sort='VALUE', dir=next_dir if current_sort == 'VALUE' else 'desc') }}">
               Detail
               {% if current_sort == 'VALUE' %}
-              <i class="bi bi-arrow-{{ 'down' if current_dir == 'asc' else 'up' }} sort-icon"></i>
+              <i class="sort-icon" data-lucide="{{ 'arrow-down' if current_dir == 'asc' else 'arrow-up' }}"></i>
               {% else %}
-              <i class="bi bi-arrow-down-up sort-icon"></i>
+              <i class="sort-icon" data-lucide="arrow-up-down"></i>
               {% endif %}
             </a>
           </th>
@@ -224,14 +224,14 @@
           <td>{{ e.event_date.strftime('%b %d, %Y') }}</td>
           <td>
             {% if e.trigger_type == 'COUNT' %}
-            <span class="status-pill LATE"><i class="bi bi-arrow-repeat"></i> 3+ Lates</span>
+            <span class="status-pill LATE"><i data-lucide="repeat"></i> 3+ Lates</span>
             {% else %}
-            <span class="status-pill INVALID_SCHEDULE"><i class="bi bi-stopwatch"></i> 31+ Minutes</span>
+            <span class="status-pill INVALID_SCHEDULE"><i data-lucide="timer"></i> 31+ Minutes</span>
             {% endif %}
           </td>
           <td>
             <div class="d-flex align-items-center gap-2">
-              <i class="bi bi-person-circle" style="color:var(--text-muted);"></i>
+              <i data-lucide="circle-user" style="color:var(--text-muted);"></i>
               <span>{{ e.lname }}, {{ e.fname }}</span>
             </div>
           </td>
@@ -255,7 +255,7 @@
         {% else %}
         <tr>
           <td colspan="5" class="text-center text-muted py-5">
-            <i class="bi bi-envelope-check" style="font-size:2rem;"></i>
+            <i data-lucide="mail-check" style="font-size:2rem;"></i>
             <div class="mt-2">No IR triggers in this date range.</div>
           </td>
         </tr>
@@ -270,9 +270,9 @@
             <a href="{{ url_for('tardiness.tardiness_page', date_from=date_from, date_to=date_to, view='late', sort='DATE', dir=next_dir if current_sort == 'DATE' else 'asc') }}">
               Date
               {% if current_sort == 'DATE' %}
-              <i class="bi bi-arrow-{{ 'down' if current_dir == 'asc' else 'up' }} sort-icon"></i>
+              <i class="sort-icon" data-lucide="{{ 'arrow-down' if current_dir == 'asc' else 'arrow-up' }}"></i>
               {% else %}
-              <i class="bi bi-arrow-down-up sort-icon"></i>
+              <i class="sort-icon" data-lucide="arrow-up-down"></i>
               {% endif %}
             </a>
           </th>
@@ -280,9 +280,9 @@
             <a href="{{ url_for('tardiness.tardiness_page', date_from=date_from, date_to=date_to, view='late', sort='lname', dir=next_dir if current_sort == 'lname' else 'asc') }}">
               Employee
               {% if current_sort == 'lname' %}
-              <i class="bi bi-arrow-{{ 'down' if current_dir == 'asc' else 'up' }} sort-icon"></i>
+              <i class="sort-icon" data-lucide="{{ 'arrow-down' if current_dir == 'asc' else 'arrow-up' }}"></i>
               {% else %}
-              <i class="bi bi-arrow-down-up sort-icon"></i>
+              <i class="sort-icon" data-lucide="arrow-up-down"></i>
               {% endif %}
             </a>
           </th>
@@ -290,9 +290,9 @@
             <a href="{{ url_for('tardiness.tardiness_page', date_from=date_from, date_to=date_to, view='late', sort='SHIFT', dir=next_dir if current_sort == 'SHIFT' else 'asc') }}">
               Shift
               {% if current_sort == 'SHIFT' %}
-              <i class="bi bi-arrow-{{ 'down' if current_dir == 'asc' else 'up' }} sort-icon"></i>
+              <i class="sort-icon" data-lucide="{{ 'arrow-down' if current_dir == 'asc' else 'arrow-up' }}"></i>
               {% else %}
-              <i class="bi bi-arrow-down-up sort-icon"></i>
+              <i class="sort-icon" data-lucide="arrow-up-down"></i>
               {% endif %}
             </a>
           </th>
@@ -300,9 +300,9 @@
             <a href="{{ url_for('tardiness.tardiness_page', date_from=date_from, date_to=date_to, view='late', sort='TL', dir=next_dir if current_sort == 'TL' else 'asc') }}">
               Team Lead
               {% if current_sort == 'TL' %}
-              <i class="bi bi-arrow-{{ 'down' if current_dir == 'asc' else 'up' }} sort-icon"></i>
+              <i class="sort-icon" data-lucide="{{ 'arrow-down' if current_dir == 'asc' else 'arrow-up' }}"></i>
               {% else %}
-              <i class="bi bi-arrow-down-up sort-icon"></i>
+              <i class="sort-icon" data-lucide="arrow-up-down"></i>
               {% endif %}
             </a>
           </th>
@@ -312,9 +312,9 @@
             <a href="{{ url_for('tardiness.tardiness_page', date_from=date_from, date_to=date_to, view='late', sort='LATE', dir=next_dir if current_sort == 'LATE' else 'desc') }}">
               Minutes Late
               {% if current_sort == 'LATE' %}
-              <i class="bi bi-arrow-{{ 'down' if current_dir == 'asc' else 'up' }} sort-icon"></i>
+              <i class="sort-icon" data-lucide="{{ 'arrow-down' if current_dir == 'asc' else 'arrow-up' }}"></i>
               {% else %}
-              <i class="bi bi-arrow-down-up sort-icon"></i>
+              <i class="sort-icon" data-lucide="arrow-up-down"></i>
               {% endif %}
             </a>
           </th>
@@ -330,7 +330,7 @@
           <td>{{ r.record_date.strftime('%b %d, %Y') }}</td>
           <td>
             <div class="d-flex align-items-center gap-2">
-              <i class="bi bi-person-circle" style="color:var(--text-muted);"></i>
+              <i data-lucide="circle-user" style="color:var(--text-muted);"></i>
               <span>{{ r.lname }}, {{ r.fname }}</span>
             </div>
           </td>
@@ -349,7 +349,7 @@
         {% else %}
         <tr>
           <td colspan="7" class="text-center text-muted py-5">
-            <i class="bi bi-calendar-x" style="font-size:2rem;"></i>
+            <i data-lucide="calendar-x" style="font-size:2rem;"></i>
             <div class="mt-2">No late records found in this date range.</div>
           </td>
         </tr>
@@ -358,7 +358,7 @@
     </table>
     {% endif %}
     <div id="noSearchMatch" class="text-center text-muted py-4" style="display:none;">
-      <i class="bi bi-search" style="font-size:1.5rem;"></i>
+      <i data-lucide="search" style="font-size:1.5rem;"></i>
       <div class="mt-2">No employees match your search.</div>
     </div>
   </div>
@@ -389,7 +389,7 @@
       <div class="modal-footer" style="border-color:var(--border);">
         <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal">Close</button>
         <a id="employeeModalPimLink" href="#" target="_blank" rel="noopener" class="btn btn-primary btn-sm">
-          <i class="bi bi-box-arrow-up-right"></i> View PIM Profile
+          <i data-lucide="external-link"></i> View PIM Profile
         </a>
       </div>
     </div>

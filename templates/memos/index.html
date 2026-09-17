@@ -3,7 +3,7 @@
 {% block content %}
 <div class="container-fluid py-3">
   <div class="d-flex align-items-center justify-content-between mb-3">
-    <h4 class="fw-bold mb-0"><i class="bi bi-file-earmark-text me-2"></i>Employee Memos</h4>
+    <h4 class="fw-bold mb-0"><i class="me-2" data-lucide="file-text"></i>Employee Memos</h4>
     <span class="text-muted small">{{ total }} total record{{ 's' if total != 1 else '' }}</span>
   </div>
 
@@ -47,7 +47,7 @@
       </form>
       {% if filters.category or filters.supervisor or filters.date_from or filters.date_to or filters.q %}
       <div class="mt-2">
-        <a href="{{ request.path }}" class="small text-muted"><i class="bi bi-x-circle"></i> Clear filters</a>
+        <a href="{{ request.path }}" class="small text-muted"><i data-lucide="circle-x"></i> Clear filters</a>
       </div>
       {% endif %}
     </div>
@@ -83,7 +83,7 @@
                 <span class="small text-muted ms-1">({{ m.employee_id }})</span>
                 {% else %}
                 <span>{{ m.first_name }} {{ m.last_name }}</span>
-                <span class="small text-danger ms-1" title="No employee ID linked"><i class="bi bi-exclamation-triangle"></i></span>
+                <span class="small text-danger ms-1" title="No employee ID linked"><i data-lucide="triangle-alert"></i></span>
                 {% endif %}
               </td>
               <td><span class="badge bg-secondary">{{ m.category or '—' }}</span></td>
@@ -98,7 +98,7 @@
       </div>
       {% else %}
       <div class="text-center text-muted py-5">
-        <i class="bi bi-inbox display-6 d-block mb-2"></i>
+        <i class="display-6 d-block mb-2" data-lucide="inbox"></i>
         No memos found matching these filters.
       </div>
       {% endif %}

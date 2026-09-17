@@ -175,7 +175,7 @@
 {# ── Recent Activity ──────────────────────────────────────── #}
 <div class="dash-grid-2 mt-3">
   <div class="chart-card mb-0">
-    <div class="chart-title"><i class="bi bi-person-plus-fill text-success me-2"></i>Recent Hires (Last 30 Days)</div>
+    <div class="chart-title"><i class="text-success me-2" data-lucide="user-plus"></i>Recent Hires (Last 30 Days)</div>
     {% for r in recent_hires %}
     <div class="recent-row">
       <div>
@@ -190,7 +190,7 @@
   </div>
 
   <div class="chart-card mb-0">
-    <div class="chart-title"><i class="bi bi-person-dash-fill text-danger me-2"></i>Recent Exits (Last 30 Days)</div>
+    <div class="chart-title"><i class="text-danger me-2" data-lucide="user-minus"></i>Recent Exits (Last 30 Days)</div>
     {% for r in recent_exits %}
     <div class="recent-row">
       <div>

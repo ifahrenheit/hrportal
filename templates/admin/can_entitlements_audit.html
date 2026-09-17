@@ -10,7 +10,7 @@
     </div>
     <div class="col-md-4 text-end">
       <a href="{{ url_for('admin_sub_admins') }}" class="btn btn-sm btn-outline-secondary">
-        <i class="bi bi-shield-check me-1"></i>Manage Sub-Admins
+        <i class="me-1" data-lucide="shield-check"></i>Manage Sub-Admins
       </a>
     </div>
   </div>
@@ -18,7 +18,7 @@
   <div class="card mb-3">
     <div class="card-body">
       <span class="text-muted small">
-        <i class="bi bi-info-circle me-1"></i>{{ holders|length }} sub-admin{{ '' if holders|length == 1 else 's' }} with access
+        <i class="me-1" data-lucide="info"></i>{{ holders|length }} sub-admin{{ '' if holders|length == 1 else 's' }} with access
       </span>
     </div>
   </div>

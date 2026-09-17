@@ -1,6 +1,6 @@
 {% extends 'base.html' %}
 {% block title %}WFM Onboarding{% endblock %}
-{% block page_title %}<i class="bi bi-cloud-upload me-2" style="color:var(--accent)"></i>WFM Onboarding{% endblock %}
+{% block page_title %}<i class="me-2" data-lucide="cloud-upload" style="color:var(--accent)"></i>WFM Onboarding{% endblock %}
 {% block content %}
 
 <div class="d-flex align-items-center gap-3 mb-4 flex-wrap">
@@ -10,10 +10,10 @@
   </div>
   <input type="text" id="searchInput" class="form-control form-control-sm" placeholder="Search name, email, account..." style="max-width:260px" oninput="filterTable()">
   <button class="btn btn-sm btn-outline-primary ms-auto" id="bulkCopyBtn" onclick="bulkCopy()" style="display:none">
-    <i class="bi bi-clipboard me-1"></i>Copy Selected (<span id="selectedCount">0</span>)
+    <i class="me-1" data-lucide="clipboard"></i>Copy Selected (<span id="selectedCount">0</span>)
   </button>
   <button class="btn btn-sm btn-success" id="bulkMarkBtn" onclick="bulkMarkOnboarded()" style="display:none">
-    <i class="bi bi-check-lg me-1"></i>Mark All Onboarded (<span id="selectedCount2">0</span>)
+    <i class="me-1" data-lucide="check"></i>Mark All Onboarded (<span id="selectedCount2">0</span>)
   </button>
   <span class="text-muted small" id="countLabel"></span>
 </div>
@@ -98,7 +98,7 @@ async function bulkMarkOnboarded() {
     fetch('/hrportal/api/wfm-mark-onboarded/' + id, { method: 'POST', headers: {'X-CSRF-Token': getCsrfToken()} })
   ));
   btn.disabled = false;
-  btn.innerHTML = '<i class="bi bi-check-lg me-1"></i>Mark All Onboarded (<span id="selectedCount2">0</span>)';
+  btn.innerHTML = '<i class="me-1" data-lucide="check"></i>Mark All Onboarded (<span id="selectedCount2">0</span>)';
   document.getElementById('bulkMarkBtn').style.display = 'none';
   document.getElementById('bulkCopyBtn').style.display = 'none';
   try { await loadWHM(); } catch(e) { console.error('loadWHM after bulk mark failed:', e); }
@@ -189,7 +189,7 @@ function renderTable() {
       </td>
       <td class="text-end">
         ${!done ? `<button class="btn btn-sm btn-success py-0 px-2" onclick="markDone('${esc(r.employee_id)}', this)">
-          <i class="bi bi-check-lg me-1"></i>Mark Onboarded
+          <i class="me-1" data-lucide="check"></i>Mark Onboarded
         </button>` : ''}
       </td>
     </tr>`;
@@ -202,10 +202,10 @@ async function markDone(employeeId, btn) {
   try {
     const res = await fetch('/hrportal/api/wfm-mark-onboarded/' + employeeId, { method: 'POST', headers: {'X-CSRF-Token': getCsrfToken()} });
     if (res.ok) { loadWHM(); }
-    else { btn.disabled = false; btn.innerHTML = '<i class="bi bi-check-lg me-1"></i>Mark Onboarded'; }
+    else { btn.disabled = false; btn.innerHTML = '<i class="me-1" data-lucide="check"></i>Mark Onboarded'; }
   } catch(e) {
     btn.disabled = false;
-    btn.innerHTML = '<i class="bi bi-check-lg me-1"></i>Mark Onboarded';
+    btn.innerHTML = '<i class="me-1" data-lucide="check"></i>Mark Onboarded';
   }
 }
 

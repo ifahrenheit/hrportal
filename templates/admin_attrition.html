@@ -4,9 +4,9 @@
 <div class="container-fluid mt-3">
 
   <div class="d-flex justify-content-between align-items-center mb-3">
-    <h4 class="mb-0"><i class="fas fa-user-minus text-danger me-2"></i>Attrition Report</h4>
+    <h4 class="mb-0"><i class="text-danger me-2" data-lucide="user-minus"></i>Attrition Report</h4>
     <button class="btn btn-sm btn-outline-secondary" onclick="exportCSV()" id="exportBtn">
-      <i class="fas fa-download me-1"></i>Export CSV
+      <i class="me-1" data-lucide="download"></i>Export CSV
     </button>
   </div>
 
@@ -14,13 +14,13 @@
     <li class="nav-item">
       <a class="nav-link {% if not request.args.get('ei_year') and not request.args.get('ei_reason') %}active{% endif %}"
          id="tab-attrition" data-bs-toggle="tab" href="#pane-attrition">
-        <i class="fas fa-table me-1"></i>Attrition Data
+        <i class="me-1" data-lucide="table"></i>Attrition Data
       </a>
     </li>
     <li class="nav-item">
       <a class="nav-link {% if request.args.get('ei_year') or request.args.get('ei_reason') %}active{% endif %}"
          id="tab-ei" data-bs-toggle="tab" href="#pane-ei">
-        <i class="fas fa-comments me-1"></i>Exit Interview
+        <i class="me-1" data-lucide="message-circle"></i>Exit Interview
         <span class="badge bg-primary ms-1">{{ ei_total_all }}</span>
       </a>
     </li>
@@ -185,7 +185,7 @@
 
       {% if ei_total_all == 0 %}
       <div class="text-center text-muted py-5">
-        <i class="fas fa-comments fa-3x mb-3 opacity-25"></i>
+        <i class="mb-3 opacity-25" data-lucide="message-circle" style="width:3em;height:3em;"></i>
         <p>No exit interview data yet. Run the AppScript sync to populate.</p>
       </div>
       {% else %}

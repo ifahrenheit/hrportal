@@ -13,6 +13,7 @@
   table.qaa-table td { padding: 12px 16px; border-bottom: 1px solid var(--border); vertical-align: middle; }
   table.qaa-table tr:last-child td { border-bottom: none; }
   .qaa-pin-btn, .qaa-icon-btn { border: none; background: none; cursor: pointer; color: var(--text-muted); font-size: 1rem; padding: 4px 6px; }
+  td.qaa-actions-cell { white-space: nowrap; }
   .qaa-pin-btn.active { color: var(--accent); }
   .qaa-icon-btn:hover { color: var(--accent); }
   .qaa-icon-btn.danger:hover { color: #dc3545; }
@@ -50,19 +51,19 @@
 </style>
 
 <div class="qaa-header">
-  <h2><i class="bi bi-clipboard2-pulse"></i> QA Updates &mdash; Admin</h2>
-  <button class="qaa-btn-primary" id="qaaNewBtn" onclick="qaaOpenModal()"><i class="bi bi-plus-lg"></i> New QA Update</button>
+  <h2><i data-lucide="activity"></i> QA Updates &mdash; Admin</h2>
+  <button class="qaa-btn-primary" id="qaaNewBtn" onclick="qaaOpenModal()"><i data-lucide="plus"></i> New QA Update</button>
 </div>
 
 <div style="display:flex;gap:8px;margin-bottom:20px;border-bottom:1px solid var(--border);">
   <button class="qaa-tab-btn active" data-tab="manage" onclick="qaaSwitchTab('manage')">
-    <i class="bi bi-list-check"></i> Manage
+    <i data-lucide="list-check"></i> Manage
   </button>
   <button class="qaa-tab-btn" data-tab="data" onclick="qaaSwitchTab('data')">
-    <i class="bi bi-bar-chart-line"></i> Data
+    <i data-lucide="chart-column"></i> Data
   </button>
   <button class="qaa-tab-btn" data-tab="deactivated" onclick="qaaSwitchTab('deactivated')">
-    <i class="bi bi-archive"></i> Deactivated
+    <i data-lucide="archive"></i> Deactivated
   </button>
 </div>
 
@@ -267,7 +268,7 @@
 <!-- History Modal (activation/deactivation + edit audit trail) -->
 <div class="qaa-modal-overlay" id="qaaHistoryOverlay">
   <div class="qaa-modal" style="max-width:480px;">
-    <h4><i class="bi bi-clock-history"></i> History</h4>
+    <h4><i data-lucide="clock-arrow-up"></i> History</h4>
     <div id="qaaHistoryList"></div>
     <div class="qaa-form-actions">
       <button type="button" class="qaa-btn-secondary" onclick="document.getElementById('qaaHistoryOverlay').classList.remove('show')">Close</button>
@@ -313,7 +314,7 @@ function qaaRenderTable() {
     <tr data-id="${u.id}">
       <td>
         <button class="qaa-pin-btn ${u.is_pinned ? 'active' : ''}" onclick="qaaTogglePin(${u.id}, ${u.is_pinned ? 0 : 1})" title="Pin">
-          <i class="bi bi-pin-angle-fill"></i>
+          <i data-lucide="pin"></i>
         </button>
       </td>
       <td><strong>${qaaEscape(u.title)}</strong></td>
@@ -329,10 +330,10 @@ function qaaRenderTable() {
         </label>
       </td>
       <td>${qaaFormatDate(u.created_at)}</td>
-      <td>
-        <button class="qaa-icon-btn" onclick="qaaOpenModal(${u.id})" title="Edit"><i class="bi bi-pencil"></i></button>
-        <button class="qaa-icon-btn" onclick="qaaShowHistory(${u.id})" title="History"><i class="bi bi-clock-history"></i></button>
-        <button class="qaa-icon-btn danger" onclick="qaaDelete(${u.id})" title="Delete"><i class="bi bi-trash"></i></button>
+      <td class="qaa-actions-cell">
+        <button class="qaa-icon-btn" onclick="qaaOpenModal(${u.id})" title="Edit"><i data-lucide="pencil"></i></button>
+        <button class="qaa-icon-btn" onclick="qaaShowHistory(${u.id})" title="History"><i data-lucide="clock-arrow-up"></i></button>
+        <button class="qaa-icon-btn danger" onclick="qaaDelete(${u.id})" title="Delete"><i data-lucide="trash"></i></button>
       </td>
     </tr>
   `).join('');
@@ -388,9 +389,9 @@ function qaaLoadDeactivated() {
           <td>${u.category ? `<span class="qaa-badge-category">${qaaEscape(u.category)}</span>` : '-'}</td>
           <td>${qaaEscape(u.deactivated_by || '-')}</td>
           <td>${qaaFormatDate(u.deactivated_at)}</td>
-          <td>
-            <button class="qaa-icon-btn" onclick="qaaReactivate(${u.id})" title="Reactivate"><i class="bi bi-arrow-counterclockwise"></i></button>
-            <button class="qaa-icon-btn" onclick="qaaShowHistory(${u.id})" title="History"><i class="bi bi-clock-history"></i></button>
+          <td class="qaa-actions-cell">
+            <button class="qaa-icon-btn" onclick="qaaReactivate(${u.id})" title="Reactivate"><i data-lucide="refresh-ccw"></i></button>
+            <button class="qaa-icon-btn" onclick="qaaShowHistory(${u.id})" title="History"><i data-lucide="clock-arrow-up"></i></button>
           </td>
         </tr>
       `).join('');
@@ -502,10 +503,10 @@ function qaaShowAcks(id) {
 function qaaHistoryFieldLabel(field, oldVal, newVal) {
   if (field === 'is_active') {
     return newVal === '1' || newVal === 1
-      ? `<span style="color:#2f6b2f;"><i class="bi bi-toggle-on"></i> Reactivated</span>`
-      : `<span style="color:#c0392b;"><i class="bi bi-toggle-off"></i> Deactivated</span>`;
+      ? `<span style="color:#2f6b2f;"><i data-lucide="toggle-right"></i> Reactivated</span>`
+      : `<span style="color:#c0392b;"><i data-lucide="toggle-left"></i> Deactivated</span>`;
   }
-  if (field === 'created') return `<span style="color:var(--accent);"><i class="bi bi-plus-circle"></i> Created</span>`;
+  if (field === 'created') return `<span style="color:var(--accent);"><i data-lucide="circle-plus"></i> Created</span>`;
   if (field === 'is_pinned') return newVal === '1' || newVal === 1 ? 'Pinned' : 'Unpinned';
   // Generic field edit (title, description, category, implementation_date)
   return `Edited <strong>${qaaEscape(field)}</strong>`;
@@ -654,7 +655,7 @@ function qaaShowCellDetail(tl, updateId) {
     let htmlContent = '';
 
     // 1. Show Acknowledged Section
-    htmlContent += `<p style="font-size:0.8rem;color:#2f6b2f;font-weight:600;margin-bottom:8px;"><i class="bi bi-check-circle-fill"></i> Acknowledged:</p>`;
+    htmlContent += `<p style="font-size:0.8rem;color:#2f6b2f;font-weight:600;margin-bottom:8px;"><i data-lucide="circle-check"></i> Acknowledged:</p>`;
     if (cell.acked === 0) {
       htmlContent += '<p style="color:var(--text-muted);font-size:0.85rem;margin-left:18px;margin-bottom:14px;">Nobody has acknowledged yet.</p>';
     } else {
@@ -670,7 +671,7 @@ function qaaShowCellDetail(tl, updateId) {
     }
 
     // 2. Show Not Yet Acknowledged Section
-    htmlContent += `<p style="font-size:0.8rem;color:#c0392b;font-weight:600;margin-bottom:8px;"><i class="bi bi-exclamation-circle-fill"></i> Not yet acknowledged:</p>`;
+    htmlContent += `<p style="font-size:0.8rem;color:#c0392b;font-weight:600;margin-bottom:8px;"><i data-lucide="circle-alert"></i> Not yet acknowledged:</p>`;
     if (cell.not_acked.length === 0) {
       htmlContent += '<p style="color:#2f6b2f;font-size:0.85rem;margin-left:18px;">Everyone has acknowledged!</p>';
     } else {
@@ -713,7 +714,7 @@ function qaaLoadByUpdate() {
       let html = `
         <div style="margin-bottom:16px;">
           <span class="qaa-progress-pill ${overallClass}">
-            <i class="bi bi-people"></i> ${data.overall_acked} / ${data.overall_total} acknowledged overall
+            <i data-lucide="users"></i> ${data.overall_acked} / ${data.overall_total} acknowledged overall
           </span>
         </div>`;
 
@@ -737,7 +738,7 @@ function qaaLoadByUpdate() {
                     <span style="color:var(--text-muted);"> anonymity/group: (${qaaEscape(e.group_name || '-')})</span>
                   </span>
                   <span class="${e.acknowledged ? 'yes' : 'no'}" style="font-weight: 600;">
-                    <i class="bi ${e.acknowledged ? 'bi-check-circle-fill' : 'bi-x-circle-fill'}"></i>
+                    <i data-lucide="${e.acknowledged ? 'circle-check' : 'circle-x'}"></i>
                     ${e.acknowledged ? 'Done' : 'Pending'}
                   </span>
                 </div>
@@ -783,10 +784,10 @@ function qaaLoadByTeam() {
             </div>
             ${u.not_acked_names.length > 0 ? `
               <div style="padding:10px 18px;border-top:1px solid var(--border);">
-                <div class="qaa-not-acked-list"><i class="bi bi-exclamation-circle"></i> Not yet acknowledged: ${u.not_acked_names.map(qaaEscape).join(', ')}</div>
+                <div class="qaa-not-acked-list"><i data-lucide="circle-alert"></i> Not yet acknowledged: ${u.not_acked_names.map(qaaEscape).join(', ')}</div>
               </div>` : `
               <div style="padding:10px 18px;border-top:1px solid var(--border);color:#4a7a4a;font-size:0.8rem;">
-                <i class="bi bi-check-circle"></i> Everyone has acknowledged this update.
+                <i data-lucide="circle-check"></i> Everyone has acknowledged this update.
               </div>`}
           </div>`;
       });

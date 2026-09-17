@@ -86,13 +86,13 @@
 <div class="container-fluid py-3">
  <div class="slv-wrap">
   <div class="slv-head">
-    <h4><i class="bi bi-clipboard2-pulse me-2"></i>SL Verification</h4>
+    <h4><i class="me-2" data-lucide="activity"></i>SL Verification</h4>
     <span class="slv-count">{{ pending|length }} awaiting HR verification</span>
   </div>
 
   {% if not pending %}
     <div class="slv-card slv-empty">
-      <i class="bi bi-check-circle d-block mb-2"></i>
+      <i class="d-block mb-2" data-lucide="circle-check"></i>
       No sick-leave filings awaiting verification.
     </div>
   {% endif %}
@@ -104,8 +104,8 @@
         <div class="slv-emp">{{ r.emp_lastname }}, {{ r.emp_firstname }}<span class="slv-id">{{ r.employee_id }}</span></div>
         <div class="slv-meta">
           <span class="slv-pill">Sick Leave</span>
-          <span><i class="bi bi-clock me-1"></i>Filed {{ r.filed_at }}</span>
-          <span><i class="bi bi-person-badge me-1"></i>TL: {{ r.tl or '—' }}</span>
+          <span><i class="me-1" data-lucide="clock"></i>Filed {{ r.filed_at }}</span>
+          <span><i class="me-1" data-lucide="id-card"></i>TL: {{ r.tl or '—' }}</span>
         </div>
       </div>
       <div class="slv-hours">
@@ -118,7 +118,7 @@
       <span class="lbl">Dates of absence</span>
       {% for d in r.dates.split(',') %}<span class="slv-date-chip">{{ d }}</span>{% endfor %}
     </div>
-    {% if r.notes %}<div class="slv-note"><i class="bi bi-chat-left-text me-1"></i>{{ r.notes }}</div>{% endif %}
+    {% if r.notes %}<div class="slv-note"><i class="me-1" data-lucide="message-square-text"></i>{{ r.notes }}</div>{% endif %}
 
     <div class="slv-body">
       <div class="slv-grid">
@@ -197,10 +197,10 @@
 
       <div class="slv-foot">
         <div class="slv-void">
-          <i class="bi bi-exclamation-triangle"></i>Hard copy not received — the verification email will include the void notice.
+          <i data-lucide="triangle-alert"></i>Hard copy not received — the verification email will include the void notice.
         </div>
         <button type="button" class="slv-btn" onclick="submitSLVerification('{{ r.leave_request_id }}')">
-          <i class="bi bi-check2-square"></i>Verify &amp; forward to SOM
+          <i data-lucide="square-check"></i>Verify &amp; forward to SOM
         </button>
       </div>
     </div>
@@ -261,7 +261,7 @@ function submitSLVerification(lr){
   }
 
   const btn = card.querySelector('.slv-btn');
-  btn.disabled = true; btn.innerHTML = '<i class="bi bi-hourglass-split"></i>Saving…';
+  btn.disabled = true; btn.innerHTML = '<i data-lucide="hourglass"></i>Saving…';
 
   const payload = {
     leave_request_id: lr,
@@ -289,11 +289,11 @@ function submitSLVerification(lr){
         }
       },300);
     } else {
-      btn.disabled=false; btn.innerHTML='<i class="bi bi-check2-square"></i>Verify &amp; forward to SOM';
+      btn.disabled=false; btn.innerHTML='<i data-lucide="square-check"></i>Verify &amp; forward to SOM';
       alert(data.message||'Error');
     }
   })
-  .catch(()=>{ btn.disabled=false; btn.innerHTML='<i class="bi bi-check2-square"></i>Verify &amp; forward to SOM'; alert('Network error'); });
+  .catch(()=>{ btn.disabled=false; btn.innerHTML='<i data-lucide="square-check"></i>Verify &amp; forward to SOM'; alert('Network error'); });
 }
 </script>
 {% endblock %}

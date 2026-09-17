@@ -116,10 +116,10 @@
 
 <div class="ir-page-header">
   <div class="ir-page-title">
-    <i class="bi bi-clipboard2-pulse"></i> Incident Reports
+    <i data-lucide="activity"></i> Incident Reports
   </div>
   <a href="{{ url_for('incident_reports.new_report') }}" class="btn-ir">
-    <i class="bi bi-plus-lg"></i> New Report
+    <i data-lucide="plus"></i> New Report
   </a>
 </div>
 
@@ -130,19 +130,19 @@
   {% set rwe_req_count = rwe_reports | selectattr('status','in',['rwe_for_signature','forwarded']) | list | length %}
 {% endif %}
 {% set stat_items = [
-  ('Total',      stats.total,       '#1e5fd4','bi-clipboard2'),
-  ('Pending',    stats.pending,     '#d97706','bi-hourglass-split'),
-  ('IR Reviewed', stats.reviewed,    '#1e5fd4','bi-eye'),
-  ('Resolved',   stats.resolved,    '#10b981','bi-check-circle'),
-  ('RWE Queue',  stats.rwe_request, '#ef4444','bi-person-exclamation'),
-  ('RWE Served', stats.rwe_served,  '#10b981','bi-person-check'),
-  ('Waived',     stats.waived,      '#8b5cf6','bi-slash-circle'),
+  ('Total',      stats.total,       '#1e5fd4','clipboard'),
+  ('Pending',    stats.pending,     '#d97706','hourglass'),
+  ('IR Reviewed', stats.reviewed,    '#1e5fd4','eye'),
+  ('Resolved',   stats.resolved,    '#10b981','circle-check'),
+  ('RWE Queue',  stats.rwe_request, '#ef4444','circle-alert'),
+  ('RWE Served', stats.rwe_served,  '#10b981','user-check'),
+  ('Waived',     stats.waived,      '#8b5cf6','ban'),
 ] %}
 <div class="ir-stat-grid">
   {% for label,val,color,icon in stat_items %}
   <div class="ir-stat" style="border-top-color:{{ color }};"
        onclick="filterByClick('{{ label }}')">
-    <i class="bi {{ icon }}" style="color:{{ color }};font-size:16px;"></i>
+    <i data-lucide="{{ icon }}" style="color:{{ color }};font-size:16px;"></i>
     <div class="ir-stat-num" style="color:{{ color }};">{{ val or 0 }}</div>
     <div class="ir-stat-lbl">{{ label }}</div>
   </div>
@@ -189,7 +189,7 @@
     </div>
     <div class="col-12 col-md-1">
       <button type="submit" class="btn-ir w-100" style="padding:6px 0;justify-content:center;">
-        <i class="bi bi-funnel"></i>
+        <i data-lucide="funnel"></i>
       </button>
     </div>
   </form>
@@ -199,18 +199,18 @@
 <ul class="nav ir-tabs">
   <li class="nav-item">
     <button class="nav-link active" data-bs-toggle="tab" data-bs-target="#cards-view">
-      <i class="bi bi-grid-3x3-gap me-1"></i>Cards
+      <i class="me-1" data-lucide="grid-3x3"></i>Cards
     </button>
   </li>
   <li class="nav-item">
     <button class="nav-link" data-bs-toggle="tab" data-bs-target="#table-view">
-      <i class="bi bi-table me-1"></i>Table
+      <i class="me-1" data-lucide="table"></i>Table
     </button>
   </li>
   {% if user.is_admin or user.is_hr or user.is_sga or user.is_supervisor %}
   <li class="nav-item">
     <button class="nav-link rwe-tab" data-bs-toggle="tab" data-bs-target="#rwe-queue">
-      <i class="bi bi-person-exclamation me-1"></i>RWE Queue
+      <i class="me-1" data-lucide="circle-alert"></i>RWE Queue
       {% if rwe_req_count > 0 %}
       <span class="rwe-count">{{ rwe_req_count }}</span>
       {% endif %}
@@ -220,12 +220,12 @@
   {% if user.is_admin %}
   <li class="nav-item">
     <button class="nav-link" data-bs-toggle="tab" data-bs-target="#rwe-report">
-      <i class="bi bi-bar-chart-line me-1"></i>RWE Report
+      <i class="me-1" data-lucide="chart-column"></i>RWE Report
     </button>
   </li>
   <li class="nav-item">
     <button class="nav-link" data-bs-toggle="tab" data-bs-target="#ir-timeline">
-      <i class="bi bi-clock-history me-1"></i>IR Timeline
+      <i class="me-1" data-lucide="clock-arrow-up"></i>IR Timeline
     </button>
   </li>
   {% endif %}
@@ -236,7 +236,7 @@
   {# Cards #}
   <div class="tab-pane fade show active" id="cards-view">
     {% if not reports %}
-    <div class="empty-state"><i class="bi bi-clipboard2-x"></i>No incident reports found.</div>
+    <div class="empty-state"><i data-lucide="clipboard-x"></i>No incident reports found.</div>
     {% else %}
     {% for r in reports %}
     {% set is_rwe = r.status == 'rwe_request' %}
@@ -246,16 +246,16 @@
           <div class="d-flex align-items-center gap-2 flex-wrap mb-1">
             <span class="ir-card-num">{{ r.report_number }}</span>
             <span class="ir-badge ir-badge-{{ r.status }}">
-              {{ {'rwe_request':'🔴 RWE Queue','rwe_for_signature':'🟡 For Signature','rwe_for_service':'🟠 For Service','rwe_served':'✅ RWE Served',
+              {{ {'rwe_request':'RWE Queue','rwe_for_signature':'For Signature','rwe_for_service':'For Service','rwe_served':'RWE Served',
                   'pending':'Pending','reviewed':'IR Reviewed','resolved':'Resolved',
-                  'waived':'⚪ Waived',
+                  'waived':'Waived',
 }.get(r.status, r.status.upper()) }}
             </span>
           </div>
           <div class="ir-card-meta">
-            <i class="bi bi-calendar3 me-1"></i>
+            <i class="me-1" data-lucide="calendar"></i>
             {{ r.incident_date.strftime('%b %d, %Y') if r.incident_date else '—' }}
-            &nbsp;·&nbsp;<i class="bi bi-person me-1"></i>{{ r.employee_name }}
+            &nbsp;·&nbsp;<i class="me-1" data-lucide="user"></i>{{ r.employee_name }}
           </div>
           <div class="ir-card-sum">{{ r.summary }}</div>
           <div style="font-size:11px;color:var(--text-muted);">
@@ -265,7 +265,7 @@
         </div>
         <a href="{{ url_for('incident_reports.view_report', report_number=r.report_number) }}"
            class="btn-ir-sm" style="flex-shrink:0;">
-          <i class="bi bi-eye"></i>View
+          <i data-lucide="eye"></i>View
         </a>
       </div>
     </div>
@@ -276,14 +276,14 @@
   {# Table #}
   <div class="tab-pane fade" id="table-view">
     {% if not reports %}
-    <div class="empty-state"><i class="bi bi-table"></i>No reports found.</div>
+    <div class="empty-state"><i data-lucide="table"></i>No reports found.</div>
     {% else %}
     <div class="mb-2 d-flex align-items-center gap-2">
       <button class="btn-ir-sm" onclick="copyTable()">
-        <i class="bi bi-clipboard"></i>Copy
+        <i data-lucide="clipboard"></i>Copy
       </button>
       <span id="copyMsg" style="font-size:12px;color:var(--success);display:none;">
-        <i class="bi bi-check-lg"></i> Copied!
+        <i data-lucide="check"></i> Copied!
       </span>
     </div>
     <div class="ir-table-wrap">
@@ -326,7 +326,7 @@
     {% if rwe_req_count > 0 %}
     <div style="background:#fee2e2;border:1px solid #fca5a5;border-radius:10px;padding:12px 16px;
                 margin-bottom:16px;display:flex;align-items:center;gap:10px;color:#991b1b;">
-      <i class="bi bi-exclamation-triangle-fill" style="font-size:18px;"></i>
+      <i data-lucide="triangle-alert" style="font-size:18px;"></i>
       <span style="font-weight:600;">{{ rwe_req_count }} report{{ 's' if rwe_req_count != 1 }} awaiting RWE action</span>
     </div>
     {% endif %}
@@ -338,18 +338,18 @@
     {% endif %}
     {% if not visible_rwe %}
     <div class="rwe-empty">
-      <i class="bi bi-check-circle-fill"></i>
+      <i data-lucide="circle-check"></i>
       No pending RWE items — all clear!
     </div>
     {% else %}
 
     {% set stage_defs = [
-      ('rwe_request',       '🔴 Awaiting Document',  'HR',  '#ef4444', 'Create the RWE document', 'rwe_for_signature', '🖊 Doc Created',  5),
-      ('rwe_for_signature', '🟡 Awaiting Signature', 'TL',  '#f59e0b', 'TL must sign the RWE document', 'rwe_for_service', '✍ Signed', 5),
-      ('rwe_for_service',   '🟠 Awaiting Service',   'HR',  '#f97316', 'Serve the signed RWE to the agent', 'awaiting_explanation', '📧 RWE Served', 5),
-      ('awaiting_explanation', '🟤 Awaiting Explanation', 'HR', '#a16207', 'Waiting for the agent\'s written explanation', 'forwarded', '📤 Explanation Received', 5),
-      ('forwarded',         '🟣 SOM/TL Decision',    'TL',  '#8b5cf6', 'Waive or proceed with disciplinary action', 'for_memo', '⚖️ Proceed w/ Action', 5),
-      ('for_memo',          '🔵 Awaiting Memo',      'HR',  '#3b82f6', 'Create the memo, then resolve', 'resolved', '✅ Resolve (memo)', 5),
+      ('rwe_request',       'Awaiting Document',  'HR',  '#ef4444', 'Create the RWE document', 'rwe_for_signature', '🖊 Doc Created',  5),
+      ('rwe_for_signature', 'Awaiting Signature', 'TL',  '#f59e0b', 'TL must sign the RWE document', 'rwe_for_service', '✍ Signed', 5),
+      ('rwe_for_service',   'Awaiting Service',   'HR',  '#f97316', 'Serve the signed RWE to the agent', 'awaiting_explanation', '📧 RWE Served', 5),
+      ('awaiting_explanation', 'Awaiting Explanation', 'HR', '#a16207', 'Waiting for the agent\'s written explanation', 'forwarded', '📤 Explanation Received', 5),
+      ('forwarded',         'SOM/TL Decision',    'TL',  '#8b5cf6', 'Waive or proceed with disciplinary action', 'for_memo', '⚖️ Proceed w/ Action', 5),
+      ('for_memo',          'Awaiting Memo',      'HR',  '#3b82f6', 'Create the memo, then resolve', 'resolved', '✅ Resolve (memo)', 5),
     ] %}
 
     {# Pill filter bar #}
@@ -398,17 +398,17 @@
               <span class="ir-badge" style="background:{{ color }}1a;color:{{ color }};">{{ stage_label }}</span>
               {% if r.responsible_tl %}
               <span class="ir-badge" style="background:var(--surface);border:1px solid var(--border);color:var(--text);">
-                <i class="bi bi-person-badge me-1"></i>TL: {{ r.responsible_tl }}
+                <i class="me-1" data-lucide="id-card"></i>TL: {{ r.responsible_tl }}
               </span>
               {% endif %}
               <span style="font-size:11px;font-weight:700;
                            color:{{ '#ef4444' if overdue else 'var(--text-muted)' }};">
-                <i class="bi bi-hourglass-split me-1"></i>{{ r.days_in_stage or 0 }}d in stage{{ ' — OVERDUE' if overdue }}
+                <i class="me-1" data-lucide="hourglass"></i>{{ r.days_in_stage or 0 }}d in stage{{ ' — OVERDUE' if overdue }}
               </span>
             </div>
             <div class="rwe-meta mt-1">
-              <i class="bi bi-person me-1"></i>{{ r.employee_name }}
-              &nbsp;·&nbsp;<i class="bi bi-calendar3 me-1"></i>
+              <i class="me-1" data-lucide="user"></i>{{ r.employee_name }}
+              &nbsp;·&nbsp;<i class="me-1" data-lucide="calendar"></i>
               {{ r.incident_date.strftime('%b %d, %Y') if r.incident_date else '—' }}
               &nbsp;·&nbsp;Filed by {{ r.submitted_by_name or 'N/A' }}
             </div>
@@ -417,7 +417,7 @@
           <div class="rwe-actions">
             <a href="{{ url_for('incident_reports.view_report', report_number=r.report_number) }}"
                class="btn-ir-sm" style="justify-content:center;">
-              <i class="bi bi-eye"></i>View
+              <i data-lucide="eye"></i>View
             </a>
             {% if user.is_admin or (owner == 'HR' and (user.is_hr or user.is_sga)) or (owner == 'TL' and user.is_supervisor) %}
             <button class="btn-ir-success" style="background:{{ color }};"
@@ -444,11 +444,11 @@
   <div class="tab-pane fade" id="rwe-report">
     <div class="d-flex justify-content-between align-items-center mb-3">
       <div style="font-family:'Outfit',sans-serif;font-size:15px;font-weight:700;color:var(--text);">
-        <i class="bi bi-bar-chart-line me-2" style="color:var(--accent);"></i>RWE Resolution Report
+        <i class="me-2" data-lucide="chart-column" style="color:var(--accent);"></i>RWE Resolution Report
         <span style="font-size:12px;font-weight:400;color:var(--text-muted);margin-left:8px;">5-day SLA target</span>
       </div>
       <button class="btn-ir-sm" onclick="copyRweTable()">
-        <i class="bi bi-clipboard"></i>Copy
+        <i data-lucide="clipboard"></i>Copy
       </button>
     </div>
 
@@ -460,15 +460,15 @@
 
     <div class="row g-3 mb-4">
       {% for label,val,color,icon in [
-        ('Total RWE',      rwe_report_data|length, '#1e5fd4','bi-clipboard2-data'),
-        ('RWE Served',     served_count,            '#10b981','bi-check-circle'),
-        ('Overdue >5 days',overdue_count,            '#ef4444','bi-exclamation-circle'),
-        ('Nearing SLA',    warning_count,            '#d97706','bi-hourglass-split'),
-        ('On Track',       ok_count,                 '#6b7280','bi-clock'),
+        ('Total RWE',      rwe_report_data|length, '#1e5fd4','clipboard-list'),
+        ('RWE Served',     served_count,            '#10b981','circle-check'),
+        ('Overdue >5 days',overdue_count,            '#ef4444','circle-alert'),
+        ('Nearing SLA',    warning_count,            '#d97706','hourglass'),
+        ('On Track',       ok_count,                 '#6b7280','clock'),
       ] %}
       <div class="col-6 col-md">
         <div class="ir-stat" style="border-top-color:{{ color }};">
-          <i class="bi {{ icon }}" style="color:{{ color }};font-size:16px;"></i>
+          <i data-lucide="{{ icon }}" style="color:{{ color }};font-size:16px;"></i>
           <div class="ir-stat-num" style="color:{{ color }};">{{ val }}</div>
           <div class="ir-stat-lbl">{{ label }}</div>
         </div>
@@ -522,13 +522,13 @@
           </td>
           <td>
             {% if r.sla_status == 'served' %}<span class="sla-served">✅ Served</span>
-            {% elif r.sla_status == 'overdue' %}<span class="sla-overdue">🔴 Overdue</span>
+            {% elif r.sla_status == 'overdue' %}<span class="sla-overdue">Overdue</span>
             {% elif r.sla_status == 'warning' %}<span class="sla-warning">⚠️ Nearing</span>
-            {% else %}<span class="sla-ok">🟢 On Track</span>{% endif %}
+            {% else %}<span class="sla-ok">On Track</span>{% endif %}
           </td>
           <td>
             <a href="{{ url_for('incident_reports.view_report', report_number=r.report_number) }}"
-               class="btn-ir-sm"><i class="bi bi-eye"></i></a>
+               class="btn-ir-sm"><i data-lucide="eye"></i></a>
           </td>
         </tr>
         {% endfor %}
@@ -538,7 +538,7 @@
 
     {% else %}
     <div class="rwe-empty">
-      <i class="bi bi-bar-chart-line"></i>
+      <i data-lucide="chart-column"></i>
       No RWE data yet. Reports will appear once tickets are escalated to RWE.
     </div>
     {% endif %}
@@ -553,12 +553,12 @@
   <div class="tab-pane fade" id="ir-timeline">
     <div class="d-flex justify-content-between align-items-center mb-3">
       <div style="font-family:'Outfit',sans-serif;font-size:15px;font-weight:700;color:var(--text);">
-        <i class="bi bi-clock-history me-2" style="color:var(--accent);"></i>IR Timeline Report
+        <i class="me-2" data-lucide="clock-arrow-up" style="color:var(--accent);"></i>IR Timeline Report
         <span style="font-size:12px;font-weight:400;color:var(--text-muted);margin-left:8px;">Full movement history for all IRs</span>
       </div>
       <a href="{{ url_for('incident_reports.timeline_csv') }}"
          class="btn-ir-sm" style="text-decoration:none;">
-        <i class="bi bi-download"></i>Download CSV
+        <i data-lucide="download"></i>Download CSV
       </a>
     </div>
 
@@ -700,12 +700,12 @@ async function markRweServed(reportNumber, btn){
     } else {
       alert('Error: ' + d.message);
       btn.disabled = false;
-      btn.innerHTML = '<i class="bi bi-check-lg"></i>Mark RWE Served';
+      btn.innerHTML = '<i data-lucide="check"></i>Mark RWE Served';
     }
   } catch(e){
     alert('Error: ' + e.message);
     btn.disabled = false;
-    btn.innerHTML = '<i class="bi bi-check-lg"></i>Mark RWE Served';
+    btn.innerHTML = '<i data-lucide="check"></i>Mark RWE Served';
   }
 }
 

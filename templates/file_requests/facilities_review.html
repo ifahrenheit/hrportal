@@ -49,18 +49,18 @@
             {% if r.status == 'Pending' %}
               <button class="btn btn-sm btn-primary w-100"
                       onclick="showReviewModal({{ r.id }}, '{{ r.employee_name|e }}', '{{ r.issue_description[:40]|e }}')">
-                <i class="bi bi-pencil-square me-1"></i>Review
+                <i class="me-1" data-lucide="square-pen"></i>Review
               </button>
             {% elif r.status == 'Approved' %}
               <div class="d-flex gap-1">
                 <button class="btn btn-sm btn-warning text-dark flex-fill"
                         onclick="showWorkModal({{ r.id }}, '{{ r.employee_name|e }}')">
-                  <i class="bi bi-tools me-1"></i>Add Work Details
+                  <i class="me-1" data-lucide="wrench"></i>Add Work Details
                 </button>
                 <a href="{{ url_for('facilities_pdf', req_id=r.id) }}"
                    class="btn btn-sm btn-outline-secondary"
                    title="Download PDF" target="_blank">
-                  <i class="bi bi-file-earmark-pdf text-danger"></i>
+                  <i class="text-danger" data-lucide="file-text"></i>
                 </a>
               </div>
             {% elif r.status == 'Work In Progress' %}
@@ -72,7 +72,7 @@
                 <a href="{{ url_for('facilities_pdf', req_id=r.id) }}"
                    class="btn btn-sm btn-outline-secondary ms-1"
                    title="Download PDF" target="_blank">
-                  <i class="bi bi-file-earmark-pdf text-danger"></i>
+                  <i class="text-danger" data-lucide="file-text"></i>
                 </a>
               </div>
             {% elif r.status == 'Pending Final Approval' %}
@@ -140,7 +140,7 @@
             <div class="d-flex justify-content-between align-items-center mb-2">
               <label class="form-label small fw-semibold mb-0">Protective Equipment / Tools to be used</label>
               <button type="button" class="btn btn-link btn-sm p-0 text-success" onclick="addItemRow()">
-                <i class="bi bi-plus-circle-fill me-1"></i>Add Item
+                <i class="me-1" data-lucide="circle-plus"></i>Add Item
               </button>
             </div>
             <table class="table table-sm table-bordered mb-0" id="itemsTable">
@@ -255,7 +255,7 @@
         <div class="modal-footer">
           <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
           <button type="submit" class="btn btn-warning btn-sm text-dark">
-            <i class="bi bi-tools me-1"></i>Save Work Details
+            <i class="me-1" data-lucide="wrench"></i>Save Work Details
           </button>
         </div>
       </form>
@@ -273,7 +273,7 @@ function addItemRow() {
     <td><input type="text" name="item_desc[]" class="form-control form-control-sm border-0" placeholder="e.g. Freon"></td>
     <td><input type="number" name="item_qty[]" class="form-control form-control-sm border-0" min="1" placeholder="1"></td>
     <td><input type="text" name="item_remarks[]" class="form-control form-control-sm border-0"></td>
-    <td><button type="button" class="btn btn-link btn-sm p-0 text-danger" onclick="this.closest('tr').remove()"><i class="bi bi-x-lg"></i></button></td>
+    <td><button type="button" class="btn btn-link btn-sm p-0 text-danger" onclick="this.closest('tr').remove()"><i data-lucide="x"></i></button></td>
   `;
   tbody.appendChild(row);
 }

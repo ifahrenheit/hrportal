@@ -70,7 +70,7 @@ window.__APPROVALS__ = {
         </select>
       </div>
       <div class="col-12 col-md-2 d-flex gap-2">
-        <button type="submit" class="btn btn-primary btn-sm"><i class="bi bi-search me-1"></i>Filter</button>
+        <button type="submit" class="btn btn-primary btn-sm"><i class="me-1" data-lucide="search"></i>Filter</button>
         <a href="{{ url_for('file_requests_approvals') }}" class="btn btn-outline-secondary btn-sm">Clear</a>
       </div>
     </form>
@@ -238,12 +238,12 @@ function RequestCard({ item, bulkMode, selected, onToggle, onAction, loading, re
             {/* Sub-meta */}
             {(rtype === 'FTS' || rtype === 'CWS') && (
               <div className="fr-meta mt-1">
-                <i className="bi bi-clock me-1"></i>Filed: {r.created_at}
+                <i className="me-1" data-lucide="clock"></i>Filed: {r.created_at}
               </div>
             )}
             {rtype === 'CWS' && r.reason && (
               <div className="fr-meta mt-1">
-                <i className="bi bi-chat-left-text me-1"></i>{r.reason}
+                <i className="me-1" data-lucide="message-square-text"></i>{r.reason}
               </div>
             )}
           </div>
@@ -255,14 +255,14 @@ function RequestCard({ item, bulkMode, selected, onToggle, onAction, loading, re
                   disabled={isLoading}
                   onClick={() => onAction('approve', rtype.toLowerCase(), r.id, empId)}>
             {isLoading ? <span className="spinner-border spinner-border-sm me-1"></span>
-                       : <i className="bi bi-check-lg me-1"></i>}
+                       : <i className="me-1" data-lucide="check"></i>}
             Approve
           </button>
           <button className="btn btn-danger btn-sm py-0 px-2"
                   disabled={isLoading}
                   onClick={() => onAction('reject', rtype.toLowerCase(), r.id, empId)}>
             {isLoading ? <span className="spinner-border spinner-border-sm me-1"></span>
-                       : <i className="bi bi-x-lg me-1"></i>}
+                       : <i className="me-1" data-lucide="x"></i>}
             Reject
           </button>
         </div>
@@ -387,9 +387,9 @@ function ApprovalsApp() {
       {/* Toast */}
       {toast && (
         <div className={`alert alert-${toast.type} fr-toast shadow`}>
-          {toast.type === 'success' && <i className="bi bi-check-circle me-2"></i>}
-          {toast.type === 'danger'  && <i className="bi bi-x-circle me-2"></i>}
-          {toast.type === 'warning' && <i className="bi bi-exclamation-triangle me-2"></i>}
+          {toast.type === 'success' && <i className="me-2" data-lucide="circle-check"></i>}
+          {toast.type === 'danger'  && <i className="me-2" data-lucide="circle-x"></i>}
+          {toast.type === 'warning' && <i className="me-2" data-lucide="triangle-alert"></i>}
           {toast.msg}
         </div>
       )}
@@ -400,7 +400,7 @@ function ApprovalsApp() {
         {total > 0 && (
           <button className={`btn btn-sm ${bulkMode ? 'btn-primary' : 'btn-outline-secondary'}`}
                   onClick={() => { setBulkMode(m => !m); setSelected(new Set()); }}>
-            <i className="bi bi-check2-square me-1"></i>Bulk Select
+            <i className="me-1" data-lucide="square-check"></i>Bulk Select
           </button>
         )}
         {bulkMode && (<>
@@ -408,10 +408,10 @@ function ApprovalsApp() {
             {selected.size === records.length ? 'Deselect All' : 'Select All'}
           </button>
           <button className="btn btn-sm btn-success" onClick={() => handleBulk('approve')}>
-            <i className="bi bi-check-lg me-1"></i>Approve Selected
+            <i className="me-1" data-lucide="check"></i>Approve Selected
           </button>
           <button className="btn btn-sm btn-danger" onClick={() => handleBulk('reject')}>
-            <i className="bi bi-x-lg me-1"></i>Reject Selected
+            <i className="me-1" data-lucide="x"></i>Reject Selected
           </button>
           <span className="text-muted small">{selected.size} selected</span>
         </>)}
@@ -419,7 +419,7 @@ function ApprovalsApp() {
 
       {total === 0 && (
         <div className="alert alert-success">
-          <i className="bi bi-check-circle me-2"></i>No pending file requests.
+          <i className="me-2" data-lucide="circle-check"></i>No pending file requests.
         </div>
       )}
 
@@ -427,7 +427,7 @@ function ApprovalsApp() {
       {tlKeys.map((tl, ti) => (
         <div key={tl}>
           <div className={`fr-tl-header${ti === 0 ? ' mt-0' : ''}`}>
-            <i className="bi bi-people-fill text-primary"></i>
+            <i className="text-primary" data-lucide="users"></i>
             <strong>{tl}</strong>
             <span className="badge bg-secondary ms-auto">{grouped[tl].length}</span>
           </div>

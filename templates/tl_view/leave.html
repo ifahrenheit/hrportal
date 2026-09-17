@@ -6,18 +6,18 @@
 {% if is_admin %}
   {% if tl_name %}
   <div class="alert alert-info py-2 px-3 mb-3 small">
-    <i class="bi bi-eye me-1"></i>
+    <i class="me-1" data-lucide="eye"></i>
     View-only. Showing leave filings for <strong>{{ tl_name }}</strong>'s team.
   </div>
   {% else %}
   <div class="alert alert-secondary py-2 px-3 mb-3 small">
-    <i class="bi bi-info-circle me-1"></i>
+    <i class="me-1" data-lucide="info"></i>
     Select a Team Lead below to view their team's leave filings.
   </div>
   {% endif %}
 {% else %}
 <div class="alert alert-info py-2 px-3 mb-3 small">
-  <i class="bi bi-eye me-1"></i>
+  <i class="me-1" data-lucide="eye"></i>
   View-only. Showing leave filings for <strong>{{ tl_name }}</strong>'s team.
 </div>
 {% endif %}
@@ -81,16 +81,16 @@
 
         <div class="col-12 d-flex gap-2">
           <button type="submit" class="btn btn-primary btn-sm">
-            <i class="bi bi-search me-1"></i>Apply
+            <i class="me-1" data-lucide="search"></i>Apply
           </button>
           <button type="button" class="btn btn-outline-secondary btn-sm" onclick="clearTlFilters()">
-            <i class="bi bi-x-circle me-1"></i>Clear
+            <i class="me-1" data-lucide="circle-x"></i>Clear
           </button>
           <span class="ms-auto text-muted small align-self-center">
             {{ records|length }} record{{ 's' if records|length != 1 }}
           </span>
           <button type="button" class="btn btn-outline-secondary btn-sm" onclick="copyTable()" title="Copy table to clipboard">
-            <i class="bi bi-clipboard me-1"></i>Copy Table
+            <i class="me-1" data-lucide="clipboard"></i>Copy Table
           </button>
         </div>
 
@@ -268,7 +268,7 @@ function copyTable() {
   navigator.clipboard.writeText(text).then(() => {
     const btn = document.querySelector('[onclick="copyTable()"]');
     const orig = btn.innerHTML;
-    btn.innerHTML = '<i class="bi bi-check-lg me-1"></i>Copied!';
+    btn.innerHTML = '<i class="me-1" data-lucide="check"></i>Copied!';
     btn.classList.add('btn-success');
     btn.classList.remove('btn-outline-secondary');
     setTimeout(() => {

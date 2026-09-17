@@ -12,7 +12,7 @@
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
 
           <div class="mb-4">
-            <h6 class="fw-semibold mb-3"><i class="bi bi-person me-2"></i>1. Requester Information</h6>
+            <h6 class="fw-semibold mb-3"><i class="me-2" data-lucide="user"></i>1. Requester Information</h6>
             <div class="mb-3">
               <label class="form-label small fw-semibold">Name</label>
               <input type="text" class="form-control form-control-sm" value="{{ user.name }}" disabled>
@@ -26,7 +26,7 @@
           </div>
 
           <div class="mb-4">
-            <h6 class="fw-semibold mb-3"><i class="bi bi-calendar-check me-2"></i>2. Date of Last Maintenance</h6>
+            <h6 class="fw-semibold mb-3"><i class="me-2" data-lucide="calendar-check"></i>2. Date of Last Maintenance</h6>
             <div class="mb-3">
               <label class="form-label small fw-semibold">If known (enter N/A if unknown) <span class="text-danger">*</span></label>
               <input type="text" name="last_maintenance" class="form-control form-control-sm"
@@ -36,7 +36,7 @@
           </div>
 
           <div class="mb-4">
-            <h6 class="fw-semibold mb-3"><i class="bi bi-exclamation-triangle me-2"></i>3. Issue Description</h6>
+            <h6 class="fw-semibold mb-3"><i class="me-2" data-lucide="triangle-alert"></i>3. Issue Description</h6>
             <div class="mb-3">
               <label class="form-label small fw-semibold">Nature of the Issue (please describe in detail) <span class="text-danger">*</span></label>
               <textarea name="issue_description" class="form-control form-control-sm" rows="4"
@@ -47,7 +47,7 @@
           <div class="d-flex gap-2 justify-content-end">
             <a href="{{ url_for('dashboard') }}" class="btn btn-secondary btn-sm">Cancel</a>
             <button type="submit" class="btn btn-primary btn-sm">
-              <i class="bi bi-send me-1"></i>Submit Request
+              <i class="me-1" data-lucide="send"></i>Submit Request
             </button>
           </div>
 

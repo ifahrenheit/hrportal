@@ -1,17 +1,17 @@
 {% extends "base.html" %}
 {% block title %}Onboarding{% endblock %}
-{% block page_title %}<i class="bi bi-person-plus-fill me-2" style="color:var(--accent)"></i>Employee Onboarding{% endblock %}
+{% block page_title %}<i class="me-2" data-lucide="user-plus" style="color:var(--accent)"></i>Employee Onboarding{% endblock %}
 
 {% block content %}
 <ul class="nav nav-tabs mb-4" id="onboardTabs">
   <li class="nav-item">
     <a class="nav-link active" id="tab-single" data-bs-toggle="tab" href="#singleTab">
-      <i class="bi bi-person-plus me-1"></i>Single
+      <i class="me-1" data-lucide="user-plus"></i>Single
     </a>
   </li>
   <li class="nav-item">
     <a class="nav-link" id="tab-bulk" data-bs-toggle="tab" href="#bulkTab">
-      <i class="bi bi-people me-1"></i>Bulk
+      <i class="me-1" data-lucide="users"></i>Bulk
     </a>
   </li>
 </ul>
@@ -23,7 +23,7 @@
   <div class="col-lg-6">
     <div class="card p-4">
       <h6 class="fw-semibold mb-4" style="font-family:Outfit,sans-serif;">
-        <i class="bi bi-person-vcard me-2" style="color:var(--accent)"></i>New Employee Details
+        <i class="me-2" data-lucide="contact" style="color:var(--accent)"></i>New Employee Details
       </h6>
 
       <div class="row g-3 mb-3">
@@ -117,14 +117,14 @@
       </div>
 
       <div class="alert alert-info py-2 px-3 mb-4 d-flex align-items-center gap-2" style="font-size:.83rem;">
-        <i class="bi bi-lock-fill"></i>
+        <i data-lucide="lock"></i>
         Default password for all accounts:
         <strong class="ms-1 font-monospace">***REMOVED***</strong>
         <span class="ms-1" style="color:var(--text-muted)">(temporary — must change on first login)</span>
       </div>
 
       <button class="btn btn-primary w-100" id="onboardBtn" onclick="runOnboarding()">
-        <i class="bi bi-play-fill me-1"></i>Create Employee Accounts
+        <i class="me-1" data-lucide="play"></i>Create Employee Accounts
       </button>
     </div>
   </div>
@@ -135,14 +135,14 @@
     <div class="card p-4" id="statusCard" style="display:none">
       <div class="d-flex justify-content-between align-items-center mb-3">
         <h6 class="fw-semibold mb-0" style="font-family:Outfit,sans-serif;">
-          <i class="bi bi-list-check me-2" style="color:var(--accent)"></i>Provisioning Status
+          <i class="me-2" data-lucide="list-check" style="color:var(--accent)"></i>Provisioning Status
         </h6>
         <span id="overallBadge" class="badge rounded-pill px-3" style="font-size:.78rem"></span>
       </div>
       <div id="empSummary" class="rounded-3 p-3 mb-3" style="background:var(--bg);border:1px solid var(--border);font-size:.83rem"></div>
       <div id="stepList"></div>
       <div class="alert alert-warning py-2 px-3 mt-3 mb-0" style="font-size:.82rem">
-        <i class="bi bi-hand-index-thumb-fill me-1"></i>
+        <i class="me-1" data-lucide="hand"></i>
         <strong>Manual steps:</strong> Biometrics (fingerprint enrollment on day 1) and Slack invite must be done manually.
       </div>
     </div>
@@ -150,7 +150,7 @@
     <div class="card p-4 d-flex align-items-center justify-content-center" id="placeholderCard"
          style="min-height:300px;border-style:dashed;border-color:var(--border);">
       <div class="text-center" style="color:var(--text-muted)">
-        <i class="bi bi-person-plus" style="font-size:2.5rem;opacity:.3"></i>
+        <i data-lucide="user-plus" style="font-size:2.5rem;opacity:.3"></i>
         <p class="mt-2 mb-0" style="font-size:.87rem">Provisioning results will appear here</p>
       </div>
     </div>
@@ -162,7 +162,7 @@
 <div class="card mt-4">
   <div class="card-body">
     <h6 class="fw-semibold mb-3" style="font-family:Outfit,sans-serif;">
-      <i class="bi bi-clock-history me-2" style="color:var(--accent)"></i>Recent Onboardings
+      <i class="me-2" data-lucide="clock-arrow-up" style="color:var(--accent)"></i>Recent Onboardings
     </h6>
     <div class="table-responsive">
       <table class="table table-hover mb-0">
@@ -190,7 +190,7 @@
     <div class="modal-content">
       <div class="modal-header">
         <h6 class="modal-title fw-semibold">
-          <i class="bi bi-list-check me-2"></i>Onboarding Tasks
+          <i class="me-2" data-lucide="list-check"></i>Onboarding Tasks
           <span id="taskModalName" class="text-muted fw-normal ms-1"></span>
         </h6>
         <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
@@ -210,17 +210,17 @@
 <div class="tab-pane fade" id="bulkTab">
   <div class="d-flex align-items-center gap-2 mb-3 flex-wrap">
     <button class="btn btn-sm btn-outline-secondary" onclick="addBulkRow()">
-      <i class="bi bi-plus-lg me-1"></i>Add Row
+      <i class="me-1" data-lucide="plus"></i>Add Row
     </button>
     <label class="btn btn-sm btn-outline-secondary mb-0">
-      <i class="bi bi-filetype-csv me-1"></i>Upload CSV
+      <i class="me-1" data-lucide="file-spreadsheet"></i>Upload CSV
       <input type="file" id="csvUpload" accept=".csv" style="display:none" onchange="parseCSV(this)">
     </label>
     <a href="#" onclick="downloadCSVTemplate(event)" class="btn btn-sm btn-outline-secondary">
-      <i class="bi bi-download me-1"></i>CSV Template
+      <i class="me-1" data-lucide="download"></i>CSV Template
     </a>
     <button class="btn btn-sm btn-danger ms-auto" onclick="clearBulkRows()">
-      <i class="bi bi-trash me-1"></i>Clear All
+      <i class="me-1" data-lucide="trash"></i>Clear All
     </button>
   </div>
 
@@ -284,13 +284,13 @@
   <div class="d-flex align-items-center gap-3 mb-4">
     <span class="text-muted small" id="bulkRowCount">0 rows</span>
     <button class="btn btn-primary ms-auto px-4" id="bulkOnboardBtn" onclick="runBulkOnboarding()">
-      <i class="bi bi-play-fill me-1"></i>Onboard All
+      <i class="me-1" data-lucide="play"></i>Onboard All
     </button>
   </div>
 
   <div id="bulkResultsPanel" style="display:none">
     <h6 class="fw-semibold mb-3">
-      <i class="bi bi-list-check me-2" style="color:var(--accent)"></i>Bulk Onboarding Results
+      <i class="me-2" data-lucide="list-check" style="color:var(--accent)"></i>Bulk Onboarding Results
     </h6>
     <div id="bulkResultsList"></div>
   </div>
@@ -301,17 +301,17 @@
 {% block scripts %}
 <script>
 const STEPS = [
-  { key: 'keycloak_created',          icon: 'bi-key-fill',         label: 'Keycloak SSO' },
-  { key: 'orangehrm_created',         icon: 'bi-people-fill',      label: 'OrangeHRM' },
-  { key: 'email_created',             icon: 'bi-envelope-fill',    label: 'Email Account' },
-  { key: 'dashboard_account_created', icon: 'bi-speedometer2',     label: 'Dashboard Login' },
-  { key: 'ad_created',                icon: 'bi-hdd-network-fill', label: 'Active Directory' },
-  { key: 'biometric_queued',          icon: 'bi-fingerprint',      label: 'Biometrics Queued' },
+  { key: 'keycloak_created',          icon: 'key',         label: 'Keycloak SSO' },
+  { key: 'orangehrm_created',         icon: 'users',      label: 'OrangeHRM' },
+  { key: 'email_created',             icon: 'mail',    label: 'Email Account' },
+  { key: 'dashboard_account_created', icon: 'gauge',     label: 'Dashboard Login' },
+  { key: 'ad_created',                icon: 'server', label: 'Active Directory' },
+  { key: 'biometric_queued',          icon: 'fingerprint-pattern',      label: 'Biometrics Queued' },
 ];
 const MANUAL = [
-  { icon: 'bi-fingerprint', label: 'Biometrics', note: 'Enroll fingerprints on day 1' },
+  { icon: 'fingerprint-pattern', label: 'Biometrics', note: 'Enroll fingerprints on day 1' },
 
-  { icon: 'bi-slack',       label: 'Slack',      note: 'Invite manually (free plan)' },
+  { icon: 'message-square',       label: 'Slack',      note: 'Invite manually (free plan)' },
 ];
 
 function validate() {
@@ -384,7 +384,7 @@ function loadingRows() {
   return STEPS.map(s => `
     <div class="d-flex align-items-center gap-3 py-2" style="border-bottom:1px solid var(--border)">
       <div class="spinner-border spinner-border-sm" style="color:var(--accent);flex-shrink:0"></div>
-      <i class="bi ${s.icon}" style="font-size:.95rem;color:var(--text-muted);flex-shrink:0"></i>
+      <i data-lucide="${s.icon}" style="font-size:.95rem;color:var(--text-muted);flex-shrink:0"></i>
       <span style="font-size:.87rem">${s.label}</span>
     </div>`).join('');
 }
@@ -402,9 +402,9 @@ function renderResults(data) {
       ? `<span style="font-size:.75rem;color:var(--text-muted);margin-left:auto">@${esc(data.ad_username)}</span>` : '';
     return `
     <div class="d-flex align-items-center gap-3 py-2" style="border-bottom:1px solid var(--border)">
-      <i class="bi ${ok ? 'bi-check-circle-fill' : 'bi-x-circle-fill'}"
+      <i data-lucide="${ok ? 'circle-check' : 'circle-x'}"
          style="font-size:1rem;color:${ok ? 'var(--success)' : 'var(--danger)'};flex-shrink:0"></i>
-      <i class="bi ${s.icon}" style="font-size:.95rem;color:var(--text-muted);flex-shrink:0"></i>
+      <i data-lucide="${s.icon}" style="font-size:.95rem;color:var(--text-muted);flex-shrink:0"></i>
       <span style="font-size:.87rem;flex:1">${s.label}</span>
       ${extra}
     </div>`;
@@ -413,8 +413,8 @@ function renderResults(data) {
   MANUAL.forEach(m => {
     html += `
     <div class="d-flex align-items-center gap-3 py-2" style="border-bottom:1px solid var(--border)">
-      <i class="bi bi-hand-index-thumb" style="font-size:1rem;color:var(--warning);flex-shrink:0"></i>
-      <i class="bi ${m.icon}" style="font-size:.95rem;color:var(--text-muted);flex-shrink:0"></i>
+      <i data-lucide="hand" style="font-size:1rem;color:var(--warning);flex-shrink:0"></i>
+      <i data-lucide="${m.icon}" style="font-size:.95rem;color:var(--text-muted);flex-shrink:0"></i>
       <span style="font-size:.87rem;flex:1">${m.label}</span>
       <span style="font-size:.75rem;color:var(--text-muted)">${m.note}</span>
     </div>`;
@@ -433,7 +433,7 @@ function renderResults(data) {
 
   const btn = document.getElementById('onboardBtn');
   btn.disabled = false;
-  btn.innerHTML = '<i class="bi bi-arrow-counterclockwise me-1"></i>Onboard Another';
+  btn.innerHTML = '<i class="me-1" data-lucide="refresh-ccw"></i>Onboard Another';
   btn.onclick = () => {
     ['employee_id','first_name','middle_name','last_name','suffix','email','birthdate','training_date',
      'operational_date','account','tl','group_name','batch'].forEach(id => {
@@ -441,7 +441,7 @@ function renderResults(data) {
     });
     document.getElementById('statusCard').style.display     = 'none';
     document.getElementById('placeholderCard').style.display = null;
-    btn.innerHTML = '<i class="bi bi-play-fill me-1"></i>Create Employee Accounts';
+    btn.innerHTML = '<i class="me-1" data-lucide="play"></i>Create Employee Accounts';
     btn.onclick   = runOnboarding;
   };
 
@@ -489,22 +489,22 @@ async function openTasks(employeeId, name) {
     const res = await fetch('/hrportal/api/onboarding-tasks/' + employeeId);
     const tasks = await res.json();
     const icons = {
-      'Keycloak Account Created': 'bi-key-fill',
-      'OrangeHRM Account Created': 'bi-people-fill',
-      'Email Created': 'bi-envelope-fill',
-      'Dashboard Access Granted': 'bi-speedometer2',
-      'AD Account Created': 'bi-hdd-network-fill',
-      'Biometrics Registered': 'bi-fingerprint',
-      'Slack Account Created': 'bi-slack',
+      'Keycloak Account Created': 'key',
+      'OrangeHRM Account Created': 'users',
+      'Email Created': 'mail',
+      'Dashboard Access Granted': 'gauge',
+      'AD Account Created': 'server',
+      'Biometrics Registered': 'fingerprint-pattern',
+      'Slack Account Created': 'message-square',
     };
     const rows = tasks.map(t => {
       const done = t.status === 'Completed';
-      const icon = icons[t.task_name] || 'bi-check2-circle';
+      const icon = icons[t.task_name] || 'circle-check';
       const btn = done
         ? '<span class="badge bg-success">Done</span>'
         : '<button class="btn btn-sm btn-outline-primary py-0 px-2" onclick="completeTask(' + t.id + ',\'' + esc(employeeId) + '\',\'' + esc(name) + '\')">Mark Done</button>';
       return '<div class="d-flex align-items-center gap-3 py-2 border-bottom">'
-        + '<i class="bi ' + icon + ' fs-5 ' + (done?'text-success':'text-muted') + '"></i>'
+        + '<i class="fs-5 ' + (done?'text-success':'text-muted') + '" data-lucide="' + icon + '"></i>'
         + '<div class="flex-grow-1">'
         + '<div class="fw-semibold" style="font-size:.88rem">' + esc(t.task_name) + '</div>'
         + (t.completed_by ? '<div class="text-muted" style="font-size:.75rem">By ' + esc(t.completed_by) + '</div>' : '')
@@ -535,7 +535,7 @@ function noRows(cols, msg) {
 }
 function resetBtn(btn) {
   btn.disabled  = false;
-  btn.innerHTML = '<i class="bi bi-play-fill me-1"></i>Create Employee Accounts';
+  btn.innerHTML = '<i class="me-1" data-lucide="play"></i>Create Employee Accounts';
 }
 function esc(s) {
   if (!s) return '';
@@ -545,8 +545,9 @@ function toast(msg, type) {
   const t = document.createElement('div');
   t.className = `alert alert-${type} position-fixed shadow`;
   t.style.cssText = 'top:1.25rem;right:1.25rem;z-index:9999;min-width:300px;font-size:.87rem';
-  t.innerHTML = `<i class="bi bi-${type==='success'?'check-circle-fill':'exclamation-triangle-fill'} me-2"></i>${esc(msg)}`;
+  t.innerHTML = `<i class="me-2" data-lucide="${type==='success'?'circle-check':'triangle-alert'}"></i>${esc(msg)}`;
   document.body.appendChild(t);
+  if (window.lucide) lucide.createIcons();
   setTimeout(() => t.remove(), 4500);
 }
 
@@ -586,7 +587,7 @@ function addBulkRow(data={}) {
         <option value="BOTH" ${data.ad_target==='BOTH'?'selected':''}>BOTH</option>
       </select>
     </td>
-    <td><button class="btn btn-sm btn-outline-danger py-0 px-1" onclick="removeBulkRow(${id})"><i class="bi bi-x"></i></button></td>
+    <td><button class="btn btn-sm btn-outline-danger py-0 px-1" onclick="removeBulkRow(${id})"><i data-lucide="x"></i></button></td>
   `;
   document.getElementById('bulkTbody').appendChild(tr);
   updateBulkRowCount();
@@ -710,7 +711,7 @@ async function runBulkOnboarding() {
           `<span class="badge me-1 ${ok ? 'bg-success' : 'bg-warning text-dark'}" style="font-size:.68rem">${label}</span>`
         ).join('');
         resEl.innerHTML = `
-          <i class="bi bi-check-circle-fill text-success fs-5"></i>
+          <i class="text-success fs-5" data-lucide="circle-check"></i>
           <div class="flex-grow-1">
             <span class="fw-semibold" style="font-size:.87rem">${esc(r.name||'')}</span>
             <span class="text-muted ms-2" style="font-size:.78rem">${esc(r.employee_id)}</span>
@@ -721,7 +722,7 @@ async function runBulkOnboarding() {
       } else {
         failCount++;
         resEl.innerHTML = `
-          <i class="bi bi-x-circle-fill text-danger fs-5"></i>
+          <i class="text-danger fs-5" data-lucide="circle-x"></i>
           <div class="flex-grow-1">
             <span class="fw-semibold" style="font-size:.87rem">${esc(r.name||'')}</span>
             <span class="text-muted ms-2" style="font-size:.78rem">${esc(r.employee_id)}</span>
@@ -733,13 +734,13 @@ async function runBulkOnboarding() {
   } catch(e) {
     rows.forEach((r, i) => {
       const resEl = document.getElementById('bulkres_' + i);
-      if (resEl) resEl.innerHTML = `<i class="bi bi-x-circle-fill text-danger fs-5"></i><div class="flex-grow-1"><span class="fw-semibold">${esc(r.schedule_name)}</span><div class="text-danger" style="font-size:.78rem">${esc(String(e))}</div></div><span class="text-danger small fw-semibold">Failed</span>`;
+      if (resEl) resEl.innerHTML = `<i class="text-danger fs-5" data-lucide="circle-x"></i><div class="flex-grow-1"><span class="fw-semibold">${esc(r.schedule_name)}</span><div class="text-danger" style="font-size:.78rem">${esc(String(e))}</div></div><span class="text-danger small fw-semibold">Failed</span>`;
       failCount++;
     });
   }
 
   btn.disabled = false;
-  btn.innerHTML = `<i class="bi bi-play-fill me-1"></i>Onboard All`;
+  btn.innerHTML = `<i class="me-1" data-lucide="play"></i>Onboard All`;
   loadRecent();
 
   // Summary toast

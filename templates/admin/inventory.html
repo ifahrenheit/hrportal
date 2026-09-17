@@ -4,11 +4,11 @@
 {% block content %}
 
 <ul class="nav nav-tabs mb-4" id="invTabs">
-  <li class="nav-item"><a class="nav-link active" data-bs-toggle="tab" href="#tab-items"><i class="bi bi-box-seam me-1"></i>Items</a></li>
-  <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tab-transactions"><i class="bi bi-clock-history me-1"></i>Transactions</a></li>
-  <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tab-upload"><i class="bi bi-upload me-1"></i>Upload</a></li>
-  <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tab-special"><i class="bi bi-star me-1"></i>Special Items</a></li>
-  <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tab-medicine"><i class="bi bi-capsule me-1"></i>Medicine</a></li>
+  <li class="nav-item"><a class="nav-link active" data-bs-toggle="tab" href="#tab-items"><i class="me-1" data-lucide="package"></i>Items</a></li>
+  <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tab-transactions"><i class="me-1" data-lucide="clock-arrow-up"></i>Transactions</a></li>
+  <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tab-upload"><i class="me-1" data-lucide="upload"></i>Upload</a></li>
+  <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tab-special"><i class="me-1" data-lucide="star"></i>Special Items</a></li>
+  <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tab-medicine"><i class="me-1" data-lucide="pill"></i>Medicine</a></li>
 </ul>
 
 <div class="tab-content">
@@ -34,10 +34,10 @@
       </div>
       <div class="col-md-4 text-end">
         <a href="{{ url_for('inventory_pdf') }}" class="btn btn-outline-danger me-2">
-          <i class="bi bi-file-earmark-pdf me-1"></i>Export PDF
+          <i class="me-1" data-lucide="file-text"></i>Export PDF
         </a>
         <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addItemModal">
-          <i class="bi bi-plus-lg me-1"></i>Add Item
+          <i class="me-1" data-lucide="plus"></i>Add Item
         </button>
       </div>
     </div>
@@ -51,10 +51,10 @@
           <thead class="table-light">
             <tr>
               <th onclick="sortTable(0)" style="cursor:pointer;user-select:none;">
-                Category <span id="sort-arrow-0">⇅</span>
+                Category <i id="sort-arrow-0" data-lucide="arrow-up-down"></i>
               </th>
               <th onclick="sortTable(1)" style="cursor:pointer;user-select:none;">
-                Item Name <span id="sort-arrow-1">⇅</span>
+                Item Name <i id="sort-arrow-1" data-lucide="arrow-up-down"></i>
               </th>
               <th>Description</th>
               <th class="text-center">Stock</th><th class="text-center">Min Alert</th>
@@ -92,17 +92,17 @@
                 <div class="d-flex gap-1">
                   <button class="btn btn-sm btn-outline-primary py-0 px-2"
                           onclick="openAdjust({{ item.id }}, '{{ item.item_name|e }}', {{ item.current_stock }})">
-                    <i class="bi bi-arrows-collapse"></i>
+                    <i data-lucide="chevrons-down-up"></i>
                   </button>
                   <button class="btn btn-sm btn-outline-secondary py-0 px-2"
                           onclick="openEdit({{ item.id }})">
-                    <i class="bi bi-pencil"></i>
+                    <i data-lucide="pencil"></i>
                   </button>
                   <form method="POST" onsubmit="return confirm('Deactivate this item?');">
                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                     <input type="hidden" name="action" value="deactivate">
                     <input type="hidden" name="item_id" value="{{ item.id }}">
-                    <button class="btn btn-sm btn-outline-danger py-0 px-2"><i class="bi bi-trash"></i></button>
+                    <button class="btn btn-sm btn-outline-danger py-0 px-2"><i data-lucide="trash"></i></button>
                   </form>
                 </div>
               </td>
@@ -153,7 +153,7 @@
     <div class="row g-4">
       <div class="col-md-6">
         <div class="card p-4">
-          <h6 class="fw-semibold mb-3"><i class="bi bi-file-earmark-excel me-1 text-success"></i>Upload Excel File</h6>
+          <h6 class="fw-semibold mb-3"><i class="me-1 text-success" data-lucide="file-spreadsheet"></i>Upload Excel File</h6>
           <p class="small text-muted mb-3">Upload an .xlsx file with columns in this order:</p>
           <div class="table-responsive mb-3">
             <table class="table table-sm table-bordered small mb-0">
@@ -176,22 +176,22 @@
             <input type="hidden" name="action" value="upload_excel">
             <input type="file" name="excel_file" class="form-control mb-3" accept=".xlsx" required>
             <button type="submit" class="btn btn-success w-100">
-              <i class="bi bi-upload me-1"></i>Upload & Import
+              <i class="me-1" data-lucide="upload"></i>Upload & Import
             </button>
           </form>
           <div class="mt-3">
             <a href="{{ url_for('admin_inventory') }}?export_template=1" class="btn btn-outline-secondary btn-sm w-100">
-              <i class="bi bi-download me-1"></i>Download Template
+              <i class="me-1" data-lucide="download"></i>Download Template
             </a>
           </div>
         </div>
       </div>
       <div class="col-md-6">
         <div class="card p-4">
-          <h6 class="fw-semibold mb-3"><i class="bi bi-google me-1 text-primary"></i>Google Sheets Sync</h6>
+          <h6 class="fw-semibold mb-3"><i class="me-1 text-primary" data-lucide="file-spreadsheet"></i>Google Sheets Sync</h6>
           <p class="small text-muted">Coming soon — sync inventory directly from a Google Sheet.</p>
           <div class="alert alert-info small">
-            <i class="bi bi-info-circle me-1"></i>
+            <i class="me-1" data-lucide="info"></i>
             This will work similarly to the employee sync. Paste your Google Sheet ID and columns will be mapped automatically.
           </div>
         </div>
@@ -204,7 +204,7 @@
       <span class="text-muted small">Medicine inventory — released directly by admin after SOM recommendation</span>
       <button class="btn btn-primary btn-sm" data-bs-toggle="modal" data-bs-target="#addItemModal"
               onclick="document.querySelector('#addItemModal select[name=category]').value='Medicine'">
-        <i class="bi bi-plus-lg me-1"></i>Add Medicine Item
+        <i class="me-1" data-lucide="plus"></i>Add Medicine Item
       </button>
     <p style="color:red;font-size:18px;">MEDICINE TAB IS RENDERING</p>
     {% set med_items = medicine_items|default([]) %}
@@ -245,7 +245,7 @@
               <td>
                 <button class="btn btn-sm btn-outline-primary py-0 px-2"
                         onclick="openAdjust({{ item.id }}, '{{ item.item_name|e }}', {{ item.current_stock }})">
-                  <i class="bi bi-arrows-collapse"></i>
+                  <i data-lucide="chevrons-down-up"></i>
                 </button>
               </td>
             </tr>
@@ -296,7 +296,7 @@
               <td>
                 <button class="btn btn-sm btn-outline-primary py-0 px-2"
                         onclick="openAdjust({{ item.id }}, '{{ item.item_name|e }}', {{ item.current_stock }})">
-                  <i class="bi bi-arrows-collapse"></i>
+                  <i data-lucide="chevrons-down-up"></i>
                 </button>
               </td>
             </tr>
@@ -316,7 +316,7 @@
     <div class="d-flex justify-content-between align-items-center mb-3">
       <span class="text-muted small">Items eligible for free request (2yr+ tenure, once per 2 years)</span>
       <button class="btn btn-primary btn-sm" data-bs-toggle="modal" data-bs-target="#addSpecialModal">
-        <i class="bi bi-plus-lg me-1"></i>Add Special Item
+        <i class="me-1" data-lucide="plus"></i>Add Special Item
       </button>
     </div>
     <div class="card">
@@ -348,13 +348,13 @@
                 <div class="d-flex gap-1">
                   <button class="btn btn-sm btn-outline-secondary py-0 px-2"
                           onclick="openEditSpecial({{ s.id }}, '{{ s.name|e }}', {{ s.price }}, '{{ s.description|e if s.description else '' }}')">
-                    <i class="bi bi-pencil"></i>
+                    <i data-lucide="pencil"></i>
                   </button>
                   <form method="POST" onsubmit="return confirm('Remove this special item?');">
                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                     <input type="hidden" name="action" value="delete_special">
                     <input type="hidden" name="special_id" value="{{ s.id }}">
-                    <button class="btn btn-sm btn-outline-danger py-0 px-2"><i class="bi bi-trash"></i></button>
+                    <button class="btn btn-sm btn-outline-danger py-0 px-2"><i data-lucide="trash"></i></button>
                   </form>
                 </div>
               </td>
@@ -653,11 +653,11 @@
                 <div class="d-flex gap-1">
                   <button class="btn btn-sm btn-outline-primary py-0 px-2"
                           onclick="openAdjust({{ item.id }}, '{{ item.item_name|e }}', {{ item.current_stock }})">
-                    <i class="bi bi-arrows-collapse"></i>
+                    <i data-lucide="chevrons-down-up"></i>
                   </button>
                   <button class="btn btn-sm btn-outline-secondary py-0 px-2 edit-btn"
                           data-item="{{ item | tojson | e }}">
-                    <i class="bi bi-pencil"></i>
+                    <i data-lucide="pencil"></i>
                   </button>
                 </div>
               </td>
@@ -722,9 +722,10 @@ function sortTable(col) {
     return aText.localeCompare(bText) * dir;
   });
   rows.forEach(r => tbody.appendChild(r));
-  document.getElementById('sort-arrow-0').textContent = '⇅';
-  document.getElementById('sort-arrow-1').textContent = '⇅';
-  document.getElementById('sort-arrow-' + col).textContent = dir === 1 ? '↑' : '↓';
+  document.getElementById('sort-arrow-0').setAttribute('data-lucide', 'arrow-up-down');
+  document.getElementById('sort-arrow-1').setAttribute('data-lucide', 'arrow-up-down');
+  document.getElementById('sort-arrow-' + col).setAttribute('data-lucide', dir === 1 ? 'arrow-up' : 'arrow-down');
+  if (window.lucide) lucide.createIcons();
   sortDir[col] = dir * -1;
 }
 </script>

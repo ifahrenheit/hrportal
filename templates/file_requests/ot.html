@@ -4,7 +4,7 @@
 {% block content %}
 
 <div class="mb-3">
-  <a href="{{ url_for('file_requests_hub') }}" class="btn btn-sm btn-outline-secondary">← Back to File Requests</a>
+  <a href="{{ url_for('file_requests_hub') }}" class="btn btn-sm btn-outline-secondary"><i data-lucide="arrow-left" style="width:1em;height:1em;vertical-align:-2px;"></i> Back to File Requests</a>
 </div>
 
 {% if message %}
@@ -119,7 +119,7 @@
         <div class="col-12" id="ticketSection" style="display:none;">
           <hr class="my-2">
           <div class="d-flex align-items-center gap-2 mb-2">
-            <i class="bi bi-ticket-perforated-fill text-warning"></i>
+            <i class="text-warning" data-lucide="ticket"></i>
             <h6 class="fw-bold mb-0">Ticket Numbers</h6>
           </div>
           <label class="form-label">

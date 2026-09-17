@@ -549,5 +549,351 @@ class TestTemplateSyntax(unittest.TestCase):
         appmod.app.jinja_env.get_template('admin/attendance_grid.html')
 
 
+# ──────────────────────────────────────────────────────────────────
+# Step 3c: SUS (suspension) exclusion
+#
+# central_db.absence_records WHERE code = 'SUS' fully explains an
+# otherwise-AWOL scheduled absence -- excluded from BOTH awol_records and
+# the unverified (NULL-personid) list. Fixture rows for this table mimic
+# what the mocked cursor hands back for:
+#     SELECT employee_id, DATE_FORMAT(absence_date, '%%Y-%%m-%%d') AS d
+#     FROM absence_records WHERE code = 'SUS' ...
+# i.e. already-formatted {'employee_id': ..., 'd': 'YYYY-MM-DD'} rows,
+# since RoutingCursor doesn't actually evaluate DATE_FORMAT() -- it just
+# routes whatever rows are given in table_rows['absence_records'] back
+# verbatim, same as every other fixture table in this file.
+# ──────────────────────────────────────────────────────────────────
+class TestAwolSusExclusion(unittest.TestCase):
+
+    def setUp(self):
+        self.client = app.test_client()
+        with self.client.session_transaction() as sess:
+            admin_session(sess, is_admin=True)
+
+    def _get(self, date_from, date_to, table_rows):
+        cursor_log = []
+        with patch.object(appmod, 'get_central_db', make_db_factory(table_rows, cursor_log)), \
+             patch.object(appmod, 'get_db', make_db_factory(table_rows, cursor_log)):
+            resp = self.client.get('/admin/awol-report',
+                                    query_string={'date_from': str(date_from), 'date_to': str(date_to)})
+        return resp, cursor_log
+
+    def test_sus_on_matching_date_excludes_from_awol_records(self):
+        d = date(2026, 9, 1)
+        scheduled = [{
+            'employee_id': 'EMP-SUS', 'schedule_name': 'Suspended Employee', 'tl': 'TL1',
+            'group_name': 'Group A', 'shift_time': '7am-4pm', 'absent_date': d, 'personid': 301,
+        }]
+        sus_rows = [{'employee_id': 'EMP-SUS', 'd': '2026-09-01'}]
+        table_rows = {'employee_schedules': scheduled, 'dailytimerecordsfiltered': [],
+                       'ot_requests': [], 'leave4day_requests': [], 'absence_records': sus_rows,
+                       'incident_reports': []}
+        resp, _ = self._get(d, d, table_rows)
+        self.assertEqual(resp.status_code, 200)
+        html = resp.data.decode()
+        self.assertNotIn('Suspended Employee', html)
+        self.assertIn('No AWOL occurrences', html)
+        self.assertNotIn('could not be verified', html)
+
+    def test_sus_on_different_date_does_not_exclude(self):
+        d = date(2026, 9, 1)
+        other_day = date(2026, 9, 2)
+        scheduled = [{
+            'employee_id': 'EMP-SUS2', 'schedule_name': 'Not Suspended Today', 'tl': 'TL1',
+            'group_name': 'Group A', 'shift_time': '7am-4pm', 'absent_date': d, 'personid': 302,
+        }]
+        # SUS record exists for this employee but on a DIFFERENT date -- must
+        # not clear the AWOL flag for `d`.
+        sus_rows = [{'employee_id': 'EMP-SUS2', 'd': str(other_day)}]
+        table_rows = {'employee_schedules': scheduled, 'dailytimerecordsfiltered': [],
+                       'ot_requests': [], 'leave4day_requests': [], 'absence_records': sus_rows,
+                       'incident_reports': []}
+        resp, _ = self._get(d, d, table_rows)
+        self.assertEqual(resp.status_code, 200)
+        html = resp.data.decode()
+        self.assertIn('Not Suspended Today', html)
+        self.assertIn('AWOL: <strong>1</strong>', html)
+
+    def test_sus_excludes_unverified_null_personid_path_too(self):
+        # Same exclusion must apply on the NULL-personid (Unverified) branch:
+        # a suspended employee with no personid mapping should appear in
+        # NEITHER awol_records NOR unverified.
+        d = date(2026, 9, 1)
+        scheduled = [{
+            'employee_id': 'EMP-SUS-NULLPID', 'schedule_name': 'Suspended Unverifiable', 'tl': 'TL1',
+            'group_name': 'Group A', 'shift_time': '9am-6pm', 'absent_date': d, 'personid': None,
+        }]
+        sus_rows = [{'employee_id': 'EMP-SUS-NULLPID', 'd': '2026-09-01'}]
+        table_rows = {'employee_schedules': scheduled, 'dailytimerecordsfiltered': [],
+                       'ot_requests': [], 'leave4day_requests': [], 'absence_records': sus_rows,
+                       'incident_reports': []}
+        resp, _ = self._get(d, d, table_rows)
+        self.assertEqual(resp.status_code, 200)
+        html = resp.data.decode()
+        self.assertNotIn('Suspended Unverifiable', html)
+        self.assertNotIn('could not be verified', html)
+        self.assertIn('No AWOL occurrences found', html)
+
+    def test_sus_excluded_from_both_awol_and_unverified_mixed_batch(self):
+        # Belt-and-suspenders: one AWOL-bound employee and one
+        # unverified-bound employee, BOTH suspended on the exact date,
+        # alongside a third (unrelated) employee who should still surface
+        # as AWOL normally. Confirms the exclusion doesn't over-fire.
+        d = date(2026, 9, 1)
+        scheduled = [
+            {'employee_id': 'EMP-SUS-A', 'schedule_name': 'Suspended AWOL Candidate', 'tl': 'TL1',
+             'group_name': 'Group A', 'shift_time': '7am-4pm', 'absent_date': d, 'personid': 303},
+            {'employee_id': 'EMP-SUS-B', 'schedule_name': 'Suspended Null Personid', 'tl': 'TL1',
+             'group_name': 'Group A', 'shift_time': '7am-4pm', 'absent_date': d, 'personid': None},
+            {'employee_id': 'EMP-SUS-C', 'schedule_name': 'Ordinary No Show', 'tl': 'TL1',
+             'group_name': 'Group A', 'shift_time': '7am-4pm', 'absent_date': d, 'personid': 304},
+        ]
+        sus_rows = [
+            {'employee_id': 'EMP-SUS-A', 'd': '2026-09-01'},
+            {'employee_id': 'EMP-SUS-B', 'd': '2026-09-01'},
+        ]
+        table_rows = {'employee_schedules': scheduled, 'dailytimerecordsfiltered': [],
+                       'ot_requests': [], 'leave4day_requests': [], 'absence_records': sus_rows,
+                       'incident_reports': []}
+        resp, _ = self._get(d, d, table_rows)
+        self.assertEqual(resp.status_code, 200)
+        html = resp.data.decode()
+        self.assertNotIn('Suspended AWOL Candidate', html)
+        self.assertNotIn('Suspended Null Personid', html)
+        self.assertIn('Ordinary No Show', html)
+        self.assertIn('AWOL: <strong>1</strong>', html)
+
+    def test_sus_lookup_matches_attendance_grid_definition(self):
+        # The user explicitly asked for this to reuse Attendance Grid's
+        # existing SUS handling -- static cross-check that both routes
+        # query the same table/column/code combination.
+        import inspect
+        awol_src = inspect.getsource(appmod.admin_awol_report)
+        grid_src = inspect.getsource(appmod.admin_attendance_grid)
+        for snippet in ("FROM absence_records", "code = 'SUS'",
+                         "employee_id IS NOT NULL", "absence_date IS NOT NULL"):
+            self.assertIn(snippet, awol_src, f'AWOL report missing SUS snippet: {snippet!r}')
+            self.assertIn(snippet, grid_src, f'Attendance Grid missing SUS snippet: {snippet!r}')
+        # AWOL report's version takes date-range params (has %s placeholders
+        # and therefore needs the doubled %%Y-%%m-%%d); Attendance Grid's
+        # older version has no params for this query, hence single %Y.
+        self.assertIn("DATE_FORMAT(absence_date, '%%Y-%%m-%%d')", awol_src)
+        self.assertIn("DATE_FORMAT(absence_date, '%Y-%m-%d')", grid_src)
+
+
+# ──────────────────────────────────────────────────────────────────
+# Step 6: Incident Report (IR) linking
+# ──────────────────────────────────────────────────────────────────
+class TestAwolIrLinking(unittest.TestCase):
+
+    def setUp(self):
+        self.client = app.test_client()
+        with self.client.session_transaction() as sess:
+            admin_session(sess, is_admin=True)
+
+    def _get(self, date_from, date_to, table_rows):
+        cursor_log = []
+        with patch.object(appmod, 'get_central_db', make_db_factory(table_rows, cursor_log)), \
+             patch.object(appmod, 'get_db', make_db_factory(table_rows, cursor_log)):
+            resp = self.client.get('/admin/awol-report',
+                                    query_string={'date_from': str(date_from), 'date_to': str(date_to)})
+        return resp, cursor_log
+
+    def test_matching_ir_renders_link_with_report_number(self):
+        d = date(2026, 9, 1)
+        scheduled = [{
+            'employee_id': 'EMP-IR1', 'schedule_name': 'Incident Reported Employee', 'tl': 'TL1',
+            'group_name': 'Group A', 'shift_time': '7am-4pm', 'absent_date': d, 'personid': 401,
+        }]
+        ir_rows = [{'employee_id': 'EMP-IR1', 'incident_date': d, 'report_number': 'IR-2026-0001'}]
+        table_rows = {'employee_schedules': scheduled, 'dailytimerecordsfiltered': [],
+                       'ot_requests': [], 'leave4day_requests': [], 'absence_records': [],
+                       'incident_reports': ir_rows}
+        resp, _ = self._get(d, d, table_rows)
+        self.assertEqual(resp.status_code, 200)
+        html = resp.data.decode()
+        self.assertIn('Incident Reported Employee', html)
+        self.assertIn('AWOL: <strong>1</strong>', html)
+        self.assertIn('IR-2026-0001', html)
+        # Blueprint is registered with url_prefix='/incident-reports' and
+        # view_report(report_number) takes the raw report number as the
+        # last path segment -- see app.py's
+        # `app.register_blueprint(ir_bp, url_prefix='/incident-reports')`
+        # and modules/incident_reports.py's `@ir_bp.route('/<report_number>')`.
+        self.assertIn('href="/incident-reports/IR-2026-0001"', html)
+
+    def test_no_matching_ir_renders_dash_not_broken_link(self):
+        d = date(2026, 9, 1)
+        scheduled = [{
+            'employee_id': 'EMP-IR2', 'schedule_name': 'No Incident Employee', 'tl': 'TL1',
+            'group_name': 'Group A', 'shift_time': '7am-4pm', 'absent_date': d, 'personid': 402,
+        }]
+        table_rows = {'employee_schedules': scheduled, 'dailytimerecordsfiltered': [],
+                       'ot_requests': [], 'leave4day_requests': [], 'absence_records': [],
+                       'incident_reports': []}
+        resp, _ = self._get(d, d, table_rows)
+        self.assertEqual(resp.status_code, 200)
+        html = resp.data.decode()
+        self.assertIn('No Incident Employee', html)
+        # The base template's own sidebar nav legitimately links to
+        # /incident-reports/, /incident-reports/new, and reuses the
+        # file-text lucide icon elsewhere (e.g. "Employee Memos"), so assert
+        # against the specific markup the awol_report.html template emits
+        # for a populated IR cell -- `url_for('incident_reports.view_report',
+        # report_number=...)` always resolves to "/incident-reports/<id>",
+        # so this substring can only appear from that one Jinja branch.
+        self.assertNotIn('href="/incident-reports/IR-', html,
+                          'no IR report link should render when there is no matching report')
+        self.assertIn('—', html)  # dash placeholder for the empty IR cell
+
+    def test_ir_on_different_date_does_not_match(self):
+        # An IR filed for the same employee but a different incident_date
+        # must not be picked up for this AWOL row.
+        d = date(2026, 9, 1)
+        other_day = date(2026, 9, 5)
+        scheduled = [{
+            'employee_id': 'EMP-IR3', 'schedule_name': 'Wrong Date IR Employee', 'tl': 'TL1',
+            'group_name': 'Group A', 'shift_time': '7am-4pm', 'absent_date': d, 'personid': 403,
+        }]
+        ir_rows = [{'employee_id': 'EMP-IR3', 'incident_date': other_day, 'report_number': 'IR-2026-0002'}]
+        table_rows = {'employee_schedules': scheduled, 'dailytimerecordsfiltered': [],
+                       'ot_requests': [], 'leave4day_requests': [], 'absence_records': [],
+                       'incident_reports': ir_rows}
+        resp, _ = self._get(d, d, table_rows)
+        self.assertEqual(resp.status_code, 200)
+        html = resp.data.decode()
+        self.assertIn('Wrong Date IR Employee', html)
+        self.assertNotIn('IR-2026-0002', html)
+
+    def test_multiple_ir_same_employee_and_date_most_recent_created_wins(self):
+        # Real SQL orders `ORDER BY created_at DESC, id DESC`, so the fixture
+        # here lists rows already in that DESC order (RoutingCursor doesn't
+        # itself evaluate ORDER BY -- it just hands back table_rows in the
+        # order given, mirroring what the DB would already have sorted).
+        # ir_map.setdefault() means the FIRST row seen for a given key wins,
+        # so putting the most-recently-created row first is what makes it
+        # the one that's kept.
+        d = date(2026, 9, 1)
+        scheduled = [{
+            'employee_id': 'EMP-IR4', 'schedule_name': 'Multiple IR Employee', 'tl': 'TL1',
+            'group_name': 'Group A', 'shift_time': '7am-4pm', 'absent_date': d, 'personid': 404,
+        }]
+        ir_rows = [
+            # Most recently created (DESC order puts this first) -- must win.
+            {'employee_id': 'EMP-IR4', 'incident_date': d, 'report_number': 'IR-2026-NEWEST'},
+            {'employee_id': 'EMP-IR4', 'incident_date': d, 'report_number': 'IR-2026-OLDER'},
+        ]
+        table_rows = {'employee_schedules': scheduled, 'dailytimerecordsfiltered': [],
+                       'ot_requests': [], 'leave4day_requests': [], 'absence_records': [],
+                       'incident_reports': ir_rows}
+        resp, _ = self._get(d, d, table_rows)
+        self.assertEqual(resp.status_code, 200)
+        html = resp.data.decode()
+        self.assertIn('IR-2026-NEWEST', html)
+        self.assertNotIn('IR-2026-OLDER', html)
+
+    def test_ir_query_only_runs_when_emp_ids_nonempty(self):
+        # No AWOL/unverified candidates at all (empty scheduled) -> emp_ids
+        # is empty -> Step 6 IR query must never execute. Assert via the
+        # same "should not be called" pattern the access-control tests use,
+        # but at the cursor level: no query text should ever mention
+        # incident_reports.
+        d = date(2026, 9, 1)
+        table_rows = {'employee_schedules': [], 'dailytimerecordsfiltered': [],
+                       'ot_requests': [], 'leave4day_requests': [], 'absence_records': [],
+                       'incident_reports': []}
+        resp, cursor_log = self._get(d, d, table_rows)
+        self.assertEqual(resp.status_code, 200)
+        for cur in cursor_log:
+            if cur.last_query:
+                self.assertNotIn('incident_reports', cur.last_query.lower())
+
+
+# ──────────────────────────────────────────────────────────────────
+# SQL parameter safety for the two new Step 3c / Step 6 queries
+# ──────────────────────────────────────────────────────────────────
+class TestAwolSusAndIrSqlSafety(unittest.TestCase):
+
+    def setUp(self):
+        self.client = app.test_client()
+        with self.client.session_transaction() as sess:
+            admin_session(sess, is_admin=True)
+
+    def test_sus_and_ir_queries_use_placeholders_not_interpolated_dates(self):
+        d_from, d_to = date(2026, 9, 1), date(2026, 9, 3)
+        scheduled = [{
+            'employee_id': 'EMP-SAFE1', 'schedule_name': 'SQL Safety Employee 2', 'tl': 'TL1',
+            'group_name': 'Group A', 'shift_time': '7am-4pm', 'absent_date': d_from, 'personid': 501,
+        }]
+        # SUS row deliberately does NOT match d_from -- this test wants the
+        # SUS query to execute (to inspect its SQL text/params) without
+        # actually excluding EMP-SAFE1, so it stays an AWOL record and the
+        # Step 6 IR query still has an emp_id to look up.
+        sus_rows = [{'employee_id': 'EMP-SAFE1', 'd': str(d_to + timedelta(days=30))}]
+        ir_rows = [{'employee_id': 'EMP-SAFE1', 'incident_date': d_from, 'report_number': 'IR-SAFE-1'}]
+        table_rows = {'employee_schedules': scheduled, 'dailytimerecordsfiltered': [],
+                       'ot_requests': [], 'leave4day_requests': [], 'absence_records': sus_rows,
+                       'incident_reports': ir_rows}
+        cursor_log = []
+        with patch.object(appmod, 'get_central_db', make_db_factory(table_rows, cursor_log)), \
+             patch.object(appmod, 'get_db', make_db_factory(table_rows, cursor_log)):
+            resp = self.client.get('/admin/awol-report',
+                                    query_string={'date_from': str(d_from), 'date_to': str(d_to)})
+        self.assertEqual(resp.status_code, 200)
+
+        saw_sus_query = False
+        saw_ir_query = False
+        for cur in cursor_log:
+            query, params = cur.last_query, cur.last_params
+            if query is None:
+                continue
+            self.assertNotIn(str(d_from), query,
+                              'date value must not be string-interpolated into the SQL text')
+            self.assertNotIn(str(d_to), query,
+                              'date value must not be string-interpolated into the SQL text')
+            qlow = query.lower()
+            if 'absence_records' in qlow:
+                saw_sus_query = True
+                # %%Y-%%m-%%d must survive intact -- the mock cursor's
+                # execute() never performs PyMySQL's %-substitution itself,
+                # so this is exactly the literal query text app.py builds.
+                self.assertIn("%%Y-%%m-%%d", query)
+                self.assertNotIn("%Y-%m-%d", query.replace('%%Y-%%m-%%d', ''),
+                                  'no stray single-%% DATE_FORMAT leftover outside the doubled literal')
+                self.assertIn('%s', query)
+                self.assertIsNotNone(params)
+                self.assertIn(d_from, tuple(params))
+                self.assertIn(d_to, tuple(params))
+            if 'incident_reports' in qlow:
+                saw_ir_query = True
+                self.assertIn('%s', query)
+                self.assertIsNotNone(params)
+                self.assertIn('EMP-SAFE1', tuple(params))
+                self.assertIn(d_from, tuple(params))
+                self.assertIn(d_to, tuple(params))
+        self.assertTrue(saw_sus_query, 'expected the Step 3c SUS lookup query to run')
+        self.assertTrue(saw_ir_query, 'expected the Step 6 IR lookup query to run')
+
+    def test_source_query_text_for_sus_and_ir_uses_bound_placeholders(self):
+        import inspect
+        src = inspect.getsource(appmod.admin_awol_report)
+        # SUS (Step 3c)
+        self.assertIn("WHERE code = 'SUS'", src)
+        self.assertIn("absence_date BETWEEN %s AND %s", src)
+        self.assertIn("DATE_FORMAT(absence_date, '%%Y-%%m-%%d')", src)
+        # IR (Step 6). NOTE: as currently written, this query has no COLLATE
+        # clause on employee_id (unlike several join-based comparisons
+        # elsewhere in app.py) -- it's a plain column-IN-params comparison
+        # against literal parameter values, not a cross-table join, so no
+        # COLLATE is needed for that to work correctly. See the report notes
+        # for more on this.
+        self.assertIn("FROM incident_reports", src)
+        self.assertIn("incident_date BETWEEN %s AND %s", src)
+        self.assertIn("employee_id IN ({placeholders})", src)
+        self.assertIn("ORDER BY created_at DESC, id DESC", src)
+        # Never an f-string embedding the actual date variables directly.
+        self.assertNotRegex(src, r'BETWEEN\s*\{date_from\}\s*AND\s*\{date_to\}')
+
+
 if __name__ == '__main__':
     unittest.main(verbosity=2)

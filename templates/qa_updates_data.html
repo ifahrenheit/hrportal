@@ -78,7 +78,7 @@
 </style>
 
 <div class="qaa-header">
-  <h2><i class="bi bi-bar-chart-line"></i> QA Updates &mdash; Data</h2>
+  <h2><i data-lucide="chart-column"></i> QA Updates &mdash; Data</h2>
 </div>
 
 <div class="qaa-report-controls">
@@ -220,7 +220,7 @@ function qaaShowCellDetail(tl, updateId) {
   if (cell.total === 0) {
     body.innerHTML = '<p style="color:var(--text-muted);font-size:0.85rem;">No active members found for this team.</p>';
   } else if (cell.not_acked.length === 0) {
-    body.innerHTML = '<p style="color:#2f6b2f;font-size:0.85rem;"><i class="bi bi-check-circle"></i> Everyone has acknowledged.</p>';
+    body.innerHTML = '<p style="color:#2f6b2f;font-size:0.85rem;"><i data-lucide="circle-check"></i> Everyone has acknowledged.</p>';
   } else {
     body.innerHTML = `
       <p style="font-size:0.8rem;color:var(--text-muted);margin-bottom:8px;">Not yet acknowledged:</p>
@@ -252,7 +252,7 @@ function qaaLoadByUpdate() {
       let html = `
         <div style="margin-bottom:16px;">
           <span class="qaa-progress-pill ${overallClass}">
-            <i class="bi bi-people"></i> ${data.overall_acked} / ${data.overall_total} acknowledged overall
+            <i data-lucide="users"></i> ${data.overall_acked} / ${data.overall_total} acknowledged overall
           </span>
         </div>`;
 
@@ -269,7 +269,7 @@ function qaaLoadByUpdate() {
                 <div class="qaa-emp-row">
                   <span>${qaaEscape(e.name)} <span style="color:var(--text-muted);">(${qaaEscape(e.group_name || '-')})</span></span>
                   <span class="${e.acknowledged ? 'yes' : 'no'}">
-                    <i class="bi ${e.acknowledged ? 'bi-check-circle-fill' : 'bi-x-circle-fill'}"></i>
+                    <i data-lucide="${e.acknowledged ? 'circle-check' : 'circle-x'}"></i>
                     ${e.acknowledged ? 'Done' : 'Not done'}
                   </span>
                 </div>
@@ -315,10 +315,10 @@ function qaaLoadByTeam() {
             </div>
             ${u.not_acked_names.length > 0 ? `
               <div style="padding:10px 18px;border-top:1px solid var(--border);">
-                <div class="qaa-not-acked-list"><i class="bi bi-exclamation-circle"></i> Not yet acknowledged: ${u.not_acked_names.map(qaaEscape).join(', ')}</div>
+                <div class="qaa-not-acked-list"><i data-lucide="circle-alert"></i> Not yet acknowledged: ${u.not_acked_names.map(qaaEscape).join(', ')}</div>
               </div>` : `
               <div style="padding:10px 18px;border-top:1px solid var(--border);color:#4a7a4a;font-size:0.8rem;">
-                <i class="bi bi-check-circle"></i> Everyone has acknowledged this update.
+                <i data-lucide="circle-check"></i> Everyone has acknowledged this update.
               </div>`}
           </div>`;
       });

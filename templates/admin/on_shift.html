@@ -14,14 +14,14 @@
 </style>
 
 <div class="onshift-summary">
-  <i class="bi bi-people-fill" style="color:var(--accent);font-size:1.3rem;"></i>
+  <i data-lucide="users" style="color:var(--accent);font-size:1.3rem;"></i>
   <span class="num">{{ records|length }}</span>
   <span class="text-muted" style="font-size:.85rem;">currently on shift</span>
 </div>
 
 {% if not records %}
 <div class="card p-4 text-center">
-  <i class="bi bi-moon text-muted" style="font-size:2.5rem;"></i>
+  <i class="text-muted" data-lucide="moon" style="font-size:2.5rem;"></i>
   <div class="mt-2 fw-semibold">No one is currently on shift</div>
 </div>
 {% else %}

@@ -69,7 +69,7 @@
     {% for acct, data in grouped.items() %}
       <div class="grp-acct">
         <div class="grp-acct-head">
-          <div class="grp-acct-name"><i class="bi bi-diagram-3"></i> {{ acct }}
+          <div class="grp-acct-name"><i data-lucide="list-tree"></i> {{ acct }}
             <span class="grp-acct-badge">{{ data.total }} session{{ '' if data.total==1 else 's' }}</span></div>
           <div class="grp-acct-meta">{{ data.agents }} agent{{ '' if data.agents==1 else 's' }} ·
             <span class="grp-done">{{ data.completed }} done</span> ·

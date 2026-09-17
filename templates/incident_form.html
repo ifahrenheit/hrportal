@@ -62,11 +62,11 @@
 <div class="ir-form-wrap">
   <div class="ir-form-header">
     <a href="{{ url_for('incident_reports.dashboard') }}">
-      <i class="bi bi-arrow-left me-1"></i>Back to Dashboard
+      <i class="me-1" data-lucide="arrow-left"></i>Back to Dashboard
     </a>
   </div>
   <div class="ir-form-title mb-4">
-    <i class="bi bi-clipboard2-plus me-2" style="color:var(--accent);"></i>New Incident Report
+    <i class="me-2" data-lucide="clipboard-plus" style="color:var(--accent);"></i>New Incident Report
   </div>
 
   <div class="ir-card">
@@ -106,7 +106,7 @@
             <input class="form-check-input" type="checkbox" id="escalate_to_hr"
                    name="escalate_to_hr" value="1">
             <label class="form-check-label" for="escalate_to_hr">
-              <i class="bi bi-exclamation-triangle-fill me-1" style="color:var(--warning);"></i>
+              <i class="me-1" data-lucide="triangle-alert" style="color:var(--warning);"></i>
               Escalate to HR immediately — Written Explanation Required
             </label>
           </div>
@@ -118,7 +118,7 @@
 
       <div class="mb-4">
         <label class="form-label">
-          <i class="bi bi-paperclip me-1"></i>Attachments
+          <i class="me-1" data-lucide="paperclip"></i>Attachments
           <span style="font-weight:400;color:var(--text-muted);">(optional, up to 4 images)</span>
         </label>
         <input type="file" class="form-control" id="attachInput" multiple accept="image/*">
@@ -128,7 +128,7 @@
 
       <div class="d-flex justify-content-end pt-2">
         <button type="submit" class="btn-ir-submit" id="submitBtn">
-          <span id="btnText"><i class="bi bi-send"></i> Submit Report</span>
+          <span id="btnText"><i data-lucide="send"></i> Submit Report</span>
           <span id="btnSpinner" class="spinner-border spinner-border-sm d-none"></span>
         </button>
       </div>

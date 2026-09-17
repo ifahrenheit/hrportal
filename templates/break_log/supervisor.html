@@ -186,7 +186,7 @@
 
 <!-- Alert settings bar -->
 <div class="alert-bar">
-  <i class="bi bi-bell" style="color:var(--warning)"></i>
+  <i data-lucide="bell" style="color:var(--warning)"></i>
   <label style="display:flex;align-items:center;gap:.5rem;cursor:pointer;margin:0;">
     <input type="checkbox" id="enableAlerts" checked>
     <span>Notify when breaks exceed 1 hr 30 min</span>
@@ -327,7 +327,7 @@
 <!-- Active breaks table -->
 <div class="sup-table-card">
   <div class="card-heading">
-    <span>🔴 Currently On Break</span>
+    <span><span class="status-dot" style="background:#ef4444;"></span>Currently On Break</span>
   </div>
   <div class="table-responsive">
     <table class="table table-hover mb-0">

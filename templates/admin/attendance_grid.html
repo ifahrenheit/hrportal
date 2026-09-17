@@ -7,27 +7,27 @@
 <ul class="nav nav-tabs mb-3">
   <li class="nav-item">
     <a class="nav-link" href="{{ url_for('admin_absences') }}">
-      <i class="bi bi-person-x me-1"></i>Absence Report
+      <i class="me-1" data-lucide="user-x"></i>Absence Report
     </a>
   </li>
   <li class="nav-item">
     <a class="nav-link active" href="{{ url_for('admin_attendance_grid') }}">
-      <i class="bi bi-grid-3x3 me-1"></i>Attendance Grid
+      <i class="me-1" data-lucide="grid-3x3"></i>Attendance Grid
     </a>
   </li>
   <li class="nav-item">
     <a class="nav-link" href="{{ url_for('admin_awol_report') }}">
-      <i class="bi bi-person-dash me-1"></i>AWOL Report
+      <i class="me-1" data-lucide="user-minus"></i>AWOL Report
     </a>
   </li>
   <li class="nav-item">
     <a class="nav-link" href="{{ url_for('admin_undertime_report') }}">
-      <i class="bi bi-hourglass-split me-1"></i>Undertime Report
+      <i class="me-1" data-lucide="hourglass"></i>Undertime Report
     </a>
   </li>
   <li class="nav-item">
     <a class="nav-link" href="{{ url_for('admin_attendance_stack_rank') }}">
-      <i class="bi bi-trophy me-1"></i>Attendance Stack Rank
+      <i class="me-1" data-lucide="trophy"></i>Attendance Stack Rank
     </a>
   </li>
 </ul>
@@ -66,17 +66,17 @@
       </div>
       <div class="col-12 col-md-4 d-flex gap-2">
         <button type="submit" class="btn btn-primary btn-sm">
-          <i class="bi bi-search me-1"></i>Apply
+          <i class="me-1" data-lucide="search"></i>Apply
         </button>
         <a href="{{ url_for('admin_attendance_grid') }}" class="btn btn-outline-secondary btn-sm">
-          <i class="bi bi-x-circle me-1"></i>Clear
+          <i class="me-1" data-lucide="circle-x"></i>Clear
         </a>
         {% if employees %}
         <button class="btn btn-outline-secondary btn-sm" id="copyReportBtn" onclick="copyReport()">
-          <i class="bi bi-clipboard-data me-1"></i>Copy Report
+          <i class="me-1" data-lucide="clipboard-list"></i>Copy Report
         </button>
         <button type="button" class="btn btn-outline-primary btn-sm" data-bs-toggle="modal" data-bs-target="#summaryModal">
-          <i class="bi bi-table me-1"></i>Summary Report
+          <i class="me-1" data-lucide="table"></i>Summary Report
         </button>
         {% endif %}
         <span class="ms-auto text-muted small align-self-center">
@@ -97,7 +97,7 @@
   {# Team Attendance Rate #}
   <div class="card p-3 flex-shrink-0" style="background:var(--surface);border:1px solid var(--border);min-width:200px;">
     <div class="d-flex align-items-center gap-2 mb-1">
-      <i class="bi bi-people-fill" style="color:var(--accent);"></i>
+      <i data-lucide="users" style="color:var(--accent);"></i>
       <span class="text-muted" style="font-size:.75rem;">
         Team Attendance Rate{% if tl_filter %} — {{ tl_filter }}{% elif group_filter %} — {{ group_filter }}{% endif %}
       </span>
@@ -116,7 +116,7 @@
   {% if is_current_month and team_forecast_rate is not none %}
   <div class="card p-3 flex-shrink-0" style="background:var(--surface);border:1px dashed var(--border);min-width:200px;">
     <div class="d-flex align-items-center gap-2 mb-1">
-      <i class="bi bi-graph-up" style="color:#0369a1;"></i>
+      <i data-lucide="chart-line" style="color:#0369a1;"></i>
       <span class="text-muted" style="font-size:.75rem;">Forecasted Achievement</span>
     </div>
     <div class="fw-bold" style="font-size:1.4rem;
@@ -164,9 +164,9 @@
     </div>
     <div class="d-flex gap-2 flex-wrap align-items-center">
       <span class="text-muted fw-semibold me-1">Notes:</span>
-      <span class="text-muted" style="font-size:.7rem;"><i class="bi bi-chat-square-text me-1"></i>Click any cell to add/view a note</span>
+      <span class="text-muted" style="font-size:.7rem;"><i class="me-1" data-lucide="message-square"></i>Click any cell to add/view a note</span>
       <span class="text-muted" style="font-size:.7rem;"><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#1d4ed8;margin-right:3px;"></span>Blue dot = note exists</span>
-      <span class="text-muted" style="font-size:.7rem;"><i class="bi bi-info-circle me-1"></i>PL and ML days excluded from Attendance Rate</span>
+      <span class="text-muted" style="font-size:.7rem;"><i class="me-1" data-lucide="info"></i>PL and ML days excluded from Attendance Rate</span>
     </div>
   </div>
 
@@ -209,7 +209,7 @@
             {% set ns.current_group = e.group_name %}
             <tr class="table-secondary">
               <td colspan="{{ date_headers|length + 4 }}" class="py-1 ps-3">
-                <i class="bi bi-people-fill me-1 text-primary"></i>
+                <i class="me-1 text-primary" data-lucide="users"></i>
                 <strong>{{ e.group_name }}</strong>
               </td>
             </tr>
@@ -311,7 +311,7 @@
 </div>
 {% else %}
 <div class="card p-4 text-center text-muted">
-  <i class="bi bi-calendar-x" style="font-size:2rem;display:block;margin-bottom:.5rem;"></i>
+  <i data-lucide="calendar-x" style="font-size:2rem;display:block;margin-bottom:.5rem;"></i>
   No attendance data found for {{ month_filter }}.
 </div>
 {% endif %}
@@ -322,7 +322,7 @@
     <div class="modal-content">
       <div class="modal-header py-2">
         <h6 class="modal-title mb-0">
-          <i class="bi bi-table me-2"></i>Status Breakdown Report
+          <i class="me-2" data-lucide="table"></i>Status Breakdown Report
           {% if tl_filter %} — {{ tl_filter }}
           {% elif group_filter %} — {{ group_filter }}
           {% endif %}
@@ -365,7 +365,7 @@
                   {% set ns.current_group = e.group_name %}
                   <tr style="background:var(--bg);">
                     <td colspan="20" class="py-1 ps-2 fw-semibold" style="font-size:.75rem;">
-                      <i class="bi bi-people-fill me-1 text-primary"></i>{{ e.group_name }}
+                      <i class="me-1 text-primary" data-lucide="users"></i>{{ e.group_name }}
                     </td>
                   </tr>
                 {% endif %}
@@ -423,7 +423,7 @@
       <div class="modal-footer py-2">
         <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal">Close</button>
         <button type="button" class="btn btn-primary btn-sm" onclick="copySummaryReport()">
-          <i class="bi bi-clipboard-data me-1"></i>Copy to Clipboard
+          <i class="me-1" data-lucide="clipboard-list"></i>Copy to Clipboard
         </button>
       </div>
     </div>
@@ -451,11 +451,11 @@
       </div>
       <div class="modal-footer py-2">
         <button type="button" class="btn btn-outline-danger btn-sm" id="noteDeleteBtn" style="display:none;">
-          <i class="bi bi-trash me-1"></i>Clear Note
+          <i class="me-1" data-lucide="trash"></i>Clear Note
         </button>
         <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
         <button type="button" class="btn btn-primary btn-sm" id="noteSaveBtn">
-          <i class="bi bi-check2 me-1"></i>Save
+          <i class="me-1" data-lucide="check"></i>Save
         </button>
       </div>
     </div>
@@ -807,7 +807,7 @@ function copyReport() {
   navigator.clipboard.writeText(rows.join('\n')).then(() => {
     const btn = document.getElementById('copyReportBtn');
     const orig = btn.innerHTML;
-    btn.innerHTML = '<i class="bi bi-check2 me-1"></i>Copied!';
+    btn.innerHTML = '<i class="me-1" data-lucide="check"></i>Copied!';
     btn.classList.replace('btn-outline-secondary', 'btn-success');
     setTimeout(() => {
       btn.innerHTML = orig;
@@ -874,7 +874,7 @@ function copySummaryReport() {
   const orig = btn.innerHTML;
 
   function onSuccess() {
-    btn.innerHTML = '<i class="bi bi-check2 me-1"></i>Copied!';
+    btn.innerHTML = '<i class="me-1" data-lucide="check"></i>Copied!';
     btn.classList.replace('btn-primary', 'btn-success');
     setTimeout(() => {
       btn.innerHTML = orig;

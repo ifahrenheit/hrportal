@@ -6,10 +6,10 @@
 {# ── Nav + Filters ───────────────────────────────────────── #}
 <div class="d-flex align-items-center gap-3 mb-4 flex-wrap">
   <a href="{{ url_for('supervisor_team_calendar', year=prev_year, month=prev_month, tl=tl_filter) }}"
-     class="btn btn-outline-secondary btn-sm"><i class="bi bi-chevron-left"></i></a>
+     class="btn btn-outline-secondary btn-sm"><i data-lucide="chevron-left"></i></a>
   <h5 class="mb-0 fw-semibold">{{ month_name }}</h5>
   <a href="{{ url_for('supervisor_team_calendar', year=next_year, month=next_month, tl=tl_filter) }}"
-     class="btn btn-outline-secondary btn-sm"><i class="bi bi-chevron-right"></i></a>
+     class="btn btn-outline-secondary btn-sm"><i data-lucide="chevron-right"></i></a>
   <a href="{{ url_for('supervisor_team_calendar') }}" class="btn btn-outline-secondary btn-sm ms-2">Today</a>
 
   <form method="GET" class="d-flex gap-2 ms-auto align-items-center">

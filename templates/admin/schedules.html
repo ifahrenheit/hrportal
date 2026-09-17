@@ -51,10 +51,10 @@
       </div>
       <div class="col-12 col-md-3 d-flex gap-2">
         <button type="submit" class="btn btn-primary btn-sm">
-          <i class="bi bi-search me-1"></i>Apply
+          <i class="me-1" data-lucide="search"></i>Apply
         </button>
         <a href="{{ url_for('admin_schedules') }}" class="btn btn-outline-secondary btn-sm">
-          <i class="bi bi-x-circle me-1"></i>Clear
+          <i class="me-1" data-lucide="circle-x"></i>Clear
         </a>
         <span class="ms-auto text-muted small align-self-center">
           {{ employees|length }} employee{{ 's' if employees|length != 1 }}
@@ -106,7 +106,7 @@
             {% set ns.current_group = e.group_name %}
             <tr class="table-secondary">
               <td colspan="{{ all_dates|length + 3 }}" class="py-1 ps-3">
-                <i class="bi bi-people-fill me-1 text-primary"></i>
+                <i class="me-1 text-primary" data-lucide="users"></i>
                 <strong>{{ e.group_name }}</strong>
               </td>
             </tr>
@@ -159,7 +159,7 @@
 </div>
 {% else %}
 <div class="card p-4 text-center text-muted">
-  <i class="bi bi-calendar-x" style="font-size:2rem;display:block;margin-bottom:.5rem;"></i>
+  <i data-lucide="calendar-x" style="font-size:2rem;display:block;margin-bottom:.5rem;"></i>
   No schedules found for {{ month_filter }}.
 </div>
 {% endif %}

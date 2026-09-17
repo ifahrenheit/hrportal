@@ -6,13 +6,13 @@
 
   <div class="d-flex align-items-center justify-content-between mb-3 flex-wrap gap-2">
     <h5 class="mb-0 fw-bold">
-      <i class="bi bi-lightning-charge-fill me-2" style="color:#6f42c1"></i>Magic CWS Balance Management
+      <i class="me-2" data-lucide="zap" style="color:#6f42c1"></i>Magic CWS Balance Management
     </h5>
     <form method="POST" action="/admin/magic-cws-balance/prepopulate"
           onsubmit="return confirm('Pre-populate from OrangeHRM Magic Leave? Existing rows will be skipped.')">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <button class="btn btn-sm btn-outline-secondary">
-        <i class="bi bi-cloud-download me-1"></i>Pre-populate from OrangeHRM
+        <i class="me-1" data-lucide="cloud-download"></i>Pre-populate from OrangeHRM
       </button>
     </form>
   </div>
@@ -20,7 +20,7 @@
   <!-- Bulk Add Card -->
   <div class="card border-0 shadow-sm mb-4">
     <div class="card-header bg-white fw-bold border-bottom">
-      <i class="bi bi-plus-circle me-2 text-success"></i>Bulk Add Hours
+      <i class="me-2 text-success" data-lucide="circle-plus"></i>Bulk Add Hours
     </div>
     <div class="card-body">
       <p class="text-muted small mb-2">
@@ -40,7 +40,7 @@
             <textarea name="reason" class="form-control" rows="3"
                       placeholder="e.g. OT incentive — April 2026"></textarea>
             <button type="submit" class="btn btn-success btn-sm mt-3 px-4">
-              <i class="bi bi-upload me-1"></i>Apply Bulk Add
+              <i class="me-1" data-lucide="upload"></i>Apply Bulk Add
             </button>
           </div>
         </div>
@@ -51,7 +51,7 @@
   <!-- Balance Table -->
   <div class="card border-0 shadow-sm mb-4">
     <div class="card-header bg-white fw-bold border-bottom">
-      <i class="bi bi-table me-2"></i>Current Balances
+      <i class="me-2" data-lucide="table"></i>Current Balances
       <span class="badge bg-secondary ms-2">{{ balances|length }}</span>
     </div>
     <div class="table-responsive">
@@ -86,7 +86,7 @@
           <td>
             <button class="btn btn-outline-secondary btn-sm py-0 px-2"
                     onclick="openEdit('{{ b.emp_number }}','{{ b.employee_id }}','{{ b.employee_name }}','{{ b.initial_hrs }}','{{ b.used_hrs }}')">
-              <i class="bi bi-pencil"></i>
+              <i data-lucide="pencil"></i>
             </button>
           </td>
         </tr>
@@ -104,7 +104,7 @@
   {% if adjustments %}
   <div class="card border-0 shadow-sm">
     <div class="card-header bg-white fw-bold border-bottom">
-      <i class="bi bi-clock-history me-2"></i>Recent Adjustments
+      <i class="me-2" data-lucide="clock-arrow-up"></i>Recent Adjustments
     </div>
     <div class="table-responsive">
       <table class="table table-sm table-hover mb-0 small">

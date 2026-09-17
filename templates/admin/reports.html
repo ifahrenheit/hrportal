@@ -20,12 +20,12 @@
 <ul class="nav nav-tabs mb-3" id="reportTabs">
   <li class="nav-item">
     <a class="nav-link {% if tab != 'detail' %}active{% endif %}" href="?year={{ year }}&tab=overview">
-      <i class="bi bi-table me-1"></i>Balance Overview
+      <i class="me-1" data-lucide="table"></i>Balance Overview
     </a>
   </li>
   <li class="nav-item">
     <a class="nav-link {% if tab == 'detail' %}active{% endif %}" href="?year={{ year }}&tab=detail">
-      <i class="bi bi-list-ul me-1"></i>Leave Details
+      <i class="me-1" data-lucide="list"></i>Leave Details
     </a>
   </li>
 </ul>
@@ -46,7 +46,7 @@
     <span id="detCount" class="text-muted small ms-2"></span>
     <a href="{{ url_for('admin_reports') }}?year={{ year }}&export=1"
        class="btn btn-sm btn-success ms-auto">
-      <i class="bi bi-download"></i> Download CSV
+      <i data-lucide="download"></i> Download CSV
     </a>
   </div>
   <div class="table-responsive">
@@ -124,7 +124,7 @@
     <span id="balCount" class="text-muted small ms-2"></span>
     <a href="{{ url_for('admin_reports') }}?year={{ year }}&export=1"
        class="btn btn-sm btn-success ms-auto">
-      <i class="bi bi-download"></i> Export CSV
+      <i data-lucide="download"></i> Export CSV
     </a>
   </div>
   <div class="table-responsive">

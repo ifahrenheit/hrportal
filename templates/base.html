@@ -9,9 +9,14 @@
   <meta name="color-scheme" content="{{ 'dark light' if theme == 'dark' else 'light dark' }}">
   <style>html[data-theme="dark"]{color-scheme:dark}html[data-theme="light"]{color-scheme:light}</style>
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css" rel="stylesheet">
   <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
   <style>
+    /* Lucide renders <i data-lucide> as an SVG sized by width/height, not
+       font-size like the old icon fonts. Scale it to the surrounding
+       font-size (fs-*, inline font-size, heading sizes, etc.) so all the
+       portal's existing icon-sizing classes keep working unchanged. */
+    .lucide { width: 1em; height: 1em; }
+    .status-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 4px; vertical-align: middle; }
     :root {
       --bg:        #f0f2f8;
       --surface:   #ffffff;
@@ -216,10 +221,10 @@
     <span class="page-title">{% block page_title %}{% endblock %}</span>
     <div class="d-flex align-items-center gap-2">
       <button class="theme-toggle" onclick="toggleTheme()" title="Toggle dark/light mode">
-        <i class="bi bi-moon-stars-fill" id="theme-icon"></i>
+        <i data-lucide="moon-star" id="theme-icon"></i>
       </button>
       <div class="user-pill">
-        <i class="bi bi-person-circle"></i>
+        <i data-lucide="circle-user"></i>
         {{ session['user']['name'] }}
         {% if session['user'].get('employee_id') %}
         <span style="color:var(--text-muted);font-size:.78rem;border-left:1px solid var(--border);padding-left:.5rem;margin-left:.25rem;">{{ session['user']['employee_id'] }}</span>
@@ -239,6 +244,7 @@
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/lucide@1.47.0/dist/umd/lucide.js"></script>
 
 <script>
 /* ===============================
@@ -246,6 +252,26 @@
 ================================ */
 function getCsrfToken() {
   return document.querySelector('meta[name="csrf-token"]').content;
+}
+
+/* ===============================
+   LUCIDE ICONS
+   Renders every <i data-lucide="..."> on the page. A MutationObserver
+   re-runs it whenever JS adds new data-lucide elements later (toasts,
+   dynamic lists, etc.) instead of requiring a manual call at every call
+   site — createIcons() is a no-op for icons already rendered.
+================================ */
+if (window.lucide) {
+  lucide.createIcons();
+  let _lucidePending = false;
+  new MutationObserver(() => {
+    if (_lucidePending) return;
+    _lucidePending = true;
+    requestAnimationFrame(() => {
+      lucide.createIcons();
+      _lucidePending = false;
+    });
+  }).observe(document.body, { childList: true, subtree: true });
 }
 
 /* ===============================
@@ -270,9 +296,8 @@ function applyTheme(theme) {
   document.documentElement.setAttribute('data-theme', theme);
   const icon = document.getElementById('theme-icon');
   if (icon) {
-    icon.className = theme === 'dark'
-      ? 'bi bi-sun-fill'
-      : 'bi bi-moon-stars-fill';
+    icon.setAttribute('data-lucide', theme === 'dark' ? 'sun' : 'moon-star');
+    if (window.lucide) lucide.createIcons();
   }
 }
 
@@ -314,9 +339,8 @@ function toggleSidebar() {
   main?.classList.toggle('expanded', collapsed);
 
   if (icon) {
-    icon.className = collapsed
-      ? 'bi bi-chevron-right'
-      : 'bi bi-chevron-left';
+    icon.setAttribute('data-lucide', collapsed ? 'chevron-right' : 'chevron-left');
+    if (window.lucide) lucide.createIcons();
   }
 
   localStorage.setItem('sidebarCollapsed', collapsed);
@@ -452,7 +476,7 @@ document.addEventListener('DOMContentLoaded', function () {
     sidebar?.classList.add('collapsed');
     main?.classList.add('expanded');
 
-    if (icon) icon.className = 'bi bi-chevron-right';
+    if (icon) icon.setAttribute('data-lucide', 'chevron-right');
   }
 
   /* Restore sections */

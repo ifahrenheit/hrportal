@@ -97,16 +97,16 @@
 
         <div class="col-12 d-flex gap-2">
           <button type="submit" class="btn btn-primary btn-sm">
-            <i class="bi bi-search me-1"></i>Apply
+            <i class="me-1" data-lucide="search"></i>Apply
           </button>
           <a href="{{ url_for('file_requests_hub') }}" class="btn btn-outline-secondary btn-sm">
-            <i class="bi bi-x-circle me-1"></i>Clear
+            <i class="me-1" data-lucide="circle-x"></i>Clear
           </a>
           <span class="ms-auto text-muted small align-self-center">
             {{ records|length }} record{{ 's' if records|length != 1 }}
           </span>
           <button class="btn btn-outline-secondary btn-sm" onclick="copyTable()" title="Copy table to clipboard">
-            <i class="bi bi-clipboard me-1"></i>Copy Table
+            <i class="me-1" data-lucide="clipboard"></i>Copy Table
           </button>
         </div>
 
@@ -119,7 +119,7 @@
 {% if is_admin or is_supervisor %}
 <div class="d-flex gap-2 mb-2 align-items-center" id="hubBulkBar">
   <button type="button" class="btn btn-outline-secondary btn-sm" id="hubBulkToggle" onclick="hubToggleBulk()">
-    <i class="bi bi-check2-square me-1"></i>Bulk Select
+    <i class="me-1" data-lucide="square-check"></i>Bulk Select
   </button>
   <div id="hubBulkActions" style="display:none;" class="d-flex gap-2 align-items-center">
     <div class="form-check mb-0">
@@ -127,13 +127,13 @@
       <label class="form-check-label small" for="hubSelectAll">All</label>
     </div>
     <button type="button" class="btn btn-success btn-sm" onclick="hubBulkSubmit('approve')">
-      <i class="bi bi-check-lg me-1"></i>Approve Selected
+      <i class="me-1" data-lucide="check"></i>Approve Selected
     </button>
     <button type="button" class="btn btn-danger btn-sm" onclick="hubBulkSubmit('reject')">
-      <i class="bi bi-x-lg me-1"></i>Reject Selected
+      <i class="me-1" data-lucide="x"></i>Reject Selected
     </button>
     <button type="button" class="btn btn-outline-danger btn-sm" onclick="hubBulkDelete()">
-      <i class="bi bi-trash me-1"></i>Delete Selected
+      <i class="me-1" data-lucide="trash"></i>Delete Selected
     </button>
     <span class="text-muted small" id="hubSelectedCount">0 selected</span>
   </div>
@@ -165,7 +165,7 @@
               {% set ns.current_tl = row_tl %}
               <tr class="table-secondary">
                 <td colspan="{% if is_admin %}12{% elif is_supervisor %}11{% else %}7{% endif %}" class="py-1 ps-3">
-                  <i class="bi bi-people-fill me-1 text-primary"></i>
+                  <i class="me-1 text-primary" data-lucide="users"></i>
                   <strong>{{ row_tl }}</strong>
                   {% if r.group_name %}<span class="text-muted small ms-2">· {{ r.group_name }}</span>{% endif %}
                 </td>
@@ -242,14 +242,14 @@
                        style="display:none;" onchange="hubUpdateCount()">
                 <button type="button" class="btn btn-success btn-sm py-0 px-2"
                         onclick="hubAction('approve','{{ r.req_type|lower }}','{{ r.id }}','{{ r.emp_id }}')"
-                        title="Approve"><i class="bi bi-check-lg"></i></button>
+                        title="Approve"><i data-lucide="check"></i></button>
                 <button type="button" class="btn btn-danger btn-sm py-0 px-2"
                         onclick="hubAction('reject','{{ r.req_type|lower }}','{{ r.id }}','{{ r.emp_id }}')"
-                        title="Reject"><i class="bi bi-x-lg"></i></button>
+                        title="Reject"><i data-lucide="x"></i></button>
                 {% if is_admin or is_supervisor %}
                 <button type="button" class="btn btn-outline-danger btn-sm py-0 px-1"
                         onclick="confirmDelete('{{ r.req_type|lower }}','{{ r.id }}','{{ r.employee_name or '' }}')"
-                        title="Delete"><i class="bi bi-trash"></i></button>
+                        title="Delete"><i data-lucide="trash"></i></button>
                 {% endif %}
               </div>
               {% elif (is_admin or is_supervisor) and r.status not in ('Deleted','deleted') %}
@@ -259,7 +259,7 @@
                        style="display:none;" onchange="hubUpdateCount()">
                 <button type="button" class="btn btn-outline-danger btn-sm py-0 px-1"
                         onclick="confirmDelete('{{ r.req_type|lower }}','{{ r.id }}','{{ r.employee_name or '' }}')"
-                        title="Delete"><i class="bi bi-trash"></i></button>
+                        title="Delete"><i data-lucide="trash"></i></button>
               </div>
               {% endif %}
             </td>
@@ -281,7 +281,7 @@
   <div class="modal-dialog">
     <div class="modal-content">
       <div class="modal-header border-0">
-        <h5 class="modal-title text-danger"><i class="bi bi-trash me-2"></i>Delete Request</h5>
+        <h5 class="modal-title text-danger"><i class="me-2" data-lucide="trash"></i>Delete Request</h5>
         <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
       </div>
       <div class="modal-body">
@@ -293,7 +293,7 @@
       <div class="modal-footer border-0">
         <button class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
         <button class="btn btn-danger btn-sm" id="delConfirmBtn" onclick="submitDelete()">
-          <i class="bi bi-trash me-1"></i>Delete
+          <i class="me-1" data-lucide="trash"></i>Delete
         </button>
       </div>
     </div>
@@ -533,13 +533,13 @@ function submitDelete() {
       } else {
         alert('Error: ' + (data.message || 'Unknown error'));
         btn.disabled = false;
-        btn.innerHTML = '<i class="bi bi-trash me-1"></i>Delete';
+        btn.innerHTML = '<i class="me-1" data-lucide="trash"></i>Delete';
       }
     })
     .catch(() => {
       alert('Network error. Please try again.');
       btn.disabled = false;
-      btn.innerHTML = '<i class="bi bi-trash me-1"></i>Delete';
+      btn.innerHTML = '<i class="me-1" data-lucide="trash"></i>Delete';
     });
 }
 
@@ -554,7 +554,7 @@ function copyTable() {
   navigator.clipboard.writeText(text).then(() => {
     const btn = document.querySelector('[onclick="copyTable()"]');
     const orig = btn.innerHTML;
-    btn.innerHTML = '<i class="bi bi-check-lg me-1"></i>Copied!';
+    btn.innerHTML = '<i class="me-1" data-lucide="check"></i>Copied!';
     btn.classList.add('btn-success');
     btn.classList.remove('btn-outline-secondary');
     setTimeout(() => {

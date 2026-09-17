@@ -11,7 +11,7 @@
     </div>
     <a href="{{ url_for('survey.survey_results_csv', slug=survey.slug) }}"
        class="btn btn-sm" style="background: var(--accent); color: #fff; border: none; border-radius: 8px;">
-      <i class="bi bi-download me-1"></i> Export CSV
+      <i class="me-1" data-lucide="download"></i> Export CSV
     </a>
   </div>
 
@@ -52,13 +52,13 @@
     <li class="nav-item" role="presentation">
       <button class="nav-link active" id="charts-tab" data-bs-toggle="pill" data-bs-target="#charts-pane"
               type="button" role="tab" style="font-family: 'Outfit', sans-serif;">
-        <i class="bi bi-bar-chart-line me-1"></i> Charts
+        <i class="me-1" data-lucide="chart-column"></i> Charts
       </button>
     </li>
     <li class="nav-item" role="presentation">
       <button class="nav-link" id="responses-tab" data-bs-toggle="pill" data-bs-target="#responses-pane"
               type="button" role="tab" style="font-family: 'Outfit', sans-serif;">
-        <i class="bi bi-list-ul me-1"></i> Responses ({{ total }})
+        <i class="me-1" data-lucide="list"></i> Responses ({{ total }})
       </button>
     </li>
   </ul>

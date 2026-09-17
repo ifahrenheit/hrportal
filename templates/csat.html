@@ -62,7 +62,7 @@
 
 <div class="container-fluid py-3">
   <div class="d-flex flex-wrap justify-content-between align-items-center mb-3">
-    <h3 class="mb-0"><i class="bi bi-emoji-smile"></i> CSAT Dashboard
+    <h3 class="mb-0"><i data-lucide="heart"></i> CSAT Dashboard
       {% if scoped_tl %}<span class="badge bg-secondary">{{ scoped_tl }} team</span>{% endif %}
     </h3>
   </div>
@@ -72,7 +72,7 @@
 
       <!-- PERIOD -->
       <div>
-        <div class="filter-group-label"><i class="bi bi-calendar3"></i> Period</div>
+        <div class="filter-group-label"><i data-lucide="calendar"></i> Period</div>
         <div class="filter-group flex-wrap">
           <div class="filter-col narrow">
             <label class="form-label small">Month</label>
@@ -97,7 +97,7 @@
 
       <!-- SEGMENT -->
       <div style="overflow: visible !important;">
-        <div class="filter-group-label"><i class="bi bi-people"></i> Segment</div>
+        <div class="filter-group-label"><i data-lucide="users"></i> Segment</div>
         <div class="filter-group flex-wrap" style="overflow: visible !important;">
           {% if not is_tl_view %}
           <div class="filter-col">
@@ -127,7 +127,7 @@
 
       <!-- SCOPE -->
       <div>
-        <div class="filter-group-label"><i class="bi bi-funnel"></i> Scope</div>
+        <div class="filter-group-label"><i data-lucide="funnel"></i> Scope</div>
         <div class="d-flex flex-column" style="gap:.35rem; padding-top:.15rem;">
           <div class="form-check form-switch mb-0">
             <input class="form-check-input" type="checkbox" id="fActive" checked>
@@ -150,7 +150,7 @@
   <div class="row g-3 mb-3" id="kpiRow">
     <div class="col-md-3">
       <div class="kpi-card">
-        <div class="kpi-ic csat"><i class="bi bi-emoji-smile"></i></div>
+        <div class="kpi-ic csat"><i data-lucide="heart"></i></div>
         <div class="kpi-body">
           <div class="kpi-label">Volume Weighted CSAT</div>
           <div class="kpi-num" id="kpiWeighted">—</div>
@@ -160,7 +160,7 @@
     </div>
     <div class="col-md-3">
       <div class="kpi-card">
-        <div class="kpi-ic resp"><i class="bi bi-inbox"></i></div>
+        <div class="kpi-ic resp"><i data-lucide="inbox"></i></div>
         <div class="kpi-body">
           <div class="kpi-label">Total Responses</div>
           <div class="kpi-num" id="kpiResp">—</div>
@@ -170,7 +170,7 @@
     </div>
     <div class="col-md-3">
       <div class="kpi-card">
-        <div class="kpi-ic resv"><i class="bi bi-check2-circle"></i></div>
+        <div class="kpi-ic resv"><i data-lucide="circle-check"></i></div>
         <div class="kpi-body">
           <div class="kpi-label">Total Resolved</div>
           <div class="kpi-num" id="kpiResolved">—</div>
@@ -180,7 +180,7 @@
     </div>
     <div class="col-md-3">
       <div class="kpi-card">
-        <div class="kpi-ic chan"><i class="bi bi-bar-chart-line"></i></div>
+        <div class="kpi-ic chan"><i data-lucide="chart-column"></i></div>
         <div class="kpi-body">
           <div class="kpi-label">Channels</div>
           <div id="kpiChannels" style="font-size:.9rem;line-height:1.5;margin-top:2px"></div>
@@ -226,27 +226,32 @@
   </div>
 
   <div class="csat-card">
-    <div class="d-flex justify-content-between align-items-center mb-2">
+    <div class="d-flex flex-wrap justify-content-between align-items-center mb-2 gap-2">
       <h6 class="mb-0">Per-Agent Volume Weighted CSAT</h6>
-      <input type="text" id="agentSearch" class="form-control form-control-sm" style="max-width:240px"
-             placeholder="Search agent / TL / batch…">
+      <div class="d-flex align-items-center gap-2">
+        <button type="button" class="btn btn-outline-secondary btn-sm text-nowrap flex-shrink-0" id="copyAgentTableBtn" onclick="copyAgentTable()">
+          <i class="me-1" data-lucide="clipboard"></i>Copy Table
+        </button>
+        <input type="text" id="agentSearch" class="form-control form-control-sm" style="max-width:240px"
+               placeholder="Search agent / TL / batch…">
+      </div>
     </div>
     <div class="table-responsive">
       <table class="table table-sm table-hover table-csat align-middle">
         <thead class="table-light">
           <tr id="agentHead">
-            <th class="sortable" data-key="email" data-type="str">Agent<span class="sort-arrow">↕</span></th>
-            <th class="sortable" data-key="tl" data-type="str">TL<span class="sort-arrow">↕</span></th>
-            <th class="sortable" data-key="batch" data-type="str">Batch<span class="sort-arrow">↕</span></th>
-            <th class="sortable text-end" data-key="weighted" data-type="num">Volume Weighted CSAT<span class="sort-arrow">↕</span></th>
-            <th class="sortable text-end" data-key="chat_pct" data-type="num">Chat%<span class="sort-arrow">↕</span></th>
-            <th class="sortable text-end" data-key="chat_resolved" data-type="num">Chat Resolved<span class="sort-arrow">↕</span></th>
-            <th class="sortable text-end" data-key="email_pct" data-type="num">Email%<span class="sort-arrow">↕</span></th>
-            <th class="sortable text-end" data-key="email_resolved" data-type="num">Email Resolved<span class="sort-arrow">↕</span></th>
-            <th class="sortable text-end" data-key="phone_pct" data-type="num">Phone%<span class="sort-arrow">↕</span></th>
-            <th class="sortable text-end" data-key="phone_resolved" data-type="num">Phone Resolved<span class="sort-arrow">↕</span></th>
-            <th class="sortable text-end" data-key="total_resolved" data-type="num">Total Resolved<span class="sort-arrow">↕</span></th>
-            <th class="sortable text-end" data-key="responses" data-type="num">Responses<span class="sort-arrow">↕</span></th>
+            <th class="sortable" data-key="email" data-type="str">Agent<i class="sort-arrow" data-lucide="arrow-up-down"></i></th>
+            <th class="sortable" data-key="tl" data-type="str">TL<i class="sort-arrow" data-lucide="arrow-up-down"></i></th>
+            <th class="sortable" data-key="batch" data-type="str">Batch<i class="sort-arrow" data-lucide="arrow-up-down"></i></th>
+            <th class="sortable text-end" data-key="weighted" data-type="num">Volume Weighted CSAT<i class="sort-arrow" data-lucide="arrow-up-down"></i></th>
+            <th class="sortable text-end" data-key="chat_pct" data-type="num">Chat%<i class="sort-arrow" data-lucide="arrow-up-down"></i></th>
+            <th class="sortable text-end" data-key="chat_resolved" data-type="num">Chat Resolved<i class="sort-arrow" data-lucide="arrow-up-down"></i></th>
+            <th class="sortable text-end" data-key="email_pct" data-type="num">Email%<i class="sort-arrow" data-lucide="arrow-up-down"></i></th>
+            <th class="sortable text-end" data-key="email_resolved" data-type="num">Email Resolved<i class="sort-arrow" data-lucide="arrow-up-down"></i></th>
+            <th class="sortable text-end" data-key="phone_pct" data-type="num">Phone%<i class="sort-arrow" data-lucide="arrow-up-down"></i></th>
+            <th class="sortable text-end" data-key="phone_resolved" data-type="num">Phone Resolved<i class="sort-arrow" data-lucide="arrow-up-down"></i></th>
+            <th class="sortable text-end" data-key="total_resolved" data-type="num">Total Resolved<i class="sort-arrow" data-lucide="arrow-up-down"></i></th>
+            <th class="sortable text-end" data-key="responses" data-type="num">Responses<i class="sort-arrow" data-lucide="arrow-up-down"></i></th>
           </tr>
         </thead>
         <tbody id="agentBody">
@@ -703,12 +708,13 @@
       const arrow = th.querySelector('.sort-arrow');
       if(th.dataset.key===sortKey){
         th.classList.add('sort-active');
-        arrow.textContent = sortDir==='asc' ? '▲' : '▼';
+        arrow.setAttribute('data-lucide', sortDir==='asc' ? 'arrow-up' : 'arrow-down');
       } else {
         th.classList.remove('sort-active');
-        arrow.textContent = '↕';
+        arrow.setAttribute('data-lucide', 'arrow-up-down');
       }
     });
+    if (window.lucide) lucide.createIcons();
   }
 
   function renderAgents(filter){
@@ -739,6 +745,23 @@
         '<td class="text-end">'+respCell+'</td>'+
       '</tr>';
     }).join('');
+  }
+
+  function copyAgentTable(){
+    const headers = ['Agent','TL','Batch','Volume Weighted CSAT','Chat%','Chat Resolved','Email%','Email Resolved','Phone%','Phone Resolved','Total Resolved','Responses'];
+    const rows = [headers.join('\t')];
+    document.querySelectorAll('#agentBody tr').forEach(function(tr){
+      const cells = tr.querySelectorAll('td');
+      if(cells.length < 12) return;
+      rows.push(Array.prototype.map.call(cells, function(td){ return td.textContent.trim(); }).join('\t'));
+    });
+    navigator.clipboard.writeText(rows.join('\n')).then(function(){
+      const btn = $('copyAgentTableBtn');
+      const orig = btn.innerHTML;
+      btn.innerHTML = '<i class="me-1" data-lucide="check"></i>Copied!';
+      btn.classList.replace('btn-outline-secondary','btn-success');
+      setTimeout(function(){ btn.innerHTML = orig; btn.classList.replace('btn-success','btn-outline-secondary'); if(window.lucide) lucide.createIcons(); }, 2000);
+    }).catch(function(){ alert('Copy failed — please select the table manually.'); });
   }
 
   $('agentHead').addEventListener('click', function(e){

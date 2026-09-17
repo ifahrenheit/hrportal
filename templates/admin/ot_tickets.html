@@ -45,7 +45,7 @@
                placeholder="Name or ID..." value="{{ emp_search }}">
       </div>
       <div class="col-12 col-md-3 d-flex gap-2">
-        <button type="submit" class="btn btn-primary btn-sm"><i class="bi bi-search me-1"></i>Filter</button>
+        <button type="submit" class="btn btn-primary btn-sm"><i class="me-1" data-lucide="search"></i>Filter</button>
         <a href="{{ url_for('admin_ot_tickets') }}" class="btn btn-outline-secondary btn-sm">Clear</a>
         <span class="text-muted small align-self-center ms-auto">{{ grouped_list|length }} request{{ 's' if grouped_list|length != 1 }} · {{ records|length }} ticket{{ 's' if records|length != 1 }}</span>
       </div>
@@ -59,7 +59,7 @@
     {% if req.tl != ns.current_tl %}
       {% set ns.current_tl = req.tl %}
       <div class="tl-header">
-        <i class="bi bi-people-fill text-primary"></i>
+        <i class="text-primary" data-lucide="users"></i>
         <strong>{{ req.tl }}</strong>
       </div>
     {% endif %}
@@ -102,7 +102,7 @@
     </div>
   {% endfor %}
 {% else %}
-  <div class="alert alert-info"><i class="bi bi-info-circle me-2"></i>No tickets found for this period.</div>
+  <div class="alert alert-info"><i class="me-2" data-lucide="info"></i>No tickets found for this period.</div>
 {% endif %}
 
 <div class="modal fade" id="ticketModal" tabindex="-1">

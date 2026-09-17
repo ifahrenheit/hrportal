@@ -7,8 +7,9 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+<script src="https://cdn.jsdelivr.net/npm/lucide@1.47.0/dist/umd/lucide.js"></script>
 <style>
+.lucide { width: 1em; height: 1em; }
 /* ============================================================
    TOKENS
    Replace this block with your existing :root token block.
@@ -366,23 +367,23 @@ tbody tr:hover td:first-child{background:var(--surface-2)}
     </a>
 
     <nav class="mainnav" id="mainnav">
-      <button class="navbtn" data-panel="leave" aria-expanded="false">Leave &amp; Requests <i class="bi bi-chevron-down"></i></button>
-      <button class="navbtn" data-panel="people" aria-expanded="false">People &amp; HR <i class="bi bi-chevron-down"></i></button>
-      <button class="navbtn is-current" data-panel="analytics" aria-expanded="false">Analytics <i class="bi bi-chevron-down"></i></button>
-      <button class="navbtn" data-panel="finance" aria-expanded="false">Finance &amp; Ops <i class="bi bi-chevron-down"></i></button>
-      <button class="navbtn" data-panel="tools" aria-expanded="false">Tools &amp; Access <i class="bi bi-chevron-down"></i></button>
+      <button class="navbtn" data-panel="leave" aria-expanded="false">Leave &amp; Requests <i data-lucide="chevron-down"></i></button>
+      <button class="navbtn" data-panel="people" aria-expanded="false">People &amp; HR <i data-lucide="chevron-down"></i></button>
+      <button class="navbtn is-current" data-panel="analytics" aria-expanded="false">Analytics <i data-lucide="chevron-down"></i></button>
+      <button class="navbtn" data-panel="finance" aria-expanded="false">Finance &amp; Ops <i data-lucide="chevron-down"></i></button>
+      <button class="navbtn" data-panel="tools" aria-expanded="false">Tools &amp; Access <i data-lucide="chevron-down"></i></button>
     </nav>
 
     <div class="topbar-right">
       <button class="searchpill" id="openPalette">
-        <i class="bi bi-search" style="font-size:13px"></i>
+        <i data-lucide="search" style="font-size:13px"></i>
         <span>Jump to...</span>
         <span class="kbd">Ctrl K</span>
       </button>
-      <button class="iconbtn" id="themeBtn" title="Toggle theme"><i class="bi bi-moon-stars"></i></button>
-      <button class="iconbtn" title="Notifications"><i class="bi bi-bell"></i><span class="dot"></span></button>
+      <button class="iconbtn" id="themeBtn" title="Toggle theme"><i data-lucide="moon-star"></i></button>
+      <button class="iconbtn" title="Notifications"><i data-lucide="bell"></i><span class="dot"></span></button>
       <button class="avatar" title="Andrew Tacdoro">AT</button>
-      <button class="burger" id="burger"><i class="bi bi-list"></i></button>
+      <button class="burger" id="burger"><i data-lucide="menu"></i></button>
     </div>
   </div>
 
@@ -391,65 +392,65 @@ tbody tr:hover td:first-child{background:var(--surface-2)}
 
     <div class="mega-panel" data-panel="leave">
       <div class="mega-grid">
-        <a href="#" class="mega-item"><span class="mega-ico"><i class="bi bi-calendar-plus"></i></span><span><h4>File a Leave</h4><p>4-day, 5-day, half-day, Magic Leave</p></span></a>
-        <a href="#" class="mega-item"><span class="mega-ico"><i class="bi bi-list-check"></i></span><span><h4>My Requests</h4><p>Track everything you have filed</p></span></a>
-        <a href="#" class="mega-item"><span class="mega-ico"><i class="bi bi-inbox"></i></span><span><h4>Approvals</h4><p>Pending items awaiting your action</p></span></a>
-        <a href="#" class="mega-item"><span class="mega-ico"><i class="bi bi-collection"></i></span><span><h4>All Leaves</h4><p>Company-wide leave register</p></span></a>
-        <a href="#" class="mega-item"><span class="mega-ico"><i class="bi bi-calendar3-week"></i></span><span><h4>Team Calendar</h4><p>Who is out, by week and team</p></span></a>
-        <a href="#" class="mega-item"><span class="mega-ico"><i class="bi bi-folder2-open"></i></span><span><h4>File Requests</h4><p>CWS, RDW, OT, FTS submissions</p></span></a>
-        <a href="#" class="mega-item"><span class="mega-ico"><i class="bi bi-patch-check"></i></span><span><h4>Certificate of Employment</h4><p>Request and release COE documents</p></span></a>
-        <a href="#" class="mega-item"><span class="mega-ico"><i class="bi bi-people"></i></span><span><h4>Team View</h4><p>Read-only view of your team's filings</p></span></a>
+        <a href="#" class="mega-item"><span class="mega-ico"><i data-lucide="calendar-plus"></i></span><span><h4>File a Leave</h4><p>4-day, 5-day, half-day, Magic Leave</p></span></a>
+        <a href="#" class="mega-item"><span class="mega-ico"><i data-lucide="list-check"></i></span><span><h4>My Requests</h4><p>Track everything you have filed</p></span></a>
+        <a href="#" class="mega-item"><span class="mega-ico"><i data-lucide="inbox"></i></span><span><h4>Approvals</h4><p>Pending items awaiting your action</p></span></a>
+        <a href="#" class="mega-item"><span class="mega-ico"><i data-lucide="layers"></i></span><span><h4>All Leaves</h4><p>Company-wide leave register</p></span></a>
+        <a href="#" class="mega-item"><span class="mega-ico"><i data-lucide="calendar-days"></i></span><span><h4>Team Calendar</h4><p>Who is out, by week and team</p></span></a>
+        <a href="#" class="mega-item"><span class="mega-ico"><i data-lucide="folder-open"></i></span><span><h4>File Requests</h4><p>CWS, RDW, OT, FTS submissions</p></span></a>
+        <a href="#" class="mega-item"><span class="mega-ico"><i data-lucide="badge-check"></i></span><span><h4>Certificate of Employment</h4><p>Request and release COE documents</p></span></a>
+        <a href="#" class="mega-item"><span class="mega-ico"><i data-lucide="users"></i></span><span><h4>Team View</h4><p>Read-only view of your team's filings</p></span></a>
       </div>
-      <div class="mega-foot"><i class="bi bi-command"></i> Press <span class="kbd">Ctrl K</span> to jump to any page directly</div>
+      <div class="mega-foot"><i data-lucide="command"></i> Press <span class="kbd">Ctrl K</span> to jump to any page directly</div>
     </div>
 
     <div class="mega-panel" data-panel="people">
       <div class="mega-grid">
-        <a href="#" class="mega-item"><span class="mega-ico"><i class="bi bi-person-vcard"></i></span><span><h4>Employee Database</h4><p>Profiles, schedules, and photos</p></span></a>
-        <a href="#" class="mega-item"><span class="mega-ico"><i class="bi bi-person-plus"></i></span><span><h4>Onboarding</h4><p>Biometric, AD, email, and Keycloak setup</p></span></a>
-        <a href="#" class="mega-item"><span class="mega-ico"><i class="bi bi-person-dash"></i></span><span><h4>Offboarding</h4><p>Disable accounts and reclaim assets</p></span></a>
-        <a href="#" class="mega-item"><span class="mega-ico"><i class="bi bi-clipboard-data"></i></span><span><h4>WFM Tracker</h4><p>Onboarding pipeline by start date</p></span></a>
-        <a href="#" class="mega-item"><span class="mega-ico"><i class="bi bi-diagram-3"></i></span><span><h4>Supervisor Assignments</h4><p>Approver mapping and overrides</p></span></a>
-        <a href="#" class="mega-item"><span class="mega-ico"><i class="bi bi-megaphone"></i></span><span><h4>Employee Memos</h4><p>Company announcements and notices</p></span></a>
-        <a href="#" class="mega-item"><span class="mega-ico"><i class="bi bi-exclamation-triangle"></i></span><span><h4>Incident Reports</h4><p>File, review, and waive IRs</p></span></a>
-        <a href="#" class="mega-item"><span class="mega-ico"><i class="bi bi-clipboard2-pulse"></i></span><span><h4>QA Updates</h4><p>Bulletins with read acknowledgment</p></span></a>
+        <a href="#" class="mega-item"><span class="mega-ico"><i data-lucide="contact"></i></span><span><h4>Employee Database</h4><p>Profiles, schedules, and photos</p></span></a>
+        <a href="#" class="mega-item"><span class="mega-ico"><i data-lucide="user-plus"></i></span><span><h4>Onboarding</h4><p>Biometric, AD, email, and Keycloak setup</p></span></a>
+        <a href="#" class="mega-item"><span class="mega-ico"><i data-lucide="user-minus"></i></span><span><h4>Offboarding</h4><p>Disable accounts and reclaim assets</p></span></a>
+        <a href="#" class="mega-item"><span class="mega-ico"><i data-lucide="clipboard-list"></i></span><span><h4>WFM Tracker</h4><p>Onboarding pipeline by start date</p></span></a>
+        <a href="#" class="mega-item"><span class="mega-ico"><i data-lucide="list-tree"></i></span><span><h4>Supervisor Assignments</h4><p>Approver mapping and overrides</p></span></a>
+        <a href="#" class="mega-item"><span class="mega-ico"><i data-lucide="megaphone"></i></span><span><h4>Employee Memos</h4><p>Company announcements and notices</p></span></a>
+        <a href="#" class="mega-item"><span class="mega-ico"><i data-lucide="triangle-alert"></i></span><span><h4>Incident Reports</h4><p>File, review, and waive IRs</p></span></a>
+        <a href="#" class="mega-item"><span class="mega-ico"><i data-lucide="activity"></i></span><span><h4>QA Updates</h4><p>Bulletins with read acknowledgment</p></span></a>
       </div>
-      <div class="mega-foot"><i class="bi bi-command"></i> Press <span class="kbd">Ctrl K</span> to jump to any page directly</div>
+      <div class="mega-foot"><i data-lucide="command"></i> Press <span class="kbd">Ctrl K</span> to jump to any page directly</div>
     </div>
 
     <div class="mega-panel active" data-panel="analytics">
       <div class="mega-grid">
-        <a href="#" class="mega-item"><span class="mega-ico"><i class="bi bi-grid-3x3"></i></span><span><h4>Attendance Grid</h4><p>Monthly P/A/FI/FO per employee</p></span></a>
-        <a href="#" class="mega-item"><span class="mega-ico"><i class="bi bi-calendar-x"></i></span><span><h4>Absence Report</h4><p>Payroll-cycle absences and FTS</p></span></a>
-        <a href="#" class="mega-item"><span class="mega-ico"><i class="bi bi-moon-stars"></i></span><span><h4>Night Differential</h4><p>Night premium hours by cycle</p></span></a>
-        <a href="#" class="mega-item"><span class="mega-ico"><i class="bi bi-emoji-smile"></i></span><span><h4>CSAT Dashboard</h4><p>Trends and per-agent scores</p></span></a>
-        <a href="#" class="mega-item"><span class="mega-ico"><i class="bi bi-box-arrow-right"></i></span><span><h4>Attrition Report</h4><p>Exit interviews and reason analysis</p></span></a>
-        <a href="#" class="mega-item"><span class="mega-ico"><i class="bi bi-hourglass-split"></i></span><span><h4>Overbreak &amp; Tardiness</h4><p>ZD sync with automatic IR filing</p></span></a>
-        <a href="#" class="mega-item"><span class="mega-ico"><i class="bi bi-clock-history"></i></span><span><h4>FTS Review</h4><p>Detected failure-to-swipe records</p></span></a>
-        <a href="#" class="mega-item"><span class="mega-ico"><i class="bi bi-ui-checks"></i></span><span><h4>Surveys</h4><p>Build forms and read the results</p></span></a>
+        <a href="#" class="mega-item"><span class="mega-ico"><i data-lucide="grid-3x3"></i></span><span><h4>Attendance Grid</h4><p>Monthly P/A/FI/FO per employee</p></span></a>
+        <a href="#" class="mega-item"><span class="mega-ico"><i data-lucide="calendar-x"></i></span><span><h4>Absence Report</h4><p>Payroll-cycle absences and FTS</p></span></a>
+        <a href="#" class="mega-item"><span class="mega-ico"><i data-lucide="moon-star"></i></span><span><h4>Night Differential</h4><p>Night premium hours by cycle</p></span></a>
+        <a href="#" class="mega-item"><span class="mega-ico"><i data-lucide="heart"></i></span><span><h4>CSAT Dashboard</h4><p>Trends and per-agent scores</p></span></a>
+        <a href="#" class="mega-item"><span class="mega-ico"><i data-lucide="log-out"></i></span><span><h4>Attrition Report</h4><p>Exit interviews and reason analysis</p></span></a>
+        <a href="#" class="mega-item"><span class="mega-ico"><i data-lucide="hourglass"></i></span><span><h4>Overbreak &amp; Tardiness</h4><p>ZD sync with automatic IR filing</p></span></a>
+        <a href="#" class="mega-item"><span class="mega-ico"><i data-lucide="clock-arrow-up"></i></span><span><h4>FTS Review</h4><p>Detected failure-to-swipe records</p></span></a>
+        <a href="#" class="mega-item"><span class="mega-ico"><i data-lucide="list-checks"></i></span><span><h4>Surveys</h4><p>Build forms and read the results</p></span></a>
       </div>
-      <div class="mega-foot"><i class="bi bi-command"></i> Press <span class="kbd">Ctrl K</span> to jump to any page directly</div>
+      <div class="mega-foot"><i data-lucide="command"></i> Press <span class="kbd">Ctrl K</span> to jump to any page directly</div>
     </div>
 
     <div class="mega-panel" data-panel="finance">
       <div class="mega-grid">
-        <a href="#" class="mega-item"><span class="mega-ico"><i class="bi bi-box-seam"></i></span><span><h4>Material Requests</h4><p>Raise and approve supply requests</p></span></a>
-        <a href="#" class="mega-item"><span class="mega-ico"><i class="bi bi-tools"></i></span><span><h4>Facilities</h4><p>Maintenance and repair tickets</p></span></a>
-        <a href="#" class="mega-item"><span class="mega-ico"><i class="bi bi-boxes"></i></span><span><h4>Inventory</h4><p>Stock levels and asset assignment</p></span></a>
-        <a href="#" class="mega-item"><span class="mega-ico"><i class="bi bi-map"></i></span><span><h4>Floor Map</h4><p>Live seat presence and assignment</p></span></a>
+        <a href="#" class="mega-item"><span class="mega-ico"><i data-lucide="package"></i></span><span><h4>Material Requests</h4><p>Raise and approve supply requests</p></span></a>
+        <a href="#" class="mega-item"><span class="mega-ico"><i data-lucide="wrench"></i></span><span><h4>Facilities</h4><p>Maintenance and repair tickets</p></span></a>
+        <a href="#" class="mega-item"><span class="mega-ico"><i data-lucide="boxes"></i></span><span><h4>Inventory</h4><p>Stock levels and asset assignment</p></span></a>
+        <a href="#" class="mega-item"><span class="mega-ico"><i data-lucide="map"></i></span><span><h4>Floor Map</h4><p>Live seat presence and assignment</p></span></a>
       </div>
-      <div class="mega-foot"><i class="bi bi-command"></i> Press <span class="kbd">Ctrl K</span> to jump to any page directly</div>
+      <div class="mega-foot"><i data-lucide="command"></i> Press <span class="kbd">Ctrl K</span> to jump to any page directly</div>
     </div>
 
     <div class="mega-panel" data-panel="tools">
       <div class="mega-grid">
-        <a href="#" class="mega-item"><span class="mega-ico"><i class="bi bi-headset"></i></span><span><h4>IT Tickets</h4><p>Hardware, access, and system issues</p></span></a>
-        <a href="#" class="mega-item"><span class="mega-ico"><i class="bi bi-life-preserver"></i></span><span><h4>HR Tickets</h4><p>Payroll, benefits, and records queries</p></span></a>
-        <a href="#" class="mega-item"><span class="mega-ico"><i class="bi bi-shield-lock"></i></span><span><h4>Sub-Admins</h4><p>Grant and revoke module permissions</p></span></a>
-        <a href="#" class="mega-item"><span class="mega-ico"><i class="bi bi-fingerprint"></i></span><span><h4>Biometric Sync</h4><p>Device status and record migration</p></span></a>
-        <a href="#" class="mega-item"><span class="mega-ico"><i class="bi bi-person-badge"></i></span><span><h4>Login As</h4><p>Open the portal as another user</p></span></a>
+        <a href="#" class="mega-item"><span class="mega-ico"><i data-lucide="headset"></i></span><span><h4>IT Tickets</h4><p>Hardware, access, and system issues</p></span></a>
+        <a href="#" class="mega-item"><span class="mega-ico"><i data-lucide="life-buoy"></i></span><span><h4>HR Tickets</h4><p>Payroll, benefits, and records queries</p></span></a>
+        <a href="#" class="mega-item"><span class="mega-ico"><i data-lucide="shield-lock"></i></span><span><h4>Sub-Admins</h4><p>Grant and revoke module permissions</p></span></a>
+        <a href="#" class="mega-item"><span class="mega-ico"><i data-lucide="fingerprint-pattern"></i></span><span><h4>Biometric Sync</h4><p>Device status and record migration</p></span></a>
+        <a href="#" class="mega-item"><span class="mega-ico"><i data-lucide="id-card"></i></span><span><h4>Login As</h4><p>Open the portal as another user</p></span></a>
       </div>
-      <div class="mega-foot"><i class="bi bi-command"></i> Press <span class="kbd">Ctrl K</span> to jump to any page directly</div>
+      <div class="mega-foot"><i data-lucide="command"></i> Press <span class="kbd">Ctrl K</span> to jump to any page directly</div>
     </div>
 
   </div>
@@ -480,14 +481,14 @@ tbody tr:hover td:first-child{background:var(--surface-2)}
       <p>July 2026 payroll cycle &middot; 263 active employees</p>
     </div>
     <div style="display:flex;gap:8px">
-      <button class="btn"><i class="bi bi-funnel"></i> Filters</button>
-      <button class="btn"><i class="bi bi-download"></i> Export</button>
-      <button class="btn btn-primary"><i class="bi bi-arrow-clockwise"></i> Sync now</button>
+      <button class="btn"><i data-lucide="funnel"></i> Filters</button>
+      <button class="btn"><i data-lucide="download"></i> Export</button>
+      <button class="btn btn-primary"><i data-lucide="refresh-cw"></i> Sync now</button>
     </div>
   </div>
 
   <div class="cards">
-    <div class="card"><div class="lbl">Attendance rate</div><div class="val">94.2%</div><div class="sub up"><i class="bi bi-arrow-up-short"></i> 1.8 pts vs June</div></div>
+    <div class="card"><div class="lbl">Attendance rate</div><div class="val">94.2%</div><div class="sub up"><i data-lucide="arrow-up"></i> 1.8 pts vs June</div></div>
     <div class="card"><div class="lbl">Absences</div><div class="val">38</div><div class="sub">across 24 employees</div></div>
     <div class="card"><div class="lbl">Failure to swipe</div><div class="val">61</div><div class="sub">17 pending review</div></div>
     <div class="card"><div class="lbl">Approved leaves</div><div class="val">112</div><div class="sub">9 awaiting approval</div></div>
@@ -525,7 +526,7 @@ tbody tr:hover td:first-child{background:var(--surface-2)}
 <div class="palette-scrim" id="paletteScrim">
   <div class="palette" role="dialog" aria-modal="true" aria-label="Jump to page">
     <div class="palette-input">
-      <i class="bi bi-search"></i>
+      <i data-lucide="search"></i>
       <input type="text" id="paletteInput" placeholder="Search pages, reports, and tools..." autocomplete="off">
       <span class="kbd">Esc</span>
     </div>
@@ -542,7 +543,7 @@ tbody tr:hover td:first-child{background:var(--surface-2)}
 <div class="drawer" id="drawer">
   <div class="drawer-head">
     <a href="#" class="brand"><span class="brand-mark">C</span><span class="brand-text">HR Portal</span></a>
-    <button class="iconbtn" id="drawerClose"><i class="bi bi-x-lg"></i></button>
+    <button class="iconbtn" id="drawerClose"><i data-lucide="x"></i></button>
   </div>
   <div class="drawer-body" id="drawerBody"></div>
 </div>
@@ -685,7 +686,7 @@ tbody tr:hover td:first-child{background:var(--surface-2)}
     var links = INDEX.filter(function(i){ return i.section === s; }).map(function(i){
       return '<a href="' + i.href + '"><span class="mega-ico"><i class="' + i.icon + '"></i></span>' + i.title + '</a>';
     }).join('');
-    return '<button class="acc-head" data-acc="' + n + '" aria-expanded="false">' + s + ' <i class="bi bi-chevron-down"></i></button>'
+    return '<button class="acc-head" data-acc="' + n + '" aria-expanded="false">' + s + ' <i data-lucide="chevron-down"></i></button>'
          + '<div class="acc-body" id="acc' + n + '">' + links + '</div>';
   }).join('');
   body.addEventListener('click', function(e){
@@ -705,7 +706,7 @@ tbody tr:hover td:first-child{background:var(--surface-2)}
   document.getElementById('themeBtn').addEventListener('click', function(){
     var dark = document.documentElement.getAttribute('data-theme') === 'dark';
     document.documentElement.setAttribute('data-theme', dark ? 'light' : 'dark');
-    this.innerHTML = dark ? '<i class="bi bi-moon-stars"></i>' : '<i class="bi bi-brightness-high"></i>';
+    this.innerHTML = dark ? '<i data-lucide="moon-star"></i>' : '<i data-lucide="sun"></i>';
   });
 
   /* ---------- demo table data ---------- */
@@ -727,6 +728,7 @@ tbody tr:hover td:first-child{background:var(--surface-2)}
   }).join('');
   document.getElementById('tbody').innerHTML = rows;
 })();
+if (window.lucide) lucide.createIcons();
 </script>
 </body>
 </html>

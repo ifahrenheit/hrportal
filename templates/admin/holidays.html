@@ -14,7 +14,7 @@
     </select>
   </form>
   <button class="btn btn-primary btn-sm" data-bs-toggle="modal" data-bs-target="#addHolidayModal">
-    <i class="bi bi-plus-circle me-1"></i>Add Holiday
+    <i class="me-1" data-lucide="circle-plus"></i>Add Holiday
   </button>
 </div>
 
@@ -56,7 +56,7 @@
             {% if h.source == 'own' %}
               <button class="btn btn-sm btn-outline-secondary me-1"
                       onclick="openEditModal({{ h.id }}, '{{ h.description|e }}', '{{ h.date }}', {{ h.recurring }})">
-                <i class="bi bi-pencil"></i>
+                <i data-lucide="pencil"></i>
               </button>
               <form method="POST" class="d-inline"
                     onsubmit="return confirm('Delete {{ h.description|e }}?');">
@@ -64,7 +64,7 @@
                 <input type="hidden" name="action" value="delete">
                 <input type="hidden" name="holiday_id" value="{{ h.id }}">
                 <button type="submit" class="btn btn-sm btn-outline-danger">
-                  <i class="bi bi-trash"></i>
+                  <i data-lucide="trash"></i>
                 </button>
               </form>
             {% else %}

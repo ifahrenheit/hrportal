@@ -31,14 +31,14 @@
     <table class="table table-hover mb-0" style="font-size:.85rem;">
       <thead>
         <tr style="background:var(--bg-secondary);color:var(--text-muted);font-size:.75rem;text-transform:uppercase;">
-          <th onclick="sortTable(0)" style="cursor:pointer;user-select:none;">Employee <span id="sa0">⇅</span></th>
-          <th onclick="sortTable(1)" style="cursor:pointer;user-select:none;">Category <span id="sa1">⇅</span></th>
-          <th onclick="sortTable(2)" style="cursor:pointer;user-select:none;">Item <span id="sa2">⇅</span></th>
+          <th onclick="sortTable(0)" style="cursor:pointer;user-select:none;">Employee <i id="sa0" data-lucide="arrow-up-down"></i></th>
+          <th onclick="sortTable(1)" style="cursor:pointer;user-select:none;">Category <i id="sa1" data-lucide="arrow-up-down"></i></th>
+          <th onclick="sortTable(2)" style="cursor:pointer;user-select:none;">Item <i id="sa2" data-lucide="arrow-up-down"></i></th>
           <th>Qty</th>
-          <th onclick="sortTable(4,'date')" style="cursor:pointer;user-select:none;">Date Needed <span id="sa4">⇅</span></th>
+          <th onclick="sortTable(4,'date')" style="cursor:pointer;user-select:none;">Date Needed <i id="sa4" data-lucide="arrow-up-down"></i></th>
           <th>Reason</th>
           <th>SOM</th>
-          <th onclick="sortTable(7,'date')" style="cursor:pointer;user-select:none;">Filed At <span id="sa7">⇅</span></th>
+          <th onclick="sortTable(7,'date')" style="cursor:pointer;user-select:none;">Filed At <i id="sa7" data-lucide="arrow-up-down"></i></th>
           <th>Status</th>
           <th>Action</th>
         </tr>
@@ -95,18 +95,18 @@
             <a href="{{ url_for('material_edit', group_id=r.request_group_id) }}"
                class="btn btn-outline-secondary btn-sm mb-1 w-100"
                style="font-size:.75rem;">
-              <i class="bi bi-pencil me-1"></i>Edit
+              <i class="me-1" data-lucide="pencil"></i>Edit
             </a>
             {% endif %}
             {% if r.status == "Recommended" %}
             <div class="d-flex gap-1">
               <button class="btn btn-sm btn-success flex-fill"
                       onclick="showStockModal({{ r.id }}, '{{ r.item_name|e }}', {{ r.quantity }})">
-                <i class="bi bi-box me-1"></i>On Stock
+                <i class="me-1" data-lucide="box"></i>On Stock
               </button>
               <button class="btn btn-sm btn-warning text-dark flex-fill"
                       onclick='showPurchaseModal({{ r.id }}, {{ r.item_name|tojson }}, {{ r.quantity }})'>
-                <i class="bi bi-cart me-1"></i>Purchase
+                <i class="me-1" data-lucide="shopping-cart"></i>Purchase
               </button>
               <form method="POST" action="{{ url_for('material_admin_action') }}" style="display:inline;">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -116,19 +116,19 @@
                 <input type="hidden" name="admin_remarks" value="">
                 <button type="submit" class="btn btn-sm btn-danger"
                         onclick="return confirm('Reject this request?')">
-                  <i class="bi bi-x-lg"></i>
+                  <i data-lucide="x"></i>
                 </button>
               </form>
             {% elif r.status == 'Pending' and r.category == 'Medicine' and not r.is_replenishment %}
               <div class="d-flex gap-1">
                 <button class="btn btn-sm btn-success"
                         onclick="showReleaseModal({{ r.id }}, '{{ r.employee_name|e }}', '{{ r.item_name|e }}')">
-                  <i class="bi bi-box-arrow-right me-1"></i>Release
+                  <i class="me-1" data-lucide="log-out"></i>Release
                 </button>
                 <a href="{{ url_for('material_request_pdf', req_id=r.id) }}"
                    class="btn btn-sm btn-outline-secondary"
                    title="Download MRF PDF" target="_blank">
-                  <i class="bi bi-file-earmark-pdf text-danger"></i>
+                  <i class="text-danger" data-lucide="file-text"></i>
                 </a>
                 <form method="POST" action="{{ url_for('material_admin_action') }}" style="display:inline;">
                   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -138,7 +138,7 @@
                   <input type="hidden" name="_filter" value="{{ status_filter }}">
                   <button type="submit" class="btn btn-sm btn-danger"
                           onclick="return confirm('Reject this medicine request?')">
-                    <i class="bi bi-x-lg"></i>
+                    <i data-lucide="x"></i>
                   </button>
                 </form>
               </div>
@@ -148,12 +148,12 @@
               <div class="d-flex gap-1">
                 <button class="btn btn-sm btn-success"
                         onclick="showReleaseModal({{ r.id }}, '{{ r.employee_name|e }}', '{{ r.item_name|e }}')">
-                  <i class="bi bi-box-arrow-right me-1"></i>Release
+                  <i class="me-1" data-lucide="log-out"></i>Release
                 </button>
                 <a href="{{ url_for('material_request_pdf', req_id=r.id) }}"
                    class="btn btn-sm btn-outline-secondary"
                    title="Download MRF PDF" target="_blank">
-                  <i class="bi bi-file-earmark-pdf text-danger"></i>
+                  <i class="text-danger" data-lucide="file-text"></i>
                 </a>
                 <form method="POST" action="{{ url_for('material_admin_action') }}" style="display:inline;">
                   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -163,7 +163,7 @@
                   <input type="hidden" name="_filter" value="{{ status_filter }}">
                   <button type="submit" class="btn btn-sm btn-danger"
                           onclick="return confirm('Reject this medicine request?')">
-                    <i class="bi bi-x-lg"></i>
+                    <i data-lucide="x"></i>
                   </button>
                 </form>
               </div>
@@ -171,12 +171,12 @@
               <div class="d-flex gap-1">
                 <button class="btn btn-sm btn-success"
                         onclick="showReleaseModal({{ r.id }}, '{{ r.employee_name|e }}', '{{ r.item_name|e }}')">
-                  <i class="bi bi-box-arrow-right me-1"></i>Release
+                  <i class="me-1" data-lucide="log-out"></i>Release
                 </button>
                 <a href="{{ url_for('material_request_pdf', req_id=r.id) }}"
                    class="btn btn-sm btn-outline-secondary"
                    title="Download MRF PDF" target="_blank">
-                  <i class="bi bi-file-earmark-pdf text-danger"></i>
+                  <i class="text-danger" data-lucide="file-text"></i>
                 </a>
               </div>
             {% else %}
@@ -188,7 +188,7 @@
                   <form method="POST" action="{{ url_for('material_mark_payment', req_id=r.id) }}" class="mb-1">
                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                     <button class="btn btn-sm btn-warning" onclick="return confirm('Mark payment as collected?')">
-                      <i class="bi bi-cash me-1"></i>Mark Paid
+                      <i class="me-1" data-lucide="banknote"></i>Mark Paid
                     </button>
                   </form>
                 {% endif %}
@@ -212,7 +212,7 @@
               <a href="{{ url_for('material_request_pdf', req_id=r.id) }}"
                  class="btn btn-sm btn-outline-secondary mt-1"
                  title="Download MRF PDF" target="_blank">
-                <i class="bi bi-file-earmark-pdf text-danger"></i> MRF PDF
+                <i class="text-danger" data-lucide="file-text"></i> MRF PDF
               </a>
             </span>
             {% endif %}
@@ -224,13 +224,13 @@
           <td colspan="10" class="py-1 px-3">
             <details>
               <summary class="small text-muted" style="cursor:pointer;list-style:none;">
-                <i class="bi bi-clock-history me-1"></i>
+                <i class="me-1" data-lucide="clock-arrow-up"></i>
                 {{ group_logs|length }} edit{{ 's' if group_logs|length > 1 else '' }}
               </summary>
               <div class="mt-1">
                 {% for log in group_logs %}
                 <div class="small d-flex gap-2 align-items-start py-1 border-bottom">
-                  <i class="bi bi-pencil text-muted" style="font-size:.75rem;margin-top:.2rem;"></i>
+                  <i class="text-muted" data-lucide="pencil" style="font-size:.75rem;margin-top:.2rem;"></i>
                   <div>
                     <span class="fw-semibold">{{ log.performed_by }}</span>
                     <span class="text-muted ms-1" style="font-size:.75rem;">{{ log.created_at.strftime('%b %d, %Y %H:%M') }}</span>
@@ -385,7 +385,7 @@ function calcTotal() {
         <div class="modal-footer">
           <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
           <button type="submit" class="btn btn-success btn-sm">
-            <i class="bi bi-box-arrow-right me-1"></i>Confirm Release
+            <i class="me-1" data-lucide="log-out"></i>Confirm Release
           </button>
         </div>
       </form>
@@ -425,10 +425,11 @@ function sortTable(col, type) {
   groups.forEach(function(g) { g.forEach(function(r) { tbody.appendChild(r); }); });
   [0,1,2,4,7].forEach(function(c) {
     var el = document.getElementById('sa'+c);
-    if (el) el.textContent = '⇅';
+    if (el) el.setAttribute('data-lucide', 'arrow-up-down');
   });
   var arrow = document.getElementById('sa'+col);
-  if (arrow) arrow.textContent = dir === 1 ? '↑' : '↓';
+  if (arrow) arrow.setAttribute('data-lucide', dir === 1 ? 'arrow-up' : 'arrow-down');
+  if (window.lucide) lucide.createIcons();
 }
 </script>
 {% endblock %}

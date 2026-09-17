@@ -364,7 +364,7 @@
       return;
     }
     list.innerHTML = sections.map(function (sec) {
-      var head = '<div class="tn-notif-sec"><i class="bi ' + sec.icon + '"></i> ' +
+      var head = '<div class="tn-notif-sec"><i data-lucide="' + sec.icon + '"></i> ' +
                  sec.title + ' <span>' + sec.items.length + '</span></div>';
       var rows = sec.items.map(function (n) {
         var href = n.link ? n.link : '#';
@@ -374,6 +374,7 @@
       }).join('');
       return head + rows;
     }).join('');
+    if (window.lucide) lucide.createIcons();
   }
 
   function load() {
@@ -434,23 +435,23 @@
 <header class="tn-header">
   <div class="tn-inner">
     <a class="tn-brand" href="{{ url_for('dashboard') }}">
-      <span class="tn-brand-icon"><i class="bi bi-calendar2-check"></i></span>
+      <span class="tn-brand-icon"><i data-lucide="calendar-check-2"></i></span>
       <span class="tn-brand-name">HR Portal<small>Cohere Outsourcing</small></span>
     </a>
 
     <nav class="tn-nav" id="tnNav">
 
       <button class="tn-trigger" data-panel="main" aria-expanded="false">
-        Main <i class="bi bi-chevron-down tn-caret"></i><span class="tn-dot"></span>
+        Main <i class="tn-caret" data-lucide="chevron-down"></i><span class="tn-dot"></span>
       </button>
 
       <button class="tn-trigger" data-panel="requests" aria-expanded="false">
-        My Requests <i class="bi bi-chevron-down tn-caret"></i><span class="tn-dot"></span>
+        My Requests <i class="tn-caret" data-lucide="chevron-down"></i><span class="tn-dot"></span>
       </button>
 
       {% if SUPER or ADMIN or P.get('can_material_requests') or break_log_supervisor_access() or TL %}
       <button class="tn-trigger" data-panel="team" aria-expanded="false">
-        My Team <i class="bi bi-chevron-down tn-caret"></i><span class="tn-dot"></span>
+        My Team <i class="tn-caret" data-lucide="chevron-down"></i><span class="tn-dot"></span>
       </button>
       {% endif %}
 
@@ -458,7 +459,7 @@
             or P.get('can_file_for_emp') or P.get('can_pim') or P.get('can_memos')
             or P.get('can_onboarding') or P.get('can_wfm') or coe_can_manage()) %}
       <button class="tn-trigger" data-panel="people" aria-expanded="false">
-        People &amp; HR <i class="bi bi-chevron-down tn-caret"></i><span class="tn-dot"></span>
+        People &amp; HR <i class="tn-caret" data-lucide="chevron-down"></i><span class="tn-dot"></span>
       </button>
       {% endif %}
 
@@ -469,7 +470,7 @@
                 or P.get('can_it_tickets') or P.get('can_hr_tickets')
                 or session.get('user', {}).get('email', '')|lower == (config.get('MATERIAL_FINAL_EMAIL','') or '')|lower)) %}
       <button class="tn-trigger" data-panel="operations" aria-expanded="false">
-        Operations <i class="bi bi-chevron-down tn-caret"></i><span class="tn-dot"></span>
+        Operations <i class="tn-caret" data-lucide="chevron-down"></i><span class="tn-dot"></span>
       </button>
       {% endif %}
 
@@ -479,13 +480,13 @@
             or P.get('can_overbreak') or P.get('can_tardiness')))
             or ADMIN or SUPER or P.get('can_csat') or session.get('is_csat_tl') %}
       <button class="tn-trigger" data-panel="analytics" aria-expanded="false">
-        Analytics <i class="bi bi-chevron-down tn-caret"></i><span class="tn-dot"></span>
+        Analytics <i class="tn-caret" data-lucide="chevron-down"></i><span class="tn-dot"></span>
       </button>
       {% endif %}
 
       {% if WRAP and (ADMIN or P.get('can_settings') or P.get('can_work_mode') or P.get('can_entitlements')) %}
       <button class="tn-trigger" data-panel="admin" aria-expanded="false">
-        Admin <i class="bi bi-chevron-down tn-caret"></i><span class="tn-dot"></span>
+        Admin <i class="tn-caret" data-lucide="chevron-down"></i><span class="tn-dot"></span>
       </button>
       {% endif %}
 
@@ -493,23 +494,23 @@
 
     <div class="tn-right">
       <button class="tn-search" id="tnOpenPalette" type="button">
-        <i class="bi bi-search" style="font-size:12px"></i>
+        <i data-lucide="search" style="font-size:12px"></i>
         <span>Jump to...</span>
         <span class="tn-kbd">Ctrl K</span>
       </button>
       <div class="tn-userpill">
-        <i class="bi bi-person-circle"></i>
+        <i data-lucide="circle-user"></i>
         {{ session['user']['name'] }}
         {% if session['user'].get('employee_id') %}
         <span class="tn-empid">{{ session['user']['employee_id'] }}</span>
         {% endif %}
       </div>
       <button class="tn-iconbtn" type="button" id="tnThemeBtn" onclick="toggleTheme()" title="Toggle dark/light mode">
-        <i class="bi bi-moon-stars-fill" id="tnThemeIcon"></i>
+        <i data-lucide="moon-star" id="tnThemeIcon"></i>
       </button>
       <div class="tn-notif" id="tnNotifWrap">
         <button class="tn-iconbtn" type="button" id="tnNotifBtn" title="Notifications">
-          <i class="bi bi-bell"></i>
+          <i data-lucide="bell"></i>
           <span class="tn-notif-badge" id="tnNotifBadge">0</span>
         </button>
         <div class="tn-notif-panel" id="tnNotifPanel">
@@ -519,7 +520,7 @@
           </div>
           <div class="tn-notif-search">
             <div class="tn-notif-search-in">
-              <i class="bi bi-search"></i>
+              <i data-lucide="search"></i>
               <input type="text" id="tnNotifSearch" placeholder="Search name or ID…" autocomplete="off">
             </div>
             <div class="tn-notif-pills" id="tnNotifPills"></div>
@@ -532,14 +533,14 @@
       <a class="tn-userpill tn-headcount-pill" id="tnHeadcountPill"
          href="{{ url_for('on_shift') }}" title="People currently on shift — click for details">
         <span class="tn-hc-dot"></span>
-        <i class="bi bi-people-fill"></i>
+        <i data-lucide="users"></i>
         <strong id="tnHeadcountNum">&mdash;</strong>
         <span class="tn-empid">on shift</span>
       </a>
       <a class="tn-iconbtn" href="{{ url_for('logout') }}" title="Logout">
-        <i class="bi bi-box-arrow-left"></i>
+        <i data-lucide="log-out"></i>
       </a>
-      <button class="tn-iconbtn tn-burger" id="tnBurger" type="button"><i class="bi bi-list"></i></button>
+      <button class="tn-iconbtn tn-burger" id="tnBurger" type="button"><i data-lucide="menu"></i></button>
     </div>
   </div>
 
@@ -564,19 +565,19 @@
     <div class="tn-panel" data-panel="main">
       <div class="tn-cols">
         <a class="tn-item {% if EP == 'dashboard' %}active{% endif %}" href="{{ url_for('dashboard') }}">
-          <i class="bi bi-speedometer2"></i> Dashboard</a>
+          <i data-lucide="gauge"></i> Dashboard</a>
         <a class="tn-item {% if EP == 'history' %}active{% endif %}" href="{{ url_for('history') }}">
-          <i class="bi bi-clock-history"></i> My History</a>
+          <i data-lucide="clock-arrow-up"></i> My History</a>
         <a class="tn-item {% if EP == 'break_log.break_log' %}active{% endif %}" href="{{ url_for('break_log.break_log') }}">
-          <i class="bi bi-stopwatch"></i> Break Log</a>
+          <i data-lucide="timer"></i> Break Log</a>
         <a class="tn-item {% if EP == 'survey.survey_list' %}active{% endif %}" href="{{ url_for('survey.survey_list') }}">
-          <i class="bi bi-card-checklist"></i> Survey</a>
+          <i data-lucide="clipboard-list"></i> Survey</a>
         <a class="tn-item {% if EP == 'qa_updates.bulletin' %}active{% endif %}" href="{{ url_for('qa_updates.bulletin') }}">
-          <i class="bi bi-megaphone"></i> QA Updates
+          <i data-lucide="megaphone"></i> QA Updates
           <span id="qaUpdatesBadge" style="display:none;margin-left:auto;background:#ef4444;color:#fff;font-size:.65rem;font-weight:700;padding:.15rem .45rem;border-radius:999px;min-width:18px;text-align:center;"></span></a>
         {% if qa_can_view_data() %}
         <a class="tn-item {% if EP == 'qa_updates.data_dashboard' %}active{% endif %}" href="{{ url_for('qa_updates.data_dashboard') }}">
-          <i class="bi bi-bar-chart-line"></i> QA Updates Data</a>
+          <i data-lucide="chart-column"></i> QA Updates Data</a>
         {% endif %}
       </div>
     </div>
@@ -585,29 +586,29 @@
     <div class="tn-panel" data-panel="requests">
       <div class="tn-cols">
         <a class="tn-item {% if EP == 'file_requests_hub' %}active{% endif %}" href="{{ url_for('file_requests_hub') }}">
-          <i class="bi bi-grid-3x2-gap"></i> All Requests</a>
+          <i data-lucide="grid-3x2"></i> All Requests</a>
         <a class="tn-item {% if EP == 'file_leave' %}active{% endif %}" href="{{ url_for('file_leave') }}">
-          <i class="bi bi-calendar-plus"></i> File Leave</a>
+          <i data-lucide="calendar-plus"></i> File Leave</a>
         <a class="tn-item {% if EP == 'file_fts' %}active{% endif %}" href="{{ url_for('file_fts') }}">
-          <i class="bi bi-clock"></i> Failure to Swipe</a>
+          <i data-lucide="clock"></i> Failure to Swipe</a>
         <a class="tn-item {% if EP in ['file_ot', 'file_rdw'] %}active{% endif %}" href="{{ url_for('file_ot') }}">
-          <i class="bi bi-hourglass-bottom"></i> OT / Rest Day Work</a>
+          <i data-lucide="hourglass"></i> OT / Rest Day Work</a>
         <a class="tn-item {% if EP == 'file_cws' %}active{% endif %}" href="{{ url_for('file_cws') }}">
-          <i class="bi bi-arrow-left-right"></i> Change Work Schedule</a>
+          <i data-lucide="arrow-left-right"></i> Change Work Schedule</a>
         <a class="tn-item {% if EP == 'magic_cws_form' %}active{% endif %}" href="{{ url_for('magic_cws_form') }}">
-          <i class="bi bi-lightning-charge-fill" style="color:#a78bfa"></i> Magic CWS</a>
+          <i data-lucide="zap" style="color:#a78bfa"></i> Magic CWS</a>
         <a class="tn-item {% if EP == 'file_material' %}active{% endif %}" href="{{ url_for('file_material') }}">
-          <i class="bi bi-box-seam"></i> Material Request</a>
+          <i data-lucide="package"></i> Material Request</a>
         <a class="tn-item {% if EP == 'facilities_request' %}active{% endif %}" href="{{ url_for('facilities_request') }}">
-          <i class="bi bi-tools"></i> Facilities &amp; Repair</a>
+          <i data-lucide="wrench"></i> Facilities &amp; Repair</a>
         <a class="tn-item {% if EP in ['tickets_index', 'ticket_detail', 'ticket_add_comment'] %}active{% endif %}" href="{{ url_for('tickets_index') }}">
-          <i class="bi bi-headset"></i> My Tickets</a>
+          <i data-lucide="headset"></i> My Tickets</a>
         <a class="tn-item {% if EP == 'coe.request_coe' %}active{% endif %}" href="{{ url_for('coe.request_coe') }}">
-          <i class="bi bi-file-earmark-text"></i> Request CoE</a>
+          <i data-lucide="file-text"></i> Request CoE</a>
         <a class="tn-item {% if EP == 'my_records.records' %}active{% endif %}" href="{{ url_for('my_records.records') }}">
-          <i class="bi bi-clipboard-check"></i> My Records</a>
+          <i data-lucide="clipboard-check"></i> My Records</a>
         <a class="tn-item {% if EP and EP.startswith('coaching.my') %}active{% endif %}" href="{{ url_for('coaching.my_sessions') }}">
-          <i class="bi bi-easel2"></i> My Coaching</a>
+          <i data-lucide="presentation"></i> My Coaching</a>
       </div>
     </div>
 
@@ -617,45 +618,45 @@
       <div class="tn-cols">
         {% if SL_HR_APPROVER %}
         <a class="tn-item {% if EP == 'sl_verification' %}active{% endif %}" href="{{ url_for('sl_verification') }}">
-          <i class="bi bi-clipboard2-pulse"></i> SL Verification
+          <i data-lucide="activity"></i> SL Verification
           <span id="slVerifyBadge" style="display:none;margin-left:auto;background:#ef4444;color:#fff;font-size:.65rem;font-weight:700;padding:.15rem .45rem;border-radius:999px;min-width:18px;text-align:center;"></span>
         </a>
         {% endif %}
         {% if SUPER or ADMIN %}
         <a class="tn-item {% if EP == 'supervisor_active_leaves' %}active{% endif %}" href="{{ url_for('supervisor_active_leaves') }}">
-          <i class="bi bi-calendar-check"></i> All Team Leaves</a>
+          <i data-lucide="calendar-check"></i> All Team Leaves</a>
         <a class="tn-item {% if EP == 'supervisor_pending' %}active{% endif %}" href="{{ url_for('supervisor_pending') }}">
-          <i class="bi bi-hourglass-split"></i> Leave Approvals
+          <i data-lucide="hourglass"></i> Leave Approvals
           <span id="pendingBadge" style="display:none;margin-left:auto;background:#ef4444;color:#fff;font-size:.65rem;font-weight:700;padding:.15rem .45rem;border-radius:999px;min-width:18px;text-align:center;"></span></a>
 
         
           <a class="tn-item {% if EP == 'file_requests_approvals' %}active{% endif %}" href="{{ url_for('file_requests_approvals') }}">
-          <i class="bi bi-check2-square"></i> OT / CWS / FTS / RDW
+          <i data-lucide="square-check"></i> OT / CWS / FTS / RDW
           <span id="fileRequestsBadge" style="display:none;margin-left:auto;background:#ef4444;color:#fff;font-size:.65rem;font-weight:700;padding:.15rem .45rem;border-radius:999px;min-width:18px;text-align:center;"></span></a>
         {% endif %}
         {% if SUPER or ADMIN or P.get('can_team_calendar') %}
         <a class="tn-item {% if EP == 'supervisor_team_calendar' %}active{% endif %}" href="{{ url_for('supervisor_team_calendar') }}">
-          <i class="bi bi-calendar3"></i> Leave Calendar</a>
+          <i data-lucide="calendar"></i> Leave Calendar</a>
         {% endif %}
         {% if ADMIN or P.get('can_coaching') or P.get('can_coaching_reports') %}
         <a class="tn-item {% if EP and EP.startswith('coaching.') %}active{% endif %}" href="{{ url_for('coaching.index') }}">
-          <i class="bi bi-easel2"></i> Coaching</a>
+          <i data-lucide="presentation"></i> Coaching</a>
         {% endif %}
         {% if SUPER or ADMIN or P.get('can_material_requests') %}
         <a class="tn-item {% if EP == 'material_som_approvals' %}active{% endif %}" href="{{ url_for('material_som_approvals') }}">
-          <i class="bi bi-box-seam"></i> Material Approvals
+          <i data-lucide="package"></i> Material Approvals
           <span id="materialBadge" style="display:none;margin-left:auto;background:#ef4444;color:#fff;font-size:.65rem;font-weight:700;padding:.15rem .45rem;border-radius:999px;min-width:18px;text-align:center;"></span></a>
         {% endif %}
         {% if break_log_supervisor_access() %}
         <a class="tn-item {% if EP == 'break_log.supervisor_break_logs' %}active{% endif %}" href="{{ url_for('break_log.supervisor_break_logs') }}">
-          <i class="bi bi-clipboard2-pulse"></i> Break Monitoring</a>
+          <i data-lucide="activity"></i> Break Monitoring</a>
         {% endif %}
         {% if TL or ADMIN %}
         <div class="tn-group-label">View My Team (Read-Only)</div>
         <a class="tn-item {% if EP == 'tl_view.tl_view_leave' %}active{% endif %}" href="{{ url_for('tl_view.tl_view_leave') }}">
-          <i class="bi bi-eye"></i> Leave</a>
+          <i data-lucide="eye"></i> Leave</a>
         <a class="tn-item {% if EP == 'tl_view.tl_view_requests' %}active{% endif %}" href="{{ url_for('tl_view.tl_view_requests') }}">
-          <i class="bi bi-eye"></i> Requests</a>
+          <i data-lucide="eye"></i> Requests</a>
         {% endif %}
       </div>
     </div>
@@ -669,40 +670,40 @@
       <div class="tn-cols">
         {% if ADMIN or P.get('can_all_leaves') %}
         <a class="tn-item {% if EP == 'admin_all_leaves' %}active{% endif %}" href="{{ url_for('admin_all_leaves') }}">
-          <i class="bi bi-calendar2-week"></i> All Leaves</a>
+          <i data-lucide="calendar-range"></i> All Leaves</a>
         {% endif %}
         {% if ADMIN or P.get('can_all_requests') %}
         <a class="tn-item {% if EP == 'file_requests_hub' %}active{% endif %}" href="{{ url_for('file_requests_hub') }}">
-          <i class="bi bi-inbox"></i> All Requests</a>
+          <i data-lucide="inbox"></i> All Requests</a>
         {% endif %}
         {% if ADMIN or P.get('can_file_for_emp') %}
         <a class="tn-item {% if EP == 'admin_file_leave' %}active{% endif %}" href="{{ url_for('admin_file_leave') }}">
-          <i class="bi bi-person-plus"></i> File for Employee</a>
+          <i data-lucide="user-plus"></i> File for Employee</a>
         {% endif %}
         {% if ADMIN or P.get('can_pim') %}
         <a class="tn-item {% if EP in ['pim_index', 'pim_profile'] %}active{% endif %}" href="{{ url_for('pim_index') }}">
-          <i class="bi bi-people"></i> Employee Database</a>
+          <i data-lucide="users"></i> Employee Database</a>
         {% endif %}
         {% if ADMIN or P.get('can_memos') %}
         <a class="tn-item {% if EP == 'memos.memos_list' %}active{% endif %}" href="{{ url_for('memos.memos_list') }}">
-          <i class="bi bi-file-earmark-text"></i> Employee Memos</a>
+          <i data-lucide="file-text"></i> Employee Memos</a>
         {% endif %}
         {% if ADMIN or P.get('can_wfm') or P.get('can_onboarding') or coe_can_manage() %}
         <div class="tn-group-label">Onboarding &amp; CoE</div>
         {% endif %}
         {% if ADMIN or P.get('can_wfm') %}
         <a class="tn-item {% if EP == 'hrportal_wfm_onboarding' %}active{% endif %}" href="{{ url_for('hrportal_wfm_onboarding') }}">
-          <i class="bi bi-cloud-upload"></i> WFM Onboarding</a>
+          <i data-lucide="cloud-upload"></i> WFM Onboarding</a>
         {% endif %}
         {% if ADMIN or P.get('can_onboarding') %}
         <a class="tn-item {% if EP == 'hrportal_onboarding' %}active{% endif %}" href="{{ url_for('hrportal_onboarding') }}">
-          <i class="bi bi-person-plus-fill"></i> Onboarding</a>
+          <i data-lucide="user-plus"></i> Onboarding</a>
         <a class="tn-item {% if EP == 'hrportal_offboarding' %}active{% endif %}" href="{{ url_for('hrportal_offboarding') }}">
-          <i class="bi bi-person-dash-fill"></i> Offboarding</a>
+          <i data-lucide="user-minus"></i> Offboarding</a>
         {% endif %}
         {% if coe_can_manage() %}
         <a class="tn-item {% if EP == 'coe.manage_queue' %}active{% endif %}" href="{{ url_for('coe.manage_queue') }}">
-          <i class="bi bi-clipboard2-check"></i> Manage CoE Requests</a>
+          <i data-lucide="clipboard-check"></i> Manage CoE Requests</a>
         {% endif %}
       </div>
     </div>
@@ -719,60 +720,60 @@
       <div class="tn-cols">
         {% if WRAP and (ADMIN or P.get('can_material_requests') or P.get('can_inventory')) %}
         <a class="tn-item {% if EP == 'admin_inventory' %}active{% endif %}" href="{{ url_for('admin_inventory') }}">
-          <i class="bi bi-boxes"></i> Inventory</a>
+          <i data-lucide="boxes"></i> Inventory</a>
         {% endif %}
         {% if ADMIN %}
         <a class="tn-item {% if EP == 'inventory_history' %}active{% endif %}" href="{{ url_for('inventory_history') }}">
-          <i class="bi bi-clock-history"></i> Inventory History</a>
+          <i data-lucide="clock-arrow-up"></i> Inventory History</a>
         {% endif %}
         {% if WRAP and (ADMIN or P.get('can_material_requests')) %}
         <a class="tn-item {% if EP == 'material_admin_review' %}active{% endif %}" href="{{ url_for('material_admin_review') }}">
-          <i class="bi bi-clipboard-check"></i> Material Review
+          <i data-lucide="clipboard-check"></i> Material Review
           <span id="materialAdminBadge" style="display:none;margin-left:auto;background:#ef4444;color:#fff;font-size:.65rem;font-weight:700;padding:.15rem .45rem;border-radius:999px;min-width:18px;text-align:center;"></span></a>
         {% endif %}
         {% if WRAP and (session.get('user', {}).get('email', '')|lower == (config.get('MATERIAL_FINAL_EMAIL','') or '')|lower or ADMIN or P.get('can_final_approval')) %}
         <a class="tn-item {% if EP == 'material_final_approval' %}active{% endif %}" href="{{ url_for('material_final_approval') }}">
-          <i class="bi bi-patch-check"></i> Material Final Approval
+          <i data-lucide="badge-check"></i> Material Final Approval
           <span id="materialFinalBadge" style="display:none;margin-left:auto;background:#ef4444;color:#fff;font-size:.65rem;font-weight:700;padding:.15rem .45rem;border-radius:999px;min-width:18px;text-align:center;"></span></a>
         {% endif %}
         {% if WRAP and (ADMIN or P.get('can_view_approved_items')) %}
         <a class="tn-item {% if EP == 'material_purchaser_view' %}active{% endif %}" href="{{ url_for('material_purchaser_view') }}">
-          <i class="bi bi-bag-check"></i> Purchaser View</a>
+          <i data-lucide="package-check"></i> Purchaser View</a>
         {% endif %}
         {% if WRAP and (ADMIN or P.get('can_facilities_review')) %}
         <a class="tn-item {% if EP == 'facilities_review' %}active{% endif %}" href="{{ url_for('facilities_review') }}">
-          <i class="bi bi-tools"></i> Facilities Review</a>
+          <i data-lucide="wrench"></i> Facilities Review</a>
         {% endif %}
         {% if WRAP and (ADMIN or P.get('can_facilities_final')) %}
         <a class="tn-item {% if EP == 'facilities_final' %}active{% endif %}" href="{{ url_for('facilities_final') }}">
-          <i class="bi bi-wrench-adjustable-circle"></i> Facilities Final Approval</a>
+          <i data-lucide="wrench"></i> Facilities Final Approval</a>
         {% endif %}
         {% if WRAP and (ADMIN or P.get('can_it_tickets') or P.get('can_hr_tickets')) %}
         <a class="tn-item {% if EP == 'admin_tickets' %}active{% endif %}" href="{{ url_for('admin_tickets') }}">
-          <i class="bi bi-headset"></i> Ticket Queue</a>
+          <i data-lucide="headset"></i> Ticket Queue</a>
         {% endif %}
         {% if ADMIN or P.get('can_floor_map') or ir_can_file() or ir_can_view() or qa_can_manage() %}
         <div class="tn-group-label">Floor &amp; Reporting</div>
         {% endif %}
         {% if ADMIN or P.get('can_floor_map') %}
         <a class="tn-item {% if 'floor_map' in EP and 'admin' not in EP %}active{% endif %}" href="{{ url_for('floor_map.index') }}">
-          <i class="bi bi-geo-alt"></i> Floor Map</a>
+          <i data-lucide="map-pin"></i> Floor Map</a>
         {% endif %}
         {% if ADMIN %}
         <a class="tn-item {% if 'floor_map' in EP and 'admin' in EP %}active{% endif %}" href="{{ url_for('floor_map.admin') }}">
-          <i class="bi bi-pencil-square"></i> Seat Setup</a>
+          <i data-lucide="square-pen"></i> Seat Setup</a>
         {% endif %}
         {% if ir_can_file() %}
         <a class="tn-item {% if 'incident_reports' in EP and EP != 'incident_reports.dashboard' %}active{% endif %}" href="{{ url_for('incident_reports.new_report') }}">
-          <i class="bi bi-file-earmark-plus"></i> File Incident Report</a>
+          <i data-lucide="file-plus"></i> File Incident Report</a>
         {% endif %}
         {% if ir_can_view() %}
         <a class="tn-item {% if EP == 'incident_reports.dashboard' %}active{% endif %}" href="{{ url_for('incident_reports.dashboard') }}">
-          <i class="bi bi-clipboard2-pulse"></i> Incident Dashboard</a>
+          <i data-lucide="activity"></i> Incident Dashboard</a>
         {% endif %}
         {% if qa_can_manage() %}
         <a class="tn-item {% if EP == 'qa_updates.admin' %}active{% endif %}" href="{{ url_for('qa_updates.admin') }}">
-          <i class="bi bi-clipboard2-pulse"></i> Manage QA Updates</a>
+          <i data-lucide="activity"></i> Manage QA Updates</a>
         {% endif %}
       </div>
     </div>
@@ -788,60 +789,60 @@
       <div class="tn-cols">
         {% if WRAP and (ADMIN or P.get('can_reports')) %}
         <a class="tn-item {% if EP == 'admin_analytics' %}active{% endif %}" href="{{ url_for('admin_analytics') }}">
-          <i class="bi bi-graph-up-arrow"></i> Analytics</a>
+          <i data-lucide="trending-up"></i> Analytics</a>
         <a class="tn-item {% if EP == 'admin_reports' %}active{% endif %}" href="{{ url_for('admin_reports') }}">
-          <i class="bi bi-bar-chart-line"></i> Reports</a>
+          <i data-lucide="chart-column"></i> Reports</a>
         {% endif %}
         {% if WRAP and (ADMIN or P.get('can_onboarding') or P.get('can_reports')) %}
         <a class="tn-item {% if EP == 'admin_onboarding_report' %}active{% endif %}" href="{{ url_for('admin_onboarding_report') }}">
-          <i class="bi bi-person-lines-fill"></i> Onboarding / Offboarding</a>
+          <i data-lucide="user-round"></i> Onboarding / Offboarding</a>
         {% endif %}
         {% if WRAP and (ADMIN or P.get('can_schedules')) %}
         <a class="tn-item {% if EP == 'admin_schedules' %}active{% endif %}" href="{{ url_for('admin_schedules') }}">
-          <i class="bi bi-calendar3-week"></i> Schedules</a>
+          <i data-lucide="calendar-days"></i> Schedules</a>
         {% endif %}
         {% if WRAP and (ADMIN or P.get('can_absences')) %}
         <a class="tn-item {% if EP == 'admin_absences' %}active{% endif %}" href="{{ url_for('admin_absences') }}">
-          <i class="bi bi-person-x"></i> Attendance</a>
+          <i data-lucide="user-x"></i> Attendance</a>
         {% endif %}
         {% if WRAP and (ADMIN or P.get('can_tardiness')) %}
         <a class="tn-item {% if EP == 'tardiness.tardiness_page' %}active{% endif %}" href="{{ url_for('tardiness.tardiness_page') }}">
-          <i class="bi bi-clock-history"></i> Tardiness Report</a>
+          <i data-lucide="clock-arrow-up"></i> Tardiness Report</a>
         {% endif %}
         {% if WRAP and (ADMIN or P.get('can_night_differential')) %}
         <a class="tn-item {% if EP == 'admin_night_diff' %}active{% endif %}" href="{{ url_for('admin_night_diff') }}">
-          <i class="bi bi-moon-stars"></i> Night Differential</a>
+          <i data-lucide="moon-star"></i> Night Differential</a>
         {% endif %}
         {% if WRAP and (ADMIN or P.get('can_holiday_awol')) %}
         <a class="tn-item {% if EP == 'admin_holiday_awol' %}active{% endif %}" href="{{ url_for('admin_holiday_awol') }}">
-          <i class="bi bi-calendar-x"></i> Holiday AWOL</a>
+          <i data-lucide="calendar-x"></i> Holiday AWOL</a>
         {% endif %}
         {% if WRAP and (ADMIN or P.get('can_overbreak')) %}
         <a class="tn-item {% if EP == 'admin_overbreak' %}active{% endif %}" href="{{ url_for('admin_overbreak') }}">
-          <i class="bi bi-cup-straw"></i> Overbreak Report</a>
+          <i data-lucide="cup-soda"></i> Overbreak Report</a>
         {% endif %}
         {% if WRAP and (ADMIN or P.get('can_ot_hours')) %}
         <a class="tn-item {% if EP == 'admin_ot_hours' %}active{% endif %}" href="{{ url_for('admin_ot_hours') }}">
-          <i class="bi bi-stopwatch"></i> OT Hours</a>
+          <i data-lucide="timer"></i> OT Hours</a>
         {% endif %}
         {% if WRAP and (ADMIN or P.get('can_attrition_report')) %}
         <a class="tn-item {% if EP == 'admin_attrition' %}active{% endif %}" href="{{ url_for('admin_attrition') }}">
-          <i class="bi bi-person-dash"></i> Attrition Report</a>
+          <i data-lucide="user-minus"></i> Attrition Report</a>
         {% endif %}
         {% if WRAP and (ADMIN or P.get('can_surveys')) %}
         <a class="tn-item {% if EP in ['survey.survey_admin_list', 'survey.survey_results'] %}active{% endif %}" href="{{ url_for('survey.survey_admin_list') }}">
-          <i class="bi bi-clipboard-data"></i> Surveys</a>
+          <i data-lucide="clipboard-list"></i> Surveys</a>
         {% endif %}
         {% if WRAP and (ADMIN or P.get('can_view_tickets')) %}
         <a class="tn-item {% if EP == 'admin_ot_tickets' %}active{% endif %}" href="{{ url_for('admin_ot_tickets') }}">
-          <i class="bi bi-ticket-perforated"></i> OT/RDW Tickets</a>
+          <i data-lucide="ticket"></i> OT/RDW Tickets</a>
         {% endif %}
         {% if ADMIN or SUPER or P.get('can_csat') or session.get('is_csat_tl') %}
         <div class="tn-group-label">CSAT</div>
         <a class="tn-item {% if EP == 'csat_dashboard' %}active{% endif %}" href="{{ url_for('csat_dashboard') }}">
-          <i class="bi bi-emoji-smile"></i> CSAT Dashboard</a>
+          <i data-lucide="heart"></i> CSAT Dashboard</a>
         <a class="tn-item {% if EP == 'csr.page' %}active{% endif %}" href="{{ url_for('csr.page') }}">
-          <i class="bi bi-person-exclamation"></i> CSR Percentage</a>
+          <i data-lucide="circle-alert"></i> CSR Percentage</a>
         {% endif %}
       </div>
     </div>
@@ -853,38 +854,38 @@
       <div class="tn-cols">
         {% if ADMIN or P.get('can_settings') %}
         <a class="tn-item {% if EP == 'admin_settings' %}active{% endif %}" href="{{ url_for('admin_settings') }}">
-          <i class="bi bi-gear"></i> Settings</a>
+          <i data-lucide="settings"></i> Settings</a>
         <a class="tn-item {% if EP == 'admin_holidays' %}active{% endif %}" href="{{ url_for('admin_holidays') }}">
-          <i class="bi bi-calendar2-x"></i> Holidays</a>
+          <i data-lucide="calendar-x-2"></i> Holidays</a>
         {% endif %}
         {% if ADMIN or P.get('can_work_mode') %}
         <a class="tn-item {% if EP == 'admin_emp_settings' %}active{% endif %}" href="{{ url_for('admin_emp_settings') }}">
-          <i class="bi bi-people-fill"></i> Work Mode per Employee</a>
+          <i data-lucide="users"></i> Work Mode per Employee</a>
         {% endif %}
         {% if ADMIN or P.get('can_entitlements') %}
         <a class="tn-item {% if EP == 'admin_leave_types' %}active{% endif %}" href="{{ url_for('admin_leave_types') }}">
-          <i class="bi bi-tag"></i> Leave Types</a>
+          <i data-lucide="tag"></i> Leave Types</a>
         <a class="tn-item {% if EP == 'admin_entitlements' %}active{% endif %}" href="{{ url_for('admin_entitlements') }}">
-          <i class="bi bi-credit-card"></i> Entitlements</a>
+          <i data-lucide="credit-card"></i> Entitlements</a>
         <a class="tn-item {% if EP == 'entitlements_audit.can_entitlements_audit' %}active{% endif %}" href="{{ url_for('entitlements_audit.can_entitlements_audit') }}">
-          <i class="bi bi-search"></i> Entitlements Audit</a>
+          <i data-lucide="search"></i> Entitlements Audit</a>
         {% endif %}
         {% if ADMIN %}
         <a class="tn-item {% if EP == 'admin_quick_links' %}active{% endif %}" href="{{ url_for('admin_quick_links') }}">
-          <i class="bi bi-grid-1x2"></i> Quick Links</a>
+          <i data-lucide="layout-panel-top"></i> Quick Links</a>
         <a class="tn-item {% if EP == 'admin_supervisors' %}active{% endif %}" href="{{ url_for('admin_supervisors') }}">
-          <i class="bi bi-person-lines-fill"></i> Supervisor Assignments</a>
+          <i data-lucide="user-round"></i> Supervisor Assignments</a>
         <a class="tn-item {% if EP == 'admin_sub_admins' %}active{% endif %}" href="{{ url_for('admin_sub_admins') }}">
-          <i class="bi bi-shield-check"></i> Sub-Admins</a>
+          <i data-lucide="shield-check"></i> Sub-Admins</a>
         <a class="tn-item {% if EP == 'magic_cws_balance_admin' %}active{% endif %}" href="{{ url_for('magic_cws_balance_admin') }}">
-          <i class="bi bi-lightning-charge-fill" style="color:#a78bfa"></i> Magic CWS Balance</a>
+          <i data-lucide="zap" style="color:#a78bfa"></i> Magic CWS Balance</a>
         {% endif %}
       </div>
     </div>
     {% endif %}
 
     <div class="tn-foot">
-      <i class="bi bi-command"></i> Press <span class="tn-kbd">Ctrl K</span> to jump to any page directly
+      <i data-lucide="command"></i> Press <span class="tn-kbd">Ctrl K</span> to jump to any page directly
     </div>
   </div>
 </header>
@@ -1101,7 +1102,7 @@
 
 {% if session.get('original_admin') %}
 <div class="tn-loginas">
-  <i class="bi bi-person-fill-gear me-1"></i>
+  <i class="me-1" data-lucide="user-round-cog"></i>
   Viewing as <strong>{{ session['user']['name'] }}</strong>
   <a href="{{ url_for('login_as_back') }}" class="ms-2 fw-bold" style="color:#000;text-decoration:underline;">
     Switch Back
@@ -1112,7 +1113,7 @@
 <div class="tn-pscrim" id="tnPScrim">
   <div class="tn-palette" role="dialog" aria-modal="true" aria-label="Jump to page">
     <div class="tn-pinput">
-      <i class="bi bi-search"></i>
+      <i data-lucide="search"></i>
       <input type="text" id="tnPInput" placeholder="Search pages..." autocomplete="off">
       <span class="tn-kbd">Esc</span>
     </div>
@@ -1122,9 +1123,9 @@
 
 <div class="tn-drawer" id="tnDrawer">
   <div class="tn-drawer-head">
-    <span class="tn-brand"><span class="tn-brand-icon"><i class="bi bi-calendar2-check"></i></span>
+    <span class="tn-brand"><span class="tn-brand-icon"><i data-lucide="calendar-check-2"></i></span>
       <span class="tn-brand-name">HR Portal<small>Cohere Outsourcing</small></span></span>
-    <button class="tn-iconbtn" id="tnDrawerClose" type="button"><i class="bi bi-x-lg"></i></button>
+    <button class="tn-iconbtn" id="tnDrawerClose" type="button"><i data-lucide="x"></i></button>
   </div>
   <div class="tn-drawer-body" id="tnDrawerBody"></div>
 </div>
@@ -1210,7 +1211,7 @@
     p.querySelectorAll('.tn-item').forEach(function(a){
       INDEX.push({
         title: a.textContent.trim(),
-        icon: a.querySelector('i') ? a.querySelector('i').className : 'bi bi-link',
+        icon: a.querySelector('i') ? a.querySelector('i').getAttribute('data-lucide') : 'link',
         section: section,
         href: a.getAttribute('href')
       });
@@ -1239,10 +1240,11 @@
         last = it.section;
       }
       html += '<div class="tn-pitem' + (idx === 0 ? ' sel' : '') + '" data-idx="' + idx + '">'
-            + '<i class="' + it.icon + '"></i>' + it.title
+            + '<i data-lucide="' + it.icon + '"></i>' + it.title
             + '<span class="sec">' + it.section + '</span></div>';
     });
     pList.innerHTML = html;
+    if (window.lucide) lucide.createIcons();
   }
   function move(d){
     var items = pList.querySelectorAll('.tn-pitem');
@@ -1279,12 +1281,13 @@
   INDEX.forEach(function(i){ if (sections.indexOf(i.section) === -1) sections.push(i.section); });
   dbody.innerHTML = sections.map(function(s, n){
     var links = INDEX.filter(function(i){ return i.section === s; }).map(function(i){
-      return '<a class="tn-item" href="' + i.href + '"><i class="' + i.icon + '"></i>' + i.title + '</a>';
+      return '<a class="tn-item" href="' + i.href + '"><i data-lucide="' + i.icon + '"></i>' + i.title + '</a>';
     }).join('');
     return '<button class="tn-acc-head" data-acc="' + n + '" aria-expanded="false" type="button">' + s
-         + ' <i class="bi bi-chevron-down"></i></button>'
+         + ' <i data-lucide="chevron-down"></i></button>'
          + '<div class="tn-acc-body" id="tnAcc' + n + '">' + links + '</div>';
   }).join('');
+  if (window.lucide) lucide.createIcons();
   dbody.addEventListener('click', function(e){
     var h = e.target.closest('.tn-acc-head');
     if (!h) return;

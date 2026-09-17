@@ -61,16 +61,16 @@
 
         <div class="col-12 d-flex gap-2">
           <button type="submit" class="btn btn-primary btn-sm">
-            <i class="bi bi-search me-1"></i>Apply
+            <i class="me-1" data-lucide="search"></i>Apply
           </button>
           <a href="{{ url_for('admin_all_leaves') }}" class="btn btn-outline-secondary btn-sm">
-            <i class="bi bi-x-circle me-1"></i>Clear
+            <i class="me-1" data-lucide="circle-x"></i>Clear
           </a>
           <span class="ms-auto text-muted small align-self-center">
             {{ records|length }} record{{ 's' if records|length != 1 }}
           </span>
           <button type="button" class="btn btn-outline-secondary btn-sm" onclick="copyTable()" title="Copy table to clipboard">
-            <i class="bi bi-clipboard me-1"></i>Copy Table
+            <i class="me-1" data-lucide="clipboard"></i>Copy Table
           </button>
         </div>
 
@@ -109,7 +109,7 @@
             {% set ns.current_tl = row_tl %}
             <tr class="table-secondary">
               <td colspan="12" class="py-1 ps-3">
-                <i class="bi bi-people-fill me-1 text-primary"></i>
+                <i class="me-1 text-primary" data-lucide="users"></i>
                 <strong>{{ row_tl }}</strong>
                 {% if r.group_name %}<span class="text-muted small ms-2">· {{ r.group_name }}</span>{% endif %}
               </td>
@@ -230,7 +230,7 @@ function copyTable() {
   navigator.clipboard.writeText(text).then(() => {
     const btn = document.querySelector('[onclick="copyTable()"]');
     const orig = btn.innerHTML;
-    btn.innerHTML = '<i class="bi bi-check-lg me-1"></i>Copied!';
+    btn.innerHTML = '<i class="me-1" data-lucide="check"></i>Copied!';
     btn.classList.add('btn-success');
     btn.classList.remove('btn-outline-secondary');
     setTimeout(() => {

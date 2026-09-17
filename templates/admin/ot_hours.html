@@ -17,13 +17,13 @@
   .date-nav .btn-icon:hover { background: var(--accent); color: #fff; border-color: var(--accent); }
 </style>
 
-<h4 class="mb-3"><i class="bi bi-stopwatch"></i> OT Hours Report</h4>
+<h4 class="mb-3"><i data-lucide="timer"></i> OT Hours Report</h4>
 
 <div class="filter-bar">
   <form method="get" id="dateForm">
     <div class="date-nav mb-2">
       <button type="button" class="btn-icon" id="prevPeriodBtn" title="Previous payroll period">
-        <i class="bi bi-chevron-left"></i>
+        <i data-lucide="chevron-left"></i>
       </button>
       <label for="date_from">From</label>
       <input type="date" id="date_from" name="date_from" value="{{ date_from }}"
@@ -32,7 +32,7 @@
       <input type="date" id="date_to" name="date_to" value="{{ date_to }}"
              class="form-control form-control-sm" style="width:auto;">
       <button type="button" class="btn-icon" id="nextPeriodBtn" title="Next payroll period">
-        <i class="bi bi-chevron-right"></i>
+        <i data-lucide="chevron-right"></i>
       </button>
       <button type="button" class="btn btn-outline-secondary btn-sm" id="currentPeriodBtn">Current Period</button>
       <button type="button" class="btn btn-outline-secondary btn-sm" id="todayBtn">Today</button>
@@ -87,12 +87,12 @@
 
     <div class="mt-2">
       <button class="btn btn-primary btn-sm" type="submit">
-        <i class="bi bi-search me-1"></i>Apply Filters
+        <i class="me-1" data-lucide="search"></i>Apply Filters
       </button>
       <a href="{{ url_for('admin_ot_hours') }}" class="btn btn-outline-secondary btn-sm">Reset</a>
       {% if records %}
       <button class="btn btn-outline-secondary btn-sm" type="button" onclick="copyOtHoursTable()">
-        <i class="bi bi-clipboard me-1"></i>Copy Table
+        <i class="me-1" data-lucide="clipboard"></i>Copy Table
       </button>
       {% endif %}
     </div>

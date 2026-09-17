@@ -8,7 +8,7 @@
     </div>
     <div class="col-md-4 text-end">
       <a href="{{ url_for('admin_inventory') }}" class="btn btn-sm btn-outline-secondary">
-        <i class="bi bi-arrow-left me-1"></i>Back to Inventory
+        <i class="me-1" data-lucide="arrow-left"></i>Back to Inventory
       </a>
     </div>
   </div>
@@ -23,10 +23,10 @@
       </form>
       <div class="ms-auto d-flex gap-2">
         <a href="{{ url_for('inventory_pdf_as_of', date=target_date.strftime('%Y-%m-%d')) }}" class="btn btn-sm btn-outline-danger">
-          <i class="bi bi-file-earmark-pdf me-1"></i>Export PDF
+          <i class="me-1" data-lucide="file-text"></i>Export PDF
         </a>
         <a href="{{ url_for('inventory_excel_as_of', date=target_date.strftime('%Y-%m-%d')) }}" class="btn btn-sm btn-outline-success">
-          <i class="bi bi-file-earmark-excel me-1"></i>Export Excel
+          <i class="me-1" data-lucide="file-spreadsheet"></i>Export Excel
         </a>
       </div>
     </div>

@@ -207,14 +207,14 @@
   <!-- Input bar -->
   <div class="ai-inputbar" style="position:relative;">
     <button class="ai-new-btn" id="aiNewBtn" onclick="newChat()">
-      <i class="bi bi-plus-lg"></i> New Chat
+      <i data-lucide="plus"></i> New Chat
     </button>
     <div class="ai-input-inner">
       <textarea id="ai-input" rows="1" placeholder="Message Cohere AI…"
         onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendAI();}"
         oninput="autoResize(this)"></textarea>
       <button class="ai-send-btn" id="aiSendBtn" onclick="sendAI()">
-        <i class="bi bi-send-fill"></i>
+        <i data-lucide="send"></i>
       </button>
     </div>
     <div class="ai-hint">Press Enter to send &nbsp;·&nbsp; Shift+Enter for new line</div>
