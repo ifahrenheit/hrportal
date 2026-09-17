@@ -136,6 +136,40 @@
         </div>
       </div>
 
+      <!-- Basic Information -->
+      <div class="card shadow-sm mt-3">
+        <div class="card-header fw-semibold">Basic Information</div>
+        <div class="card-body py-2 px-3">
+          <table class="table table-sm table-borderless mb-0">
+            <tr><th class="text-muted fw-normal" width="45%">Schedule Name</th><td>{{ employee.schedule_name or '—' }}</td></tr>
+            <tr><th class="text-muted fw-normal">ZD Name</th><td>{{ employee.zd_name or '—' }}</td></tr>
+            <tr><th class="text-muted fw-normal">Phone Name</th><td>{{ employee.phone_name or '—' }}</td></tr>
+            <tr><th class="text-muted fw-normal">UB Account</th><td>{{ employee.ub_account or '—' }}</td></tr>
+            <tr><th class="text-muted fw-normal">Birthdate</th><td>{{ employee.birthdate.strftime('%b %d, %Y') if employee.birthdate else '—' }}</td></tr>
+            <tr><th class="text-muted fw-normal">Batch</th><td>{{ employee.batch or '—' }}</td></tr>
+            <tr><th class="text-muted fw-normal">Tenure</th><td>{{ employee.tenure or '—' }}</td></tr>
+          </table>
+        </div>
+      </div>
+
+      <!-- Key Dates -->
+      <div class="card shadow-sm mt-3">
+        <div class="card-header fw-semibold">Key Dates</div>
+        <div class="card-body py-2 px-3">
+          <table class="table table-sm table-borderless mb-0">
+            {% set fmt = '%b %d, %Y' %}
+            <tr><th class="text-muted fw-normal" width="50%">Training Date</th><td>{{ employee.training_date.strftime(fmt) if employee.training_date else '—' }}</td></tr>
+            <tr><th class="text-muted fw-normal">Operational Date</th><td>{{ employee.operational_date.strftime(fmt) if employee.operational_date else '—' }}</td></tr>
+            <tr><th class="text-muted fw-normal">Promotion Date</th><td>{{ employee.promotion_date.strftime(fmt) if employee.promotion_date else '—' }}</td></tr>
+            <tr><th class="text-muted fw-normal">Exit Date</th><td>{{ employee.exit_date.strftime(fmt) if employee.exit_date else '—' }}</td></tr>
+            <tr><th class="text-muted fw-normal">Email Mode Start</th><td>{{ employee.email_mode_date_start.strftime(fmt) if employee.email_mode_date_start else '—' }}</td></tr>
+            <tr><th class="text-muted fw-normal">Email Mode Exit</th><td>{{ employee.email_mode_exit_date.strftime(fmt) if employee.email_mode_exit_date else '—' }}</td></tr>
+            <tr><th class="text-muted fw-normal">Moved to Arctic</th><td>{{ employee.moved_to_arctic.strftime(fmt) if employee.moved_to_arctic else '—' }}</td></tr>
+            <tr><th class="text-muted fw-normal">Moved to NUMA</th><td>{{ employee.moved_to_numa.strftime(fmt) if employee.moved_to_numa else '—' }}</td></tr>
+          </table>
+        </div>
+      </div>
+
     </div>
 
     <!-- RIGHT: Calendar + Info -->
@@ -233,7 +267,7 @@
       <!-- Work Schedule Calendar -->
       <div class="card shadow-sm mb-3">
         <div class="card-header d-flex align-items-center justify-content-between">
-          <span class="fw-semibold"><i class="bi bi-calendar3 me-2"></i>Work Schedule</span>
+          <span class="fw-semibold"><i class="me-2" data-lucide="calendar"></i>Work Schedule</span>
           <div class="d-flex align-items-center gap-2">
             <a href="{{ url_for('pim_profile', employee_id=employee_id, year=prev_year, month=prev_month) }}"
                class="btn btn-sm btn-outline-secondary">&lsaquo;</a>
@@ -292,36 +326,36 @@
           <span class="badge rounded-pill px-3 py-2{% if perf.absences %} perf-pill-clickable{% endif %}"
                 style="background:#fef2f2;color:#991b1b;border:1px solid #fecaca;font-size:.8rem;{% if perf.absences %}cursor:pointer;{% endif %}"
                 {% if perf.absences %}data-perf-toggle="perf-detail-{{ scope_key }}-absences" role="button" tabindex="0"{% endif %}>
-            <i class="bi bi-x-circle me-1"></i>Absences:
+            <i class="me-1" data-lucide="circle-x"></i>Absences:
             <strong>{{ perf.absence_count if perf.absence_count is not none else '—' }}</strong>
             {% if perf.absence_count %}
             <span class="text-muted">({{ perf.awol_count }} AWOL &middot; {{ perf.on_leave_count }} on leave)</span>
             {% endif %}
-            {% if perf.absences %}<i class="bi bi-chevron-down ms-1 perf-chevron" style="font-size:.7rem;transition:transform .15s;"></i>{% endif %}
+            {% if perf.absences %}<i class="ms-1 perf-chevron" data-lucide="chevron-down" style="font-size:.7rem;transition:transform .15s;"></i>{% endif %}
           </span>
           <span class="badge rounded-pill px-3 py-2{% if perf.fts %} perf-pill-clickable{% endif %}"
                 style="background:#faf5ff;color:#6b21a8;border:1px solid #e9d5ff;font-size:.8rem;{% if perf.fts %}cursor:pointer;{% endif %}"
                 {% if perf.fts %}data-perf-toggle="perf-detail-{{ scope_key }}-fts" role="button" tabindex="0"{% endif %}>
-            <i class="bi bi-box-arrow-in-right me-1"></i>FTS:
+            <i class="me-1" data-lucide="log-in"></i>FTS:
             <strong>{{ perf.fts_count if perf.fts_count is not none else '—' }}</strong>
-            {% if perf.fts %}<i class="bi bi-chevron-down ms-1 perf-chevron" style="font-size:.7rem;transition:transform .15s;"></i>{% endif %}
+            {% if perf.fts %}<i class="ms-1 perf-chevron" data-lucide="chevron-down" style="font-size:.7rem;transition:transform .15s;"></i>{% endif %}
           </span>
           <span class="badge rounded-pill px-3 py-2{% if perf.overbreaks %} perf-pill-clickable{% endif %}"
                 style="background:#fff7ed;color:#9a3412;border:1px solid #fed7aa;font-size:.8rem;{% if perf.overbreaks %}cursor:pointer;{% endif %}"
                 {% if perf.overbreaks %}data-perf-toggle="perf-detail-{{ scope_key }}-overbreaks" role="button" tabindex="0"{% endif %}>
-            <i class="bi bi-cup-hot me-1"></i>Overbreaks:
+            <i class="me-1" data-lucide="coffee"></i>Overbreaks:
             <strong>{{ perf.overbreak_count }}</strong>
-            {% if perf.overbreaks %}<i class="bi bi-chevron-down ms-1 perf-chevron" style="font-size:.7rem;transition:transform .15s;"></i>{% endif %}
+            {% if perf.overbreaks %}<i class="ms-1 perf-chevron" data-lucide="chevron-down" style="font-size:.7rem;transition:transform .15s;"></i>{% endif %}
           </span>
           <span class="badge rounded-pill px-3 py-2{% if perf.tardiness %} perf-pill-clickable{% endif %}"
                 style="background:#eff6ff;color:#1e40af;border:1px solid #bfdbfe;font-size:.8rem;{% if perf.tardiness %}cursor:pointer;{% endif %}"
                 {% if perf.tardiness %}data-perf-toggle="perf-detail-{{ scope_key }}-tardiness" role="button" tabindex="0"{% endif %}>
-            <i class="bi bi-clock-history me-1"></i>Tardiness:
+            <i class="me-1" data-lucide="clock-arrow-up"></i>Tardiness:
             <strong>{{ perf.tardiness_count }}</strong>
             {% if perf.tardiness_count %}
             <span class="text-muted">({{ perf.tardiness_minutes }} min late total)</span>
             {% endif %}
-            {% if perf.tardiness %}<i class="bi bi-chevron-down ms-1 perf-chevron" style="font-size:.7rem;transition:transform .15s;"></i>{% endif %}
+            {% if perf.tardiness %}<i class="ms-1 perf-chevron" data-lucide="chevron-down" style="font-size:.7rem;transition:transform .15s;"></i>{% endif %}
           </span>
         </div>
 
@@ -418,11 +452,11 @@
 
         {% if perf.absences is none or perf.fts is none %}
         <div class="text-muted mt-2" style="font-size:.78rem;">
-          <i class="bi bi-info-circle me-1"></i>Absences/FTS not computable for this {{ 'month' if scope_key == 'month' else 'year' }} — no schedule or attendance-system mapping found for this employee.
+          <i class="me-1" data-lucide="info"></i>Absences/FTS not computable for this {{ 'month' if scope_key == 'month' else 'year' }} — no schedule or attendance-system mapping found for this employee.
         </div>
         {% elif perf.cutoff_note %}
         <div class="text-muted mt-2" style="font-size:.78rem;">
-          <i class="bi bi-info-circle me-1"></i>Absences/FTS cover shifts through {{ perf.cutoff_note }} only — later dates this {{ 'month' if scope_key == 'month' else 'year' }} haven't happened yet.
+          <i class="me-1" data-lucide="info"></i>Absences/FTS cover shifts through {{ perf.cutoff_note }} only — later dates this {{ 'month' if scope_key == 'month' else 'year' }} haven't happened yet.
         </div>
         {% endif %}
       </div>
@@ -430,7 +464,7 @@
 
       <div class="card shadow-sm mb-3" id="perfSummaryCard">
         <div class="card-header fw-semibold d-flex align-items-center justify-content-between flex-wrap gap-2">
-          <span><i class="bi bi-graph-up me-2"></i>Attendance Performance Summary</span>
+          <span><i class="me-2" data-lucide="chart-line"></i>Attendance Performance Summary</span>
           <div class="btn-group btn-group-sm" role="group" aria-label="Performance summary scope">
             <button type="button" class="btn btn-outline-secondary active" data-perf-scope-btn="month">Month</button>
             <button type="button" class="btn btn-outline-secondary" data-perf-scope-btn="year">Year</button>
@@ -474,6 +508,22 @@
       })();
       </script>
 
+      <!-- Profile section tabs -->
+      <ul class="nav nav-tabs mb-3" id="profileTabs" role="tablist">
+        <li class="nav-item" role="presentation">
+          <button class="nav-link active" data-bs-toggle="tab" data-bs-target="#tab-csat" type="button" role="tab">
+            <i class="me-1" data-lucide="heart" style="width:14px;height:14px;"></i>CSAT
+          </button>
+        </li>
+        <li class="nav-item" role="presentation">
+          <button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-details" type="button" role="tab">
+            <i class="me-1" data-lucide="file-text" style="width:14px;height:14px;"></i>Memos
+          </button>
+        </li>
+      </ul>
+
+      <div class="tab-content" id="profileTabsContent">
+      <div class="tab-pane fade show active" id="tab-csat" role="tabpanel">
       <!-- CSAT Performance Summary -->
       {% macro csat_scope_block(scope_key, csat, visible) %}
       <div class="csat-scope-block" data-csat-scope="{{ scope_key }}"{% if not visible %} style="display:none;"{% endif %}>
@@ -492,17 +542,17 @@
 
         <div class="d-flex gap-2 flex-wrap">
           <span class="badge rounded-pill px-3 py-2" style="background:#ecfeff;color:#155e75;border:1px solid #a5f3fc;font-size:.8rem;">
-            <i class="bi bi-chat-dots me-1"></i>Chat:
+            <i class="me-1" data-lucide="message-circle"></i>Chat:
             <strong>{{ '%.1f'|format(csat.by_channel.Chat.pct) ~ '%' if csat.by_channel.Chat.pct is not none else '—' }}</strong>
             <span class="text-muted">({{ csat.by_channel.Chat.resolved }} resolved)</span>
           </span>
           <span class="badge rounded-pill px-3 py-2" style="background:#fdf2f8;color:#9d174d;border:1px solid #fbcfe8;font-size:.8rem;">
-            <i class="bi bi-envelope me-1"></i>Email:
+            <i class="me-1" data-lucide="mail"></i>Email:
             <strong>{{ '%.1f'|format(csat.by_channel.Email.pct) ~ '%' if csat.by_channel.Email.pct is not none else '—' }}</strong>
             <span class="text-muted">({{ csat.by_channel.Email.resolved }} resolved)</span>
           </span>
           <span class="badge rounded-pill px-3 py-2" style="background:#f0fdfa;color:#115e59;border:1px solid #99f6e4;font-size:.8rem;">
-            <i class="bi bi-telephone me-1"></i>Phone:
+            <i class="me-1" data-lucide="phone"></i>Phone:
             <strong>{{ '%.1f'|format(csat.by_channel.Phone.pct) ~ '%' if csat.by_channel.Phone.pct is not none else '—' }}</strong>
             <span class="text-muted">({{ csat.by_channel.Phone.resolved }} resolved)</span>
           </span>
@@ -513,9 +563,9 @@
           <span class="badge rounded-pill px-3 py-2 perf-pill-clickable"
                 style="background:#f8fafc;color:#334155;border:1px solid #e2e8f0;font-size:.8rem;cursor:pointer;"
                 data-csat-toggle="csat-detail-{{ scope_key }}" role="button" tabindex="0">
-            <i class="bi bi-table me-1"></i>View Responses:
+            <i class="me-1" data-lucide="table"></i>View Responses:
             <strong>{{ csat.responses|length }}</strong>
-            <i class="bi bi-chevron-down ms-1 perf-chevron" style="font-size:.7rem;transition:transform .15s;"></i>
+            <i class="ms-1 perf-chevron" data-lucide="chevron-down" style="font-size:.7rem;transition:transform .15s;"></i>
           </span>
         </div>
         <div id="csat-detail-{{ scope_key }}" class="csat-detail-table mt-2" style="display:none;">
@@ -540,7 +590,7 @@
         </div>
         {% else %}
         <div class="text-muted mt-2" style="font-size:.78rem;">
-          <i class="bi bi-info-circle me-1"></i>No CSAT responses recorded for this {{ 'month' if scope_key == 'month' else 'year' }}.
+          <i class="me-1" data-lucide="info"></i>No CSAT responses recorded for this {{ 'month' if scope_key == 'month' else 'year' }}.
         </div>
         {% endif %}
       </div>
@@ -548,7 +598,7 @@
 
       <div class="card shadow-sm mb-3" id="csatSummaryCard">
         <div class="card-header fw-semibold d-flex align-items-center justify-content-between flex-wrap gap-2">
-          <span><i class="bi bi-emoji-smile me-2"></i>CSAT Performance Summary</span>
+          <span><i class="me-2" data-lucide="heart"></i>CSAT Performance Summary</span>
           <div class="btn-group btn-group-sm" role="group" aria-label="CSAT summary scope">
             <button type="button" class="btn btn-outline-secondary active" data-csat-scope-btn="month">Month</button>
             <button type="button" class="btn btn-outline-secondary" data-csat-scope-btn="year">Year</button>
@@ -591,49 +641,15 @@
         });
       })();
       </script>
+      </div>
 
-      <!-- Basic Info + Key Dates -->
+      <div class="tab-pane fade" id="tab-details" role="tabpanel">
       <div class="row g-3">
-        <div class="col-md-6">
-          <div class="card shadow-sm h-100">
-            <div class="card-header fw-semibold">Basic Information</div>
-            <div class="card-body py-2 px-3">
-              <table class="table table-sm table-borderless mb-0">
-                <tr><th class="text-muted fw-normal" width="45%">Schedule Name</th><td>{{ employee.schedule_name or '—' }}</td></tr>
-                <tr><th class="text-muted fw-normal">ZD Name</th><td>{{ employee.zd_name or '—' }}</td></tr>
-                <tr><th class="text-muted fw-normal">Phone Name</th><td>{{ employee.phone_name or '—' }}</td></tr>
-                <tr><th class="text-muted fw-normal">UB Account</th><td>{{ employee.ub_account or '—' }}</td></tr>
-                <tr><th class="text-muted fw-normal">Birthdate</th><td>{{ employee.birthdate.strftime('%b %d, %Y') if employee.birthdate else '—' }}</td></tr>
-                <tr><th class="text-muted fw-normal">Batch</th><td>{{ employee.batch or '—' }}</td></tr>
-                <tr><th class="text-muted fw-normal">Tenure</th><td>{{ employee.tenure or '—' }}</td></tr>
-              </table>
-            </div>
-          </div>
-        </div>
-        <div class="col-md-6">
-          <div class="card shadow-sm h-100">
-            <div class="card-header fw-semibold">Key Dates</div>
-            <div class="card-body py-2 px-3">
-              <table class="table table-sm table-borderless mb-0">
-                {% set fmt = '%b %d, %Y' %}
-                <tr><th class="text-muted fw-normal" width="50%">Training Date</th><td>{{ employee.training_date.strftime(fmt) if employee.training_date else '—' }}</td></tr>
-                <tr><th class="text-muted fw-normal">Operational Date</th><td>{{ employee.operational_date.strftime(fmt) if employee.operational_date else '—' }}</td></tr>
-                <tr><th class="text-muted fw-normal">Promotion Date</th><td>{{ employee.promotion_date.strftime(fmt) if employee.promotion_date else '—' }}</td></tr>
-                <tr><th class="text-muted fw-normal">Exit Date</th><td>{{ employee.exit_date.strftime(fmt) if employee.exit_date else '—' }}</td></tr>
-                <tr><th class="text-muted fw-normal">Email Mode Start</th><td>{{ employee.email_mode_date_start.strftime(fmt) if employee.email_mode_date_start else '—' }}</td></tr>
-                <tr><th class="text-muted fw-normal">Email Mode Exit</th><td>{{ employee.email_mode_exit_date.strftime(fmt) if employee.email_mode_exit_date else '—' }}</td></tr>
-                <tr><th class="text-muted fw-normal">Moved to Arctic</th><td>{{ employee.moved_to_arctic.strftime(fmt) if employee.moved_to_arctic else '—' }}</td></tr>
-                <tr><th class="text-muted fw-normal">Moved to NUMA</th><td>{{ employee.moved_to_numa.strftime(fmt) if employee.moved_to_numa else '—' }}</td></tr>
-              </table>
-            </div>
-          </div>
-        </div>
-
         {% if session.get('is_admin') or session.get('permissions', {}).get('can_memos') %}
         <div class="col-12">
           <div class="card shadow-sm mb-3">
             <div class="card-header fw-semibold d-flex align-items-center gap-2">
-              <i class="bi bi-file-earmark-text"></i> Employee Memos
+              <i data-lucide="file-text"></i> Employee Memos
             </div>
             <div class="card-body py-2 px-3" id="memos-container">
               <small class="text-muted">Loading memos...</small>
@@ -692,6 +708,8 @@
             </div>
           </div>
         </div>
+      </div>
+      </div>
       </div>
 
     </div>
