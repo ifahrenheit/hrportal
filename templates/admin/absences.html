@@ -5,33 +5,8 @@
 {% block content %}
 
 {# ── Page Tabs ───────────────────────────────────────────── #}
-<ul class="nav nav-tabs mb-3">
-  <li class="nav-item">
-    <a class="nav-link active" href="{{ url_for('admin_absences') }}">
-      <i class="me-1" data-lucide="user-x"></i>Absence Report
-    </a>
-  </li>
-  <li class="nav-item">
-    <a class="nav-link" href="{{ url_for('admin_attendance_grid') }}">
-      <i class="me-1" data-lucide="grid-3x3"></i>Attendance Grid
-    </a>
-  </li>
-  <li class="nav-item">
-    <a class="nav-link" href="{{ url_for('admin_awol_report') }}">
-      <i class="me-1" data-lucide="user-minus"></i>AWOL Report
-    </a>
-  </li>
-  <li class="nav-item">
-    <a class="nav-link" href="{{ url_for('admin_undertime_report') }}">
-      <i class="me-1" data-lucide="hourglass"></i>Undertime Report
-    </a>
-  </li>
-  <li class="nav-item">
-    <a class="nav-link" href="{{ url_for('admin_attendance_stack_rank') }}">
-      <i class="me-1" data-lucide="trophy"></i>Attendance Stack Rank
-    </a>
-  </li>
-</ul>
+{% set active_tab = 'absences' %}
+{% include "nav/_attendance_tabs.html" %}
 
 {# Filters #}
 <style>

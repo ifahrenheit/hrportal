@@ -1,0 +1,70 @@
+{# Shared tab bar for the Absence/Attendance family of report pages, so
+   switching between them doesn't require going back through the sidebar.
+   Set `active_tab` before including this partial to one of:
+   'absences' | 'attendance_grid' | 'awol' | 'undertime' | 'stack_rank' |
+   'tardiness' | 'holiday_awol' | 'overbreak' | 'ot_hours'.
+
+   Night Differential is deliberately left out of this bar -- it's still
+   being reworked, not yet ready to sit alongside these as a stable tab.
+
+   Skipped entirely under the topnav pilot (nav_style == 'topnav') --
+   nav/_topnav.html's own "Attendance" subnav row already lists these same
+   pages as pills, so rendering this too would just be a second, redundant
+   row of identical links stacked under the first. #}
+{% if nav_style != 'topnav' %}
+<ul class="nav nav-tabs mb-3">
+  <li class="nav-item">
+    <a class="nav-link {% if active_tab == 'absences' %}active{% endif %}" href="{{ url_for('admin_absences') }}">
+      <i class="me-1" data-lucide="user-x"></i>Absence Report
+    </a>
+  </li>
+  <li class="nav-item">
+    <a class="nav-link {% if active_tab == 'attendance_grid' %}active{% endif %}" href="{{ url_for('admin_attendance_grid') }}">
+      <i class="me-1" data-lucide="grid-3x3"></i>Attendance Grid
+    </a>
+  </li>
+  <li class="nav-item">
+    <a class="nav-link {% if active_tab == 'awol' %}active{% endif %}" href="{{ url_for('admin_awol_report') }}">
+      <i class="me-1" data-lucide="user-minus"></i>AWOL Report
+    </a>
+  </li>
+  <li class="nav-item">
+    <a class="nav-link {% if active_tab == 'undertime' %}active{% endif %}" href="{{ url_for('admin_undertime_report') }}">
+      <i class="me-1" data-lucide="hourglass"></i>Undertime Report
+    </a>
+  </li>
+  <li class="nav-item">
+    <a class="nav-link {% if active_tab == 'stack_rank' %}active{% endif %}" href="{{ url_for('admin_attendance_stack_rank') }}">
+      <i class="me-1" data-lucide="trophy"></i>Attendance Stack Rank
+    </a>
+  </li>
+  {% if session.get('is_admin') or session.get('permissions', {}).get('can_tardiness') %}
+  <li class="nav-item">
+    <a class="nav-link {% if active_tab == 'tardiness' %}active{% endif %}" href="{{ url_for('tardiness.tardiness_page') }}">
+      <i class="me-1" data-lucide="clock-arrow-up"></i>Tardiness
+    </a>
+  </li>
+  {% endif %}
+  {% if session.get('is_admin') or session.get('permissions', {}).get('can_holiday_awol') %}
+  <li class="nav-item">
+    <a class="nav-link {% if active_tab == 'holiday_awol' %}active{% endif %}" href="{{ url_for('admin_holiday_awol') }}">
+      <i class="me-1" data-lucide="calendar-x"></i>Holiday AWOL
+    </a>
+  </li>
+  {% endif %}
+  {% if session.get('is_admin') or session.get('permissions', {}).get('can_overbreak') %}
+  <li class="nav-item">
+    <a class="nav-link {% if active_tab == 'overbreak' %}active{% endif %}" href="{{ url_for('admin_overbreak') }}">
+      <i class="me-1" data-lucide="cup-soda"></i>Overbreak
+    </a>
+  </li>
+  {% endif %}
+  {% if session.get('is_admin') or session.get('permissions', {}).get('can_ot_hours') %}
+  <li class="nav-item">
+    <a class="nav-link {% if active_tab == 'ot_hours' %}active{% endif %}" href="{{ url_for('admin_ot_hours') }}">
+      <i class="me-1" data-lucide="timer"></i>OT Hours
+    </a>
+  </li>
+  {% endif %}
+</ul>
+{% endif %}

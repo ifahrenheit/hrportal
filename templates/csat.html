@@ -33,6 +33,10 @@
   .csat-grade-good { color:#198754; font-weight:600; }
   .csat-grade-warn { color:#fd7e14; font-weight:600; }
   .csat-grade-bad  { color:#dc3545; font-weight:600; }
+  .csat-row-pass > td { background:rgba(16,185,129,.14) !important; }
+  [data-theme="dark"] .csat-row-pass > td { background:rgba(16,185,129,.22) !important; }
+  .csat-row-fail > td { background:rgba(220,53,69,.14) !important; }
+  [data-theme="dark"] .csat-row-fail > td { background:rgba(220,53,69,.24) !important; }
   .table-csat th { white-space:nowrap; }
   .table-csat th.sortable { cursor:pointer; user-select:none; }
   .table-csat th.sortable:hover { background:var(--bg); }
@@ -147,6 +151,18 @@
     </div>
   </div>
 
+  <ul class="nav nav-tabs mb-3">
+    <li class="nav-item">
+      <a class="nav-link active" data-bs-toggle="tab" href="#tab-csat-overview">Overview</a>
+    </li>
+    <li class="nav-item">
+      <a class="nav-link" data-bs-toggle="tab" href="#tab-csat-team-comparison">Team Comparison</a>
+    </li>
+  </ul>
+
+  <div class="tab-content">
+  <div class="tab-pane fade show active" id="tab-csat-overview">
+
   <div class="row g-3 mb-3" id="kpiRow">
     <div class="col-md-3">
       <div class="kpi-card">
@@ -260,7 +276,57 @@
       </table>
     </div>
   </div>
+
+  </div>
+  <!-- /tab-csat-overview -->
+
+  <div class="tab-pane fade" id="tab-csat-team-comparison">
+    <div class="csat-card">
+      <div class="d-flex flex-wrap justify-content-between align-items-center mb-2 gap-2">
+        <h6 class="mb-0">Team Comparison <span class="text-muted" style="font-weight:400">(volume weighted CSAT per team, same filters as Overview)</span></h6>
+        <div class="d-flex align-items-center flex-nowrap gap-2">
+          <input type="text" class="form-control form-control-sm" style="max-width:240px; min-width:140px; flex:0 1 auto;"
+                 placeholder="Search team…" data-table-search="#teamComparisonTable">
+          <span class="text-muted small text-nowrap flex-shrink-0" data-table-count="#teamComparisonTable"></span>
+        </div>
+      </div>
+      <div class="d-flex flex-wrap align-items-end gap-2 mb-2" id="teamCompFilterRow">
+        <div class="filter-col" style="min-width:220px">
+          <label class="form-label small">Team</label>
+          <div class="ms" id="msTeamComp"></div>
+        </div>
+      </div>
+      <div class="table-responsive">
+        <table class="table table-sm table-hover table-csat align-middle" id="teamComparisonTable">
+          <thead class="table-light">
+            <tr id="teamCompHead">
+              <th class="sortable" data-key="team" data-type="str">Team<i class="sort-arrow" data-lucide="arrow-up-down"></i></th>
+              <th class="sortable text-end" data-key="agents" data-type="num"># Agents<i class="sort-arrow" data-lucide="arrow-up-down"></i></th>
+              <th class="sortable text-end" data-key="weighted" data-type="num">Volume Weighted CSAT<i class="sort-arrow" data-lucide="arrow-up-down"></i></th>
+              <th class="sortable text-end" data-key="chat_pct" data-type="num">Chat%<i class="sort-arrow" data-lucide="arrow-up-down"></i></th>
+              <th class="sortable text-end" data-key="chat_resolved" data-type="num">Chat Resolved<i class="sort-arrow" data-lucide="arrow-up-down"></i></th>
+              <th class="sortable text-end" data-key="email_pct" data-type="num">Email%<i class="sort-arrow" data-lucide="arrow-up-down"></i></th>
+              <th class="sortable text-end" data-key="email_resolved" data-type="num">Email Resolved<i class="sort-arrow" data-lucide="arrow-up-down"></i></th>
+              <th class="sortable text-end" data-key="phone_pct" data-type="num">Phone%<i class="sort-arrow" data-lucide="arrow-up-down"></i></th>
+              <th class="sortable text-end" data-key="phone_resolved" data-type="num">Phone Resolved<i class="sort-arrow" data-lucide="arrow-up-down"></i></th>
+              <th class="sortable text-end" data-key="total_resolved" data-type="num">Total Resolved<i class="sort-arrow" data-lucide="arrow-up-down"></i></th>
+              <th class="sortable text-end" data-key="responses" data-type="num">Responses<i class="sort-arrow" data-lucide="arrow-up-down"></i></th>
+            </tr>
+          </thead>
+          <tbody id="teamComparisonBody">
+            <tr class="empty-row"><td colspan="11" class="csat-loading">Loading…</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+  <!-- /tab-csat-team-comparison -->
+
+  </div>
+  <!-- /tab-content -->
 </div>
+
+{% include "routines/_table_assets.html" %}
 
 <!-- QA Responses Modal -->
 <div class="modal fade" id="respModal" tabindex="-1" aria-hidden="true">
@@ -311,6 +377,14 @@
 (function(){
   const fmtPct = function(v){ return (v==null? '—' : v.toFixed(2)+'%'); };
   const grade = function(v){ return v>=90 ? 'csat-grade-good' : (v>=80 ? 'csat-grade-warn' : 'csat-grade-bad'); };
+  const PASS_THRESHOLD = 88;
+  const FAIL_THRESHOLD = 80;
+  const rowPass = function(v){
+    if(v==null) return '';
+    if(v>=PASS_THRESHOLD) return ' csat-row-pass';
+    if(v<FAIL_THRESHOLD) return ' csat-row-fail';
+    return '';
+  };
   const $ = function(id){ return document.getElementById(id); };
 
   const today = new Date();
@@ -323,8 +397,10 @@
   $('csatEnd').value   = defEnd;
 
   let trendChart, tlChart, batchChart, agentRows = [];
+  let allTeamRows = [];
   let monthSpans = {}, weekSpans = {};
   let sortKey = 'weighted', sortDir = 'desc', sortType = 'num';
+  let teamSortKey = 'weighted', teamSortDir = 'desc', teamSortType = 'num';
   let selectedAgent = '';
   let allAgentsForPicker = [];
 
@@ -381,11 +457,10 @@
       input.value = selectedAgent;
       dropdown.style.display = 'none';
 
-      // Auto-assign TL if matching metadata is found
-      const match = allAgentsForPicker.find(function(a) { return a.email === selectedAgent; });
-      if (match && match.tl && $('fTL')) {
-        $('fTL').value = match.tl;
-      }
+      // Agent view shows ALL of that agent's responses, so clear the TL
+      // filter: responses keep the TL at the time they were recorded, and an
+      // agent who changed TLs would otherwise lose the older ones.
+      if ($('fTL')) $('fTL').value = 'All';
 
       toggleAgentViewLayout();
       loadAll();
@@ -468,6 +543,14 @@
   });
 
   const msBatch = MultiSelect('msBatch', 'Batch');
+
+  // Team Comparison tab's own Team filter — purely local: it narrows which
+  // already-fetched team rows are displayed, it does not requery the server
+  // and does not affect the Overview tab (the shared TL filter does that).
+  const msTeamComp = MultiSelect('msTeamComp', 'Team');
+  if($('msTeamComp')) $('msTeamComp').addEventListener('change', function(e){
+    if(e.target.closest && e.target.closest('.ms-item')) renderTeamRows();
+  });
 
   function val(id){ const el=$(id); return el ? el.value : 'All'; }
 
@@ -732,7 +815,7 @@
       const respCell = a.responses>0
         ? '<a href="#" class="resp-link" data-email="'+encodeURIComponent(a.email)+'">'+a.responses.toLocaleString()+'</a>'
         : a.responses.toLocaleString();
-      return '<tr>'+
+      return '<tr class="'+rowPass(a.weighted).trim()+'">'+
         '<td>'+(a.email||'')+'</td><td>'+(a.tl||'')+'</td><td>'+(a.batch||'')+'</td>'+
         '<td class="text-end '+grade(a.weighted)+'">'+fmtPct(a.weighted)+'</td>'+
         '<td class="text-end">'+a.chat_pct.toFixed(2)+'%</td>'+
@@ -809,6 +892,87 @@
   renderAgents($('agentSearch').value);
 }
 
+  function sortTeamRows(rows){
+    const k = teamSortKey, dir = teamSortDir==='asc'?1:-1;
+    const isNum = teamSortType==='num';
+    return rows.slice().sort(function(a,b){
+      let va = a[k], vb = b[k];
+      if(isNum){ va = Number(va)||0; vb = Number(vb)||0; return (va-vb)*dir; }
+      va = (va==null?'':String(va)).toLowerCase();
+      vb = (vb==null?'':String(vb)).toLowerCase();
+      if(va<vb) return -1*dir;
+      if(va>vb) return 1*dir;
+      return 0;
+    });
+  }
+
+  function updateTeamArrows(){
+    document.querySelectorAll('#teamCompHead th.sortable').forEach(function(th){
+      const arrow = th.querySelector('.sort-arrow');
+      if(th.dataset.key===teamSortKey){
+        th.classList.add('sort-active');
+        arrow.setAttribute('data-lucide', teamSortDir==='asc' ? 'arrow-up' : 'arrow-down');
+      } else {
+        th.classList.remove('sort-active');
+        arrow.setAttribute('data-lucide', 'arrow-up-down');
+      }
+    });
+    if (window.lucide) lucide.createIcons();
+  }
+
+  if($('teamCompHead')) $('teamCompHead').addEventListener('click', function(e){
+    const th = e.target.closest('th.sortable');
+    if(!th) return;
+    const key = th.dataset.key;
+    if(teamSortKey===key){
+      teamSortDir = (teamSortDir==='asc') ? 'desc' : 'asc';
+    } else {
+      teamSortKey = key;
+      teamSortType = th.dataset.type || 'str';
+      teamSortDir = (teamSortType==='num') ? 'desc' : 'asc';
+    }
+    renderTeamRows();
+  });
+
+  function renderTeamRows(){
+    const body = $('teamComparisonBody');
+    if(!allTeamRows.length){ body.innerHTML = '<tr class="empty-row"><td colspan="11" class="csat-loading">No teams in range.</td></tr>'; return; }
+    const sel = msTeamComp ? msTeamComp.value() : 'All';
+    const selSet = sel==='All' ? null : new Set(sel.split(','));
+    let rows = allTeamRows.filter(function(t){ return !selSet || selSet.has(t.team); });
+    if(!rows.length){ body.innerHTML = '<tr class="empty-row"><td colspan="11" class="csat-loading">No teams selected — pick a team from the filter above.</td></tr>'; return; }
+    rows = sortTeamRows(rows);
+    updateTeamArrows();
+    body.innerHTML = rows.map(function(t){
+      const name = (t.team||'').replace(/</g,'&lt;');
+      return '<tr class="'+rowPass(t.weighted).trim()+'">'+
+        '<td>'+name+'</td>'+
+        '<td class="text-end">'+(t.agents||0).toLocaleString()+'</td>'+
+        '<td class="text-end '+grade(t.weighted)+'">'+fmtPct(t.weighted)+'</td>'+
+        '<td class="text-end">'+t.chat_pct.toFixed(2)+'%</td>'+
+        '<td class="text-end">'+(t.chat_resolved||0).toLocaleString()+'</td>'+
+        '<td class="text-end">'+t.email_pct.toFixed(2)+'%</td>'+
+        '<td class="text-end">'+(t.email_resolved||0).toLocaleString()+'</td>'+
+        '<td class="text-end">'+t.phone_pct.toFixed(2)+'%</td>'+
+        '<td class="text-end">'+(t.phone_resolved||0).toLocaleString()+'</td>'+
+        '<td class="text-end">'+t.total_resolved.toLocaleString()+'</td>'+
+        '<td class="text-end">'+t.responses.toLocaleString()+'</td>'+
+      '</tr>';
+    }).join('');
+    const searchInput = document.querySelector('[data-table-search="#teamComparisonTable"]');
+    if(searchInput) searchInput.dispatchEvent(new Event('input'));
+  }
+
+  async function loadTeamComparison(){
+    const body = $('teamComparisonBody');
+    const r = await fetch('/api/csat/team-comparison'+qs());
+    if(!r.ok){ body.innerHTML = '<tr class="empty-row"><td colspan="11" class="csat-loading">Failed to load.</td></tr>'; return; }
+    const d = await r.json();
+    allTeamRows = d.teams || [];
+    if(msTeamComp) msTeamComp.setOptions(allTeamRows.map(function(t){ return {value:t.team, text:t.team}; }));
+    renderTeamRows();
+  }
+
   function updateFilterSummary(){
   const parts = ['Showing: ' + $('csatStart').value + ' → ' + $('csatEnd').value];
   if(selectedAgent) parts.push('Agent: ' + selectedAgent);
@@ -820,7 +984,7 @@
   $('filterSummary').textContent = parts.join('  ·  ');
 }
 
-  function loadAll(){ updateFilterSummary(); loadSummary(); loadAgents(); }
+  function loadAll(){ updateFilterSummary(); loadSummary(); loadAgents(); loadTeamComparison(); }
 
     $('csatReset').addEventListener('click', function(){
     if($('fTL')) $('fTL').value='All';
@@ -831,6 +995,7 @@
     if($('fActive')) $('fActive').checked = true;
     if($('fCS')) $('fCS').checked = true;
     if(msBatch) msBatch.clear();
+    if(msTeamComp) msTeamComp.clear();
     $('fWeek').value='All'; $('fMonth').value='All'; $('fGran').value='month';
     $('csatStart').value=allStart; $('csatEnd').value=allEnd;
     loadAll();

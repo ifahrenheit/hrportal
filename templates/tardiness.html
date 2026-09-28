@@ -79,6 +79,9 @@
   tr.clickable-row:hover { background: var(--bg) !important; }
 </style>
 
+{% set active_tab = 'tardiness' %}
+{% include "nav/_attendance_tabs.html" %}
+
 <div class="btn-group btn-group-sm mb-3" role="group">
   <a href="{{ url_for('tardiness.tardiness_page', date_from=date_from, date_to=date_to, view='late') }}"
      class="btn {% if view != 'triggers' %}btn-primary{% else %}btn-outline-secondary{% endif %}">

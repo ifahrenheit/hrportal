@@ -1,0 +1,85 @@
+{# Shared .data-table styling + client-side sort/search for the Routine Tracker.
+   Markup contract:
+     <input data-table-search="#tableId">           filters rows by text
+     <table class="data-table" id="tableId">         header cells with data-sort="text|num"
+     <td data-sort-value="...">                      optional explicit sort key
+     <span data-table-count="#tableId">              "n of m" counter               #}
+<style>
+  .rt-card {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 14px;
+    box-shadow: var(--card-shadow); padding: 1rem 1.25rem; margin-bottom: 1.5rem;
+  }
+  .rt-card-title { font-family: 'Outfit', sans-serif; font-weight: 600; font-size: 1rem; margin: 0 0 .75rem; }
+  .rt-toolbar { display: flex; flex-wrap: wrap; align-items: end; gap: .75rem; }
+  .rt-toolbar label { display: block; font-size: .78rem; color: var(--text-muted); font-weight: 500; margin-bottom: .2rem; }
+  .rt-toolbar .form-control, .rt-toolbar .form-select { background: var(--input-bg); color: var(--text); border-color: var(--border); }
+  .rt-muted { color: var(--text-muted); font-size: .8rem; }
+  .data-table { width: 100%; border-collapse: collapse; font-size: .88rem; color: var(--text); }
+  .data-table th {
+    text-align: left; padding: .6rem .75rem; font-size: .75rem; text-transform: uppercase;
+    letter-spacing: .04em; color: var(--text-muted); border-bottom: 2px solid var(--border);
+    white-space: nowrap; user-select: none;
+  }
+  .data-table th[data-sort] { cursor: pointer; }
+  .data-table th[data-sort]:hover { color: var(--accent); }
+  .data-table th[aria-sort="ascending"]::after { content: " \25B2"; font-size: .6rem; }
+  .data-table th[aria-sort="descending"]::after { content: " \25BC"; font-size: .6rem; }
+  .data-table td { padding: .6rem .75rem; border-bottom: 1px solid var(--border); vertical-align: top; }
+  .data-table tbody tr:hover td { background: rgba(30,95,212,.05); }
+  .data-table .empty-row td { text-align: center; color: var(--text-muted); padding: 1.5rem; }
+  .rt-badge { display: inline-flex; align-items: center; gap: .3rem; padding: .15rem .55rem;
+    border-radius: 999px; font-size: .75rem; font-weight: 600; border: 1px solid transparent; }
+  .rt-badge .lucide { width: .9em; height: .9em; }
+  .rt-badge.pass   { background: rgba(37,106,191,.12); color: #256abf; border-color: rgba(37,106,191,.3); }
+  .rt-badge.fail   { background: rgba(227,73,72,.12);  color: #c93a39; border-color: rgba(227,73,72,.35); }
+  .rt-badge.on     { background: rgba(16,185,129,.12); color: #0b8a61; border-color: rgba(16,185,129,.3); }
+  .rt-badge.off    { background: rgba(107,122,153,.14); color: var(--text-muted); border-color: var(--border); }
+  [data-theme="dark"] .rt-badge.pass { color: #86b6ef; }
+  [data-theme="dark"] .rt-badge.fail { color: #f08a89; }
+  [data-theme="dark"] .rt-badge.on   { color: #4ade9f; }
+  .rt-comment { white-space: pre-wrap; max-width: 34rem; }
+</style>
+<script>
+(function () {
+  function cellKey(td, type) {
+    var v = td.hasAttribute('data-sort-value') ? td.getAttribute('data-sort-value') : td.textContent.trim();
+    return type === 'num' ? (parseFloat(v) || 0) : v.toLowerCase();
+  }
+  document.querySelectorAll('table.data-table').forEach(function (table) {
+    var tbody = table.tBodies[0];
+    table.querySelectorAll('th[data-sort]').forEach(function (th, _) {
+      th.addEventListener('click', function () {
+        var idx = Array.prototype.indexOf.call(th.parentNode.children, th);
+        var dir = th.getAttribute('aria-sort') === 'ascending' ? 'descending' : 'ascending';
+        table.querySelectorAll('th').forEach(function (o) { o.removeAttribute('aria-sort'); });
+        th.setAttribute('aria-sort', dir);
+        var type = th.getAttribute('data-sort');
+        var rows = Array.prototype.filter.call(tbody.rows, function (r) { return !r.classList.contains('empty-row'); });
+        rows.sort(function (a, b) {
+          var x = cellKey(a.cells[idx], type), y = cellKey(b.cells[idx], type);
+          return (x < y ? -1 : x > y ? 1 : 0) * (dir === 'ascending' ? 1 : -1);
+        });
+        rows.forEach(function (r) { tbody.appendChild(r); });
+      });
+    });
+  });
+  document.querySelectorAll('[data-table-search]').forEach(function (input) {
+    var table = document.querySelector(input.getAttribute('data-table-search'));
+    var counter = document.querySelector('[data-table-count="' + input.getAttribute('data-table-search') + '"]');
+    if (!table) return;
+    function apply() {
+      var q = input.value.toLowerCase().trim(), shown = 0, total = 0;
+      Array.prototype.forEach.call(table.tBodies[0].rows, function (r) {
+        if (r.classList.contains('empty-row')) return;
+        total++;
+        var hit = !q || r.textContent.toLowerCase().indexOf(q) !== -1;
+        r.style.display = hit ? '' : 'none';
+        if (hit) shown++;
+      });
+      if (counter) counter.textContent = shown + ' of ' + total;
+    }
+    input.addEventListener('input', apply);
+    apply();
+  });
+})();
+</script>

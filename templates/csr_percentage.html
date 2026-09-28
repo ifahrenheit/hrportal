@@ -25,6 +25,7 @@
   .csr-email { white-space:nowrap; color:var(--text-muted); font-size:.8rem; }
   .csr-cell { text-align:center; white-space:nowrap; font-variant-numeric:tabular-nums; }
   .csr-blank { color:var(--text-muted); opacity:.35; }
+  .csr-frac { font-size:.78em; opacity:.75; font-weight:400; }
   /* higher CSR% is worse */
   /* <15% good | 15-20% watch | >20% high. Tinted background so bands read at a glance. */
   /* table cells: scoped + !important to beat Bootstrap's .table td rules */
@@ -42,6 +43,22 @@
   [data-theme="dark"] span.csr-mid { color:#fbbf24; background:rgba(253,126,20,.20); }
   [data-theme="dark"] span.csr-hi  { color:#f87171; background:rgba(220,53,69,.22); }
   .csr-scroll { max-height:70vh; overflow:auto; }
+  .ms { position:relative; }
+  .ms-btn { width:100%; text-align:left; display:flex; justify-content:space-between; align-items:center;
+            background:var(--surface); border:1px solid var(--border); border-radius:.375rem; padding:.25rem .5rem;
+            font-size:.875rem; cursor:pointer; min-height:31px; color:var(--text); }
+  .ms-btn .ms-caret { opacity:.6; margin-left:6px; }
+  .ms-panel { position:absolute; z-index:1000; top:calc(100% + 4px); left:0; right:0;
+              background:var(--surface); border:1px solid var(--border); border-radius:.5rem; box-shadow:0 6px 24px rgba(0,0,0,.25);
+              padding:8px; display:none; max-width:280px; color:var(--text); }
+  .ms-panel.open { display:block; }
+  .ms-search { width:100%; font-size:.85rem; padding:.25rem .4rem; border:1px solid var(--border); border-radius:.375rem; margin-bottom:6px; background:var(--bg); color:var(--text); }
+  .ms-actions { display:flex; justify-content:space-between; font-size:.78rem; margin-bottom:6px; }
+  .ms-actions a { cursor:pointer; text-decoration:none; }
+  .ms-list { max-height:220px; overflow:auto; }
+  .ms-item { display:flex; align-items:center; gap:6px; padding:3px 4px; font-size:.85rem; border-radius:.3rem; }
+  .ms-item:hover { background:var(--bg); }
+  .ms-item input { margin:0; }
   .csr-loading { color:var(--text-muted); padding:20px; }
   .table-csr td.csr-cell.clickable { cursor:pointer; }
   .table-csr td.csr-cell.clickable:hover { outline:2px solid var(--accent); outline-offset:-2px; }
@@ -156,12 +173,23 @@
     </div>
   </div>
 
+  <ul class="nav nav-tabs mb-3">
+    <li class="nav-item">
+      <a class="nav-link active" data-bs-toggle="tab" href="#tab-csr-overview">Overview</a>
+    </li>
+    <li class="nav-item">
+      <a class="nav-link" data-bs-toggle="tab" href="#tab-csr-team-comparison">Team Comparison</a>
+    </li>
+  </ul>
+
+  <div class="tab-content">
+  <div class="tab-pane fade show active" id="tab-csr-overview">
   <div class="csr-card">
     <h6 class="mb-2">CSR % of DSATs by Month</h6>
     <div class="text-muted small mb-2">
       CSR&nbsp;% = DSATs with root cause <strong>CSR</strong> and no rep responsible,
-      divided by that agent's total DSATs for the month.
-      Blank = no CSR-attributable DSATs. Hover a cell for the counts.
+      divided by that agent's total DSATs for the month (shown in parentheses as CSR/DSATs).
+      Blank = no CSR-attributable DSATs.
     </div>
     <div class="d-flex align-items-center flex-wrap mb-2" style="gap:.75rem;font-size:.78rem;">
       <span class="text-muted">Legend:</span>
@@ -178,6 +206,43 @@
       </table>
     </div>
   </div>
+  </div>
+  <!-- /tab-csr-overview -->
+
+  <div class="tab-pane fade" id="tab-csr-team-comparison">
+  <div class="csr-card">
+    <div class="d-flex flex-wrap justify-content-between align-items-center mb-2 gap-2">
+      <h6 class="mb-0">CSR % of DSATs by Month <span class="text-muted" style="font-weight:400">(by team — same filters as Overview)</span></h6>
+    </div>
+    <div class="text-muted small mb-2">
+      Per team: total DSATs with root cause <strong>CSR</strong> and no rep responsible across all of
+      that TL's agents, divided by the TL's total DSATs for the month.
+    </div>
+    <div class="d-flex flex-wrap align-items-end gap-2 mb-2">
+      <div class="filter-col" style="min-width:220px">
+        <label class="form-label small">Team</label>
+        <div class="ms" id="msTeamComp"></div>
+      </div>
+    </div>
+    <div class="d-flex align-items-center flex-wrap mb-2" style="gap:.75rem;font-size:.78rem;">
+      <span class="text-muted">Legend:</span>
+      <span class="csr-cell csr-lo"  style="padding:.1rem .5rem;border-radius:4px;">&lt; 15%</span>
+      <span class="csr-cell csr-mid" style="padding:.1rem .5rem;border-radius:4px;">15&ndash;20%</span>
+      <span class="csr-cell csr-hi"  style="padding:.1rem .5rem;border-radius:4px;">&gt; 20%</span>
+    </div>
+    <div class="csr-scroll">
+      <table class="table table-sm table-hover table-csr mb-0">
+        <thead><tr id="csrTeamHead"></tr></thead>
+        <tbody id="csrTeamBody">
+          <tr><td class="csr-loading">Loading…</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+  </div>
+  <!-- /tab-csr-team-comparison -->
+  </div>
+  <!-- /tab-content -->
 
   <!-- DSAT drill-down modal -->
   <div class="csrm-backdrop" id="csrmBackdrop">
@@ -202,8 +267,76 @@
   let csrData = { periods: [], agents: [], gran: 'month' };
   let currentGran = 'month';
   let sortKey = 'name', sortDir = 'asc';
+  let teamSortKey = 'tl', teamSortDir = 'asc';
+
+  function MultiSelect(mountId, label){
+    const mount = $(mountId);
+    if(!mount) return null;
+    let options = [];
+    let selected = new Set();
+    mount.innerHTML =
+      '<button type="button" class="ms-btn"><span class="ms-text">'+label+': All</span><span class="ms-caret">▾</span></button>'+
+      '<div class="ms-panel">'+
+        '<input type="text" class="ms-search" placeholder="Search…">'+
+        '<div class="ms-actions"><a class="ms-all">Select all</a><a class="ms-clear">Clear</a></div>'+
+        '<div class="ms-list"></div>'+
+      '</div>';
+    const btn = mount.querySelector('.ms-btn');
+    const panel = mount.querySelector('.ms-panel');
+    const search = mount.querySelector('.ms-search');
+    const list = mount.querySelector('.ms-list');
+    const textEl = mount.querySelector('.ms-text');
+
+    function updateText(){
+      if(selected.size===0){ textEl.textContent = label+': All'; return; }
+      const arr = Array.from(selected);
+      textEl.textContent = arr.length<=2 ? (label+': '+arr.join(', ')) : (label+': '+arr.length+' selected');
+    }
+    function renderList(){
+      const q = search.value.toLowerCase();
+      const html = options.filter(function(o){ return !q || o.text.toLowerCase().includes(q); }).map(function(o){
+        return '<label class="ms-item"><input type="checkbox" value="'+o.value+'" '+(selected.has(o.value)?'checked':'')+'><span>'+o.text+'</span></label>';
+      }).join('');
+      list.innerHTML = html || '<div class="text-muted small px-1">No matches</div>';
+      list.querySelectorAll('input').forEach(function(cb){
+        cb.addEventListener('change', function(){
+          if(cb.checked) selected.add(cb.value); else selected.delete(cb.value);
+          updateText();
+        });
+      });
+    }
+    btn.addEventListener('click', function(e){
+      e.stopPropagation();
+      document.querySelectorAll('.ms-panel.open').forEach(function(p){ if(p!==panel) p.classList.remove('open'); });
+      panel.classList.toggle('open');
+      if(panel.classList.contains('open')) search.focus();
+    });
+    panel.addEventListener('click', function(e){ e.stopPropagation(); });
+    search.addEventListener('input', renderList);
+    mount.querySelector('.ms-all').addEventListener('click', function(){ options.forEach(function(o){ selected.add(o.value); }); renderList(); updateText(); });
+    mount.querySelector('.ms-clear').addEventListener('click', function(){ selected.clear(); renderList(); updateText(); });
+
+    return {
+      setOptions: function(opts){ options = opts; renderList(); },
+      value: function(){ return selected.size ? Array.from(selected).join(',') : 'All'; },
+      clear: function(){ selected.clear(); renderList(); updateText(); }
+    };
+  }
+  document.addEventListener('click', function(){
+    document.querySelectorAll('.ms-panel.open').forEach(function(p){ p.classList.remove('open'); });
+  });
+
+  const msTeamComp = MultiSelect('msTeamComp', 'Team');
+  if ($('msTeamComp')) $('msTeamComp').addEventListener('change', function(e){
+    if (e.target.closest && e.target.closest('.ms-item')) renderTeamBody();
+  });
 
   function fmtPct(v){ return (v === null || v === undefined) ? '' : v.toFixed(2) + '%'; }
+  // Shows the raw counts behind a percentage right in the cell (not just in
+  // the hover title) -- "66.67%" alone doesn't tell you if that's 2/3 or
+  // 200/300, and that distinction matters for judging how much a cell
+  // should weigh in a coaching conversation.
+  function fmtFrac(csr, dsats){ return ' <span class="csr-frac">(' + csr + '/' + dsats + ')</span>'; }
 
   // Colour bands: <15% good (green) | 15-20% watch (amber) | >20% high (red)
   function grade(v){
@@ -333,7 +466,7 @@
         } else {
           tds += '<td class="csr-cell clickable ' + grade(cell.pct) + '"' + clickAttrs +
                  ' title="' + cell.csr + ' CSR of ' + cell.dsats + ' DSATs — click for details">' +
-                 fmtPct(cell.pct) + '</td>';
+                 fmtPct(cell.pct) + fmtFrac(cell.csr, cell.dsats) + '</td>';
         }
       });
       return '<tr>' + tds + '</tr>';
@@ -342,6 +475,119 @@
     $('csrSummary').textContent = rows.length + ' agent' + (rows.length === 1 ? '' : 's') +
                                   ' \u00b7 ' + csrData.periods.length + ' ' + currentGran +
                                   (csrData.periods.length === 1 ? '' : 's') + columnWarning();
+  }
+
+  // Aggregate the already-fetched per-agent rows up to one row per TL —
+  // same source data as the Overview tab, no extra request needed.
+  function aggregateTeams(){
+    const teams = {};
+    csrData.agents.forEach(function(a){
+      const key = a.tl || '(No TL)';
+      if (!teams[key]) teams[key] = { tl: key, emails: {}, months: {} };
+      const t = teams[key];
+      t.emails[a.email] = 1;
+      csrData.periods.forEach(function(p){
+        const cell = a.months[p];
+        if (!cell) return;
+        if (!t.months[p]) t.months[p] = { csr: 0, dsats: 0 };
+        t.months[p].csr += cell.csr;
+        t.months[p].dsats += cell.dsats;
+      });
+    });
+    return Object.keys(teams).map(function(k){
+      const t = teams[k];
+      let totCsr = 0, totDsats = 0;
+      Object.keys(t.months).forEach(function(p){
+        const m = t.months[p];
+        m.pct = m.dsats ? Math.round(10000 * m.csr / m.dsats) / 100 : null;
+        totCsr += m.csr; totDsats += m.dsats;
+      });
+      return {
+        tl: t.tl,
+        agents: Object.keys(t.emails).length,
+        months: t.months,
+        total_csr: totCsr,
+        total_dsats: totDsats,
+        total_pct: totDsats ? Math.round(10000 * totCsr / totDsats) / 100 : null
+      };
+    });
+  }
+
+  function sortTeams(rows){
+    const r = rows.slice();
+    r.sort(function(a, b){
+      let av, bv;
+      if (teamSortKey === 'tl')          { av = (a.tl||'').toLowerCase();  bv = (b.tl||'').toLowerCase(); }
+      else if (teamSortKey === 'agents') { av = a.agents; bv = b.agents; }
+      else if (teamSortKey === 'total_pct') { av = a.total_pct===null?-1:a.total_pct; bv = b.total_pct===null?-1:b.total_pct; }
+      else { // a period key
+        const am = a.months[teamSortKey], bm = b.months[teamSortKey];
+        av = (am && am.pct !== null) ? am.pct : -1;
+        bv = (bm && bm.pct !== null) ? bm.pct : -1;
+      }
+      if (av < bv) return teamSortDir === 'asc' ? -1 : 1;
+      if (av > bv) return teamSortDir === 'asc' ? 1 : -1;
+      return 0;
+    });
+    return r;
+  }
+
+  function renderTeamHead(){
+    const head = $('csrTeamHead');
+    if (!head) return;
+    let html = '<th class="sortable" data-key="tl">TL<i class="sort-arrow" data-lucide="arrow-up-down"></i></th>' +
+               '<th class="sortable csr-cell" data-key="agents"># Agents<i class="sort-arrow" data-lucide="arrow-up-down"></i></th>' +
+               '<th class="sortable csr-cell" data-key="total_pct">Total CSR%<i class="sort-arrow" data-lucide="arrow-up-down"></i></th>';
+    csrData.periods.forEach(function(m){
+      html += '<th class="sortable csr-cell" data-key="' + m + '" title="' + periodLabelFull(m) + '">' +
+              periodLabel(m) + '<i class="sort-arrow" data-lucide="arrow-up-down"></i></th>';
+    });
+    head.innerHTML = html;
+    head.querySelectorAll('th.sortable').forEach(function(th){
+      th.classList.toggle('sort-active', th.dataset.key === teamSortKey);
+      th.addEventListener('click', function(){
+        const k = th.dataset.key;
+        if (teamSortKey === k) { teamSortDir = (teamSortDir === 'asc') ? 'desc' : 'asc'; }
+        else { teamSortKey = k; teamSortDir = (k === 'tl') ? 'asc' : 'desc'; }
+        renderTeamHead(); renderTeamBody();
+      });
+    });
+    if (window.lucide) lucide.createIcons();
+  }
+
+  function renderTeamBody(){
+    const body = $('csrTeamBody');
+    if (!body) return;
+    const sel = msTeamComp ? msTeamComp.value() : 'All';
+    const selSet = sel === 'All' ? null : new Set(sel.split(','));
+    let rows = aggregateTeams().filter(function(t){ return !selSet || selSet.has(t.tl); });
+    rows = sortTeams(rows);
+
+    const colspan = 3 + csrData.periods.length;
+    if (!rows.length){
+      const msg = selSet ? 'No teams selected — pick a team from the filter above.' : 'No teams with DSATs in this range.';
+      body.innerHTML = '<tr><td colspan="' + colspan + '" class="csr-loading">' + msg + '</td></tr>';
+      return;
+    }
+
+    body.innerHTML = rows.map(function(t){
+      let tds = '<td class="csr-name">' + t.tl + '</td>' +
+                '<td class="csr-cell">' + t.agents + '</td>' +
+                '<td class="csr-cell ' + grade(t.total_pct) + '">' + fmtPct(t.total_pct) +
+                (t.total_dsats ? fmtFrac(t.total_csr, t.total_dsats) : '') + '</td>';
+      csrData.periods.forEach(function(m){
+        const cell = t.months[m];
+        if (!cell || cell.dsats === 0 || cell.csr === 0){
+          tds += '<td class="csr-cell csr-blank" title="' +
+                 (cell ? cell.csr + ' CSR of ' + cell.dsats + ' DSATs' : 'No DSATs') + '">&mdash;</td>';
+        } else {
+          tds += '<td class="csr-cell ' + grade(cell.pct) + '" title="' +
+                 cell.csr + ' CSR of ' + cell.dsats + ' DSATs">' +
+                 fmtPct(cell.pct) + fmtFrac(cell.csr, cell.dsats) + '</td>';
+        }
+      });
+      return '<tr>' + tds + '</tr>';
+    }).join('');
   }
 
   async function loadData(){
@@ -354,6 +600,9 @@
     csrData = await r.json();
     renderHead();
     renderBody();
+    renderTeamHead();
+    if (msTeamComp) msTeamComp.setOptions(aggregateTeams().map(function(t){ return {value:t.tl, text:t.tl}; }));
+    renderTeamBody();
     populateFilterOptions();
   }
 
@@ -553,6 +802,7 @@
     $('csrActive').checked = true;
     $('csrCS').checked = true;
     $('csrSearch').value = '';
+    if (msTeamComp) msTeamComp.clear();
     loadData();
   });
 </script>

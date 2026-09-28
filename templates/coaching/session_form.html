@@ -26,8 +26,8 @@
             </select>
           </div>
           <div class="col-md-6">
-            <label class="form-label small fw-semibold">Coaching Type *</label>
-            <select name="coaching_type" class="form-select form-select-sm" required>
+            <label class="form-label small fw-semibold">Coaching Type <span class="text-muted fw-normal">(required unless Draft)</span></label>
+            <select name="coaching_type" class="form-select form-select-sm">
               <option value="">Select type…</option>
               {% for k,v in types.items() %}<option value="{{ k }}" {{ 'selected' if s.coaching_type==k }}>{{ v }}</option>{% endfor %}
             </select>
@@ -41,8 +41,8 @@
             <input type="time" name="session_time" class="form-control form-control-sm" value="{{ s.session_time or '' }}" required>
           </div>
           <div class="col-12">
-            <label class="form-label small fw-semibold">Topic *</label>
-            <input type="text" name="topic" class="form-control form-control-sm" value="{{ s.topic or '' }}" maxlength="255" placeholder="e.g., Call handling improvement" required>
+            <label class="form-label small fw-semibold">Topic <span class="text-muted fw-normal">(required unless Draft)</span></label>
+            <input type="text" name="topic" class="form-control form-control-sm" value="{{ s.topic or '' }}" maxlength="255" placeholder="e.g., Call handling improvement">
           </div>
         </div>
       </div>
@@ -52,12 +52,12 @@
       <div class="card-body">
         <h6 class="text-primary fw-bold mb-3" style="border-left:3px solid var(--accent);padding-left:8px;">Discussion &amp; Feedback</h6>
         <div class="mb-3">
-          <label class="form-label small fw-semibold">Discussion Notes *</label>
-          <textarea name="discussion_notes" class="form-control form-control-sm" rows="3" required>{{ s.discussion_notes or '' }}</textarea>
+          <label class="form-label small fw-semibold">Discussion Notes <span class="text-muted fw-normal">(required unless Draft)</span></label>
+          <textarea name="discussion_notes" class="form-control form-control-sm" rows="3">{{ s.discussion_notes or '' }}</textarea>
         </div>
         <div class="mb-3">
-          <label class="form-label small fw-semibold">Areas for Improvement *</label>
-          <textarea name="areas_for_improvement" class="form-control form-control-sm" rows="3" required>{{ s.areas_for_improvement or '' }}</textarea>
+          <label class="form-label small fw-semibold">Areas for Improvement <span class="text-muted fw-normal">(required unless Draft)</span></label>
+          <textarea name="areas_for_improvement" class="form-control form-control-sm" rows="3">{{ s.areas_for_improvement or '' }}</textarea>
         </div>
         <div>
           <label class="form-label small fw-semibold">Strengths <span class="text-muted fw-normal">(optional)</span></label>
@@ -78,6 +78,7 @@
             <select name="status" class="form-select form-select-sm">
               {% for k,v in statuses.items() %}<option value="{{ k }}" {{ 'selected' if (s.status or 'pending')==k }}>{{ v }}</option>{% endfor %}
             </select>
+            <p class="text-muted mt-1 mb-0" style="font-size:.78rem;">Draft = hold this session for later; the agent is <strong>not</strong> emailed until you edit it and change the status to Pending or For Follow-up.</p>
           </div>
         </div>
       </div>

@@ -59,6 +59,7 @@ COACHING_TYPES = {
 
 # Portal status set offered in the TL/SOM dropdown.
 STATUSES = {
+    "draft": "Draft",
     "completed": "Completed",
     "pending": "Pending",
     "for_followup": "For Follow-up",
@@ -67,6 +68,7 @@ STATUSES = {
 # Legacy values (from the PHP era) still shown correctly for old rows,
 # but not offered in the dropdown.
 STATUS_LABELS_ALL = {
+    "draft": "Draft",
     "completed": "Completed",
     "pending": "Pending",
     "for_followup": "For Follow-up",
@@ -76,6 +78,7 @@ STATUS_LABELS_ALL = {
 
 # Status -> inline style using theme vars (works light + dark).
 STATUS_BADGE = {
+    "draft":            "background:var(--surface-3,#94a3b8);color:#fff;",
     "completed":        "background:var(--ok,#16a34a);color:#fff;",
     "pending":          "background:var(--danger,#dc2626);color:#fff;",
     "for_followup":     "background:#c05621;color:#fff;",
@@ -269,7 +272,7 @@ def index():
                       ON s.employee_id = cs.supervisor_id {GC}
                     GROUP BY s.employee_id, s.schedule_name, s.email
                     ORDER BY total DESC
-                """)
+                """, ())
                 team = cur.fetchall()
     finally:
         conn.close()
@@ -627,6 +630,10 @@ def _parse_form():
 
 
 def _required_ok(d):
+    # Draft: just enough to hold the slot (agent + when) — the rest gets
+    # filled in once the agent is actually on shift for the conversation.
+    if d["status"] == "draft":
+        return bool(d["agent_id"] and d["session_date"] and d["session_time"])
     # TL/SOM required: agent, date, time, type, topic,
     # discussion_notes, areas_for_improvement. Strengths optional.
     return all([
@@ -672,19 +679,22 @@ def new_session():
             conn.commit()
         finally:
             conn.close()
+        created_label = "Draft saved" if d["status"] == "draft" else "Coaching session created"
         # Attach any images to the new session (session saves regardless).
         imgs = request.files.getlist("images")
         if any(f and f.filename for f in imgs):
             saved, err = _save_attachments(new_id, "tl", imgs)
             if err:
-                flash(f"Session created, but image(s) not added: {err}", "warning")
+                flash(f"{created_label}, but image(s) not added: {err}", "warning")
             elif saved:
-                flash(f"Session created with {saved} image(s).", "success")
+                flash(f"{created_label} with {saved} image(s).", "success")
             else:
-                flash("Coaching session created.", "success")
+                flash(f"{created_label}.", "success")
         else:
-            flash("Coaching session created.", "success")
+            flash(f"{created_label}.", "success")
         # Notify the agent immediately if this session needs their action plan.
+        # ('draft' is deliberately excluded from PENDING_STATUSES — no email
+        # until a TL flips it to pending/for_followup, see edit_session.)
         if d["status"] in PENDING_STATUSES:
             try:
                 _notify_agent_pending(new_id, kind="created")
@@ -737,6 +747,13 @@ def edit_session(session_id):
         finally:
             conn.close()
         flash("Session updated.", "success")
+        # Publishing a draft (draft -> pending/for_followup) is what actually
+        # notifies the agent — creation itself stayed silent while it was a draft.
+        if row["status"] == "draft" and d["status"] in PENDING_STATUSES:
+            try:
+                _notify_agent_pending(session_id, kind="created")
+            except Exception as e:
+                current_app.logger.error(f"coaching publish-notify failed: {e}")
         return redirect(url_for("coaching.view_session", session_id=session_id))
 
     return render_template("coaching/session_form.html", mode="edit", s=row,
@@ -891,6 +908,8 @@ def attach_agent(session_id):
         abort(404)
     if row["agent_id"] != _me():
         abort(403)
+    if row["status"] == "draft":
+        abort(404)
     if row["status"] == "completed":
         flash("This session is completed; attachments are locked.", "error")
         return redirect(url_for("coaching.my_session", session_id=session_id))
@@ -957,7 +976,7 @@ def my_sessions():
                 SELECT cs.*, s.schedule_name AS supervisor_name
                 FROM coaching_sessions cs
                 LEFT JOIN gsheet_employees s ON s.employee_id = cs.supervisor_id {GC}
-                WHERE cs.agent_id = %s
+                WHERE cs.agent_id = %s AND cs.status <> 'draft'
                 ORDER BY cs.session_date DESC, cs.id DESC
             """, (me,))
             rows = cur.fetchall()
@@ -985,6 +1004,9 @@ def my_session(session_id):
     # Agents may only touch their OWN sessions.
     if row["agent_id"] != me:
         abort(403)
+    # Drafts aren't visible to the agent yet — the TL hasn't published it.
+    if row["status"] == "draft":
+        abort(404)
 
     locked = (row["status"] == "completed")
 

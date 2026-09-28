@@ -74,6 +74,10 @@ app.register_blueprint(requirements_bp)
 from modules.entitlements_audit import entitlements_audit_bp
 app.register_blueprint(entitlements_audit_bp)
 
+## Routine Tracker Blueprint (IT recurring health checks)
+from modules.routines import routines_bp
+app.register_blueprint(routines_bp)
+
 #coaching Blueprint
 from coaching import coaching_bp
 app.register_blueprint(coaching_bp)
@@ -170,6 +174,14 @@ def get_central_db():
         autocommit=False
     )
 
+def _split_recipients(to):
+    """Accepts either a single address or a comma-joined string of several
+    (some callers, e.g. coaching.py, build 'a@x.com, b@x.com' expecting this
+    to reach every address) and returns a proper list for smtplib's
+    to_addrs -- a raw comma-joined string there is treated as one single
+    (invalid) address and gets the whole send rejected by the relay."""
+    return [addr.strip() for addr in to.split(',') if addr.strip()]
+
 def _send_email_worker(to, subject, body):
     try:
         msg = MIMEMultipart('alternative')
@@ -179,7 +191,7 @@ def _send_email_worker(to, subject, body):
         msg.attach(MIMEText(body, 'html'))
         with smtplib.SMTP(os.getenv('SMTP_SERVER'), int(os.getenv('SMTP_PORT', 2525)), timeout=10) as smtp:
             smtp.login(os.getenv('SMTP_USER'), os.getenv('SMTP_PASSWORD'))
-            smtp.sendmail(os.getenv('SMTP_USER'), to, msg.as_string())
+            smtp.sendmail(os.getenv('SMTP_USER'), _split_recipients(to), msg.as_string())
     except Exception as e:
         app.logger.error(f"Email error to {to}: {e}")
 
@@ -197,7 +209,7 @@ def send_email_as(to, subject, body, from_name):
             msg.attach(MIMEText(body, 'html'))
             with smtplib.SMTP(os.getenv('SMTP_SERVER'), int(os.getenv('SMTP_PORT', 2525)), timeout=10) as smtp:
                 smtp.login(os.getenv('SMTP_USER'), os.getenv('SMTP_PASSWORD'))
-                smtp.sendmail(os.getenv('SMTP_USER'), to, msg.as_string())
+                smtp.sendmail(os.getenv('SMTP_USER'), _split_recipients(to), msg.as_string())
         except Exception as e:
             app.logger.error(f"Email error to {to}: {e}")
     import threading
@@ -1255,7 +1267,7 @@ def file_leave():
                                        portal_balances=portal_balances, user=session['user'])
         notes         = request.form.get('notes', '').strip()
         duration      = request.form.get('duration', 'full')
-        # --- MAGIC_LEAVE_CUSTOM_PATCH --- raw custom-hours input, Magic Leave only
+        # --- CUSTOM_HOURS_PATCH --- raw custom-hours input, any leave type except AWOL
         custom_hours_raw = request.form.get('custom_hours', '').strip()
 
         # Map duration to shift_half enum
@@ -1279,14 +1291,15 @@ def file_leave():
             flash('First Half / Second Half / Custom Hours can only be filed for a single day.', 'danger')
             return render_template('file_leave.html', balances=balances, user=session['user'])
 
-        # --- MAGIC_LEAVE_CUSTOM_PATCH --- Custom Hours is Magic Leave only, and must be a whole,
-        # positive number of hours. (Whether it also fits the remaining balance is checked further
-        # down, alongside the existing Full Day / Half Day balance check.)
+        # --- CUSTOM_HOURS_PATCH --- Custom Hours is available for any leave type except
+        # AWOL (which is a fixed 8h/holiday-only leave, handled entirely by the AWOL_PATCH
+        # block above and not compatible with an arbitrary hour count). Must be a whole,
+        # positive number of hours. (Whether it also fits the remaining balance is checked
+        # further down, alongside the existing Full Day / Half Day balance check.)
         custom_hours_value = None
         if use_custom:
-            _magic_leave_type_id = _get_magic_leave_type_id()
-            if not _magic_leave_type_id or leave_type_id != _magic_leave_type_id:
-                flash('Custom hours is only available for Magic Leave.', 'danger')
+            if is_awol:
+                flash('Custom hours is not available for AWOL.', 'danger')
                 return render_template('file_leave.html', balances=balances, user=session['user'])
             if not custom_hours_raw.isdigit() or int(custom_hours_raw) <= 0:
                 flash('Custom hours must be a whole number greater than 0.', 'danger')
@@ -2588,6 +2601,43 @@ def admin_ot_hours():
                            unique_agents=unique_agents, approved_count=approved_count,
                            pending_count=pending_count)
 
+def _holidays_in_range(date_from, date_to):
+    """
+    Returns {date_str: holiday_name} for holidays (from ohrm_holiday and
+    leave4day_holidays, incl. recurring ones projected onto whichever
+    year(s) the range spans) falling within [date_from, date_to].
+    """
+    years = sorted({date_from.year, date_to.year})
+    holidays = {}
+    ohrm = get_db()
+    try:
+        with ohrm.cursor() as c:
+            for tbl in ('ohrm_holiday', 'leave4day_holidays'):
+                for yr in years:
+                    c.execute(f"""
+                        SELECT
+                            CASE WHEN recurring = 1
+                                 THEN DATE(CONCAT(%s, '-', LPAD(MONTH(`date`),2,'0'), '-', LPAD(DAY(`date`),2,'0')))
+                                 ELSE `date`
+                            END AS cy,
+                            description AS name
+                        FROM {tbl}
+                        WHERE recurring = 1
+                           OR (recurring = 0 AND YEAR(`date`) = %s)
+                    """, (yr, yr))
+                    for r in c.fetchall():
+                        d = r.get('cy')
+                        if not d or not (date_from <= d <= date_to):
+                            continue
+                        ds = d.strftime('%Y-%m-%d') if hasattr(d, 'strftime') else str(d)
+                        nm = (r.get('name') or '').strip()
+                        if ds not in holidays or (not holidays[ds] and nm):
+                            holidays[ds] = nm
+    finally:
+        ohrm.close()
+    return holidays
+
+
 def _holiday_awol_rows(group_filter='', tl_filter='', emp_search='', include_separated=False):
     """
     Returns list of dict rows for scheduled-but-absent-and-uncovered agents on
@@ -2671,12 +2721,6 @@ def _holiday_awol_rows(group_filter='', tl_filter='', emp_search='', include_sep
         WHERE es.schedule_date IN ({placeholders})
           AND es.is_rest_day = 0
           AND NOT EXISTS (
-                SELECT 1 FROM dailytimerecordsfiltered d
-                WHERE d.personid = u.personid
-                  AND d.date_only = es.schedule_date
-                  AND d.type IN ('in', 'out')
-          )
-          AND NOT EXISTS (
                 SELECT 1 FROM cws_requests cw
                 WHERE cw.employee_id COLLATE utf8mb4_unicode_ci = es.employee_id
                   AND cw.original_date = es.schedule_date
@@ -2692,6 +2736,43 @@ def _holiday_awol_rows(group_filter='', tl_filter='', emp_search='', include_sep
             rows = cur.fetchall()
     finally:
         conn.close()
+
+    # --- Attendance check, done in Python (not SQL) so overnight shifts are
+    # handled correctly. A raw "does a punch row's date_only match the
+    # scheduled date" check (the old approach) wrongly clears an employee
+    # who no-showed a holiday night shift but has a leftover OUT punch from
+    # the *previous* night's overnight shift landing on the holiday's
+    # date_only after midnight. build_attendance_map() -- the same helper
+    # /admin/awol-report, /admin/absences and /admin/attendance-grid use --
+    # pairs each IN with its OUT and attributes the whole shift to the IN's
+    # calendar date, so it isn't fooled by that. Keeps this list consistent
+    # with the AWOL Report for the same date. ---
+    if rows:
+        personids = list({int(r['personid']) for r in rows if r.get('personid')})
+        shift_starts = {}
+        holiday_dates_set = set()
+        for r in rows:
+            pid = int(r['personid']) if r.get('personid') else None
+            if not pid:
+                continue
+            sched_date = r['holiday_date']
+            holiday_dates_set.add(sched_date)
+            start_h, _ = parse_shift_time(r.get('shift_time'))
+            if start_h is not None:
+                shift_starts[(pid, sched_date)] = start_h
+
+        if holiday_dates_set and personids:
+            window_start = min(holiday_dates_set) - timedelta(days=1)
+            window_end   = max(holiday_dates_set) + timedelta(days=1)
+            attendance_map = build_attendance_map(personids, window_start, window_end, shift_starts)
+
+            def _attended(r):
+                pid = int(r['personid']) if r.get('personid') else None
+                if not pid:
+                    return False
+                return attendance_map.get((pid, r['holiday_date'])) is not None
+
+            rows = [r for r in rows if not _attended(r)]
 
     # --- Batched SL remaining hours (leave_type_id=2), keyed by employee_id via hs_hr_employee ---
     emp_ids = list({r['employee_id'] for r in rows})
@@ -3903,6 +3984,7 @@ def admin_schedules():
     return render_template('admin/schedules.html',
                            employees=employees, all_dates=all_dates, date_headers=date_headers,
                            months=months, groups=groups, shifts=shifts, tls=tls,
+                           today=date.today().strftime('%Y-%m-%d'),
                            month_filter=month_filter, emp_search=emp_search,
                            group_filter=group_filter, shift_filter=shift_filter,
                            tl_filter=tl_filter,
@@ -4820,13 +4902,17 @@ def send_sl_verification_email(req):
     def yn(v):
         return 'Yes' if v in (1, '1', True) else 'No'
 
+    life_health_value = yn(req.get('sl_life_health'))
+    if not req.get('sl_life_health') and req.get('sl_life_health_exempt'):
+        life_health_value = 'No (exempted — not yet eligible for coverage)'
+
     rows = [
         ('Dates of Absence',              req.get('absence_dates', '') or ''),
         ('Date of Consultation',          req.get('sl_date_consultation', '') or ''),
         ('Date Fit to Work',              req.get('sl_date_fit_to_work', '') or ''),
         ('Name of Doctor',                req.get('sl_doctor_name', '') or ''),
         ('Specialization of Doctor',      req.get('sl_specialization', '') or ''),
-        ('Life and Health',               yn(req.get('sl_life_health'))),
+        ('Life and Health',               life_health_value),
         ('PRC Verification',              'Verified' if req.get('sl_prc_verified') else 'Non-verified'),
         ('Specialization',                'Match' if req.get('sl_spec_match') else 'No match'),
         ('Face to face consult',          yn(req.get('sl_face_to_face'))),
@@ -4894,20 +4980,23 @@ def sl_verification():
                     SUM(r.hours_deducted) AS hours_deducted,
                     SUM(r.days_deducted)  AS days_deducted,
                     GROUP_CONCAT(r.leave_date ORDER BY r.leave_date) AS dates,
-                    e.emp_firstname, e.emp_lastname, g.tl
+                    e.emp_firstname, e.emp_lastname, g.tl, est.name AS employment_status
                 FROM leave4day_requests r
                 JOIN hs_hr_employee e ON r.emp_number = e.emp_number
                 LEFT JOIN central_db.gsheet_employees g
                        ON g.employee_id COLLATE utf8mb4_unicode_ci = e.employee_id
+                LEFT JOIN ohrm_employment_status est ON est.id = e.emp_status
                 WHERE r.leave_type_id = 2
                   AND r.status = 'pending'
                   AND r.sl_hr_stage = 'pending_hr'
                   AND r.deleted_at IS NULL
                 GROUP BY r.leave_request_id, r.emp_number, r.employee_id, r.notes,
-                         e.emp_firstname, e.emp_lastname, g.tl
+                         e.emp_firstname, e.emp_lastname, g.tl, est.name
                 ORDER BY MIN(r.leave_date) ASC
             """)
             pending = c.fetchall()
+            for r in pending:
+                r['is_regular'] = bool(r['employment_status'] and 'regular' in r['employment_status'].strip().lower())
     finally:
         db.close()
 
@@ -4934,6 +5023,7 @@ def sl_verification_submit():
     spec    = (data.get('specialization') or '').strip()
     awol    = (data.get('awol_dates') or '').strip()
     life    = 1 if data.get('life_health') in (1, '1', True, 'yes', 'Yes') else 0
+    life_exempt = 1 if data.get('life_health_exempt') in (1, '1', True, 'yes', 'Yes') else 0
     prc     = 1 if data.get('prc_verified') in (1, '1', True, 'verified', 'Verified') else 0
     f2f     = 1 if data.get('face_to_face') in (1, '1', True, 'yes', 'Yes') else 0
     spec_match = 1 if data.get('spec_match') in (1, '1', True, 'match', 'Match') else 0
@@ -4954,7 +5044,16 @@ def sl_verification_submit():
             if not rows:
                 return jsonify({'success': False, 'message': 'No pending SL rows found'}), 404
 
-            # Valid Absence: every absence date within [consult, fit] inclusive.
+            # Non-regular employees (probationary, contract, seasonal, etc.)
+            # may not yet be covered by life & health insurance. HR marks
+            # `life_health_exempt` when a "No" answer is for that reason,
+            # so it doesn't invalidate the absence.
+            life_ok = life or life_exempt
+
+            # Valid Absence: every absence date within [consult, fit] inclusive,
+            # AND (Life & health = Yes, or exempted) AND PRC = Verified AND
+            # Face-to-face = Yes. Any of those failing (or dates falling
+            # outside range) invalidates the absence.
             # Allow consult to be 1 day after the absence date too -- an
             # overnight/night-shift absence is logged against the shift's
             # start date, but the employee may not see a doctor until after
@@ -4966,7 +5065,8 @@ def sl_verification_submit():
                     cd = _dt.strptime(consult, '%Y-%m-%d').date()
                     fd = _dt.strptime(fit, '%Y-%m-%d').date()
                     absns = [r['leave_date'] for r in rows]
-                    valid = 1 if all((cd - _td(days=1)) <= d <= fd for d in absns) and cd <= fd else 0
+                    dates_ok = all((cd - _td(days=1)) <= d <= fd for d in absns) and cd <= fd
+                    valid = 1 if dates_ok and life_ok and prc and f2f else 0
                 except ValueError:
                     valid = 0
 
@@ -4974,12 +5074,12 @@ def sl_verification_submit():
                 UPDATE leave4day_requests
                 SET sl_hr_stage='hr_verified',
                     sl_date_consultation=%s, sl_date_fit_to_work=%s,
-                    sl_valid_absence=%s, sl_doctor_name=%s, sl_life_health=%s,
+                    sl_valid_absence=%s, sl_doctor_name=%s, sl_life_health=%s, sl_life_health_exempt=%s,
                     sl_prc_verified=%s, sl_specialization=%s, sl_spec_match=%s, sl_face_to_face=%s,
                     sl_awol_dates=%s, sl_hardcopy_received=%s,
                     sl_hr_verified_by=%s, sl_hr_verified_at=NOW()
                 WHERE leave_request_id=%s AND leave_type_id=2 AND status='pending'
-            """, (consult, fit, valid, doctor, life, prc, spec, spec_match, f2f, awol, hardcpy,
+            """, (consult, fit, valid, doctor, life, life_exempt, prc, spec, spec_match, f2f, awol, hardcpy,
                   session['user']['name'], leave_request_id))
         db.commit()
 
@@ -4997,6 +5097,7 @@ def sl_verification_submit():
             'sl_specialization': spec,
             'sl_spec_match': spec_match,
             'sl_life_health': life,
+            'sl_life_health_exempt': life_exempt,
             'sl_prc_verified': prc,
             'sl_face_to_face': f2f,
             'sl_awol_dates': awol,
@@ -10562,6 +10663,7 @@ def build_attendance_map(personids, window_start, window_end, shift_starts=None)
                     # no attendance record at all).
                     attendance_map[(pid, shift_date_for(pid, previous_in))] = {
                         'status': 'Present', 'time_in': previous_in.strftime('%b %d %H:%M'), 'time_out': log_dt.strftime('%b %d %H:%M'),
+                        'time_in_dt': previous_in, 'time_out_dt': log_dt,
                         'hours_worked': round((log_dt - previous_in).total_seconds() / 3600, 4),
                     }
                     previous_in = None
@@ -10848,12 +10950,33 @@ def admin_awol_report():
     if date_from > date_to:
         date_from = date_to
 
+    # ── Agent filters (Group / Team Lead / Employee) -- same fields, same
+    # gsheet_employees source, as the sibling Attendance Grid and Attendance
+    # Stack Rank tabs, so filtering behaves identically across all of them. ──
+    group_filter = request.args.get('group', '')
+    tl_filter    = request.args.get('tl', '')
+    emp_search   = request.args.get('emp_search', '').strip()
+    groups_list, tls_list = _holiday_awol_filter_lists()
+
     # ── Step 1: All scheduled active employees in date range ──
+    where  = ["es.schedule_date BETWEEN %s AND %s",
+              "es.is_rest_day = 0", "es.shift_time IS NOT NULL", "g.status = 'Active'"]
+    params = [date_from, date_to]
+    if group_filter:
+        where.append('g.group_name = %s')
+        params.append(group_filter)
+    if tl_filter:
+        where.append('g.tl = %s')
+        params.append(tl_filter)
+    if emp_search:
+        where.append('(g.employee_id LIKE %s OR g.schedule_name LIKE %s)')
+        params += [f'%{emp_search}%', f'%{emp_search}%']
+
     scheduled = []
     cdb = get_central_db()
     try:
         with cdb.cursor() as c:
-            c.execute("""
+            c.execute(f"""
                 SELECT
                     g.employee_id,
                     g.schedule_name,
@@ -10871,12 +10994,9 @@ def admin_awol_report():
                     FROM userdata
                     GROUP BY companyid
                 ) u ON u.companyid COLLATE utf8mb4_unicode_ci = es.employee_id COLLATE utf8mb4_unicode_ci
-                WHERE es.schedule_date BETWEEN %s AND %s
-                    AND es.is_rest_day   = 0
-                    AND es.shift_time   IS NOT NULL
-                    AND g.status         = 'Active'
+                WHERE {' AND '.join(where)}
                 ORDER BY g.group_name, g.tl, es.schedule_date, g.schedule_name
-            """, (date_from, date_to))
+            """, params)
             scheduled = c.fetchall()
     finally:
         cdb.close()
@@ -11075,12 +11195,27 @@ def admin_awol_report():
     awol_records = [r for r in records if _uncovered(r)]
     unverified   = [r for r in unverified_candidates if _uncovered(r)]
 
+    # Flag holiday AWOLs so the template can call them out separately --
+    # these carry extra payroll/compliance weight (see Holiday AWOL report).
+    holiday_map = _holidays_in_range(date_from, date_to)
     for r in awol_records:
         r['ir_report_number'] = ir_map.get('{}|{}'.format(r['employee_id'], r['absent_date']))
+        r['holiday_name'] = holiday_map.get(str(r['absent_date']))
+        r['is_holiday'] = r['holiday_name'] is not None
+
+    # IR filter: All / Only IR filed / Only no IR filed. Applied after the
+    # AWOL list is finalized (not pushed into the SQL) since IR status has
+    # no bearing on whether something *is* AWOL -- it only narrows the view.
+    ir_filter = request.args.get('ir_filter', '')
+    if ir_filter == 'with_ir':
+        awol_records = [r for r in awol_records if r['ir_report_number']]
+    elif ir_filter == 'no_ir':
+        awol_records = [r for r in awol_records if not r['ir_report_number']]
 
     summary = {
         'awol':       len(awol_records),
         'unverified': len(unverified),
+        'holiday':    sum(1 for r in awol_records if r['is_holiday']),
     }
 
     return render_template('admin/awol_report.html',
@@ -11088,7 +11223,10 @@ def admin_awol_report():
                            unverified=unverified,
                            date_from=str(date_from),
                            date_to=str(date_to),
-                           summary=summary)
+                           summary=summary,
+                           group_filter=group_filter, tl_filter=tl_filter, emp_search=emp_search,
+                           ir_filter=ir_filter,
+                           groups=groups_list, tls=tls_list)
 
 @app.route('/admin/undertime-report')
 def admin_undertime_report():
@@ -11132,13 +11270,16 @@ def admin_undertime_report():
     if date_from > date_to:
         date_from = date_to
 
-    # How much shortfall (in minutes) to tolerate before a Present shift
-    # counts as "undertime". 0 = flag any shortfall at all. No break/lunch
-    # deduction convention exists anywhere else in this codebase for
-    # scheduled-vs-actual hour comparisons, so this is a plain, full-shift
-    # comparison -- kept as a named constant so the tolerance is trivially
-    # tunable later without hunting through the route.
-    UNDERTIME_GRACE_MINUTES = 0
+    # How much shortfall (in seconds) to tolerate before a Present shift
+    # counts as "undertime". A scheduled 9:00 PM start clocked in at
+    # 9:00:59 PM (59s late) is sub-minute punch/clock jitter, not a real
+    # tardiness worth flagging, so anything under a full minute late is
+    # excluded. No break/lunch deduction convention exists anywhere else in
+    # this codebase for scheduled-vs-actual hour comparisons, so above this
+    # tolerance it's a plain, full-shift comparison -- kept as a named
+    # constant so the tolerance is trivially tunable later without hunting
+    # through the route.
+    UNDERTIME_GRACE_SECONDS = 60
 
     # A parsed shift span longer than this is treated as implausible source
     # data (e.g. a typo'd shift_time like '6pm-3pm' instead of '6pm-3am',
@@ -11149,12 +11290,34 @@ def admin_undertime_report():
     # fixed rather than just vanishing from the report.
     MAX_PLAUSIBLE_SHIFT_HOURS = 16
 
+    # ── Agent filters (Group / Team Lead / Employee) -- same fields, same
+    # gsheet_employees source, as the sibling Attendance Grid, AWOL Report
+    # and Attendance Stack Rank tabs, so filtering behaves identically
+    # across all of them. ──
+    group_filter = request.args.get('group', '')
+    tl_filter    = request.args.get('tl', '')
+    emp_search   = request.args.get('emp_search', '').strip()
+    groups_list, tls_list = _holiday_awol_filter_lists()
+
     # ── Step 1: All scheduled active employees in date range ──
+    where  = ["es.schedule_date BETWEEN %s AND %s",
+              "es.is_rest_day = 0", "es.shift_time IS NOT NULL", "g.status = 'Active'"]
+    params = [date_from, date_to]
+    if group_filter:
+        where.append('g.group_name = %s')
+        params.append(group_filter)
+    if tl_filter:
+        where.append('g.tl = %s')
+        params.append(tl_filter)
+    if emp_search:
+        where.append('(g.employee_id LIKE %s OR g.schedule_name LIKE %s)')
+        params += [f'%{emp_search}%', f'%{emp_search}%']
+
     scheduled = []
     cdb = get_central_db()
     try:
         with cdb.cursor() as c:
-            c.execute("""
+            c.execute(f"""
                 SELECT
                     g.employee_id,
                     g.schedule_name,
@@ -11172,12 +11335,9 @@ def admin_undertime_report():
                     FROM userdata
                     GROUP BY companyid
                 ) u ON u.companyid COLLATE utf8mb4_unicode_ci = es.employee_id COLLATE utf8mb4_unicode_ci
-                WHERE es.schedule_date BETWEEN %s AND %s
-                    AND es.is_rest_day   = 0
-                    AND es.shift_time   IS NOT NULL
-                    AND g.status         = 'Active'
+                WHERE {' AND '.join(where)}
                 ORDER BY g.group_name, g.tl, es.schedule_date, g.schedule_name
-            """, (date_from, date_to))
+            """, params)
             scheduled = c.fetchall()
     finally:
         cdb.close()
@@ -11185,6 +11345,7 @@ def admin_undertime_report():
     records            = []
     implausible_shifts = []
     leave_map          = {}
+    ir_map             = {}
 
     if scheduled:
         # Build lookup: personid -> employee info
@@ -11245,14 +11406,46 @@ def admin_undertime_report():
                 implausible_shifts.append(r)
                 continue
 
-            shortfall_hours = scheduled_hours - att['hours_worked']
+            # Late-in and early-out are evaluated independently against the
+            # scheduled start/end, not netted against each other via total
+            # duration -- clocking out past the scheduled end must NOT cancel
+            # out a late clock-in. That extra time is overtime (tracked
+            # separately in OT Hours / OT Tickets), not a tardiness credit.
+            sched_start_dt = dt.combine(sched_date, dt.min.time()) + timedelta(hours=start_h)
+            sched_end_dt   = dt.combine(sched_date, dt.min.time()) + timedelta(hours=end_h)
+            if sched_end_dt <= sched_start_dt:
+                sched_end_dt += timedelta(days=1)  # overnight shift
 
-            if shortfall_hours > (UNDERTIME_GRACE_MINUTES / 60):
+            late_in_hours   = max((att['time_in_dt']  - sched_start_dt).total_seconds() / 3600, 0)
+            early_out_hours = max((sched_end_dt - att['time_out_dt']).total_seconds() / 3600, 0)
+
+            # A late clock-in (pre-shift shortfall) is NOT counted as
+            # "undertime" here -- it's already tracked by the Tardiness
+            # report (modules/tardiness.py, same "time_in > shift_start"
+            # definition), and double-flagging the same lateness under two
+            # reports would just be noise. This report is scoped to leaving
+            # early -- a shortfall the Tardiness report has no visibility
+            # into at all.
+            shortfall_hours = early_out_hours
+
+            # "Hours Worked" still nets out BOTH late-in and early-out, not
+            # the raw punch-to-punch duration -- an early clock-in (e.g.
+            # 6:31am for a 7am shift) doesn't earn extra credited hours, and
+            # a late arrival still means less was actually worked even
+            # though that lateness is reported under Tardiness, not here.
+            hours_worked = max(scheduled_hours - late_in_hours - early_out_hours, 0)
+
+            if shortfall_hours > (UNDERTIME_GRACE_SECONDS / 3600):
                 r = dict(row)
                 r['attendance_status'] = 'Present'
-                r['time_in']           = att['time_in']
-                r['time_out']          = att['time_out']
-                r['hours_worked']      = att['hours_worked']
+                # Second-precision punches (not the shared attendance_map's
+                # minute-rounded 'time_in'/'time_out' strings) so the
+                # Undertime column's seconds breakdown is traceable back to
+                # an actual displayed clock time instead of looking
+                # inconsistent with it.
+                r['time_in']           = att['time_in_dt'].strftime('%b %d %H:%M:%S')
+                r['time_out']          = att['time_out_dt'].strftime('%b %d %H:%M:%S')
+                r['hours_worked']      = hours_worked
                 r['scheduled_hours']   = scheduled_hours
                 r['shortfall_hours']   = shortfall_hours
                 records.append(r)
@@ -11260,12 +11453,13 @@ def admin_undertime_report():
         # ── Step 5: Leave coverage. Any filed leave of ANY type/status
         # (other than Rejected/Cancelled/Deleted, matched case-insensitively
         # so a future status-value casing change can't silently slip
-        # through) covering the date excludes the day from this report --
-        # e.g. approved half-day leave plus a shorter worked shift is an
-        # explained, legitimate partial day, not concerning "undertime".
-        # leave4day_requests already stores one row per calendar day even
-        # for multi-day requests, so a plain per-day key match is
-        # sufficient without extra date-range logic. ──
+        # through) covering the date is looked up and attached to the row --
+        # e.g. an approved half-day VL alongside a shorter worked shift --
+        # instead of silently hiding the row, so a supervisor can see WHY a
+        # shift looks short and judge it themselves rather than having it
+        # disappear from the report. leave4day_requests already stores one
+        # row per calendar day even for multi-day requests, so a plain
+        # per-day key match is sufficient without extra date-range logic. ──
         emp_ids = list({r['employee_id'] for r in records})
         if emp_ids:
             placeholders = ','.join(['%s'] * len(emp_ids))
@@ -11288,14 +11482,38 @@ def admin_undertime_report():
             finally:
                 odb.close()
 
-    # ── Final filter: exclude any day with filed-leave coverage (see Step
-    # 5), then sort by shortfall descending (biggest shortfalls first) --
-    # the template's client-side column-sort JS still lets this be
-    # re-sorted afterward. ──
-    def _uncovered(r):
-        return not leave_map.get('{}|{}'.format(r['employee_id'], r['absent_date']))
+            # ── Step 6: Incident Report cross-reference. Same employee_id +
+            # date match against central_db's incident_reports table, so a
+            # supervisor can jump straight to an IR that already documents
+            # this occurrence instead of hunting for it separately. ──
+            cdb_ir = get_central_db()
+            try:
+                with cdb_ir.cursor() as c:
+                    c.execute(f"""
+                        SELECT employee_id, incident_date, report_number
+                        FROM incident_reports
+                        WHERE employee_id IN ({placeholders})
+                          AND incident_date BETWEEN %s AND %s
+                        ORDER BY created_at ASC
+                    """, emp_ids + [date_from, date_to])
+                    for row in c.fetchall():
+                        key = '{}|{}'.format(row['employee_id'], row['incident_date'])
+                        ir_map.setdefault(key, []).append(row['report_number'])
+            finally:
+                cdb_ir.close()
 
-    undertime_records = [r for r in records if _uncovered(r)]
+    # ── Annotate each record with leave coverage + IR cross-reference (see
+    # Step 5/6 above), then sort by shortfall descending (biggest shortfalls
+    # first) -- the template's client-side column-sort JS still lets this be
+    # re-sorted afterward. ──
+    for r in records:
+        key             = '{}|{}'.format(r['employee_id'], r['absent_date'])
+        leave_rows      = leave_map.get(key, [])
+        r['leave_type_name'] = leave_rows[0]['leave_type_name'] if leave_rows else None
+        r['leave_code']       = get_leave_code(leave_rows[0]['leave_type_name']) if leave_rows else None
+        r['ir_numbers']       = ir_map.get(key, [])
+
+    undertime_records = records
     undertime_records.sort(key=lambda r: r['shortfall_hours'], reverse=True)
 
     summary = {
@@ -11307,7 +11525,9 @@ def admin_undertime_report():
                            implausible_shifts=implausible_shifts,
                            date_from=str(date_from),
                            date_to=str(date_to),
-                           summary=summary)
+                           summary=summary,
+                           group_filter=group_filter, tl_filter=tl_filter, emp_search=emp_search,
+                           groups=groups_list, tls=tls_list)
 
 @app.route('/on-shift')
 def on_shift():
@@ -12289,7 +12509,11 @@ def _perf_scope_data(conn, employee_id, date_from, date_to, perf_safe_last_day, 
     # logic as get_overbreak_trigger_events_for_period()'s local
     # _duration_to_minutes() (that helper is a nested function, not
     # importable, so its logic is replicated here rather than reimplemented
-    # differently).
+    # differently). "Minutes over" is the excess above the flat 90-minute
+    # allowed break (ALLOWED_BREAK_MINUTES), matching admin_overbreak()'s
+    # excess_minutes -- previously this rendered the raw total break
+    # duration instead, which read far higher than the Overbreak Report's
+    # "+Xm" figures for the same occurrence.
     perf_cursor.execute("""
         SELECT record_date, break_duration FROM overbreak_records
         WHERE employee_id = %s AND validity = 'Valid'
@@ -12298,6 +12522,8 @@ def _perf_scope_data(conn, employee_id, date_from, date_to, perf_safe_last_day, 
     """, (employee_id, date_from, date_to))
     overbreak_rows = perf_cursor.fetchall()
     perf_cursor.close()
+
+    ALLOWED_BREAK_MINUTES = 90  # 1:30 -- same allowance as admin_overbreak()
 
     def _duration_to_minutes(val):
         if val is None:
@@ -12309,7 +12535,7 @@ def _perf_scope_data(conn, employee_id, date_from, date_to, perf_safe_last_day, 
 
     overbreaks = [{
         'date': r['record_date'],
-        'minutes': _duration_to_minutes(r['break_duration']),
+        'minutes': max(_duration_to_minutes(r['break_duration']) - ALLOWED_BREAK_MINUTES, 0),
     } for r in overbreak_rows]  # already ORDER BY record_date DESC
 
     # Tardiness: reuse the shared modules.tardiness range helper (its own
@@ -12327,6 +12553,82 @@ def _perf_scope_data(conn, employee_id, date_from, date_to, perf_safe_last_day, 
     tardiness.sort(key=lambda r: r['date'], reverse=True)
     tardiness_minutes = sum(r['minutes_late'] or 0 for r in tardiness)
 
+    # Undertime: same definition as admin_undertime_report() -- a scheduled
+    # shift the employee both clocked in AND out for (Present, not FTS
+    # IN/OUT), where they clocked out early. A late clock-in is deliberately
+    # NOT counted here even though it also shortens the worked duration --
+    # that's already covered by the Tardiness pill above, and double-
+    # counting the same lateness under two pills would be confusing rather
+    # than informative. Same UNDERTIME_GRACE_SECONDS grace (sub-minute
+    # early-out is punch/clock jitter, not real undertime) and same
+    # MAX_PLAUSIBLE_SHIFT_HOURS implausible-shift guard.
+    UNDERTIME_GRACE_SECONDS      = 60
+    MAX_PLAUSIBLE_SHIFT_HOURS    = 16
+    undertime = None
+    if personid is not None:
+        undertime_candidates = []
+        for row in perf_schedule_rows:
+            if row['is_rest_day'] or not row['shift_time']:
+                continue  # only scheduled working days count
+            if row['schedule_date'] > attendance_date_to:
+                continue  # shift hasn't happened yet -- not evaluable
+            att = attendance_map_perf.get((personid, row['schedule_date']))
+            if att is None or att['status'] != 'Present':
+                continue  # no punch, or only one punch -- out of scope
+
+            start_h, end_h = parse_shift_time(row['shift_time'])
+            if start_h is None or end_h is None:
+                continue  # can't compute a shortfall without a scheduled length
+
+            scheduled_hours = end_h - start_h if end_h > start_h else (end_h + 24 - start_h)
+            if scheduled_hours > MAX_PLAUSIBLE_SHIFT_HOURS:
+                continue  # implausible shift string -- a schedule-data issue, not undertime
+
+            sched_end_dt = datetime.combine(row['schedule_date'], datetime.min.time()) + timedelta(hours=end_h)
+            sched_start_dt = datetime.combine(row['schedule_date'], datetime.min.time()) + timedelta(hours=start_h)
+            if sched_end_dt <= sched_start_dt:
+                sched_end_dt += timedelta(days=1)  # overnight shift
+
+            early_out_hours = max((sched_end_dt - att['time_out_dt']).total_seconds() / 3600, 0)
+            if early_out_hours <= (UNDERTIME_GRACE_SECONDS / 3600):
+                continue
+
+            undertime_candidates.append({
+                'date': row['schedule_date'],
+                'day_of_week': row['schedule_date'].strftime('%A'),
+                'shift_time': row['shift_time'],
+                'time_in': att['time_in_dt'].strftime('%b %d %H:%M:%S'),
+                'time_out': att['time_out_dt'].strftime('%b %d %H:%M:%S'),
+                'shortfall_hours': early_out_hours,
+            })
+
+        # Leave coverage: any filed leave (any type/status other than
+        # Rejected/Cancelled/Deleted) covering the date excludes it, same as
+        # admin_undertime_report()'s Step 5 -- an approved half-day leave
+        # plus a shorter worked shift is an explained partial day, not
+        # concerning undertime.
+        undertime = undertime_candidates
+        if undertime_candidates:
+            leave_dates_ut = set()
+            leave_db_ut = get_db()
+            try:
+                with leave_db_ut.cursor(pymysql.cursors.DictCursor) as c_ut:
+                    c_ut.execute("""
+                        SELECT lr.leave_date
+                        FROM leave4day_requests lr
+                        WHERE lr.employee_id = %s
+                          AND lr.leave_date BETWEEN %s AND %s
+                          AND LOWER(lr.status) NOT IN ('rejected','cancelled','deleted')
+                    """, (employee_id, date_from, date_to))
+                    leave_dates_ut = {r['leave_date'] for r in c_ut.fetchall()}
+            finally:
+                leave_db_ut.close()
+            undertime = [u for u in undertime_candidates if u['date'] not in leave_dates_ut]
+
+        undertime.sort(key=lambda r: r['date'], reverse=True)
+
+    undertime_minutes = sum(int(round(u['shortfall_hours'] * 60)) for u in undertime) if undertime is not None else None
+
     return {
         'label': label,
         'absences': absences,
@@ -12343,6 +12645,9 @@ def _perf_scope_data(conn, employee_id, date_from, date_to, perf_safe_last_day, 
         'tardiness': tardiness,
         'tardiness_count': len(tardiness),
         'tardiness_minutes': tardiness_minutes,
+        'undertime': undertime,
+        'undertime_count': (len(undertime) if undertime is not None else None),
+        'undertime_minutes': undertime_minutes,
         # Only set when THIS scope's window got truncated by the safe-cutoff
         # (i.e. it's the current, still-in-progress month, or the current,
         # still-in-progress year) -- lets the template make clear the
@@ -12485,6 +12790,25 @@ def pim_profile(employee_id):
     if not employee:
         cursor.close()
         abort(404)
+    # "Next employee" button: same list/order as the /pim index default
+    # view (Active/Training/Pending, by schedule_name), employee_id as the
+    # tie-breaker so duplicate names still step one at a time.
+    cursor.execute("""
+        SELECT employee_id, schedule_name FROM gsheet_employees
+        WHERE status IN ('Active', 'Training', 'Pending')
+          AND (COALESCE(schedule_name, ''), employee_id) > (%s, %s)
+        ORDER BY COALESCE(schedule_name, ''), employee_id
+        LIMIT 1
+    """, (employee.get('schedule_name') or '', employee_id))
+    next_employee = cursor.fetchone()
+    cursor.execute("""
+        SELECT employee_id, schedule_name FROM gsheet_employees
+        WHERE status IN ('Active', 'Training', 'Pending')
+          AND (COALESCE(schedule_name, ''), employee_id) < (%s, %s)
+        ORDER BY COALESCE(schedule_name, '') DESC, employee_id DESC
+        LIMIT 1
+    """, (employee.get('schedule_name') or '', employee_id))
+    prev_employee = cursor.fetchone()
     cursor.execute("""
         SELECT schedule_date, shift_time, is_rest_day
         FROM employee_schedules
@@ -12566,7 +12890,9 @@ def pim_profile(employee_id):
                            perf_month=perf_month,
                            perf_year=perf_year,
                            csat_month=csat_month,
-                           csat_year=csat_year)
+                           csat_year=csat_year,
+                           next_employee=next_employee,
+                           prev_employee=prev_employee)
 
 
 @app.route('/pim/<employee_id>/photo')
@@ -13736,6 +14062,72 @@ def api_csat_agents():
         return jsonify({"range":{"start":start,"end":end},"agents":rows})
     finally:
         cdb.close()
+
+
+@app.route('/api/csat/team-comparison')
+@login_required
+def api_csat_team_comparison():
+    """GROUP BY tl (team) version of api_csat_agents' metric logic — same source
+    tables and filter conditions, aggregated per team instead of per agent."""
+    allowed, tl_name = _csat_scope()
+    if not allowed:
+        return jsonify({"error": "forbidden"}), 403
+    start, end = _csat_date_range()
+    conds, params = _csat_filters(tl_name)
+    cdb = get_central_db()
+    try:
+        with cdb.cursor() as c:
+            c.execute(f"""
+                SELECT r.tl AS team, COUNT(DISTINCT r.agent_email) AS agents,
+                       COALESCE(SUM(chat_resolved),0) chat_wt,
+                       COALESCE(SUM(email_resolved),0) email_wt,
+                       COALESCE(SUM(phone_resolved),0) phone_wt,
+                       COALESCE(SUM(total_resolved),0) total_wt
+                FROM resolve_counts r WHERE {_apply(conds,'r')}
+                GROUP BY r.tl
+            """, params)
+            teams={}
+            for row in c.fetchall():
+                g=row['team']
+                if g is None or g in ('#N/A','NULL',''):
+                    continue
+                teams[g]={"team":g,"agents":int(row['agents']),"chat_wt":int(row['chat_wt']),
+                    "email_wt":int(row['email_wt']),"phone_wt":int(row['phone_wt']),
+                    "total_resolved":int(row['total_wt']),"pct":{}}
+            c.execute(f"""
+                SELECT cr.tl AS team, cr.channel_type, AVG(cr.csat_score) pct, COUNT(*) n
+                FROM csat_responses cr WHERE {_apply(conds,'cr')}
+                GROUP BY cr.tl, cr.channel_type
+            """, params)
+            resp_count={}
+            for row in c.fetchall():
+                g=row['team']
+                if g is None or g in ('#N/A','NULL',''):
+                    continue
+                if g not in teams:
+                    teams[g]={"team":g,"agents":0,"chat_wt":0,"email_wt":0,
+                              "phone_wt":0,"total_resolved":0,"pct":{}}
+                teams[g]["pct"][row['channel_type']]=float(row['pct'] or 0)
+                resp_count[g]=resp_count.get(g,0)+int(row['n'])
+            rows=[]
+            for g,t in teams.items():
+                d=t["chat_wt"]+t["email_wt"]+t["phone_wt"]; p=t["pct"]
+                weighted=((p.get('Chat',0)*t["chat_wt"]+p.get('Email',0)*t["email_wt"]
+                          +p.get('Phone',0)*t["phone_wt"])/d) if d else 0
+                rows.append({"team":g,"agents":t["agents"],
+                    "weighted":round(weighted*100,2),
+                    "chat_pct":round(p.get('Chat',0)*100,2),
+                    "email_pct":round(p.get('Email',0)*100,2),
+                    "phone_pct":round(p.get('Phone',0)*100,2),
+                    "chat_resolved":t["chat_wt"],
+                    "email_resolved":t["email_wt"],
+                    "phone_resolved":t["phone_wt"],
+                    "total_resolved":t["total_resolved"],"responses":resp_count.get(g,0)})
+            rows.sort(key=lambda x:x['weighted'],reverse=True)
+        return jsonify({"range":{"start":start,"end":end},"teams":rows})
+    finally:
+        cdb.close()
+
 
 @app.route('/api/csat/agent-responses')
 @login_required

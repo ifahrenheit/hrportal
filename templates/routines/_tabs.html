@@ -1,0 +1,23 @@
+{# Routine Tracker tab bar. Pass active_tab: tasks | log | logs | dashboard #}
+<ul class="nav nav-tabs mb-3">
+  <li class="nav-item">
+    <a class="nav-link {{ 'active' if active_tab == 'tasks' }}" href="{{ url_for('routines.task_list') }}">
+      <i class="me-1" data-lucide="list-checks"></i>Tasks
+    </a>
+  </li>
+  <li class="nav-item">
+    <a class="nav-link {{ 'active' if active_tab == 'log' }}" href="{{ url_for('routines.log_check') }}">
+      <i class="me-1" data-lucide="clipboard-check"></i>Log a Check
+    </a>
+  </li>
+  <li class="nav-item">
+    <a class="nav-link {{ 'active' if active_tab == 'logs' }}" href="{{ url_for('routines.log_history') }}">
+      <i class="me-1" data-lucide="history"></i>Log History
+    </a>
+  </li>
+  <li class="nav-item">
+    <a class="nav-link {{ 'active' if active_tab == 'dashboard' }}" href="{{ url_for('routines.dashboard') }}">
+      <i class="me-1" data-lucide="chart-column"></i>Dashboard
+    </a>
+  </li>
+</ul>

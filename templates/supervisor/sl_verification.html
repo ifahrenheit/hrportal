@@ -69,6 +69,10 @@
 .slv-seg input.pos:checked + label { background:#059669; color:#fff; }
 .slv-seg input.neg:checked + label { background:#4b5563; color:#fff; }
 
+.slv-exempt { display:flex; align-items:flex-start; gap:6px; margin-top:6px; font-size:.74rem;
+  color:var(--bs-secondary-color,#6b7280); cursor:pointer; line-height:1.3; }
+.slv-exempt input { margin-top:2px; }
+
 .slv-foot { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-top:16px; padding-top:14px; border-top:1px solid var(--bs-border-color,#eef0f3); }
 .slv-void { font-size:.8rem; color:#b45309; display:none; align-items:center; gap:6px; }
 .slv-btn { border:0; border-radius:8px; padding:.5rem 1.1rem; font-size:.86rem; font-weight:600; color:#fff;
@@ -98,7 +102,7 @@
   {% endif %}
 
   {% for r in pending %}
-  <div class="slv-card" id="slcard-{{ r.leave_request_id }}">
+  <div class="slv-card" id="slcard-{{ r.leave_request_id }}" data-regular="{{ 1 if r.is_regular else 0 }}">
     <div class="slv-card__top">
       <div>
         <div class="slv-emp">{{ r.emp_lastname }}, {{ r.emp_firstname }}<span class="slv-id">{{ r.employee_id }}</span></div>
@@ -106,6 +110,11 @@
           <span class="slv-pill">Sick Leave</span>
           <span><i class="me-1" data-lucide="clock"></i>Filed {{ r.filed_at }}</span>
           <span><i class="me-1" data-lucide="id-card"></i>TL: {{ r.tl or '—' }}</span>
+          {% if r.is_regular %}
+            <span class="slv-pill" style="background:#dcfce7;color:#166534;">Regular</span>
+          {% else %}
+            <span class="slv-pill" style="background:#e0e7ff;color:#3730a3;">Non-regular{{ ' — ' + r.employment_status|trim if r.employment_status else '' }}</span>
+          {% endif %}
         </div>
       </div>
       <div class="slv-hours">
@@ -157,13 +166,17 @@
           <input type="text" class="sl-awol" placeholder="N/A">
         </div>
         <div class="slv-field">
-          <label>Life &amp; health</label>
+          <label>Life &amp; health <span style="font-weight:400;color:#9aa1ab">(insurance coverage)</span></label>
           <div class="slv-seg">
             <input type="radio" class="btn-check sl-life pos" name="life-{{ r.leave_request_id }}" id="life-y-{{ r.leave_request_id }}" value="1">
             <label for="life-y-{{ r.leave_request_id }}">Yes</label>
             <input type="radio" class="btn-check sl-life neg" name="life-{{ r.leave_request_id }}" id="life-n-{{ r.leave_request_id }}" value="0">
             <label for="life-n-{{ r.leave_request_id }}">No</label>
           </div>
+          <label class="slv-exempt" style="display:none;">
+            <input type="checkbox" class="sl-life-exempt" {{ 'checked' if not r.is_regular }}>
+            Not yet eligible for coverage (non-regular) — don't invalidate
+          </label>
         </div>
         <div class="slv-field">
           <label>PRC verification</label>
@@ -221,18 +234,36 @@ function recomputeValid(lr){
   const fit     = card.querySelector('.sl-fit').value;
   const box     = card.querySelector('.sl-valid');
   const absence = parseDates(card.querySelector('[data-absence]').getAttribute('data-absence'));
+  const life = getRadio(card,'sl-life'), prc = getRadio(card,'sl-prc'), f2f = getRadio(card,'sl-f2f');
+  const lifeExempt = card.querySelector('.sl-life-exempt').checked;
   box.classList.remove('ok','bad');
   if(!consult || !fit || !absence.length){ box.textContent='Enter dates'; return; }
   const cd=new Date(consult), fd=new Date(fit);
   const cdMinus1 = new Date(cd); cdMinus1.setDate(cdMinus1.getDate()-1);
   let ok = cd <= fd;
   for(const d of absence){ const dd=new Date(d); if(dd<cdMinus1||dd>fd){ ok=false; break; } }
-  box.textContent = ok ? 'Yes — dates covered' : 'No — outside range';
+  // Life & health = No, PRC = Non-verified, or Face-to-face = No, invalidates the absence too.
+  // Unless Life & health = No was marked exempt (employee not yet eligible for coverage).
+  if(ok && ((life==='0' && !lifeExempt) || prc==='0' || f2f==='0')) ok = false;
+  box.textContent = ok ? 'Yes — dates covered' : 'No — outside range or unverified';
   box.classList.add(ok ? 'ok' : 'bad');
 }
 
-document.querySelectorAll('.sl-consult, .sl-fit').forEach(el=>{
-  el.addEventListener('change',()=>recomputeValid(el.getAttribute('data-lr')));
+document.querySelectorAll('.sl-consult, .sl-fit, .sl-life, .sl-prc, .sl-f2f, .sl-life-exempt').forEach(el=>{
+  el.addEventListener('change',()=>recomputeValid(el.getAttribute('data-lr') || el.name.split('-').slice(1).join('-') || el.closest('.slv-card').id.replace('slcard-','')));
+});
+
+document.querySelectorAll('.sl-life').forEach(el=>{
+  el.addEventListener('change',()=>{
+    const card = el.closest('.slv-card');
+    const exemptRow = card.querySelector('.slv-exempt');
+    const noChecked = card.querySelector('.sl-life[value="0"]').checked;
+    exemptRow.style.display = noChecked ? 'flex' : 'none';
+  });
+  // initialize visibility on load in case of pre-filled state
+  const card = el.closest('.slv-card');
+  const exemptRow = card.querySelector('.slv-exempt');
+  exemptRow.style.display = card.querySelector('.sl-life[value="0"]').checked ? 'flex' : 'none';
 });
 
 document.querySelectorAll('.sl-hard').forEach(el=>{
@@ -254,6 +285,7 @@ function submitSLVerification(lr){
   const life = getRadio(card,'sl-life'), prc = getRadio(card,'sl-prc');
   const f2f  = getRadio(card,'sl-f2f'),  hard = getRadio(card,'sl-hard');
   const smatch = getRadio(card,'sl-specmatch');
+  const lifeExempt = card.querySelector('.sl-life-exempt').checked;
 
   if(!consult || !fit){ alert('Please enter both Date of consultation and Date fit to work.'); return; }
   if(life===null||prc===null||f2f===null||hard===null||smatch===null){
@@ -270,7 +302,8 @@ function submitSLVerification(lr){
     doctor_name: card.querySelector('.sl-doctor').value,
     specialization: card.querySelector('.sl-spec').value,
     awol_dates: card.querySelector('.sl-awol').value,
-    life_health: life, prc_verified: prc, spec_match: smatch, face_to_face: f2f, hardcopy_received: hard
+    life_health: life, life_health_exempt: lifeExempt ? 1 : 0,
+    prc_verified: prc, spec_match: smatch, face_to_face: f2f, hardcopy_received: hard
   };
 
   fetch('/leave/sl-verification/submit',{

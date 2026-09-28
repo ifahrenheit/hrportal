@@ -752,6 +752,10 @@
         <a class="tn-item {% if EP == 'admin_tickets' %}active{% endif %}" href="{{ url_for('admin_tickets') }}">
           <i data-lucide="headset"></i> Ticket Queue</a>
         {% endif %}
+        {% if WRAP and (ADMIN or P.get('can_it_tickets')) %}
+        <a class="tn-item {% if EP.startswith('routines.') %}active{% endif %}" href="{{ url_for('routines.task_list') }}">
+          <i data-lucide="list-checks"></i> Routine Tracker</a>
+        {% endif %}
         {% if ADMIN or P.get('can_floor_map') or ir_can_file() or ir_can_view() or qa_can_manage() %}
         <div class="tn-group-label">Floor &amp; Reporting</div>
         {% endif %}
@@ -802,7 +806,7 @@
           <i data-lucide="calendar-days"></i> Schedules</a>
         {% endif %}
         {% if WRAP and (ADMIN or P.get('can_absences')) %}
-        <a class="tn-item {% if EP == 'admin_absences' %}active{% endif %}" href="{{ url_for('admin_absences') }}">
+        <a class="tn-item {% if EP in ['admin_absences', 'admin_attendance_grid', 'admin_awol_report', 'admin_undertime_report', 'admin_attendance_stack_rank'] %}active{% endif %}" href="{{ url_for('admin_absences') }}">
           <i data-lucide="user-x"></i> Attendance</a>
         {% endif %}
         {% if WRAP and (ADMIN or P.get('can_tardiness')) %}
@@ -959,17 +963,18 @@
   <a class="tn-subtab {% if EP == 'memos.memos_list' %}active{% endif %}" href="{{ url_for('memos.memos_list') }}">Memos</a>
   {% endif %}
 </div></div>
-{% elif EP in ['admin_absences', 'tardiness.tardiness_page', 'admin_night_diff', 'admin_overbreak', 'admin_ot_hours'] %}
+{% elif EP in ['admin_absences', 'admin_attendance_grid', 'admin_awol_report', 'admin_undertime_report', 'admin_attendance_stack_rank', 'tardiness.tardiness_page', 'admin_holiday_awol', 'admin_overbreak', 'admin_ot_hours'] %}
 <div class="tn-subnav"><div class="tn-subnav-inner">
   <span class="tn-subnav-label">Attendance</span>
   {% if WRAP and (ADMIN or P.get('can_absences')) %}
-  <a class="tn-subtab {% if EP == 'admin_absences' %}active{% endif %}" href="{{ url_for('admin_absences') }}">Attendance</a>
+  <a class="tn-subtab {% if EP == 'admin_absences' %}active{% endif %}" href="{{ url_for('admin_absences') }}">Absences</a>
+  <a class="tn-subtab {% if EP == 'admin_attendance_grid' %}active{% endif %}" href="{{ url_for('admin_attendance_grid') }}">Attendance Grid</a>
+  <a class="tn-subtab {% if EP == 'admin_awol_report' %}active{% endif %}" href="{{ url_for('admin_awol_report') }}">AWOL Report</a>
+  <a class="tn-subtab {% if EP == 'admin_undertime_report' %}active{% endif %}" href="{{ url_for('admin_undertime_report') }}">Undertime Report</a>
+  <a class="tn-subtab {% if EP == 'admin_attendance_stack_rank' %}active{% endif %}" href="{{ url_for('admin_attendance_stack_rank') }}">Attendance Stack Rank</a>
   {% endif %}
   {% if WRAP and (ADMIN or P.get('can_tardiness')) %}
   <a class="tn-subtab {% if EP == 'tardiness.tardiness_page' %}active{% endif %}" href="{{ url_for('tardiness.tardiness_page') }}">Tardiness</a>
-  {% endif %}
-  {% if WRAP and (ADMIN or P.get('can_night_differential')) %}
-  <a class="tn-subtab {% if EP == 'admin_night_diff' %}active{% endif %}" href="{{ url_for('admin_night_diff') }}">Night Differential</a>
   {% endif %}
   {% if WRAP and (ADMIN or P.get('can_holiday_awol')) %}
   <a class="tn-subtab {% if EP == 'admin_holiday_awol' %}active{% endif %}" href="{{ url_for('admin_holiday_awol') }}">Holiday AWOL</a>
@@ -1216,6 +1221,19 @@
         href: a.getAttribute('href')
       });
     });
+    /* the Attendance page's own tab bar (Absence Report / Attendance Grid /
+       AWOL Report / Undertime Report / Attendance Stack Rank) isn't part of
+       the mega menu, so its tabs are added here as search-only entries */
+    {% if WRAP and (ADMIN or P.get('can_absences')) %}
+    if (p.dataset.panel === 'analytics'){
+      INDEX.push(
+        {title: 'Attendance Grid', icon: 'grid-3x3', section: section, href: '{{ url_for("admin_attendance_grid") }}'},
+        {title: 'AWOL Report', icon: 'user-minus', section: section, href: '{{ url_for("admin_awol_report") }}'},
+        {title: 'Undertime Report', icon: 'hourglass', section: section, href: '{{ url_for("admin_undertime_report") }}'},
+        {title: 'Attendance Stack Rank', icon: 'trophy', section: section, href: '{{ url_for("admin_attendance_stack_rank") }}'}
+      );
+    }
+    {% endif %}
   });
 
   var pScrim = document.getElementById('tnPScrim');

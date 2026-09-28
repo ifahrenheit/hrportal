@@ -399,6 +399,13 @@
           <i data-lucide="headset"></i>
           <span class="nav-label">Ticket Queue</span>
         </a>
+        {% if session.get('is_admin') or session.get('permissions', {}).get('can_it_tickets') %}
+        <a class="nav-link {% if request.endpoint and request.endpoint.startswith('routines.') %}active{% endif %}"
+           href="{{ url_for('routines.task_list') }}">
+          <i data-lucide="list-checks"></i>
+          <span class="nav-label">Routine Tracker</span>
+        </a>
+        {% endif %}
       </div>
       {% endif %}
 

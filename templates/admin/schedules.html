@@ -92,7 +92,7 @@
           <th style="min-width:80px;">Group</th>
           <th style="min-width:80px;">TL</th>
           {% for h in date_headers %}
-          <th class="text-center" style="min-width:52px;padding:.25rem .2rem;">
+          <th class="text-center{{ ' col-today' if h.date == today }}" style="min-width:52px;padding:.25rem .2rem;">
             <div>{{ h.day }}</div>
             <div style="font-size:.65rem;opacity:.7;">{{ h.weekday }}</div>
           </th>
@@ -120,35 +120,36 @@
             <td class="text-muted" style="font-size:.7rem;padding:.2rem .3rem;white-space:nowrap;">{{ e.tl }}</td>
             {% for h in date_headers %}{% set d = h.date %}
               {% set day = e.days.get(d) %}
+              {% set today_cls = ' col-today' if d == today else '' %}
               {% if day %}
                 {% if day.is_rest %}
-                <td class="text-center sched-cell" style="background:#1a1a1a;color:#fff;font-size:.65rem;padding:.15rem .1rem;white-space:nowrap;">RD</td>
+                <td class="text-center sched-cell{{ today_cls }}" style="background:#1a1a1a;color:#fff;font-size:.65rem;padding:.15rem .1rem;white-space:nowrap;">RD</td>
                 {% else %}
                   {% set s = day.shift or '' %}
-                  {% if '6am' in s %}<td class="text-center sched-cell" style="background:#e8f5e9;color:#2e7d32;font-size:.65rem;padding:.15rem .1rem;white-space:nowrap;">{{ s }}</td>
-                  {% elif '7am' in s and '4pm' in s %}<td class="text-center sched-cell" style="background:#f1f8e9;color:#558b2f;font-size:.65rem;padding:.15rem .1rem;white-space:nowrap;">{{ s }}</td>
-                  {% elif '8am' in s %}<td class="text-center sched-cell" style="background:#e0f2f1;color:#00695c;font-size:.65rem;padding:.15rem .1rem;white-space:nowrap;">{{ s }}</td>
-                  {% elif '9am' in s and '6pm' in s %}<td class="text-center sched-cell" style="background:#e8eaf6;color:#283593;font-size:.65rem;padding:.15rem .1rem;white-space:nowrap;">{{ s }}</td>
-                  {% elif '10am' in s %}<td class="text-center sched-cell" style="background:#e3f2fd;color:#1565c0;font-size:.65rem;padding:.15rem .1rem;white-space:nowrap;">{{ s }}</td>
-                  {% elif '11am' in s %}<td class="text-center sched-cell" style="background:#fff8e1;color:#f57f17;font-size:.65rem;padding:.15rem .1rem;white-space:nowrap;">{{ s }}</td>
-                  {% elif '12nn' in s or '12pm' in s %}<td class="text-center sched-cell" style="background:#fff3e0;color:#e65100;font-size:.65rem;padding:.15rem .1rem;white-space:nowrap;">{{ s }}</td>
-                  {% elif '1pm' in s %}<td class="text-center sched-cell" style="background:#fbe9e7;color:#bf360c;font-size:.65rem;padding:.15rem .1rem;white-space:nowrap;">{{ s }}</td>
-                  {% elif '2pm' in s %}<td class="text-center sched-cell" style="background:#fce4ec;color:#880e4f;font-size:.65rem;padding:.15rem .1rem;white-space:nowrap;">{{ s }}</td>
-                  {% elif '3pm' in s %}<td class="text-center sched-cell" style="background:#f8bbd0;color:#880e4f;font-size:.65rem;padding:.15rem .1rem;white-space:nowrap;">{{ s }}</td>
-                  {% elif '4pm' in s %}<td class="text-center sched-cell" style="background:#f3e5f5;color:#6a1b9a;font-size:.65rem;padding:.15rem .1rem;white-space:nowrap;">{{ s }}</td>
-                  {% elif '5pm' in s %}<td class="text-center sched-cell" style="background:#ede7f6;color:#4527a0;font-size:.65rem;padding:.15rem .1rem;white-space:nowrap;">{{ s }}</td>
-                  {% elif '6pm' in s %}<td class="text-center sched-cell" style="background:#e8eaf6;color:#1a237e;font-size:.65rem;padding:.15rem .1rem;white-space:nowrap;">{{ s }}</td>
-                  {% elif '7pm' in s %}<td class="text-center sched-cell" style="background:#e0e7ff;color:#1e1b4b;font-size:.65rem;padding:.15rem .1rem;white-space:nowrap;">{{ s }}</td>
-                  {% elif '8pm' in s %}<td class="text-center sched-cell" style="background:#ddd6fe;color:#312e81;font-size:.65rem;padding:.15rem .1rem;white-space:nowrap;">{{ s }}</td>
-                  {% elif '9pm' in s %}<td class="text-center sched-cell" style="background:#c7d2fe;color:#312e81;font-size:.65rem;padding:.15rem .1rem;white-space:nowrap;">{{ s }}</td>
-                  {% elif '10pm' in s %}<td class="text-center sched-cell" style="background:#a5b4fc;color:#1e1b4b;font-size:.65rem;padding:.15rem .1rem;white-space:nowrap;">{{ s }}</td>
-                  {% elif '11pm' in s %}<td class="text-center sched-cell" style="background:#818cf8;color:#fff;font-size:.65rem;padding:.15rem .1rem;white-space:nowrap;">{{ s }}</td>
-                  {% elif '1am' in s or '2am' in s or '3am' in s or '4am' in s or '5am' in s %}<td class="text-center sched-cell" style="background:#4f46e5;color:#fff;font-size:.65rem;padding:.15rem .1rem;white-space:nowrap;">{{ s }}</td>
-                  {% else %}<td class="text-center sched-cell" style="background:#e0f2f1;color:#00695c;font-size:.65rem;padding:.15rem .1rem;white-space:nowrap;">{{ s }}</td>
+                  {% if '6am' in s %}<td class="text-center sched-cell{{ today_cls }}" style="background:#e8f5e9;color:#2e7d32;font-size:.65rem;padding:.15rem .1rem;white-space:nowrap;">{{ s }}</td>
+                  {% elif '7am' in s and '4pm' in s %}<td class="text-center sched-cell{{ today_cls }}" style="background:#f1f8e9;color:#558b2f;font-size:.65rem;padding:.15rem .1rem;white-space:nowrap;">{{ s }}</td>
+                  {% elif '8am' in s %}<td class="text-center sched-cell{{ today_cls }}" style="background:#e0f2f1;color:#00695c;font-size:.65rem;padding:.15rem .1rem;white-space:nowrap;">{{ s }}</td>
+                  {% elif '9am' in s and '6pm' in s %}<td class="text-center sched-cell{{ today_cls }}" style="background:#e8eaf6;color:#283593;font-size:.65rem;padding:.15rem .1rem;white-space:nowrap;">{{ s }}</td>
+                  {% elif '10am' in s %}<td class="text-center sched-cell{{ today_cls }}" style="background:#e3f2fd;color:#1565c0;font-size:.65rem;padding:.15rem .1rem;white-space:nowrap;">{{ s }}</td>
+                  {% elif '11am' in s %}<td class="text-center sched-cell{{ today_cls }}" style="background:#fff8e1;color:#f57f17;font-size:.65rem;padding:.15rem .1rem;white-space:nowrap;">{{ s }}</td>
+                  {% elif '12nn' in s or '12pm' in s %}<td class="text-center sched-cell{{ today_cls }}" style="background:#fff3e0;color:#e65100;font-size:.65rem;padding:.15rem .1rem;white-space:nowrap;">{{ s }}</td>
+                  {% elif '1pm' in s %}<td class="text-center sched-cell{{ today_cls }}" style="background:#fbe9e7;color:#bf360c;font-size:.65rem;padding:.15rem .1rem;white-space:nowrap;">{{ s }}</td>
+                  {% elif '2pm' in s %}<td class="text-center sched-cell{{ today_cls }}" style="background:#fce4ec;color:#880e4f;font-size:.65rem;padding:.15rem .1rem;white-space:nowrap;">{{ s }}</td>
+                  {% elif '3pm' in s %}<td class="text-center sched-cell{{ today_cls }}" style="background:#f8bbd0;color:#880e4f;font-size:.65rem;padding:.15rem .1rem;white-space:nowrap;">{{ s }}</td>
+                  {% elif '4pm' in s %}<td class="text-center sched-cell{{ today_cls }}" style="background:#f3e5f5;color:#6a1b9a;font-size:.65rem;padding:.15rem .1rem;white-space:nowrap;">{{ s }}</td>
+                  {% elif '5pm' in s %}<td class="text-center sched-cell{{ today_cls }}" style="background:#ede7f6;color:#4527a0;font-size:.65rem;padding:.15rem .1rem;white-space:nowrap;">{{ s }}</td>
+                  {% elif '6pm' in s %}<td class="text-center sched-cell{{ today_cls }}" style="background:#e8eaf6;color:#1a237e;font-size:.65rem;padding:.15rem .1rem;white-space:nowrap;">{{ s }}</td>
+                  {% elif '7pm' in s %}<td class="text-center sched-cell{{ today_cls }}" style="background:#e0e7ff;color:#1e1b4b;font-size:.65rem;padding:.15rem .1rem;white-space:nowrap;">{{ s }}</td>
+                  {% elif '8pm' in s %}<td class="text-center sched-cell{{ today_cls }}" style="background:#ddd6fe;color:#312e81;font-size:.65rem;padding:.15rem .1rem;white-space:nowrap;">{{ s }}</td>
+                  {% elif '9pm' in s %}<td class="text-center sched-cell{{ today_cls }}" style="background:#c7d2fe;color:#312e81;font-size:.65rem;padding:.15rem .1rem;white-space:nowrap;">{{ s }}</td>
+                  {% elif '10pm' in s %}<td class="text-center sched-cell{{ today_cls }}" style="background:#a5b4fc;color:#1e1b4b;font-size:.65rem;padding:.15rem .1rem;white-space:nowrap;">{{ s }}</td>
+                  {% elif '11pm' in s %}<td class="text-center sched-cell{{ today_cls }}" style="background:#818cf8;color:#fff;font-size:.65rem;padding:.15rem .1rem;white-space:nowrap;">{{ s }}</td>
+                  {% elif '1am' in s or '2am' in s or '3am' in s or '4am' in s or '5am' in s %}<td class="text-center sched-cell{{ today_cls }}" style="background:#4f46e5;color:#fff;font-size:.65rem;padding:.15rem .1rem;white-space:nowrap;">{{ s }}</td>
+                  {% else %}<td class="text-center sched-cell{{ today_cls }}" style="background:#e0f2f1;color:#00695c;font-size:.65rem;padding:.15rem .1rem;white-space:nowrap;">{{ s }}</td>
                   {% endif %}
                 {% endif %}
               {% else %}
-                <td class="text-center text-muted sched-cell" style="font-size:.65rem;padding:.15rem .1rem;">—</td>
+                <td class="text-center text-muted sched-cell{{ today_cls }}" style="font-size:.65rem;padding:.15rem .1rem;">—</td>
               {% endif %}
             {% endfor %}
           </tr>
@@ -169,6 +170,9 @@
 {% block scripts %}
 <style>
 .sched-cell { padding: .18rem .12rem !important; line-height: 1.1; }
+th.col-today { background: var(--accent) !important; color: #fff !important; }
+td.col-today { box-shadow: inset 0 0 0 9999px color-mix(in srgb, var(--accent) 16%, transparent); }
+th.col-today, td.col-today { border-left: 2px solid var(--accent) !important; border-right: 2px solid var(--accent) !important; }
 #tableScroll table td, #tableScroll table th { vertical-align: middle; }
 #tableScroll tbody tr { height: 36px; }
 #topScroll::-webkit-scrollbar,

@@ -177,7 +177,7 @@
 
 
       <!-- Quick Employee Search -->
-      <div class="d-flex justify-content-end mb-2">
+      <div class="d-flex justify-content-end align-items-center gap-2 mb-2">
         <div class="position-relative" style="width:300px;">
           <input type="text" id="pimSearch" class="form-control form-control-sm"
                  placeholder="Search employee..." autocomplete="off">
@@ -187,6 +187,26 @@
                       background:var(--bs-body-bg,#fff);border:1px solid var(--bs-border-color,#dee2e6);">
           </div>
         </div>
+        {% if prev_employee %}
+        <a class="btn btn-sm btn-outline-secondary d-inline-flex align-items-center gap-1 text-nowrap"
+           href="{{ url_for('pim_profile', employee_id=prev_employee.employee_id, year=year, month=month) }}"
+           title="Back: {{ prev_employee.schedule_name or prev_employee.employee_id }}">
+          <i data-lucide="chevron-left" style="width:15px;height:15px;"></i> Back
+        </a>
+        {% else %}
+        <button type="button" class="btn btn-sm btn-outline-secondary text-nowrap" disabled
+                title="First employee in the list">Back</button>
+        {% endif %}
+        {% if next_employee %}
+        <a class="btn btn-sm btn-outline-secondary d-inline-flex align-items-center gap-1 text-nowrap"
+           href="{{ url_for('pim_profile', employee_id=next_employee.employee_id, year=year, month=month) }}"
+           title="Next: {{ next_employee.schedule_name or next_employee.employee_id }}">
+          Next <i data-lucide="chevron-right" style="width:15px;height:15px;"></i>
+        </a>
+        {% else %}
+        <button type="button" class="btn btn-sm btn-outline-secondary text-nowrap" disabled
+                title="Last employee in the list">Next</button>
+        {% endif %}
       </div>
       <script>
       (function(){
@@ -357,6 +377,16 @@
             {% endif %}
             {% if perf.tardiness %}<i class="ms-1 perf-chevron" data-lucide="chevron-down" style="font-size:.7rem;transition:transform .15s;"></i>{% endif %}
           </span>
+          <span class="badge rounded-pill px-3 py-2{% if perf.undertime %} perf-pill-clickable{% endif %}"
+                style="background:#ecfeff;color:#155e75;border:1px solid #a5f3fc;font-size:.8rem;{% if perf.undertime %}cursor:pointer;{% endif %}"
+                {% if perf.undertime %}data-perf-toggle="perf-detail-{{ scope_key }}-undertime" role="button" tabindex="0"{% endif %}>
+            <i class="me-1" data-lucide="hourglass"></i>Undertime:
+            <strong>{{ perf.undertime_count if perf.undertime_count is not none else '—' }}</strong>
+            {% if perf.undertime_count %}
+            <span class="text-muted">({{ perf.undertime_minutes }} min short total)</span>
+            {% endif %}
+            {% if perf.undertime %}<i class="ms-1 perf-chevron" data-lucide="chevron-down" style="font-size:.7rem;transition:transform .15s;"></i>{% endif %}
+          </span>
         </div>
 
         {% if perf.absences %}
@@ -442,6 +472,27 @@
                   <td>{{ t.shift_start.strftime('%I:%M %p') if t.shift_start else '—' }}</td>
                   <td>{{ t.time_in.strftime('%I:%M %p') if t.time_in else '—' }}</td>
                   <td>{{ t.minutes_late }}</td>
+                </tr>
+              {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </div>
+        {% endif %}
+
+        {% if perf.undertime %}
+        <div id="perf-detail-{{ scope_key }}-undertime" class="perf-detail-table mt-2" style="display:none;">
+          <div class="border rounded" style="max-height:280px;overflow-y:auto;">
+            <table class="table table-sm table-striped mb-0">
+              <thead><tr><th>Date</th><th>Day</th><th>Scheduled Shift</th><th>Time Out</th><th>Minutes Short</th></tr></thead>
+              <tbody>
+              {% for u in perf.undertime %}
+                <tr>
+                  <td>{{ u.date.strftime('%b %d, %Y') }}</td>
+                  <td>{{ u.day_of_week }}</td>
+                  <td>{{ u.shift_time }}</td>
+                  <td>{{ u.time_out }}</td>
+                  <td>{{ (u.shortfall_hours * 60) | round | int }}</td>
                 </tr>
               {% endfor %}
               </tbody>

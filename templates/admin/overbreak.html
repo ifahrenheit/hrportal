@@ -42,6 +42,8 @@
   .date-nav .btn-icon:hover { background: var(--accent); color: #fff; border-color: var(--accent); }
   tr.no-match { display: none; }
 </style>
+{% set active_tab = 'overbreak' %}
+{% include "nav/_attendance_tabs.html" %}
 <div class="btn-group btn-group-sm mb-3" role="group">
   <a href="{{ url_for('admin_overbreak') }}"
      class="btn {% if view != 'triggers' %}btn-primary{% else %}btn-outline-secondary{% endif %}">

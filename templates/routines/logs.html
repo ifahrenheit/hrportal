@@ -1,0 +1,100 @@
+{% extends "base.html" %}
+{% block title %}Routine Log History{% endblock %}
+{% block page_title %}Routine Tracker{% endblock %}
+
+{% block content %}
+{% include "routines/_tabs.html" %}
+
+<form method="get" class="rt-card">
+  <div class="rt-toolbar">
+    <div>
+      <label for="fTask">Task</label>
+      <select class="form-select" id="fTask" name="task_id">
+        <option value="">All tasks</option>
+        {% for t in tasks %}
+        <option value="{{ t.id }}" {{ 'selected' if t.id == filters.task_id }}>{{ t.title }}{{ '' if t.active else ' (inactive)' }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div>
+      <label for="fResult">Result</label>
+      <select class="form-select" id="fResult" name="result">
+        <option value="">Any</option>
+        {% for r in results %}<option value="{{ r }}" {{ 'selected' if r == filters.result }}>{{ r|capitalize }}</option>{% endfor %}
+      </select>
+    </div>
+    <div>
+      <label for="fFreq">Frequency</label>
+      <select class="form-select" id="fFreq" name="frequency">
+        <option value="">Any</option>
+        {% for f in frequencies %}<option value="{{ f }}" {{ 'selected' if f == filters.frequency }}>{{ freq_labels[f] }}</option>{% endfor %}
+      </select>
+    </div>
+    <div>
+      <label for="fFrom">From</label>
+      <input type="date" class="form-control" id="fFrom" name="date_from"
+             value="{{ filters.date_from.isoformat() if filters.date_from else '' }}">
+    </div>
+    <div>
+      <label for="fTo">To</label>
+      <input type="date" class="form-control" id="fTo" name="date_to"
+             value="{{ filters.date_to.isoformat() if filters.date_to else '' }}">
+    </div>
+    <button type="submit" class="btn btn-primary"><i class="me-1" data-lucide="filter"></i>Apply</button>
+    <a class="btn btn-outline-secondary" href="{{ url_for('routines.log_history', date_from='', date_to='') }}">Clear</a>
+    <a class="btn btn-outline-secondary ms-auto" href="{{ url_for('routines.log_csv', **csv_args) }}">
+      <i class="me-1" data-lucide="download"></i>Export CSV
+    </a>
+  </div>
+</form>
+
+<div class="rt-card">
+  <div class="rt-toolbar mb-3">
+    <div style="min-width:260px">
+      <label for="logSearch">Search these results</label>
+      <input type="text" id="logSearch" class="form-control" data-table-search="#logTable"
+             placeholder="Task, person, comment…">
+    </div>
+    <span class="rt-muted pb-2" data-table-count="#logTable"></span>
+  </div>
+  {% if truncated %}
+  <div class="alert alert-warning py-2">Showing the latest {{ max_rows }} checks. Narrow the filters, or use Export CSV for the full set.</div>
+  {% endif %}
+  <div class="table-responsive">
+    <table class="data-table" id="logTable">
+      <thead>
+        <tr>
+          <th data-sort="text">Checked at</th>
+          <th data-sort="text">Task</th>
+          <th data-sort="text">Category</th>
+          <th data-sort="text">Frequency</th>
+          <th data-sort="text">Result</th>
+          <th data-sort="text">Checked by</th>
+          <th>Comment</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in rows %}
+        <tr>
+          <td class="text-nowrap" data-sort-value="{{ r.checked_at.strftime('%Y-%m-%d %H:%M:%S') }}">
+            {{ r.checked_at.strftime('%b %d, %Y %H:%M') }}
+          </td>
+          <td>{{ r.task_title }}</td>
+          <td>{{ r.category }}</td>
+          <td>{{ freq_labels[r.frequency] }}</td>
+          <td>
+            {% if r.result == 'pass' %}<span class="rt-badge pass"><i data-lucide="circle-check"></i>Pass</span>
+            {% else %}<span class="rt-badge fail"><i data-lucide="circle-x"></i>Fail</span>{% endif %}
+          </td>
+          <td>{{ r.checked_by }}</td>
+          <td class="rt-comment">{{ r.comment or '—' }}</td>
+        </tr>
+        {% else %}
+        <tr class="empty-row"><td colspan="7">No checks match these filters.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% include "routines/_table_assets.html" %}
+{% endblock %}

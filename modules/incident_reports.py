@@ -223,7 +223,7 @@ def send_hr_notification(report_number, commenter_name, comment, agent_eid, stat
         with conn.cursor() as cur:
             cur.execute("""
                 SELECT ir.*, g.group_name FROM incident_reports ir
-                LEFT JOIN gsheet_employees g ON ir.employee_id = g.employee_id
+                LEFT JOIN gsheet_employees g ON ir.employee_id COLLATE utf8mb4_unicode_ci = g.employee_id
                 WHERE ir.report_number = %s
             """, (report_number,))
             inc = cur.fetchone()
@@ -305,7 +305,7 @@ def send_rwe_served_to_tl(report_number, served_by, comment, agent_eid):
         # Get report details
         with conn.cursor() as cur:
             cur.execute("""SELECT ir.*, g.group_name FROM incident_reports ir
-                           LEFT JOIN gsheet_employees g ON ir.employee_id = g.employee_id
+                           LEFT JOIN gsheet_employees g ON ir.employee_id COLLATE utf8mb4_unicode_ci = g.employee_id
                            WHERE ir.report_number = %s""", (report_number,))
             inc = cur.fetchone()
         if not inc:

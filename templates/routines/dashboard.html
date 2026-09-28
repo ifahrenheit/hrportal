@@ -1,0 +1,195 @@
+{% extends "base.html" %}
+{% block title %}Routine Dashboard{% endblock %}
+{% block page_title %}Routine Tracker{% endblock %}
+
+{% block content %}
+{% include "routines/_tabs.html" %}
+
+<style>
+  .rt-viz { --pass: #2a78d6; --fail: #e34948; }
+  [data-theme="dark"] .rt-viz { --pass: #3987e5; --fail: #e66767; }
+  .rt-kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: .75rem; margin-bottom: 1.5rem; }
+  .rt-kpi { background: var(--surface); border: 1px solid var(--border); border-radius: 14px;
+            box-shadow: var(--card-shadow); padding: .9rem 1.1rem; }
+  .rt-kpi .v { font-family: 'Outfit', sans-serif; font-size: 1.9rem; font-weight: 600; line-height: 1.1; }
+  .rt-kpi .l { font-size: .78rem; color: var(--text-muted); }
+  .rt-chart-box { position: relative; height: 280px; }
+  .rt-range .btn.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+</style>
+
+<div class="d-flex flex-wrap align-items-center gap-2 mb-3">
+  <span class="rt-muted">Range</span>
+  <div class="btn-group rt-range" role="group" aria-label="Date range">
+    {% for r in ranges %}
+    <a class="btn btn-sm btn-outline-secondary {{ 'active' if r == days }}"
+       href="{{ url_for('routines.dashboard', days=r) }}">{{ r }} days</a>
+    {% endfor %}
+  </div>
+</div>
+
+<div class="rt-kpis">
+  <div class="rt-kpi"><div class="v">{{ kpis.total }}</div><div class="l">Checks logged</div></div>
+  <div class="rt-kpi"><div class="v">{{ (kpis.pass_rate ~ '%') if kpis.pass_rate is not none else '—' }}</div><div class="l">Pass rate</div></div>
+  <div class="rt-kpi"><div class="v">{{ kpis.fails }}</div><div class="l">Failed checks</div></div>
+  <div class="rt-kpi"><div class="v">{{ kpis.due }}</div><div class="l">Due, not yet logged</div></div>
+</div>
+
+<div class="rt-card rt-viz">
+  <h2 class="rt-card-title">Pass / fail per day</h2>
+  {% if kpis.total %}
+  <div class="rt-chart-box"><canvas id="dayChart" role="img" aria-label="Stacked bar chart of passed and failed checks per day"></canvas></div>
+  {% else %}
+  <p class="rt-muted mb-0">No checks logged in this range.</p>
+  {% endif %}
+</div>
+
+<div class="row g-3">
+  <div class="col-xl-6">
+    <div class="rt-card rt-viz h-100">
+      <h2 class="rt-card-title">Fail rate per task</h2>
+      {% if per_task %}
+      <div class="rt-chart-box" style="height: {{ [per_task|length * 30 + 60, 200]|max }}px">
+        <canvas id="taskChart" role="img" aria-label="Bar chart of fail rate per task"></canvas>
+      </div>
+      <div class="table-responsive mt-3">
+        <table class="data-table" id="taskRateTable">
+          <thead><tr><th data-sort="text">Task</th><th data-sort="text">Frequency</th><th data-sort="num">Checks</th><th data-sort="num">Fails</th><th data-sort="num">Fail rate</th></tr></thead>
+          <tbody>
+            {% for t in per_task %}
+            <tr>
+              <td>{{ t.title }}</td><td>{{ freq_labels[t.frequency] }}</td>
+              <td>{{ t.total }}</td><td>{{ t.fails }}</td>
+              <td data-sort-value="{{ t.fail_rate }}">{{ t.fail_rate }}%</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+      <p class="rt-muted mb-0">No checks logged in this range.</p>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="col-xl-6">
+    <div class="rt-card">
+      <h2 class="rt-card-title">Checks due, not yet logged</h2>
+      <div class="table-responsive">
+        <table class="data-table" id="dueTable">
+          <thead><tr><th data-sort="text">Task</th><th data-sort="text">Frequency</th><th>Due</th><th data-sort="text">Last checked</th><th></th></tr></thead>
+          <tbody>
+            {% for d in due %}
+            <tr>
+              <td>{{ d.title }}<div class="rt-muted">{{ d.category }}</div></td>
+              <td>{{ freq_labels[d.frequency] }}</td>
+              <td>Not logged {{ d.window }}</td>
+              <td data-sort-value="{{ d.last_checked.strftime('%Y-%m-%d %H:%M:%S') if d.last_checked else '' }}">
+                {{ d.last_checked.strftime('%b %d, %Y') if d.last_checked else 'Never' }}
+              </td>
+              <td><a class="btn btn-sm btn-outline-primary" href="{{ url_for('routines.log_check', task_id=d.id) }}">Log</a></td>
+            </tr>
+            {% else %}
+            <tr class="empty-row"><td colspan="5">All caught up — every active task has been checked in its current window.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="rt-card">
+      <h2 class="rt-card-title">Recent failures</h2>
+      <div class="table-responsive">
+        <table class="data-table" id="failTable">
+          <thead><tr><th>When</th><th>Task</th><th>By</th><th>Comment</th></tr></thead>
+          <tbody>
+            {% for r in recent_fails %}
+            <tr>
+              <td class="text-nowrap">{{ r.checked_at.strftime('%b %d, %H:%M') }}</td>
+              <td>{{ r.task_title }}</td><td>{{ r.checked_by }}</td>
+              <td class="rt-comment">{{ r.comment or '—' }}</td>
+            </tr>
+            {% else %}
+            <tr class="empty-row"><td colspan="4">No failures in this range.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+{% include "routines/_table_assets.html" %}
+{% endblock %}
+
+{% block scripts %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script>
+(function () {
+  var DATA = {{ chart|tojson }};
+  var charts = [];
+
+  function css(el, name) { return getComputedStyle(el).getPropertyValue(name).trim(); }
+
+  function build() {
+    charts.forEach(function (c) { c.destroy(); });
+    charts = [];
+    var root = document.querySelector('.rt-viz');
+    var pass = css(root, '--pass'), fail = css(root, '--fail');
+    var text = css(document.body, '--text-muted'), grid = css(document.body, '--border');
+    var surface = css(document.body, '--surface');
+    Chart.defaults.font.family = "'DM Sans', sans-serif";
+    Chart.defaults.color = text;
+
+    var dayEl = document.getElementById('dayChart');
+    if (dayEl) {
+      var seg = { borderColor: surface, borderWidth: 2, maxBarThickness: 18,
+                  borderRadius: { topLeft: 4, topRight: 4 } };
+      charts.push(new Chart(dayEl, {
+        type: 'bar',
+        data: { labels: DATA.labels, datasets: [
+          Object.assign({ label: 'Pass', data: DATA.pass, backgroundColor: pass }, seg),
+          Object.assign({ label: 'Fail', data: DATA.fail, backgroundColor: fail }, seg)
+        ]},
+        options: {
+          responsive: true, maintainAspectRatio: false,
+          interaction: { mode: 'index', intersect: false },
+          scales: {
+            x: { stacked: true, grid: { display: false }, ticks: { maxRotation: 0, autoSkip: true, maxTicksLimit: 12 } },
+            y: { stacked: true, beginAtZero: true, grid: { color: grid }, border: { display: false }, ticks: { precision: 0 } }
+          },
+          plugins: { legend: { position: 'top', align: 'end', labels: { usePointStyle: true, boxWidth: 8 } } }
+        }
+      }));
+    }
+
+    var taskEl = document.getElementById('taskChart');
+    if (taskEl) {
+      charts.push(new Chart(taskEl, {
+        type: 'bar',
+        data: { labels: DATA.tasks.map(function (t) { return t.title; }),
+                datasets: [{ label: 'Fail rate', data: DATA.tasks.map(function (t) { return t.rate; }),
+                             backgroundColor: fail, borderRadius: 4, maxBarThickness: 16 }] },
+        options: {
+          indexAxis: 'y', responsive: true, maintainAspectRatio: false,
+          scales: {
+            x: { min: 0, max: 100, grid: { color: grid }, border: { display: false },
+                 ticks: { callback: function (v) { return v + '%'; } } },
+            y: { grid: { display: false } }
+          },
+          plugins: {
+            legend: { display: false },
+            tooltip: { callbacks: { label: function (ctx) {
+              var t = DATA.tasks[ctx.dataIndex];
+              return t.rate + '% (' + t.fails + ' of ' + t.total + ' checks failed)';
+            } } }
+          }
+        }
+      }));
+    }
+  }
+
+  build();
+  // Re-colour when the portal's light/dark toggle flips data-theme.
+  new MutationObserver(build).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+})();
+</script>
+{% endblock %}

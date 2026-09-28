@@ -5,23 +5,8 @@
 
 {% block content %}
 
-<ul class="nav nav-tabs mb-3">
-  <li class="nav-item">
-    <a class="nav-link" href="{{ url_for('admin_absences') }}">
-      <i class="me-1" data-lucide="user-x"></i>Absence Report
-    </a>
-  </li>
-  <li class="nav-item">
-    <a class="nav-link" href="{{ url_for('admin_attendance_grid') }}">
-      <i class="me-1" data-lucide="grid-3x3"></i>Attendance Grid
-    </a>
-  </li>
-  <li class="nav-item">
-    <a class="nav-link active" href="{{ url_for('admin_holiday_awol') }}">
-      <i class="me-1" data-lucide="calendar-x"></i>Holiday AWOL
-    </a>
-  </li>
-</ul>
+{% set active_tab = 'holiday_awol' %}
+{% include "nav/_attendance_tabs.html" %}
 
 <div class="card mb-3">
   <div class="card-body pb-2">

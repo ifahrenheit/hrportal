@@ -1,0 +1,76 @@
+{% extends "base.html" %}
+{% block title %}Log a Check{% endblock %}
+{% block page_title %}Routine Tracker{% endblock %}
+
+{% block content %}
+{% include "routines/_tabs.html" %}
+
+<div class="row g-3">
+  <div class="col-lg-5">
+    <div class="rt-card">
+      <h2 class="rt-card-title">Log a check</h2>
+      {% if tasks %}
+      <form method="post" action="{{ url_for('routines.log_check') }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <div class="mb-3">
+          <label class="form-label" for="logTask">Task</label>
+          <select class="form-select" id="logTask" name="task_id" required>
+            <option value="">Select a task…</option>
+            {% for t in tasks %}
+            <option value="{{ t.id }}" {{ 'selected' if t.id == selected_task }}>
+              {{ t.title }} · {{ freq_labels[t.frequency] }}{{ ' — due' if t.id in due_ids }}
+            </option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="mb-3">
+          <span class="form-label d-block">Result</span>
+          <div class="btn-group" role="group" aria-label="Result">
+            <input type="radio" class="btn-check" name="result" id="resPass" value="pass" required>
+            <label class="btn btn-outline-primary" for="resPass"><i class="me-1" data-lucide="circle-check"></i>Pass</label>
+            <input type="radio" class="btn-check" name="result" id="resFail" value="fail">
+            <label class="btn btn-outline-danger" for="resFail"><i class="me-1" data-lucide="circle-x"></i>Fail</label>
+          </div>
+        </div>
+        <div class="mb-3">
+          <label class="form-label" for="logComment">Comment</label>
+          <textarea class="form-control" id="logComment" name="comment" rows="4" maxlength="2000"
+                    placeholder="What did you see? Required context for any failure."></textarea>
+        </div>
+        <button type="submit" class="btn btn-primary"><i class="me-1" data-lucide="send"></i>Submit check</button>
+        <p class="rt-muted mt-2 mb-0">Recorded as {{ session.get('user', {}).get('email') }} at the time you submit.</p>
+      </form>
+      {% else %}
+      <p class="mb-0 rt-muted">There are no active routine tasks. An admin can add one on the Tasks tab.</p>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="col-lg-7">
+    <div class="rt-card">
+      <h2 class="rt-card-title">Your last 10 checks</h2>
+      <div class="table-responsive">
+        <table class="data-table" id="mineTable">
+          <thead><tr><th>When</th><th>Task</th><th>Result</th><th>Comment</th></tr></thead>
+          <tbody>
+            {% for r in mine %}
+            <tr>
+              <td class="text-nowrap">{{ r.checked_at.strftime('%b %d, %H:%M') }}</td>
+              <td>{{ r.task_title }}</td>
+              <td>
+                {% if r.result == 'pass' %}<span class="rt-badge pass"><i data-lucide="circle-check"></i>Pass</span>
+                {% else %}<span class="rt-badge fail"><i data-lucide="circle-x"></i>Fail</span>{% endif %}
+              </td>
+              <td class="rt-comment">{{ r.comment or '—' }}</td>
+            </tr>
+            {% else %}
+            <tr class="empty-row"><td colspan="4">You haven't logged any checks yet.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+{% include "routines/_table_assets.html" %}
+{% endblock %}
