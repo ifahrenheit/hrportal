@@ -463,11 +463,16 @@ def get_cws_moves_for_range(date_from: date, date_to: date):
     return moved_out_by_date, moved_in_by_date
 
 
-def get_late_records_for_range(date_from: date, date_to: date):
+def get_late_records_for_range(date_from: date, date_to: date, only_employee_id: str = None):
     """
     Returns every LATE tardiness record across [date_from, date_to]
     (inclusive). Each record gets a 'record_date' field added so the range
     view can show which day each late instance happened on.
+
+    only_employee_id: optional. When given, only that employee's schedules
+    (and CWS moves into a date) are evaluated -- same rules, same results as
+    filtering the full output by companyid, but without evaluating the whole
+    company (used by the PIM profile page). None = everyone, as before.
 
     Same rules as get_tardiness_for_date (rest days, on-leave, CWS
     moved-out employees are skipped; CWS moved-in employees are evaluated
@@ -485,9 +490,12 @@ def get_late_records_for_range(date_from: date, date_to: date):
     cur = conn.cursor()
 
     try:
-        # 1. Every schedule row for every scheduled employee across the range.
+        # 1. Every schedule row for every scheduled employee across the range
+        #    (or just only_employee_id's).
+        employee_clause = "AND es.employee_id = %s" if only_employee_id is not None else ""
+        employee_params = (only_employee_id,) if only_employee_id is not None else ()
         cur.execute(
-            """
+            f"""
             SELECT
                 es.employee_id,
                 es.schedule_date,
@@ -506,9 +514,10 @@ def get_late_records_for_range(date_from: date, date_to: date):
             LEFT JOIN gsheet_employees ge ON ge.employee_id = es.employee_id
             WHERE es.schedule_date BETWEEN %s AND %s
               AND u.active = 1
+              {employee_clause}
             ORDER BY es.schedule_date, u.lname, u.fname
             """,
-            (date_from, date_to),
+            (date_from, date_to, *employee_params),
         )
         schedule_rows = cur.fetchall()
 
@@ -519,6 +528,11 @@ def get_late_records_for_range(date_from: date, date_to: date):
         # 2. Leave and CWS overrides, bulk-fetched for the whole range.
         leave_by_date = get_employees_on_leave_for_range(date_from, date_to)
         moved_out_by_date, moved_in_by_date = get_cws_moves_for_range(date_from, date_to)
+        if only_employee_id is not None:
+            moved_in_by_date = {
+                d: {eid: t for eid, t in moved_in.items() if eid == only_employee_id}
+                for d, moved_in in moved_in_by_date.items()
+            }
 
         # 3. Apply CWS "moved in" overrides per date, synthesizing a schedule
         #    row (via one bulk userdata/gsheet_employees lookup) for anyone

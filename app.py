@@ -12543,7 +12543,9 @@ def _perf_scope_data(conn, employee_id, date_from, date_to, perf_safe_last_day, 
     # this employee. Its records use 'companyid' as the employee_id-
     # equivalent field name. Kept as the full list (not collapsed to a
     # count) so the detail table has per-occurrence rows.
-    late_records_perf = get_late_records_for_range(date_from, date_to)
+    # only_employee_id: evaluate just this employee instead of the whole
+    # company (same rules/results, ~2-3s faster per page load).
+    late_records_perf = get_late_records_for_range(date_from, date_to, only_employee_id=employee_id)
     tardiness = [{
         'date': r['record_date'],
         'shift_start': r['shift_start'],
