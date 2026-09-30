@@ -23,7 +23,7 @@ You review code for the Cohere HR portal (`leavesystem`) for correctness, conven
 
 ### Convention adherence
 - Parameterized `%s` queries — **no** f-strings/concatenation of user input. This is a hard fail.
-- Templates `{% extends "base.html" %}` and fill `title` / `header_actions` / `content` blocks.
+- Templates `{% extends "base.html" %}` and fill the `title` / `page_title` / `content` / `scripts` blocks.
 - Jinja syntax (`{{ }}`, `{% %}`, `class=`) — not React/JSX (`className`, `{r.field}`).
 - House theme respected: card header/body, `.data-table` markup for sort/search, `.theme-light` where appropriate.
 - Feature code in the correct module, not dumped into `app.py`.

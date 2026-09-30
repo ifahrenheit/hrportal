@@ -58,7 +58,7 @@
 | Frontend | Jinja2, Bootstrap 5, Vanilla JS |
 | Auth | Keycloak (Docker) — SSO via OIDC |
 | PDF Generation | ReportLab |
-| Email | SMTP via Flask-Mail |
+| Email | SMTP via smtplib |
 | Employee Sync | Google Sheets → MySQL via Google Apps Script |
 | Web Server | Apache2 (reverse proxy) |
 | Process Manager | systemd (`leavesystem.service`) |
@@ -73,7 +73,7 @@
 hrportal/
 ├── app.py                  # Main Flask application (routes, helpers)
 ├── config.py               # App configuration
-├── incident_reports.py     # Incident report blueprint
+├── modules/incident_reports.py  # Incident report blueprint
 ├── requirements.txt        # Python dependencies
 │
 ├── break_log/              # Break log blueprint

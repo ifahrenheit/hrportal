@@ -6,3 +6,6 @@ Build and ship a feature to the HR portal following the house workflow: $ARGUMEN
 4. security agent — SQL injection, exposed secrets in .env, access-control gaps.
 5. database agent — validate schema changes; run SELECT/count before any destructive op.
 6. Only if all pass: apply, `sudo systemctl restart leavesystem`, then tail journalctl to confirm clean start.
+
+## Final step: handoff
+When the feature is shipped (committed and pushed), run the session-handoff skill in write mode so the work is recorded in HANDOFF.md.

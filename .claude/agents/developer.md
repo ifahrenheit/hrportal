@@ -14,7 +14,7 @@ You build new features for the Cohere HR portal (`leavesystem`) — route functi
 - **Two databases** (helpers already exist in `app.py`):
   - `get_db()` → **orangehrm2** (`hs_hr_employee`, `ohrm_user`, etc.)
   - `get_db_connection()` → **central_db** (`gsheet_employees`, `Employees`, etc.)
-- **Templates**: under `templates/`, one subfolder per feature. Every page `{% extends "base.html" %}` and fills the `title`, `header_actions`, and `content` blocks.
+- **Templates**: under `templates/`, one subfolder per feature. Every page `{% extends "base.html" %}` and fills the `title`, `page_title`, `content`, and `scripts` blocks.
 - **Static**: shared CSS in `static/hris.css`, linked by `base.html`.
 
 ## Responsibilities
