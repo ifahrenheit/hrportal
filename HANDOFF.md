@@ -21,6 +21,7 @@ Commit: `8ef4bb4` · Branch: `main`
 
 ### Config / environment
 - Root crontab line 56 changed to `0 9,17 * * * .../venv/bin/python .../scripts/cron_incident_reminder.py --send >> /var/log/incident_reminders.log 2>&1`. The previous crontab was backed up to the session scratchpad (`crontab.bak.20261002003100`).
+- Renamed `/var/www/html/cohere_dashboard/incident_report/cron_reminder.php` to `cron_reminder.php.disabled`. It was publicly reachable with no auth, and opening it would send the old email. The old URL now returns 404. To undo, rename it back.
 - Restarted `leavesystem` on 2026-10-02 00:32. It started cleanly with no code changes, because every modified .py file was older than the previous start.
 
 ### How to verify
