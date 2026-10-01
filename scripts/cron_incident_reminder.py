@@ -1,13 +1,15 @@
-import os
 #!/usr/bin/env python3
 """
 cron_incident_reminder.py
-Standalone script — run daily via cron to alert on stale incidents.
+Standalone script — run via cron to alert on stale incidents (pending/reviewed, 72h+ idle).
+Replaces cohere_dashboard/incident_report/cron_reminder.php.
 
-Cron example (8:30 AM daily):
-  30 8 * * * /usr/bin/python3 /var/www/html/leavesystem/cron_incident_reminder.py >> /var/log/ir_reminder.log 2>&1
+Dry run by default; pass --send to email and stamp last_reminder_sent.
+  0 9,17 * * * /var/www/html/leavesystem/venv/bin/python /var/www/html/leavesystem/scripts/cron_incident_reminder.py --send >> /var/log/incident_reminders.log 2>&1
 """
 
+import os
+import sys
 import pymysql
 import pymysql.cursors
 import smtplib
@@ -41,7 +43,7 @@ def get_supervisor_emails(conn, incident_list):
             cur.execute("""
                 SELECT sm.supervisor_email
                 FROM supervisor_mapping sm
-                INNER JOIN gsheet_employees g ON sm.agent_email = g.email
+                INNER JOIN gsheet_employees g ON sm.agent_email COLLATE utf8mb4_unicode_ci = g.email
                 WHERE g.employee_id = %s LIMIT 1
             """, (inc['employee_id'],))
             row = cur.fetchone()
@@ -177,6 +179,13 @@ def main():
             return
 
         logging.info(f"Found {len(stale)} stale incident(s).")
+        if '--send' not in sys.argv:
+            recipients = {IR_EMAIL_TO} | get_supervisor_emails(conn, stale) | get_group_emails(conn, stale)
+            for inc in stale:
+                logging.info(f"  [dry-run] {inc['report_number']} {inc['status']} "
+                             f"{inc['employee_name']} idle {inc['hours_since_activity']}h")
+            logging.info(f"  [dry-run] would email: {sorted(recipients)}")
+            return
         if send_reminder(stale):
             ids = ','.join(str(i['id']) for i in stale)
             with conn.cursor() as cur:
