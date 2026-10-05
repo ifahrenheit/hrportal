@@ -8,6 +8,45 @@
 
 ---
 
+## 2026-10-05 (2) — File Request for Employee page (FTS / CWS / OT-RDW, incl. Separated)
+Commit: `2621cd4` (changes below are **uncommitted** on top of it) · Branch: `main`
+
+### What was built / changed
+- New page `/admin/file-request` (endpoint `file_for_emp.index`). Blueprint in `modules/file_for_employee.py`, template `templates/admin/file_request_for_employee.html`.
+  - Pick any employee, including Separated ones, then file FTS, CWS or OT/RDW on their behalf. Recent requests (last 120 days) show underneath.
+  - Admin-only "File as approved" checkbox. It writes `status='Approved'`, `approver_name` and `approved_at`, the same three columns `/api/approvals/action` sets.
+  - Blocks request dates after the exit date, and the date pickers are capped at it.
+  - Warns when there's no approver on file, which is typical for Separated employees.
+- Nav: "File Request for Employee" added next to "File for Employee" in `templates/nav/_topnav.html` (menu + People subnav) and `templates/nav/_sidebar.html`.
+- `app.py` registers the blueprint right after `survey_bp`.
+- Tests: `tests/test_file_for_employee.py`, 19 tests. POSTs are fully mocked; the GET render tests are read-only against the real DB.
+- One-off before the page existed: filed FTS OUT #839 for Lornelyn Sancover (260618-12), 2026-09-29 21:00, Pending.
+
+### Why / decisions
+- Permission is `can_file_for_emp`, the same flag as the leave page. "File as approved" is limited to `is_admin`, at the user's request.
+- The validation and duplicate checks copy `file_fts` / `file_cws` / `file_ot` in app.py, without touching those live routes. **If self-service filing rules change, update `modules/file_for_employee.py` too.** OT also checks ot_type, rate, category and time against the form's option lists.
+- The blueprint doesn't `from app import`, because app.py runs as `__main__` and that would re-execute the whole file. Instead `init_file_for_emp(...)` hands it `get_central_db`, `get_db`, `send_email`, `get_supervisor_email`, `_fetch_pim_requests` and `TICKET_REQUIRED_TYPES`. That's why it's registered down by `survey_bp`.
+- Audit trail: the request tables have no "filed by" column, so each filing writes a `central_db.employee_audit_log` row (`field_name='filed_request'`, `change_source='file_for_employee'`) plus an app log line.
+- Email:
+  - Active employee: gets a "filed on your behalf" notice.
+  - Pending request: also goes to the approver via `get_supervisor_email()`.
+  - Separated employee: gets no email.
+
+### Config / environment
+- No new .env keys and no schema changes. All INSERTs were checked with `EXPLAIN` against the live tables. Backup: `app.py.bak.20261005215620`.
+- `leavesystem` restarted 2026-10-05 21:58 with a clean start.
+
+### How to verify
+- `./venv/bin/python -m unittest tests.test_file_for_employee -v` (with .env loaded).
+- Open `https://hrportal.cohere.ph/admin/file-request?employee_id=260618-12`; #839 shows in Recent requests.
+
+### Open items / next steps
+- [ ] Someone with All Requests access needs to approve FTS #839. Lornelyn has no approver.
+- [ ] Possibly show `filed_request` audit rows somewhere in the UI (only in the DB for now).
+- [ ] Commit the uncommitted work. The PIM tabs and this page sit alongside the older IR/tardiness items.
+
+---
+
 ## 2026-10-05 — PIM profile: Leave Balance + Attendance Grid tabs
 Commit: `b8dbb0e` (changes below are **uncommitted** on top of it) · Branch: `main`
 
