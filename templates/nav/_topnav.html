@@ -679,6 +679,8 @@
         {% if ADMIN or P.get('can_file_for_emp') %}
         <a class="tn-item {% if EP == 'admin_file_leave' %}active{% endif %}" href="{{ url_for('admin_file_leave') }}">
           <i data-lucide="user-plus"></i> File for Employee</a>
+        <a class="tn-item {% if EP == 'file_for_emp.index' %}active{% endif %}" href="{{ url_for('file_for_emp.index') }}">
+          <i data-lucide="clipboard-plus"></i> File Request for Employee</a>
         {% endif %}
         {% if ADMIN or P.get('can_pim') %}
         <a class="tn-item {% if EP in ['pim_index', 'pim_profile'] %}active{% endif %}" href="{{ url_for('pim_index') }}">
@@ -947,7 +949,7 @@
   <a class="tn-subtab {% if EP == 'tl_view.tl_view_requests' %}active{% endif %}" href="{{ url_for('tl_view.tl_view_requests') }}">TL: Requests</a>
   {% endif %}
 </div></div>
-{% elif EP in ['admin_all_leaves', 'admin_file_leave', 'pim_index', 'pim_profile', 'memos.memos_list'] %}
+{% elif EP in ['admin_all_leaves', 'admin_file_leave', 'file_for_emp.index', 'pim_index', 'pim_profile', 'memos.memos_list'] %}
 <div class="tn-subnav"><div class="tn-subnav-inner">
   <span class="tn-subnav-label">People</span>
   {% if ADMIN or P.get('can_all_leaves') %}
@@ -955,6 +957,7 @@
   {% endif %}
   {% if ADMIN or P.get('can_file_for_emp') %}
   <a class="tn-subtab {% if EP == 'admin_file_leave' %}active{% endif %}" href="{{ url_for('admin_file_leave') }}">File for Employee</a>
+  <a class="tn-subtab {% if EP == 'file_for_emp.index' %}active{% endif %}" href="{{ url_for('file_for_emp.index') }}">File Request for Employee</a>
   {% endif %}
   {% if ADMIN or P.get('can_pim') %}
   <a class="tn-subtab {% if EP in ['pim_index', 'pim_profile'] %}active{% endif %}" href="{{ url_for('pim_index') }}">Employee Database</a>

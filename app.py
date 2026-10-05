@@ -5421,7 +5421,53 @@ def admin_file_leave():
             employees = c.fetchall()
     finally:
         cdb_tmp.close()
+
+    def _render(balances, form=None):
+        # Every render path keeps the chosen employee selected and the form
+        # filled in, and adds the employee card, balance cards and recent
+        # leaves. Display only -- the filing logic below is unchanged.
+        form = form or {}
+        selected = (form.get('employee_id') or request.args.get('employee_id') or '').strip()
+        emp_info, balance_data, recent = None, None, []
+        if selected:
+            cdb_r = get_central_db()
+            try:
+                with cdb_r.cursor() as c:
+                    c.execute("""SELECT employee_id, schedule_name, status, tl, group_name
+                                 FROM gsheet_employees WHERE employee_id = %s""", (selected,))
+                    emp_info = c.fetchone()
+            finally:
+                cdb_r.close()
+            target = resolve_emp_number(None, selected)
+            if target:
+                balance_data = _pim_leave_balance_data(target)
+                odb_r = get_db()
+                try:
+                    with odb_r.cursor() as c:
+                        c.execute("""
+                            SELECT r.leave_date, r.status, r.days_deducted, r.hours_deducted,
+                                   r.is_off_day, r.notes, lt.name AS leave_type_name
+                            FROM leave4day_requests r
+                            LEFT JOIN ohrm_leave_type lt ON lt.id = r.leave_type_id
+                            WHERE r.emp_number = %s AND r.deleted_at IS NULL
+                              AND r.leave_date >= CURDATE() - INTERVAL 120 DAY
+                            ORDER BY r.leave_date DESC, r.id DESC
+                            LIMIT 100
+                        """, (target,))
+                        recent = c.fetchall()
+                finally:
+                    odb_r.close()
+        return render_template('admin/file_leave_admin.html',
+                               employees=employees, balances=balances,
+                               selected_emp=selected, emp=emp_info,
+                               balance_data=balance_data, recent=recent,
+                               form=form, user=session['user'])
+
     balances = []
+    if request.method == 'GET' and request.args.get('employee_id'):
+        target_emp = resolve_emp_number(None, request.args.get('employee_id'))
+        if target_emp:
+            balances, _portal = get_leave_balances(target_emp)
     if request.method == 'POST':
         if not validate_csrf():
             flash('Security check failed, please try again.', 'danger')
@@ -5431,9 +5477,7 @@ def admin_file_leave():
 
         # Just loading balances after employee selection
         if 'leave_type_id' not in request.form or not request.form.get('start_date'):
-            return render_template('admin/file_leave_admin.html',
-                                   employees=employees, balances=balances,
-                                   selected_emp=request.form.get('employee_id', ''), user=session['user'])
+            return _render(balances, request.form)
 
         leave_type_id = int(request.form['leave_type_id'])
         start_date    = datetime.strptime(request.form['start_date'], '%Y-%m-%d').date()
@@ -5442,29 +5486,67 @@ def admin_file_leave():
 
         if start_date > end_date:
             flash('Start date must be before end date.', 'danger')
-            return render_template('admin/file_leave_admin.html',
-                                   employees=employees, balances=balances, user=session['user'])
+            return _render(balances, request.form)
 
         duration   = request.form.get('duration', 'full')
+        # Custom Hours / Use Remaining Balance: same rules as the regular
+        # file_leave() (CUSTOM_HOURS_PATCH / use_remaining there).
+        use_custom    = (duration == 'custom')
+        use_remaining = (duration == 'remaining')
+        shift_value   = {'first_half': '1st Half', 'second_half': '2nd Half'}.get(duration)
 
-        if duration in ('first_half', 'second_half') and start_date != end_date:
-            flash('First Half / Second Half can only be filed for a single day.', 'danger')
-            return render_template('admin/file_leave_admin.html',
-                                   employees=employees, balances=balances, user=session['user'])
+        if duration in ('first_half', 'second_half', 'custom') and start_date != end_date:
+            flash('First Half / Second Half / Custom Hours can only be filed for a single day.', 'danger')
+            return _render(balances, request.form)
+        custom_hours_value = None
+        if use_custom:
+            awol_type = _get_awol_type()
+            if awol_type and awol_type['id'] == leave_type_id:
+                flash('Custom hours is not available for AWOL.', 'danger')
+                return _render(balances, request.form)
+            custom_hours_raw = request.form.get('custom_hours', '').strip()
+            if not custom_hours_raw.isdigit() or int(custom_hours_raw) <= 0:
+                flash('Custom hours must be a whole number greater than 0.', 'danger')
+                return _render(balances, request.form)
+            custom_hours_value = int(custom_hours_raw)
         deductions = calculate_deduction(target_emp, start_date, end_date, duration)
         if not deductions:
             flash('No valid working days in selected range.', 'warning')
-            return render_template('admin/file_leave_admin.html',
-                                   employees=employees, balances=balances, user=session['user'])
+            return _render(balances, request.form)
+
+        if use_custom and not deductions[0]['is_off_day']:
+            deductions[0]['hours'] = float(custom_hours_value)
+            deductions[0]['days']  = round(custom_hours_value / OHRM_HOURS_PER_DAY, 4)
 
         total_days  = sum(d['days'] for d in deductions)
         total_hours = sum(d['hours'] for d in deductions)
         balance     = next((b for b in balances if b['leave_type_id'] == leave_type_id), None)
 
-        if not balance or (float(balance['remaining_days']) - total_days) < 0:
+        if (use_custom or use_remaining) and total_hours == 0:
+            flash('No deductible hours for the selected date(s) -- they appear to be off-days or holidays.', 'danger')
+            return _render(balances, request.form)
+        if not balance:
             flash('Insufficient leave balance.', 'danger')
-            return render_template('admin/file_leave_admin.html',
-                                   employees=employees, balances=balances, user=session['user'])
+            return _render(balances, request.form)
+        if use_remaining:
+            # Use exactly the remaining balance, spread across the days
+            available = balance['remaining_hours']
+            if available <= 0:
+                flash(f'No remaining balance for {balance["leave_type_name"]}.', 'danger')
+                return _render(balances, request.form)
+            ratio = available / total_hours
+            for d in deductions:
+                d['hours'] = round(d['hours'] * ratio, 2)
+                d['days']  = round(d['days'] * ratio, 4)
+            total_hours = available
+            total_days  = sum(d['days'] for d in deductions)
+        elif use_custom:
+            if total_hours > balance['remaining_hours']:
+                flash(f'Insufficient balance. Available: {balance["remaining_hours"]:.1f} hrs | Required: {total_hours:.1f} hrs', 'danger')
+                return _render(balances, request.form)
+        elif (float(balance['remaining_days']) - total_days) < 0:
+            flash('Insufficient leave balance.', 'danger')
+            return _render(balances, request.form)
 
         # File the leave — same logic as regular filing, no 7-day check
         try:
@@ -5497,10 +5579,11 @@ def admin_file_leave():
                     c.execute("""
                         INSERT INTO leave4day_requests
                             (emp_number, employee_id, leave_type_id, leave_date, hours_deducted,
-                             days_deducted, is_off_day, status, notes, leave_request_id)
-                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                             days_deducted, is_off_day, status, notes, leave_request_id, shift_half)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     """, (target_emp, emp_employee_id, leave_type_id, d['date'], d['hours'],
-                          d['days'], d['is_off_day'], leave4day_status, notes, leave_request_id))
+                          d['days'], d['is_off_day'], leave4day_status, notes, leave_request_id,
+                          shift_value))
 
                 c.execute("""
                     UPDATE ohrm_leave_entitlement
@@ -5517,8 +5600,7 @@ def admin_file_leave():
         finally:
             db2.close()
 
-    return render_template('admin/file_leave_admin.html',
-                           employees=employees, balances=balances, user=session['user'])
+    return _render(balances, request.form if request.method == 'POST' else None)
 
 @app.route('/debug-approver')
 @login_required
@@ -6702,7 +6784,7 @@ def material_release_action():
         if req:
             # Deduct from inventory
             with cdb.cursor() as c:
-                c.execute('SELECT id, current_stock, sub_unit, sub_unit_per_unit FROM inventory_items WHERE item_name=%s AND category=%s AND is_active=1 LIMIT 1', (req['item_name'], req['category']))
+                c.execute('SELECT id, current_stock, unit, sub_unit, sub_unit_per_unit FROM inventory_items WHERE item_name=%s AND category=%s AND is_active=1 LIMIT 1', (req['item_name'], req['category']))
                 inv = c.fetchone()
                 if inv:
                     qty = req['quantity']
@@ -6715,7 +6797,7 @@ def material_release_action():
                     else:
                         log_note = 'Released to ' + req['employee_name']
                         if inv.get('sub_unit') and inv.get('sub_unit_per_unit'):
-                            log_note = 'Released to ' + req['employee_name'] + ' (' + str(qty) + ' ' + inv['unit'] + ')'
+                            log_note = 'Released to ' + req['employee_name'] + ' (' + str(qty) + ' ' + (inv.get('unit') or '') + ')'
                         new_stock = max(0, inv['current_stock'] - qty)
                         txn_type = 'out'
                         applied_qty = inv['current_stock'] - new_stock  # actual amount deducted, clamped at available stock
@@ -12777,6 +12859,323 @@ def _csat_scope_data(conn, agent_email, date_from, date_to):
     }
 
 
+_PIM_LEAVE_STATUSES = ('pending', 'approved', 'scheduled', 'rejected', 'cancelled')
+
+
+_PIM_REQUEST_TYPES = ('OT', 'RDW', 'CWS', 'Magic CWS', 'FTS')
+_PIM_REQUEST_STATUSES = ('Pending', 'Approved', 'Rejected', 'Cancelled')
+
+
+def _fetch_pim_requests(conn, employee_id, date_from, date_to):
+    """
+    Every OT / RDW / CWS / Magic CWS / FTS request an employee filed for
+    [date_from, date_to] (keyed on the request's own work date), normalised
+    to one row shape for the PIM Requests tab. Same per-type SELECTs as
+    file_requests_hub(), minus the TL/approver joins; deleted rows excluded.
+    """
+    cur = conn.cursor(pymysql.cursors.DictCursor)
+    rows = []
+    cur.execute("""
+        SELECT 'OT' AS req_type, id, ot_date AS req_date,
+               CONCAT(ot_type, ' ', TIME_FORMAT(start_time,'%%H:%%i'), '-',
+                      TIME_FORMAT(end_time,'%%H:%%i')) AS details,
+               ROUND(MOD(TIMESTAMPDIFF(MINUTE,
+                   CONCAT(ot_date,' ',start_time), CONCAT(ot_date,' ',end_time)
+               ) + 1440, 1440) / 60, 2) AS hours,
+               NULL AS reason, status, timestamp AS filed_at, approver_name, approved_at
+        FROM ot_requests
+        WHERE employee_id = %s AND ot_date BETWEEN %s AND %s
+          AND deleted_at IS NULL AND status != 'Deleted'
+    """, (employee_id, date_from, date_to))
+    rows.extend(cur.fetchall())
+    cur.execute("""
+        SELECT 'RDW' AS req_type, id, rd_date AS req_date,
+               CONCAT(work_category, ' ', TIME_FORMAT(start_time,'%%H:%%i'), '-',
+                      TIME_FORMAT(end_time,'%%H:%%i'),
+                      IF(took_break = 'Y', ' (1h break)', '')) AS details,
+               ROUND(MOD(TIMESTAMPDIFF(MINUTE,
+                   CONCAT(rd_date,' ',start_time), CONCAT(rd_date,' ',end_time)
+               ) + 1440, 1440) / 60, 2) - IF(took_break = 'Y', 1, 0) AS hours,
+               NULL AS reason, status, created_at AS filed_at, approver_name, approved_at
+        FROM rd_requests
+        WHERE employee_id = %s AND rd_date BETWEEN %s AND %s
+          AND deleted_at IS NULL AND status != 'Deleted'
+    """, (employee_id, date_from, date_to))
+    rows.extend(cur.fetchall())
+    cur.execute("""
+        SELECT 'CWS' AS req_type, id, original_date AS req_date,
+               CONCAT(DATE_FORMAT(original_date,'%%b %%d'), ' ', original_time,
+                      ' → ', DATE_FORMAT(new_date,'%%b %%d'), ' ', new_time) AS details,
+               NULL AS hours, reason, status, created_at AS filed_at, approver_name, approved_at
+        FROM cws_requests
+        WHERE employee_id = %s AND original_date BETWEEN %s AND %s
+          AND deleted_at IS NULL AND status != 'Deleted'
+    """, (employee_id, date_from, date_to))
+    rows.extend(cur.fetchall())
+    cur.execute("""
+        SELECT 'Magic CWS' AS req_type, m.id, m.original_date AS req_date,
+               CONCAT(DATE_FORMAT(m.original_date,'%%b %%d'), ' ', m.original_shift,
+                      ' → ', DATE_FORMAT(m.new_date,'%%b %%d'), ' ', m.new_shift) AS details,
+               m.deduction_hours AS hours, m.reason, m.status, m.filed_at,
+               CONCAT(h.emp_firstname, ' ', h.emp_lastname) AS approver_name, m.approved_at
+        FROM magic_cws_requests m
+        LEFT JOIN orangehrm2.hs_hr_employee h ON h.emp_number = m.approved_by
+        WHERE m.employee_id = %s AND m.original_date BETWEEN %s AND %s
+          AND m.status != 'Deleted'
+    """, (employee_id, date_from, date_to))
+    rows.extend(cur.fetchall())
+    cur.execute("""
+        SELECT 'FTS' AS req_type, id, fts_date AS req_date,
+               CONCAT(fts_type, ' @ ', TIME_FORMAT(fts_time,'%%H:%%i')) AS details,
+               NULL AS hours, NULL AS reason, status, created_at AS filed_at,
+               approver_name, approved_at
+        FROM fts_requests
+        WHERE employeeID = %s AND fts_date BETWEEN %s AND %s
+          AND deleted_at IS NULL AND status != 'Deleted'
+    """, (employee_id, date_from, date_to))
+    rows.extend(cur.fetchall())
+    cur.close()
+    rows.sort(key=lambda r: (r['req_date'], r['filed_at'] or datetime.min), reverse=True)
+    return rows
+
+
+def _request_scope_data(request_rows, date_from, date_to, label):
+    """Month/Year slice of _fetch_pim_requests() rows, with per-type and per-status counts."""
+    rows = [r for r in request_rows if r['req_date'] and date_from <= r['req_date'] <= date_to]
+    by_type = {t: 0 for t in _PIM_REQUEST_TYPES}
+    by_status = {s: 0 for s in _PIM_REQUEST_STATUSES}
+    for r in rows:
+        if r['req_type'] in by_type:
+            by_type[r['req_type']] += 1
+        if r['status'] in by_status:
+            by_status[r['status']] += 1
+    return {'label': label, 'rows': rows, 'by_type': by_type, 'by_status': by_status}
+
+
+def _leave_scope_data(leave_rows, date_from, date_to, label):
+    """
+    Filed Leaves summary for ONE date range, built from the per-day
+    leave4day_requests rows pim_profile() already fetched for the whole year
+    -- the Month scope is just a Python filter over the Year rows, so the
+    Leaves tab costs a single indexed query (idx_emp_date).
+    """
+    rows = [r for r in leave_rows if date_from <= r['leave_date'] <= date_to]
+    counts = {s: 0 for s in _PIM_LEAVE_STATUSES}
+    days = {s: 0.0 for s in _PIM_LEAVE_STATUSES}
+    for r in rows:
+        st = (r['status'] or '').lower()
+        if st in counts:
+            counts[st] += 1
+            days[st] += float(r['days_deducted'] or 0)
+    return {
+        'label': label,
+        'rows': rows,
+        'counts': counts,
+        'days': {s: round(v, 2) for s, v in days.items()},
+    }
+
+
+def _pim_leave_balance_data(emp_number):
+    """
+    Leave Balance tab: the same current-year balances the employee sees on
+    their own /dashboard (get_leave_balances(): OrangeHRM entitlements first,
+    portal entitlements second), plus a per-type split of used_hours into
+    approved / scheduled / pending. The split uses get_leave_balances()'s exact
+    used_hours filter, so the three parts always add up to "Used".
+    """
+    if not emp_number:
+        return {'year': date.today().year, 'ohrm': [], 'portal': [], 'source': get_entitlement_source()}
+    ohrm_rows, portal_rows = get_leave_balances(emp_number)
+    split = {}
+    db = get_db()
+    try:
+        with db.cursor() as c:
+            c.execute("""
+                SELECT leave_type_id, LOWER(status) AS st, SUM(hours_deducted) AS h
+                FROM leave4day_requests
+                WHERE emp_number = %s
+                  AND status NOT IN ('rejected', 'cancelled', 'Deleted')
+                  AND is_off_day = 0
+                  AND leave_date >= MAKEDATE(YEAR(CURDATE()), 1)
+                  AND leave_date <  MAKEDATE(YEAR(CURDATE()) + 1, 1)
+                GROUP BY leave_type_id, LOWER(status)
+            """, (emp_number,))
+            for r in c.fetchall():
+                bucket = r['st'] if r['st'] in ('approved', 'scheduled') else 'pending'
+                parts = split.setdefault(r['leave_type_id'], {'approved': 0.0, 'scheduled': 0.0, 'pending': 0.0})
+                parts[bucket] += float(r['h'] or 0)
+    finally:
+        db.close()
+    for b in ohrm_rows:
+        b['split'] = split.get(b['leave_type_id'], {'approved': 0.0, 'scheduled': 0.0, 'pending': 0.0})
+        b['pct_used'] = round(min(b['used_hours'] / b['total_hours'] * 100, 100), 1) if b['total_hours'] else 0
+    for b in portal_rows:
+        b['pct_used'] = round(min(b['used_hours'] / b['total_hours'] * 100, 100), 1) if b['total_hours'] else 0
+    return {'year': date.today().year, 'ohrm': ohrm_rows, 'portal': portal_rows, 'source': get_entitlement_source()}
+
+
+def _pim_attendance_grid(employee, emp_number, schedule_rows, year, month, safe_last_day):
+    """
+    Attendance Grid tab: one employee's month, built with the same day rules
+    as admin_attendance_grid() (precedence Present > FTS IN/OUT > filed leave
+    > SUS > Absent, RD for rest days, PL/ML excluded from the rate, a trailing
+    "*" on pending leave codes) so this tab and /admin/attendance-grid agree.
+    Unlike that page, the data cutoff applies to every month, so a future
+    month never shows A's.
+
+    schedule_rows: the employee_schedules rows pim_profile() already fetched
+    for this month. Returns None if the employee has no userdata personid,
+    meaning there are no punches to evaluate.
+    """
+    from calendar import monthrange
+    employee_id = employee['employee_id']
+    month_start = date(year, month, 1)
+    month_end   = date(year, month, monthrange(year, month)[1])
+    data_end    = min(month_end, safe_last_day)
+
+    cdb = get_central_db()
+    try:
+        with cdb.cursor() as c:
+            c.execute("""
+                SELECT personid FROM userdata WHERE companyid = %s
+                ORDER BY personid DESC LIMIT 1
+            """, (employee_id,))
+            pr = c.fetchone()
+            personid = int(pr['personid']) if pr and pr['personid'] else None
+            c.execute("""
+                SELECT note_date, note, created_by, updated_at FROM attendance_notes
+                WHERE employee_id = %s AND note_date BETWEEN %s AND %s
+            """, (employee_id, month_start, month_end))
+            notes = {r['note_date']: r for r in c.fetchall()}
+            sus_dates = set()
+            try:
+                c.execute("""
+                    SELECT absence_date FROM absence_records
+                    WHERE code = 'SUS' AND employee_id = %s
+                      AND absence_date BETWEEN %s AND %s
+                """, (employee_id, month_start, month_end))
+                sus_dates = {r['absence_date'] for r in c.fetchall()}
+            except Exception as e:
+                app.logger.warning(f"pim attendance grid: SUS lookup failed for {employee_id}: {e}")
+    finally:
+        cdb.close()
+    if not personid:
+        return None
+
+    leave_map = {}
+    holiday_map = {}
+    odb = get_db()
+    try:
+        with odb.cursor() as c:
+            if emp_number:
+                c.execute("""
+                    SELECT lr.leave_date, lt.name AS leave_type_name, lr.status
+                    FROM leave4day_requests lr
+                    JOIN ohrm_leave_type lt ON lt.id = lr.leave_type_id
+                    WHERE lr.emp_number = %s AND lr.leave_date BETWEEN %s AND %s
+                      AND lr.status NOT IN ('Rejected','Cancelled','Deleted','rejected','cancelled')
+                """, (emp_number, month_start, month_end))
+                for lv in c.fetchall():
+                    leave_map[lv['leave_date']] = {
+                        'name': lv['leave_type_name'],
+                        'code': get_leave_code(lv['leave_type_name']),
+                        'pending': lv['status'] in ('Pending Approval', 'pending', 'Scheduled'),
+                    }
+            c.execute("""
+                SELECT description, date, recurring FROM ohrm_holiday
+                WHERE (YEAR(date) = %s AND MONTH(date) = %s)
+                   OR (recurring = 1 AND MONTH(date) = %s)
+            """, (year, month, month))
+            for h in c.fetchall():
+                hdate = h['date']
+                if h['recurring']:
+                    try:
+                        hdate = hdate.replace(year=year)
+                    except ValueError:
+                        continue
+                if hdate.month == month:
+                    holiday_map[hdate] = (h['description'] or '').strip()
+    finally:
+        odb.close()
+
+    shift_starts = {}
+    for r in schedule_rows:
+        start_h, _ = parse_shift_time(r['shift_time'])
+        if start_h is not None:
+            shift_starts[(personid, r['schedule_date'])] = start_h
+    attendance_map = build_attendance_map(
+        [personid], month_start - timedelta(days=1), month_end + timedelta(days=1), shift_starts)
+
+    exit_date = employee.get('exit_date')
+    if isinstance(exit_date, datetime):
+        exit_date = exit_date.date()
+    elif not isinstance(exit_date, date):
+        exit_date = None
+    days = {}
+    scheduled = present = remaining = 0
+    counts = {}
+    for r in schedule_rows:
+        d = r['schedule_date']
+        is_rest = bool(r['is_rest_day'])
+        status = None
+        att = attendance_map.get((personid, d))
+        lv = leave_map.get(d)
+        if exit_date and d > exit_date:
+            pass
+        elif d > data_end:
+            if not is_rest:
+                remaining += 1
+        elif is_rest:
+            status = 'RD'
+        else:
+            scheduled += 1
+            if att and att['status'] == 'Present':
+                status = 'P'
+            elif att and att['status'] == 'FTS IN':
+                status = 'FI'
+            elif att and att['status'] == 'FTS OUT':
+                status = 'FO'
+            elif lv:
+                status = f"{lv['code']}*" if lv['pending'] else lv['code']
+                if lv['code'] in ('PL', 'ML'):
+                    scheduled -= 1
+            elif d in sus_dates:
+                status = 'SUS'
+            else:
+                status = 'A'
+            if status in ('P', 'FI', 'FO'):
+                present += 1
+        if status:
+            counts[status] = counts.get(status, 0) + 1
+        days[d.day] = {
+            'status': status,
+            'shift': r['shift_time'] or '',
+            'leave': lv,
+            'note': notes.get(d),
+            'time_in': att.get('time_in') if att else None,
+            'time_out': att.get('time_out') if att else None,
+        }
+    for d, hname in holiday_map.items():
+        days.setdefault(d.day, {'status': None, 'shift': '', 'leave': None,
+                                'note': notes.get(d), 'time_in': None, 'time_out': None})
+        days[d.day]['holiday'] = hname
+
+    rate = round(present / scheduled * 100, 1) if scheduled else None
+    forecast = None
+    if remaining:
+        forecast = round((present + remaining) / (scheduled + remaining) * 100, 1)
+    return {
+        'days': days,
+        'counts': counts,
+        'scheduled': scheduled,
+        'present': present,
+        'remaining': remaining,
+        'rate': rate,
+        'forecast': forecast,
+        'data_end': data_end if data_end < month_end else None,
+    }
+
+
 @app.route('/pim/<employee_id>')
 def pim_profile(employee_id):
     if not (session.get('is_admin') or session.get('permissions', {}).get('can_pim')):
@@ -12866,14 +13265,49 @@ def pim_profile(employee_id):
     agent_email = employee.get('email')
     csat_month = _csat_scope_data(conn, agent_email, date_from, date_to)
     csat_year  = _csat_scope_data(conn, agent_email, year_date_from, year_date_to)
+
+    # ── Filed Requests (Requests tab): OT/RDW/CWS/Magic CWS/FTS for the
+    # viewed year; the Month scope is filtered from the same rows. ──
+    request_rows = _fetch_pim_requests(conn, employee_id, year_date_from, year_date_to)
+    requests_month = _request_scope_data(request_rows, date_from, date_to, month_name)
+    requests_year  = _request_scope_data(request_rows, year_date_from, year_date_to, str(year))
     conn.close()
 
     ohrm = get_db()
     ocur = ohrm.cursor(pymysql.cursors.DictCursor)
     ocur.execute("SELECT emp_number FROM hs_hr_employee WHERE employee_id = %s LIMIT 1", (employee_id,))
     emp_row = ocur.fetchone()
+    # ── Filed Leaves (Leaves tab): every leave day filed for the viewed
+    # year, keyed on leave_date; soft-deleted rows are excluded. ──
+    leave_rows = []
+    if emp_row:
+        ocur.execute("""
+            SELECT r.id, r.leave_type_id, r.leave_request_id, r.sl_hardcopy_received,
+                   r.leave_date, r.status, r.sl_hr_stage, r.days_deducted,
+                   r.hours_deducted, r.is_off_day, r.shift_half, r.notes,
+                   r.filed_at, r.approver_name, r.approved_at,
+                   lt.name AS leave_type_name
+            FROM leave4day_requests r
+            LEFT JOIN ohrm_leave_type lt ON lt.id = r.leave_type_id
+            WHERE r.emp_number = %s
+              AND r.leave_date BETWEEN %s AND %s
+              AND r.deleted_at IS NULL
+            ORDER BY r.leave_date DESC, r.id DESC
+        """, (emp_row['emp_number'], year_date_from, year_date_to))
+        leave_rows = ocur.fetchall()
     ocur.close()
     ohrm.close()
+    leaves_month = _leave_scope_data(leave_rows, date_from, date_to, month_name)
+    leaves_year  = _leave_scope_data(leave_rows, year_date_from, year_date_to, str(year))
+    # Approve/Reject buttons on the Leaves/Requests tabs render only for this
+    # employee's own approver (never admins-by-default, never self). This is
+    # display only -- pim_request_action() / api_leave_action() re-check.
+    can_approve = _is_pim_approver_of(emp_row['emp_number'] if emp_row else None)
+    # ── Leave Balance tab (current year) and Attendance Grid tab (viewed
+    # month, same perf_safe_last_day cutoff as the Attendance summary). ──
+    leave_balance = _pim_leave_balance_data(emp_row['emp_number'] if emp_row else None)
+    att_grid = _pim_attendance_grid(employee, emp_row['emp_number'] if emp_row else None,
+                                    schedule_rows, year, month, perf_safe_last_day)
     if emp_row:
         photo_url = url_for('pim_employee_photo', employee_id=employee_id)
     else:
@@ -12893,8 +13327,133 @@ def pim_profile(employee_id):
                            perf_year=perf_year,
                            csat_month=csat_month,
                            csat_year=csat_year,
+                           leaves_month=leaves_month,
+                           leaves_year=leaves_year,
+                           requests_month=requests_month,
+                           requests_year=requests_year,
+                           can_approve=can_approve,
+                           leave_balance=leave_balance,
+                           att_grid=att_grid,
                            next_employee=next_employee,
                            prev_employee=prev_employee)
+
+
+def _is_pim_approver_of(target_emp_number):
+    """True only if the logged-in user is target's approver (same reporting
+    line as the approval queues, via get_subordinates()) and not target."""
+    viewer = (session.get('user') or {}).get('emp_number')
+    if not viewer or not target_emp_number or viewer == target_emp_number:
+        return False
+    return target_emp_number in get_subordinates(viewer)
+
+
+# req_type -> (table, employee-id column, notification label)
+_PIM_ACTION_TABLES = {
+    'OT':  ('ot_requests',  'employee_id', 'OT'),
+    'RDW': ('rd_requests',  'employee_id', 'Rest Day Work'),
+    'CWS': ('cws_requests', 'employee_id', 'CWS'),
+    'FTS': ('fts_requests', 'employeeID',  'FTS'),
+}
+
+
+@app.route('/pim/<employee_id>/request-action', methods=['POST'])
+@login_required
+def pim_request_action(employee_id):
+    """
+    Approve/Reject one OT / RDW / CWS / FTS / Magic CWS request from the PIM
+    Requests tab. Unlike /api/approvals/action this is scoped: the caller must
+    be this employee's approver, the request must belong to this employee,
+    and only a still-Pending request can change (checked in the UPDATE
+    itself, so a double click or a second approver gets a clean 409).
+    Leaves go through the existing /api/leave/action, which already checks
+    the reporting line.
+    """
+    if not validate_csrf():
+        return jsonify({'success': False, 'message': 'Security check failed, please reload the page.'}), 403
+
+    data     = request.get_json(silent=True) or {}
+    req_type = data.get('req_type')
+    action   = data.get('action')
+    try:
+        req_id = int(data.get('req_id'))
+    except (TypeError, ValueError):
+        return jsonify({'success': False, 'message': 'Invalid request.'}), 400
+    if action not in ('approve', 'reject') or (req_type not in _PIM_ACTION_TABLES and req_type != 'Magic CWS'):
+        return jsonify({'success': False, 'message': 'Invalid request.'}), 400
+
+    ohrm = get_db()
+    try:
+        with ohrm.cursor() as oc:
+            oc.execute("SELECT emp_number FROM hs_hr_employee WHERE employee_id = %s LIMIT 1", (employee_id,))
+            emp_row = oc.fetchone()
+    finally:
+        ohrm.close()
+    if not emp_row or not _is_pim_approver_of(emp_row['emp_number']):
+        return jsonify({'success': False, 'message': "Only this employee's approver can do that."}), 403
+
+    new_status    = 'Approved' if action == 'approve' else 'Rejected'
+    approver_name = session['user']['name']
+    conn = get_central_db()
+    try:
+        with conn.cursor(pymysql.cursors.DictCursor) as c:
+            if req_type == 'Magic CWS':
+                c.execute("""SELECT emp_number, deduction_hours FROM magic_cws_requests
+                             WHERE id = %s AND employee_id = %s AND status = 'Pending'""",
+                          (req_id, employee_id))
+                req = c.fetchone()
+                if req and action == 'approve':
+                    # commits on its own; only creates the balance row if missing
+                    _init_magic_cws_balance(conn, req['emp_number'], employee_id)
+                c.execute("""UPDATE magic_cws_requests
+                             SET status = %s, approved_by = %s, approved_at = NOW()
+                             WHERE id = %s AND employee_id = %s AND status = 'Pending'""",
+                          (new_status, session['user']['emp_number'], req_id, employee_id))
+                changed = c.rowcount == 1
+                if changed and action == 'approve':
+                    c.execute("""UPDATE magic_cws_balance SET used_hrs = used_hrs + %s
+                                 WHERE emp_number = %s""",
+                              (float(req['deduction_hours'] or 0), req['emp_number']))
+                label = 'Magic CWS'
+            else:
+                table, id_col, label = _PIM_ACTION_TABLES[req_type]
+                c.execute(f"""UPDATE {table}
+                              SET status = %s, approver_name = %s, approved_at = NOW()
+                              WHERE id = %s AND {id_col} = %s
+                                AND status = 'Pending' AND deleted_at IS NULL""",
+                          (new_status, approver_name, req_id, employee_id))
+                changed = c.rowcount == 1
+            if not changed:
+                conn.rollback()
+                return jsonify({'success': False,
+                                'message': 'This request is no longer pending -- it may have already been actioned. Reload to see its current status.'}), 409
+        conn.commit()
+    except Exception as e:
+        conn.rollback()
+        app.logger.exception(f"pim_request_action failed ({req_type} #{req_id})")
+        return jsonify({'success': False, 'message': 'Something went wrong, nothing was changed.'}), 500
+    finally:
+        conn.close()
+
+    app.logger.info(f"PIM {action}: {req_type} #{req_id} for {employee_id} by {approver_name}")
+    try:
+        cdb = get_central_db()
+        with cdb.cursor() as c:
+            c.execute("SELECT Email, CONCAT(FirstName,' ',LastName) AS name FROM Employees WHERE EmployeeID = %s",
+                      (employee_id,))
+            emp = c.fetchone()
+        cdb.close()
+        if emp and emp['Email']:
+            send_email(emp['Email'], f'{label} Request {new_status}',
+                f"<p>Hi {markupsafe.escape(emp['name'])},</p>"
+                f"<p>Your <b>{label}</b> request has been <b>{new_status.lower()}</b> "
+                f"by {markupsafe.escape(approver_name)}.</p>"
+                f"<p><a href='https://hrportal.cohere.ph'>View HR Portal</a></p>")
+    except Exception as e:
+        app.logger.warning(f"PIM request-action email failed: {e}")
+
+    return jsonify({'success': True, 'status': new_status,
+                    'approver_name': approver_name,
+                    'approved_at': datetime.now().strftime('%b %d, %Y %I:%M %p')})
 
 
 @app.route('/pim/<employee_id>/photo')
@@ -15393,6 +15952,16 @@ def get_attendance_note_logs():
     } for r in logs])
 
 app.register_blueprint(survey_bp)
+
+# File FTS / CWS / OT for an employee (incl. Separated). Registered down here,
+# not with the other blueprints at the top, because it is handed helpers that
+# are only defined further down app.py (see modules/file_for_employee.py).
+from modules.file_for_employee import file_for_emp_bp, init_file_for_emp
+init_file_for_emp(get_central_db=get_central_db, get_db=get_db, send_email=send_email,
+                  get_supervisor_email=get_supervisor_email,
+                  fetch_requests=_fetch_pim_requests,
+                  ticket_required_types=TICKET_REQUIRED_TYPES)
+app.register_blueprint(file_for_emp_bp)
 
 # Add this route to app.py (or a Blueprint if you prefer to keep it separate).
 # Requires: ABSENCE_SYNC_KEY set in .env

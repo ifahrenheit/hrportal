@@ -1,0 +1,305 @@
+{% extends 'base.html' %}
+{% block title %}File Request for Employee{% endblock %}
+{% block page_title %}File Request for Employee{% endblock %}
+{% block content %}
+<div class="container-fluid px-0" style="max-width:1100px;">
+
+  <h6 class="text-muted text-uppercase fw-semibold mb-1" style="letter-spacing:.07em;">File FTS / CWS / OT for an Employee</h6>
+  <p class="text-muted small mb-3">
+    For filing on someone's behalf, including separated employees who can no longer log in.
+    Leaves are filed on <a href="{{ url_for('admin_file_leave') }}">File for Employee (Leave)</a>.
+  </p>
+
+  <!-- Employee picker -->
+  <div class="card shadow-sm mb-3">
+    <div class="card-body p-3">
+      <form method="GET" id="empPickForm" class="row g-2 align-items-end">
+        <input type="hidden" name="type" value="{{ req_type }}">
+        <div class="col-md-4">
+          <label class="form-label fw-semibold small mb-1">Search</label>
+          <input type="text" id="empFilter" class="form-control" placeholder="Name or employee ID" autocomplete="off">
+        </div>
+        <div class="col-md-8">
+          <label class="form-label fw-semibold small mb-1">Employee</label>
+          <select name="employee_id" id="empSelect" class="form-select" required onchange="this.form.submit()">
+            <option value="">-- Select Employee --</option>
+            {% for e in employees %}
+            <option value="{{ e.employee_id }}" {% if emp and emp.employee_id == e.employee_id %}selected{% endif %}
+                    data-search="{{ (e.schedule_name ~ ' ' ~ e.employee_id)|lower }}">
+              {{ e.schedule_name }} — {{ e.employee_id }}{% if e.status == 'Separated' %} (Separated{% if e.exit_date %} {{ e.exit_date }}{% endif %}){% endif %}
+            </option>
+            {% endfor %}
+          </select>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  {% if emp %}
+  <!-- Selected employee -->
+  <div class="card shadow-sm mb-3">
+    <div class="card-body p-3 d-flex flex-wrap gap-4 align-items-center">
+      <div>
+        <div class="fw-bold">{{ emp.schedule_name }}</div>
+        <div class="text-muted small">{{ emp.employee_id }}</div>
+      </div>
+      <div>
+        <span class="badge {% if emp.status == 'Separated' %}bg-secondary{% else %}bg-success{% endif %}">{{ emp.status }}</span>
+        {% if exit_date %}<span class="text-muted small ms-1">exit {{ exit_date.strftime('%b %d, %Y') }}</span>{% endif %}
+      </div>
+      <div class="small"><span class="text-muted">TL:</span> {{ emp.tl or '—' }} &nbsp; <span class="text-muted">Group:</span> {{ emp.group_name or '—' }}</div>
+      <div class="small"><span class="text-muted">Approver:</span> {{ supervisor_email or '—' }}</div>
+      {% if session.get('is_admin') or session.get('permissions', {}).get('can_pim') %}
+      <a class="btn btn-sm btn-outline-secondary ms-auto" href="{{ url_for('pim_profile', employee_id=emp.employee_id) }}">
+        <i data-lucide="user" style="width:14px;height:14px;"></i> PIM profile</a>
+      {% endif %}
+    </div>
+    {% if not supervisor_email %}
+    <div class="card-footer small" style="background:#fffbeb;color:#92400e;">
+      <i data-lucide="alert-triangle" style="width:14px;height:14px;"></i>
+      No approver is on file for this employee, so a Pending request won't reach anyone's approval queue.
+      It will only show in <a href="{{ url_for('file_requests_hub') }}">All Requests</a>.
+      {% if is_admin %}Consider ticking "File as approved".{% endif %}
+    </div>
+    {% endif %}
+  </div>
+
+  {% set f = form %}
+  <ul class="nav nav-tabs mb-0">
+    {% for key, label, icon in [('fts', 'FTS', 'fingerprint'), ('cws', 'CWS', 'repeat'), ('ot', 'OT / Rest Day Work', 'clock')] %}
+    <li class="nav-item">
+      <a class="nav-link {% if req_type == key %}active{% endif %}"
+         href="{{ url_for('file_for_emp.index', employee_id=emp.employee_id, type=key) }}">
+        <i class="me-1" data-lucide="{{ icon }}" style="width:14px;height:14px;"></i>{{ label }}</a>
+    </li>
+    {% endfor %}
+  </ul>
+  <div class="card shadow-sm mb-3" style="border-top-left-radius:0;">
+    <div class="card-body p-4">
+      <form method="POST" id="fileForm">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="employee_id" value="{{ emp.employee_id }}">
+        <input type="hidden" name="type" value="{{ req_type }}">
+        {% set max_date = exit_date.isoformat() if exit_date else '' %}
+
+        {% if req_type == 'fts' %}
+        <div class="row g-3">
+          <div class="col-md-4">
+            <label class="form-label">FTS Date <span class="text-danger">*</span></label>
+            <input type="date" name="fts_date" class="form-control" required value="{{ f.get('fts_date', '') }}" {% if max_date %}max="{{ max_date }}"{% endif %}>
+          </div>
+          <div class="col-md-4">
+            <label class="form-label">FTS Time <span class="text-danger">*</span></label>
+            <input type="time" name="fts_time" class="form-control" required value="{{ f.get('fts_time', '') }}">
+          </div>
+          <div class="col-md-4">
+            <label class="form-label">FTS Type <span class="text-danger">*</span></label>
+            <select name="fts_type" class="form-select" required>
+              <option value="">-- Select --</option>
+              {% for t in ['IN', 'OUT'] %}<option value="{{ t }}" {% if f.get('fts_type') == t %}selected{% endif %}>{{ t }}</option>{% endfor %}
+            </select>
+          </div>
+        </div>
+
+        {% elif req_type == 'cws' %}
+        <div class="row g-3">
+          <div class="col-md-6">
+            <label class="form-label">Original Date <span class="text-danger">*</span></label>
+            <input type="date" name="original_date" class="form-control" required value="{{ f.get('original_date', '') }}" {% if max_date %}max="{{ max_date }}"{% endif %}>
+          </div>
+          <div class="col-md-6">
+            <label class="form-label">Original Time / Shift <span class="text-danger">*</span></label>
+            <input type="text" name="original_time" class="form-control" placeholder="e.g. 8:00 AM – 5:00 PM" required value="{{ f.get('original_time', '') }}">
+          </div>
+          <div class="col-md-6">
+            <label class="form-label">New Date <span class="text-danger">*</span></label>
+            <input type="date" name="new_date" class="form-control" required value="{{ f.get('new_date', '') }}">
+          </div>
+          <div class="col-md-6">
+            <label class="form-label">New Time / Shift <span class="text-danger">*</span></label>
+            <input type="text" name="new_time" class="form-control" placeholder="e.g. 9:00 AM – 6:00 PM" required value="{{ f.get('new_time', '') }}">
+          </div>
+          <div class="col-12">
+            <label class="form-label">Reason <span class="text-danger">*</span></label>
+            <textarea name="reason" class="form-control" rows="2" required>{{ f.get('reason', '') }}</textarea>
+          </div>
+        </div>
+
+        {% else %}
+        <div class="row g-3">
+          <div class="col-md-6">
+            <label class="form-label">Work Day Type <span class="text-danger">*</span></label>
+            <select name="work_day_type" id="work_day_type" class="form-select" required>
+              <option value="">-- Select --</option>
+              <option value="REGULAR" {% if f.get('work_day_type') == 'REGULAR' %}selected{% endif %}>Regular Work Day (OT)</option>
+              <option value="REST_DAY" {% if f.get('work_day_type') == 'REST_DAY' %}selected{% endif %}>Rest Day (RD)</option>
+            </select>
+          </div>
+          <div class="col-md-6">
+            <label class="form-label">Date <span class="text-danger">*</span></label>
+            <input type="date" name="ot_date" class="form-control" required value="{{ f.get('ot_date', '') }}" {% if max_date %}max="{{ max_date }}"{% endif %}>
+          </div>
+          <div class="col-md-6 js-regular">
+            <label class="form-label">OT Type <span class="text-danger">*</span></label>
+            <select name="ot_type" id="ot_type" class="form-select">
+              <option value="">-- Select OT Type --</option>
+              {% for v, l in ot_types %}<option value="{{ v }}" {% if f.get('ot_type') == v %}selected{% endif %}>{{ l }}</option>{% endfor %}
+            </select>
+          </div>
+          <div class="col-md-6 js-regular">
+            <label class="form-label">Regular Rate <span class="text-danger">*</span></label>
+            <select name="regular_rate" class="form-select">
+              <option value="">-- Select --</option>
+              {% for v in ['Yes', 'No'] %}<option value="{{ v }}" {% if f.get('regular_rate') == v %}selected{% endif %}>{{ v }}</option>{% endfor %}
+            </select>
+          </div>
+          <div class="col-md-6 js-restday">
+            <label class="form-label">Work Category <span class="text-danger">*</span></label>
+            <select name="work_category" id="work_category" class="form-select">
+              {% for v, l in rd_categories %}<option value="{{ v }}" {% if f.get('work_category') == v %}selected{% endif %}>{{ l }}</option>{% endfor %}
+            </select>
+          </div>
+          <div class="col-md-6 js-restday">
+            <label class="form-label">Took a 1-hour break? <span class="text-danger">*</span></label>
+            <select name="took_break" class="form-select">
+              <option value="">-- Select --</option>
+              <option value="N" {% if f.get('took_break') == 'N' %}selected{% endif %}>No</option>
+              <option value="Y" {% if f.get('took_break') == 'Y' %}selected{% endif %}>Yes</option>
+            </select>
+          </div>
+          <div class="col-md-6">
+            <label class="form-label">Start Time <span class="text-danger">*</span></label>
+            <select name="start_time" class="form-select" required>
+              <option value="">-- Select --</option>
+              {% for t in time_options %}<option value="{{ t }}" {% if f.get('start_time') == t %}selected{% endif %}>{{ t[:5] }}</option>{% endfor %}
+            </select>
+          </div>
+          <div class="col-md-6">
+            <label class="form-label">End Time <span class="text-danger">*</span></label>
+            <select name="end_time" class="form-select" required>
+              <option value="">-- Select --</option>
+              {% for t in time_options %}<option value="{{ t }}" {% if f.get('end_time') == t %}selected{% endif %}>{{ t[:5] }}</option>{% endfor %}
+            </select>
+            <div class="form-text">An end time earlier than the start time is treated as overnight.</div>
+          </div>
+          <div class="col-12" id="ticketSection">
+            <label class="form-label">Ticket Numbers <span class="text-danger">*</span></label>
+            <textarea name="ticket_numbers" id="ticket_numbers" class="form-control font-monospace" rows="4"
+                      placeholder="One per line or comma-separated. Letters/numbers only, min 5 characters.">{{ f.get('ticket_numbers', '') }}</textarea>
+            <div class="form-text" id="ticketCounter">0 ticket(s) detected</div>
+          </div>
+        </div>
+        {% endif %}
+
+        <div class="d-flex flex-wrap align-items-center gap-3 mt-4">
+          {% if is_admin %}
+          <div class="form-check mb-0">
+            <input class="form-check-input" type="checkbox" name="file_approved" value="1" id="fileApproved"
+                   {% if f.get('file_approved') == '1' %}checked{% endif %}>
+            <label class="form-check-label" for="fileApproved">
+              File as approved <span class="text-muted small">(records you, {{ session['user']['name'] }}, as the approver)</span>
+            </label>
+          </div>
+          {% endif %}
+          <button type="submit" class="btn btn-primary px-4 ms-auto" id="fileSubmit">File for {{ emp.schedule_name }}</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Recent requests -->
+  <div class="card shadow-sm mb-4">
+    <div class="card-header fw-semibold d-flex align-items-center gap-2">
+      <i data-lucide="history"></i> Recent requests <span class="text-muted small fw-normal">(last 120 days, by work date)</span>
+    </div>
+    <div class="card-body p-0">
+      {% if recent %}
+      <div class="table-responsive" style="max-height:360px;overflow-y:auto;">
+        <table class="table table-sm table-striped mb-0 align-middle">
+          <thead><tr><th>#</th><th>Type</th><th>Date</th><th>Details</th><th>Status</th><th>Approver</th><th>Filed</th></tr></thead>
+          <tbody>
+          {% for r in recent %}
+            <tr>
+              <td class="text-muted small">{{ r.id }}</td>
+              <td><span class="badge bg-light text-dark border">{{ r.req_type }}</span></td>
+              <td class="text-nowrap">{{ r.req_date.strftime('%b %d, %Y') }}</td>
+              <td class="small">{{ r.details or '' }}{% if r.hours %} <span class="text-muted">({{ '%g'|format(r.hours|float) }}h)</span>{% endif %}</td>
+              <td><span class="badge {% if r.status == 'Pending' %}bg-warning text-dark{% elif r.status == 'Approved' %}bg-success{% elif r.status == 'Rejected' %}bg-danger{% else %}bg-secondary{% endif %}">{{ r.status }}</span></td>
+              <td class="small">{{ r.approver_name or '—' }}</td>
+              <td class="small text-nowrap text-muted">{{ r.filed_at.strftime('%b %d %H:%M') if r.filed_at else '—' }}</td>
+            </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+      <div class="p-3 text-muted small">No FTS / CWS / OT / RDW requests in this window.</div>
+      {% endif %}
+    </div>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+  // Employee search: filter the dropdown, and jump straight to a single match on Enter.
+  var filter = document.getElementById('empFilter'), sel = document.getElementById('empSelect');
+  if (filter && sel) {
+    filter.addEventListener('input', function () {
+      var q = this.value.trim().toLowerCase(), first = null, n = 0;
+      Array.prototype.forEach.call(sel.options, function (o, i) {
+        if (i === 0) return;
+        var hit = !q || o.dataset.search.indexOf(q) !== -1;
+        o.hidden = !hit;
+        if (hit) { n++; if (!first) first = o; }
+      });
+      sel.dataset.single = (n === 1 && first) ? first.value : '';
+    });
+    filter.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        if (sel.dataset.single) { sel.value = sel.dataset.single; sel.form.submit(); }
+      }
+    });
+  }
+
+  // OT / RDW: show the fields for the chosen work day type, and the ticket box
+  // only when that type needs tickets (same rules as the self-service OT form).
+  var wdt = document.getElementById('work_day_type');
+  if (wdt) {
+    var TICKET_REQUIRED = {{ ticket_required|tojson }};
+    var otType = document.getElementById('ot_type'), cat = document.getElementById('work_category');
+    var tix = document.getElementById('ticket_numbers'), tixSec = document.getElementById('ticketSection');
+    function sync() {
+      var t = wdt.value;
+      document.querySelectorAll('.js-regular').forEach(function (el) { el.style.display = t === 'REGULAR' ? '' : 'none'; });
+      document.querySelectorAll('.js-restday').forEach(function (el) { el.style.display = t === 'REST_DAY' ? '' : 'none'; });
+      var needs = (t === 'REGULAR' && TICKET_REQUIRED.indexOf(otType.value) !== -1) ||
+                  (t === 'REST_DAY' && (cat.value === 'REGULAR' || cat.value === 'OT260'));
+      tixSec.style.display = needs ? '' : 'none';
+      tix.required = needs;
+    }
+    [wdt, otType, cat].forEach(function (el) { el.addEventListener('change', sync); });
+    tix.addEventListener('input', function () {
+      var n = this.value.split(/[\s,]+/).filter(function (t) { return t.trim(); }).length;
+      document.getElementById('ticketCounter').textContent = n + ' ticket(s) detected';
+    });
+    sync();
+  }
+
+  // Confirm before filing, especially when filing as approved.
+  var form = document.getElementById('fileForm');
+  if (form) {
+    form.addEventListener('submit', function (e) {
+      var approved = document.getElementById('fileApproved');
+      var msg = 'File this request for ' + {{ (emp.schedule_name if emp else '')|tojson }} +
+                (approved && approved.checked ? ' as APPROVED?' : ' as Pending?');
+      if (!confirm(msg)) { e.preventDefault(); return; }
+      document.getElementById('fileSubmit').disabled = true;
+    });
+  }
+})();
+</script>
+{% endblock %}

@@ -1,52 +1,302 @@
 {% extends 'base.html' %}
-{% block page_title %}Admin — File Leave{% endblock %}
+{% block title %}File Leave for Employee{% endblock %}
+{% block page_title %}File Leave for Employee{% endblock %}
 {% block content %}
-<h6 class="text-muted text-uppercase fw-semibold mb-3" style="letter-spacing:.07em;">File Leave for Employee</h6>
-<div class="card p-4">
-  <form method="POST">
-    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-    <div class="mb-3">
-      <label class="form-label fw-semibold">Employee</label>
-      <select name="employee_id" class="form-select" required onchange="this.form.submit()">
-        <option value="">-- Select Employee --</option>
-        {% for e in employees %}
-        <option value="{{ e.employee_id }}" {% if selected_emp|string == e.employee_id|string %}selected{% endif %}>{{ e.schedule_name }}</option>
-        {% endfor %}
-      </select>
+<div class="container-fluid px-0" style="max-width:1100px;">
+
+  <h6 class="text-muted text-uppercase fw-semibold mb-1" style="letter-spacing:.07em;">File Leave for an Employee</h6>
+  <p class="text-muted small mb-3">
+    Leaves filed here are <strong>approved automatically</strong>: past and today's dates are recorded as taken, future dates as scheduled, and the balance is deducted right away.
+    FTS / CWS / OT are filed on <a href="{{ url_for('file_for_emp.index') }}">File Request for Employee</a>.
+  </p>
+
+  <!-- Employee picker -->
+  <div class="card shadow-sm mb-3">
+    <div class="card-body p-3">
+      <form method="GET" class="row g-2 align-items-end">
+        <div class="col-md-4">
+          <label class="form-label fw-semibold small mb-1">Search</label>
+          <input type="text" id="empFilter" class="form-control" placeholder="Name or employee ID" autocomplete="off">
+        </div>
+        <div class="col-md-8">
+          <label class="form-label fw-semibold small mb-1">Employee</label>
+          <select name="employee_id" id="empSelect" class="form-select" required onchange="this.form.submit()">
+            <option value="">-- Select Employee --</option>
+            {% for e in employees %}
+            <option value="{{ e.employee_id }}" {% if selected_emp|string == e.employee_id|string %}selected{% endif %}
+                    data-search="{{ (e.schedule_name ~ ' ' ~ e.employee_id)|lower }}">
+              {{ e.schedule_name }} — {{ e.employee_id }}
+            </option>
+            {% endfor %}
+          </select>
+        </div>
+      </form>
     </div>
-    {% if balances %}
-    <div class="mb-3">
-      <label class="form-label fw-semibold">Leave Type</label>
-      <select name="leave_type_id" class="form-select" required>
-        {% for b in balances %}
-        <option value="{{ b.leave_type_id }}">{{ b.leave_type_name }} ({{ "%.1f"|format(b.remaining_hours) }} hrs remaining)</option>
-        {% endfor %}
-      </select>
-    </div>
-    <div class="mb-3">
-      <label class="form-label fw-semibold">Duration</label>
-      <select name="duration" class="form-select">
-        <option value="full">Full Day Leave</option>
-        <option value="first_half">1st Half of the Shift Leave</option>
-        <option value="second_half">2nd Half of the Shift Leave</option>
-      </select>
-    </div>
-    <div class="row mb-3">
-      <div class="col">
-        <label class="form-label fw-semibold">Start Date</label>
-        <input type="date" name="start_date" class="form-control" required>
+  </div>
+
+  {% if selected_emp %}
+  <!-- Selected employee -->
+  <div class="card shadow-sm mb-3">
+    <div class="card-body p-3 d-flex flex-wrap gap-4 align-items-center">
+      <div>
+        <div class="fw-bold">{{ emp.schedule_name if emp else selected_emp }}</div>
+        <div class="text-muted small">{{ selected_emp }}</div>
       </div>
-      <div class="col">
-        <label class="form-label fw-semibold">End Date</label>
-        <input type="date" name="end_date" class="form-control" required>
+      {% if emp %}
+      <div><span class="badge {% if emp.status == 'Active' %}bg-success{% else %}bg-secondary{% endif %}">{{ emp.status }}</span></div>
+      <div class="small"><span class="text-muted">TL:</span> {{ emp.tl or '—' }} &nbsp; <span class="text-muted">Group:</span> {{ emp.group_name or '—' }}</div>
+      {% endif %}
+      {% if session.get('is_admin') or session.get('permissions', {}).get('can_pim') %}
+      <a class="btn btn-sm btn-outline-secondary ms-auto" href="{{ url_for('pim_profile', employee_id=selected_emp) }}">
+        <i data-lucide="user" style="width:14px;height:14px;"></i> PIM profile</a>
+      {% endif %}
+    </div>
+  </div>
+
+  <!-- Leave balances -->
+  {% macro bal_days(hours) %}{{ '%g'|format((hours / 8)|round(2)) }}d{% endmacro %}
+  {% if balance_data and balance_data.ohrm %}
+  <div class="d-flex justify-content-between align-items-baseline mb-2">
+    <span class="fw-semibold small text-uppercase text-muted" style="letter-spacing:.06em;">Leave balance {{ balance_data.year }}</span>
+    <span class="text-muted" style="font-size:.75rem;">Click a card to choose that leave type</span>
+  </div>
+  <div class="row g-2 mb-3">
+    {% for b in balance_data.ohrm %}
+    {% set low = b.total_hours and b.remaining_hours <= 8 %}
+    <div class="col-6 col-md-4 col-xl">
+      <div class="card h-100 shadow-sm js-bal-card" role="button" tabindex="0" data-type-id="{{ b.leave_type_id }}"
+           style="cursor:pointer;border:2px solid transparent;">
+        <div class="card-body p-2 px-3">
+          <div class="small fw-semibold text-truncate" title="{{ b.leave_type_name }}">{{ b.leave_type_name }}</div>
+          <div class="fw-bold" style="font-size:1.35rem;line-height:1.2;color:{% if low %}#b91c1c{% else %}#065f46{% endif %};">
+            {{ '%g'|format(b.remaining_days) }}<span class="small fw-normal text-muted"> day{{ '' if b.remaining_days == 1 else 's' }} left</span>
+          </div>
+          <div class="progress my-1" style="height:4px;">
+            <div class="progress-bar" style="width:{{ b.pct_used }}%;background:{% if low %}#dc2626{% else %}#0d9488{% endif %};"></div>
+          </div>
+          <div class="text-muted" style="font-size:.7rem;">
+            {{ bal_days(b.used_hours) }} used of {{ bal_days(b.total_hours) }}{% if b.split.pending %} · <span style="color:#92400e;">{{ bal_days(b.split.pending) }} pending</span>{% endif %}
+          </div>
+        </div>
       </div>
     </div>
-    <div class="mb-3">
-      <label class="form-label fw-semibold">Notes</label>
-      <textarea name="notes" class="form-control" rows="2"></textarea>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  {% if balances %}
+  {% set f = form %}
+  <!-- File leave form -->
+  <div class="card shadow-sm mb-3">
+    <div class="card-body p-4">
+      <form method="POST" id="leaveForm">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="employee_id" value="{{ selected_emp }}">
+        <div class="row g-3">
+          <div class="col-md-6">
+            <label class="form-label">Leave Type <span class="text-danger">*</span></label>
+            <select name="leave_type_id" id="leaveType" class="form-select" required>
+              {% for b in balances %}
+              <option value="{{ b.leave_type_id }}" data-remaining="{{ b.remaining_days }}"
+                      data-hrs="{{ b.remaining_hours }}" data-awol="{{ 1 if b.leave_type_name == 'AWOL' else 0 }}"
+                      {% if f.get('leave_type_id')|string == b.leave_type_id|string %}selected{% endif %}>
+                {{ b.leave_type_name }} ({{ '%g'|format(b.remaining_days) }} days left)
+              </option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="col-md-6">
+            <label class="form-label">Duration <span class="text-danger">*</span></label>
+            <select name="duration" id="duration" class="form-select">
+              {% for v, l in [('full', 'Full Day Leave'), ('first_half', '1st Half of the Shift'), ('second_half', '2nd Half of the Shift'),
+                              ('remaining', 'Use Remaining Balance'), ('custom', 'Custom Hours')] %}
+              <option value="{{ v }}" id="dur-{{ v }}" {% if f.get('duration') == v %}selected{% endif %}>{{ l }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="col-md-6" id="customHoursWrap" style="display:none;">
+            <label class="form-label">Custom Hours <span class="text-danger">*</span> <span class="text-muted small">(whole hours only)</span></label>
+            <input type="number" name="custom_hours" id="customHours" class="form-control" min="1" step="1"
+                   inputmode="numeric" placeholder="e.g. 3" value="{{ f.get('custom_hours', '') }}">
+            <div class="form-text">Up to the remaining balance (<span id="customMax">0</span> hrs), single day only.</div>
+          </div>
+          <div class="col-md-6">
+            <label class="form-label">Start Date <span class="text-danger">*</span></label>
+            <input type="date" name="start_date" id="startDate" class="form-control" required value="{{ f.get('start_date', '') }}">
+          </div>
+          <div class="col-md-6">
+            <label class="form-label">End Date <span class="text-danger">*</span></label>
+            <input type="date" name="end_date" id="endDate" class="form-control" required value="{{ f.get('end_date', '') }}">
+            <div class="form-text" id="endDateHint"></div>
+          </div>
+          <div class="col-12">
+            <label class="form-label">Notes</label>
+            <textarea name="notes" class="form-control" rows="2" placeholder="Optional">{{ f.get('notes', '') }}</textarea>
+          </div>
+        </div>
+        <div class="d-flex flex-wrap align-items-center gap-3 mt-4">
+          <span class="text-muted small" id="rangeSummary"></span>
+          <button type="submit" class="btn btn-primary px-4 ms-auto" id="leaveSubmit">
+            File Leave for {{ emp.schedule_name if emp else selected_emp }}</button>
+        </div>
+      </form>
     </div>
-    <button type="submit" class="btn btn-primary">File Leave</button>
-    {% endif %}
-  </form>
+  </div>
+  {% else %}
+  <div class="card p-4 text-center text-muted mb-3">
+    <i data-lucide="wallet" style="width:28px;height:28px;display:block;margin:0 auto .5rem;"></i>
+    No leave entitlements found for this employee in {{ balance_data.year if balance_data else 'this year' }}, so a leave can't be filed yet.
+  </div>
+  {% endif %}
+
+  <!-- Recent leaves -->
+  {% set leave_status_styles = {
+    'pending':   ('Pending',   '#fffbeb', '#92400e', '#fde68a'),
+    'approved':  ('Approved',  '#ecfdf5', '#065f46', '#a7f3d0'),
+    'scheduled': ('Scheduled', '#ecfeff', '#155e75', '#a5f3fc'),
+    'rejected':  ('Rejected',  '#fef2f2', '#991b1b', '#fecaca'),
+    'cancelled': ('Cancelled', '#f8fafc', '#475569', '#e2e8f0'),
+  } %}
+  <div class="card shadow-sm mb-4">
+    <div class="card-header fw-semibold d-flex align-items-center gap-2">
+      <i data-lucide="history"></i> Recent leaves <span class="text-muted small fw-normal">(last 120 days and upcoming, by leave date)</span>
+    </div>
+    <div class="card-body p-0">
+      {% if recent %}
+      <div class="table-responsive" style="max-height:360px;overflow-y:auto;">
+        <table class="table table-sm table-striped mb-0 align-middle">
+          <thead><tr><th>Leave Date</th><th>Type</th><th>Deducted</th><th>Status</th><th>Notes</th></tr></thead>
+          <tbody>
+          {% for r in recent %}
+            {% set st = leave_status_styles.get((r.status or '')|lower, (r.status|capitalize, '#f8fafc', '#475569', '#e2e8f0')) %}
+            <tr>
+              <td class="text-nowrap">{{ r.leave_date.strftime('%b %d, %Y') }} <span class="text-muted small">{{ r.leave_date.strftime('%a') }}</span></td>
+              <td>{{ r.leave_type_name or '—' }}</td>
+              <td class="text-nowrap">
+                {% if r.is_off_day %}<span class="text-muted small">Off-day</span>
+                {% else %}{{ '%g'|format(r.days_deducted|float) }}d <span class="text-muted small">/ {{ '%g'|format(r.hours_deducted|float) }}h</span>{% endif %}
+              </td>
+              <td><span class="badge" style="background:{{ st[1] }};color:{{ st[2] }};border:1px solid {{ st[3] }};">{{ st[0] }}</span></td>
+              <td class="small text-muted">{{ r.notes or '' }}</td>
+            </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+      <div class="p-3 text-muted small">No leaves in this window.</div>
+      {% endif %}
+    </div>
+  </div>
+  {% endif %}
 </div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+  // Employee search: filter the dropdown, and jump straight to a single match on Enter.
+  var filter = document.getElementById('empFilter'), sel = document.getElementById('empSelect');
+  if (filter && sel) {
+    filter.addEventListener('input', function () {
+      var q = this.value.trim().toLowerCase(), first = null, n = 0;
+      Array.prototype.forEach.call(sel.options, function (o, i) {
+        if (i === 0) return;
+        var hit = !q || o.dataset.search.indexOf(q) !== -1;
+        o.hidden = !hit;
+        if (hit) { n++; if (!first) first = o; }
+      });
+      sel.dataset.single = (n === 1 && first) ? first.value : '';
+    });
+    filter.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        if (sel.dataset.single) { sel.value = sel.dataset.single; sel.form.submit(); }
+      }
+    });
+  }
+
+  var form = document.getElementById('leaveForm');
+  if (!form) return;
+  var type = document.getElementById('leaveType'), dur = document.getElementById('duration');
+  var start = document.getElementById('startDate'), end = document.getElementById('endDate');
+  var hint = document.getElementById('endDateHint'), summary = document.getElementById('rangeSummary');
+
+  // Balance cards pick the leave type and highlight the chosen one.
+  var cards = document.querySelectorAll('.js-bal-card');
+  function highlight() {
+    cards.forEach(function (c) { c.style.borderColor = c.dataset.typeId === type.value ? '#0d6efd' : 'transparent'; });
+  }
+  cards.forEach(function (c) {
+    function pick() {
+      if (!type.querySelector('option[value="' + c.dataset.typeId + '"]')) return;
+      type.value = c.dataset.typeId; highlight(); update();
+    }
+    c.addEventListener('click', pick);
+    c.addEventListener('keydown', function (e) { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); pick(); } });
+  });
+
+  // Same option rules as the regular /file-leave form:
+  //  - Use Remaining Balance: only while 0 < remaining < 10 hrs
+  //  - Custom Hours: any type with a positive balance except AWOL
+  var optRemaining = document.getElementById('dur-remaining'), optCustom = document.getElementById('dur-custom');
+  var customWrap = document.getElementById('customHoursWrap'), customInput = document.getElementById('customHours');
+  function syncDurationOptions() {
+    var opt = type.options[type.selectedIndex];
+    var hrs = parseFloat(opt.dataset.hrs || 0), awol = opt.dataset.awol === '1';
+    var showRem = hrs > 0 && hrs < 10, showCustom = hrs > 0 && !awol;
+    optRemaining.hidden = !showRem;
+    optRemaining.textContent = 'Use Remaining Balance (' + hrs.toFixed(1) + ' hrs)';
+    optCustom.hidden = !showCustom;
+    if ((dur.value === 'remaining' && !showRem) || (dur.value === 'custom' && !showCustom)) dur.value = 'full';
+    customInput.max = Math.floor(hrs);
+    document.getElementById('customMax').textContent = Math.floor(hrs);
+    var isCustom = dur.value === 'custom';
+    customWrap.style.display = isCustom ? '' : 'none';
+    customInput.required = isCustom;
+  }
+
+  // Half-day and Custom Hours are single-day (the server enforces this too): lock End Date to Start Date.
+  function update() {
+    syncDurationOptions();
+    var half = dur.value === 'first_half' || dur.value === 'second_half' || dur.value === 'custom';
+    if (half || !end.value || (start.value && end.value < start.value)) end.value = start.value;
+    end.readOnly = half;
+    end.min = start.value || '';
+    hint.textContent = half ? (dur.value === 'custom' ? 'Custom Hours covers a single day.' : 'Half-day leave covers a single day.') : '';
+    var opt = type.options[type.selectedIndex];
+    if (start.value && end.value) {
+      var days = Math.round((new Date(end.value) - new Date(start.value)) / 86400000) + 1;
+      var what = dur.value === 'custom' ? (customInput.value || '?') + ' hr(s) on 1 day'
+               : dur.value === 'remaining' ? 'All ' + parseFloat(opt.dataset.hrs || 0).toFixed(1) + ' remaining hrs over ' + days + ' day' + (days === 1 ? '' : 's')
+               : half ? 'Half day' : days + ' calendar day' + (days === 1 ? '' : 's');
+      summary.textContent = what +
+        ' · ' + opt.text.trim() + '. Holidays and off-days in the range are not deducted.';
+    } else {
+      summary.textContent = '';
+    }
+    highlight();
+  }
+  [type, dur, start, end].forEach(function (el) { el.addEventListener('change', update); });
+  customInput.addEventListener('input', update);
+  update();
+
+  form.addEventListener('submit', function (e) {
+    var opt = type.options[type.selectedIndex];
+    if (dur.value === 'custom') {
+      var raw = (customInput.value || '').trim(), max = parseInt(customInput.max || '0', 10);
+      if (!/^[0-9]+$/.test(raw) || +raw <= 0 || +raw > max) {
+        e.preventDefault();
+        alert('Custom hours must be a whole number between 1 and ' + max + '.');
+        return;
+      }
+    }
+    var msg = 'File ' + opt.text.trim().replace(/\s*\(.*\)$/, '') + ' for ' +
+              {{ (emp.schedule_name if emp else selected_emp)|tojson }} + ' from ' + start.value +
+              ' to ' + end.value + '?\n\nIt will be approved automatically and deducted from the balance.';
+    if (!confirm(msg)) { e.preventDefault(); return; }
+    document.getElementById('leaveSubmit').disabled = true;
+  });
+})();
+</script>
 {% endblock %}

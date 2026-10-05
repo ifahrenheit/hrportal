@@ -284,10 +284,21 @@
       })();
       </script>
 
-      <!-- Work Schedule Calendar -->
+      <!-- Work Schedule & Attendance: schedule calendar overlaid with the
+           attendance grid (same day rules/colours as /admin/attendance-grid).
+           Evaluated days show their status; days not yet evaluated keep the
+           plain schedule look (shift / Rest Day). -->
+      {% set grid_styles = {
+        'P':   ('#d1fae5', '#065f46', 'Present'),
+        'A':   ('#fee2e2', '#b91c1c', 'Absent'),
+        'FI':  ('#fff7ed', '#9a3412', 'FTS In (no time-in)'),
+        'FO':  ('#faf5ff', '#6b21a8', 'FTS Out (no time-out)'),
+        'SUS': ('#fef3c7', '#92400e', 'Suspended'),
+        'RD':  ('#1a1a1a', '#ffffff', 'Rest Day'),
+      } %}
       <div class="card shadow-sm mb-3">
-        <div class="card-header d-flex align-items-center justify-content-between">
-          <span class="fw-semibold"><i class="me-2" data-lucide="calendar"></i>Work Schedule</span>
+        <div class="card-header d-flex align-items-center justify-content-between flex-wrap gap-2">
+          <span class="fw-semibold"><i class="me-2" data-lucide="calendar"></i>Work Schedule &amp; Attendance</span>
           <div class="d-flex align-items-center gap-2">
             <a href="{{ url_for('pim_profile', employee_id=employee_id, year=prev_year, month=prev_month) }}"
                class="btn btn-sm btn-outline-secondary">&lsaquo;</a>
@@ -297,44 +308,117 @@
           </div>
         </div>
         <div class="card-body p-3">
-          <!-- Day headers -->
+        {% if att_grid is none %}
+          <div class="text-muted mb-2" style="font-size:.75rem;">
+            <i data-lucide="fingerprint" style="width:12px;height:12px;"></i>
+            No biometric (userdata) record is linked to {{ employee_id }}, so only the schedule is shown.
+          </div>
+        {% else %}
+          <div class="d-flex flex-wrap align-items-stretch gap-3 mb-3">
+            <div class="rounded-3 px-3 py-2" style="background:#ecfdf5;border:1px solid #a7f3d0;min-width:170px;">
+              <div class="text-uppercase" style="font-size:.68rem;letter-spacing:.06em;color:#065f46;">Attendance Rate</div>
+              <div class="fw-bold" style="font-size:1.7rem;line-height:1.15;color:#065f46;">
+                {{ '%.1f'|format(att_grid.rate) ~ '%' if att_grid.rate is not none else '—' }}
+              </div>
+              <div class="text-muted" style="font-size:.72rem;">{{ att_grid.present }} present / {{ att_grid.scheduled }} scheduled</div>
+            </div>
+            {% if att_grid.forecast is not none %}
+            <div class="rounded-3 px-3 py-2" style="background:#f8fafc;border:1px solid #e2e8f0;min-width:170px;">
+              <div class="text-uppercase" style="font-size:.68rem;letter-spacing:.06em;color:#475569;">Best-case Forecast</div>
+              <div class="fw-bold" style="font-size:1.7rem;line-height:1.15;color:#334155;">{{ '%.1f'|format(att_grid.forecast) }}%</div>
+              <div class="text-muted" style="font-size:.72rem;">if all {{ att_grid.remaining }} remaining shift{{ '' if att_grid.remaining == 1 else 's' }} are worked</div>
+            </div>
+            {% endif %}
+            <div class="d-flex flex-wrap align-content-center gap-2">
+              {% for code, n in att_grid.counts|dictsort %}
+                {% set st = grid_styles[code] if code in grid_styles else (('#fef9c3', '#854d0e') if code.endswith('*') else ('#eff6ff', '#1d4ed8')) %}
+                <span class="badge px-2 py-2" style="background:{{ st[0] }};color:{{ st[1] }};font-size:.75rem;">
+                  {{ code }}: <strong>{{ n }}</strong>
+                </span>
+              {% endfor %}
+            </div>
+          </div>
+          {% if att_grid.data_end %}
+          <div class="text-muted mb-2" style="font-size:.75rem;">
+            <i data-lucide="info" style="width:12px;height:12px;"></i>
+            Attendance evaluated through {{ att_grid.data_end.strftime('%b %d') }}. Later days show the schedule only until their shift has finished (1 PM cutoff).
+          </div>
+          {% endif %}
+        {% endif %}
+
           <div class="row g-1 mb-1">
             {% for d in ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'] %}
             <div class="col text-center py-2 rounded fw-semibold"
                  style="font-size:.75rem;background:var(--bs-primary,#0d6efd);color:#fff;opacity:.85;">{{ d }}</div>
             {% endfor %}
           </div>
-          <!-- Weeks -->
           {% for week in cal_weeks %}
           <div class="row g-1 mb-1">
             {% for day in week %}
             {% if day == 0 %}
-              <div class="col" style="min-height:56px;"></div>
+              <div class="col" style="min-height:64px;"></div>
             {% else %}
               {% set sched = schedule.get(day) %}
+              {% set cell = att_grid.days.get(day) if att_grid else none %}
               {% set is_today = (today.day == day and today.month == month and today.year == year) %}
-              {% if sched %}
-                {% set is_rest = sched.is_rest %}
-                {% set shift   = sched.shift %}
+              {% set status = cell.status if cell else none %}
+              {% if status %}
+                {% set st = grid_styles[status] if status in grid_styles else (('#fef9c3', '#854d0e') if status.endswith('*') else ('#eff6ff', '#1d4ed8')) %}
+              {% elif sched and not sched.is_rest %}
+                {% set st = ('rgba(13,110,253,.12)', 'inherit') %}
               {% else %}
-                {% set is_rest = True %}
-                {% set shift   = '' %}
+                {% set st = ('var(--bs-secondary-bg,#f8f9fa)', 'inherit') %}
               {% endif %}
-              <div class="col rounded p-2"
-                   style="min-height:56px;
-                          background:{% if not sched %}var(--bs-secondary-bg,#f8f9fa){% elif is_rest %}var(--bs-secondary-bg,#f8f9fa){% else %}rgba(13,110,253,.12){% endif %};
+              {% set tip = [] %}
+              {% if sched and sched.shift %}{% set _ = tip.append('Shift: ' ~ sched.shift) %}{% endif %}
+              {% if cell %}
+                {% if cell.time_in %}{% set _ = tip.append('In: ' ~ cell.time_in) %}{% endif %}
+                {% if cell.time_out %}{% set _ = tip.append('Out: ' ~ cell.time_out) %}{% endif %}
+                {% if cell.leave %}{% set _ = tip.append('Leave: ' ~ cell.leave.name ~ (' (pending)' if cell.leave.pending else '')) %}{% endif %}
+                {% if cell.holiday %}{% set _ = tip.append('Holiday: ' ~ cell.holiday) %}{% endif %}
+                {% if cell.note %}{% set _ = tip.append('Note: ' ~ (cell.note.note or '') ~ ' — ' ~ (cell.note.created_by or '')) %}{% endif %}
+              {% endif %}
+              {# Padding/border live on the inner box: on the .col itself they
+                 change its flex width, so part-empty first/last weeks drift
+                 out of line with the day headers. #}
+              <div class="col">
+              <div class="rounded p-2 h-100 position-relative"
+                   {% if tip %}title="{{ tip|join('\n') }}"{% endif %}
+                   style="min-height:64px;background:{{ st[0] }};color:{{ st[1] }};
                           border:2px solid {% if is_today %}#f59e0b{% else %}transparent{% endif %};">
-                <div class="fw-bold" style="font-size:.78rem;color:{% if is_today %}#f59e0b{% else %}inherit{% endif %};">{{ day }}</div>
-                {% if sched and not is_rest and shift %}
-                  <div class="text-primary" style="font-size:.65rem;">{{ shift }}</div>
-                {% elif sched and is_rest %}
+                <div class="d-flex justify-content-between align-items-start">
+                  <span class="fw-bold" style="font-size:.78rem;{% if is_today %}color:#f59e0b;{% endif %}">{{ day }}</span>
+                  {% if cell and cell.note %}<i data-lucide="message-square" style="width:12px;height:12px;"></i>{% endif %}
+                </div>
+                {% if status %}
+                  <div class="fw-bold" style="font-size:.95rem;line-height:1.2;">{{ status }}</div>
+                  {% if sched and sched.shift and status != 'RD' %}<div style="font-size:.6rem;opacity:.8;">{{ sched.shift }}</div>{% endif %}
+                {% elif sched and not sched.is_rest and sched.shift %}
+                  <div class="text-primary" style="font-size:.65rem;">{{ sched.shift }}</div>
+                {% elif sched and sched.is_rest %}
                   <div class="text-muted" style="font-size:.65rem;">Rest Day</div>
                 {% endif %}
+                {% if cell and cell.holiday %}
+                  <div class="text-truncate" style="font-size:.6rem;font-weight:600;color:{% if status == 'RD' %}#fcd34d{% else %}#b45309{% endif %};">{{ cell.holiday }}</div>
+                {% endif %}
+              </div>
               </div>
             {% endif %}
             {% endfor %}
           </div>
           {% endfor %}
+
+          {% if att_grid is not none %}
+          <div class="d-flex flex-wrap gap-2 mt-3" style="font-size:.7rem;">
+            {% for code, st in grid_styles.items() %}
+              <span style="background:{{ st[0] }};color:{{ st[1] }};padding:.15rem .45rem;border-radius:4px;">{{ code }} — {{ st[2] }}</span>
+            {% endfor %}
+            <span style="background:#eff6ff;color:#1d4ed8;padding:.15rem .45rem;border-radius:4px;">VL/SL/LWOP/PL/COL/ML — Leave</span>
+            <span style="background:#fef9c3;color:#854d0e;padding:.15rem .45rem;border-radius:4px;">* — Pending leave</span>
+            <span style="background:rgba(13,110,253,.12);padding:.15rem .45rem;border-radius:4px;">Upcoming shift</span>
+            <span class="text-muted">Hover a day for shift, punches, leave and notes. PL/ML days are left out of the rate.</span>
+          </div>
+          {% endif %}
         </div>
       </div>
 
@@ -567,6 +651,23 @@
           </button>
         </li>
         <li class="nav-item" role="presentation">
+          <button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-leaves" type="button" role="tab">
+            <i class="me-1" data-lucide="calendar-days" style="width:14px;height:14px;"></i>Leaves
+            <span id="leavesPendingBadge" class="badge rounded-pill ms-1" style="background:#fef3c7;color:#92400e;font-size:.68rem;{% if not leaves_year.counts.pending %}display:none;{% endif %}">{{ leaves_year.counts.pending }}</span>
+          </button>
+        </li>
+        <li class="nav-item" role="presentation">
+          <button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-requests" type="button" role="tab">
+            <i class="me-1" data-lucide="clipboard-list" style="width:14px;height:14px;"></i>Requests
+            <span id="requestsPendingBadge" class="badge rounded-pill ms-1" style="background:#fef3c7;color:#92400e;font-size:.68rem;{% if not requests_year.by_status.Pending %}display:none;{% endif %}">{{ requests_year.by_status.Pending }}</span>
+          </button>
+        </li>
+        <li class="nav-item" role="presentation">
+          <button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-balance" type="button" role="tab">
+            <i class="me-1" data-lucide="wallet" style="width:14px;height:14px;"></i>Leave Balance
+          </button>
+        </li>
+        <li class="nav-item" role="presentation">
           <button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-details" type="button" role="tab">
             <i class="me-1" data-lucide="file-text" style="width:14px;height:14px;"></i>Memos
           </button>
@@ -651,13 +752,13 @@
         <div class="card-header fw-semibold d-flex align-items-center justify-content-between flex-wrap gap-2">
           <span><i class="me-2" data-lucide="heart"></i>CSAT Performance Summary</span>
           <div class="btn-group btn-group-sm" role="group" aria-label="CSAT summary scope">
-            <button type="button" class="btn btn-outline-secondary active" data-csat-scope-btn="month">Month</button>
-            <button type="button" class="btn btn-outline-secondary" data-csat-scope-btn="year">Year</button>
+            <button type="button" class="btn btn-outline-secondary" data-csat-scope-btn="month">Month</button>
+            <button type="button" class="btn btn-outline-secondary active" data-csat-scope-btn="year">Year</button>
           </div>
         </div>
         <div class="card-body py-3 px-3">
-          {{ csat_scope_block('month', csat_month, true) }}
-          {{ csat_scope_block('year', csat_year, false) }}
+          {{ csat_scope_block('month', csat_month, false) }}
+          {{ csat_scope_block('year', csat_year, true) }}
         </div>
       </div>
       <script>
@@ -693,6 +794,576 @@
       })();
       </script>
       </div>
+
+      <div class="tab-pane fade" id="tab-leaves" role="tabpanel">
+      <!-- Filed Leaves -->
+      {% macro leave_scope_block(scope_key, lv, visible) %}
+      {% set leave_status_styles = {
+        'pending':   ('Pending',   '#fffbeb', '#92400e', '#fde68a', 'hourglass'),
+        'approved':  ('Approved',  '#ecfdf5', '#065f46', '#a7f3d0', 'circle-check'),
+        'scheduled': ('Scheduled', '#ecfeff', '#155e75', '#a5f3fc', 'calendar-clock'),
+        'rejected':  ('Rejected',  '#fef2f2', '#991b1b', '#fecaca', 'circle-x'),
+        'cancelled': ('Cancelled', '#f8fafc', '#475569', '#e2e8f0', 'ban'),
+      } %}
+      <div class="leave-scope-block" data-leave-scope="{{ scope_key }}"{% if not visible %} style="display:none;"{% endif %}>
+        <div class="text-muted mb-2" style="font-size:.8rem;">for {{ lv.label }} (by leave date)</div>
+        <div class="d-flex gap-2 flex-wrap">
+          <span class="badge rounded-pill px-3 py-2 perf-pill-clickable"
+                style="background:#f8fafc;color:#334155;border:1px solid #e2e8f0;font-size:.8rem;cursor:pointer;"
+                data-leave-filter="" role="button" tabindex="0">
+            <i class="me-1" data-lucide="list"></i>All: <strong>{{ lv.rows|length }}</strong>
+          </span>
+          {% for key, st in leave_status_styles.items() %}
+          <span class="badge rounded-pill px-3 py-2 perf-pill-clickable"
+                style="background:{{ st[1] }};color:{{ st[2] }};border:1px solid {{ st[3] }};font-size:.8rem;cursor:pointer;{% if not lv.counts[key] %}opacity:.6;{% endif %}"
+                data-leave-filter="{{ key }}" role="button" tabindex="0">
+            <i class="me-1" data-lucide="{{ st[4] }}"></i>{{ st[0] }}:
+            <strong data-count="{{ key }}">{{ lv.counts[key] }}</strong>
+            <span class="text-muted" data-days="{{ key }}" data-val="{{ lv.days[key] }}"{% if not lv.counts[key] %} style="display:none;"{% endif %}>({{ '%g'|format(lv.days[key]) }} day{{ '' if lv.days[key] == 1 else 's' }})</span>
+          </span>
+          {% endfor %}
+        </div>
+
+        {% if lv.rows %}
+        <div class="border rounded mt-2" style="max-height:320px;overflow-y:auto;">
+          <table class="table table-sm table-striped mb-0 align-middle">
+            <thead><tr><th>Leave Date</th><th>Type</th><th>Deducted</th><th>Status</th><th>Filed</th><th>Approver</th><th>Notes</th>{% if can_approve %}<th></th>{% endif %}</tr></thead>
+            <tbody>
+            {% for r in lv.rows %}
+              {% set st = leave_status_styles.get(r.status, (r.status|capitalize, '#f8fafc', '#475569', '#e2e8f0', '')) %}
+              <tr data-leave-status="{{ r.status }}" data-leave-id="{{ r.id }}" data-leave-rid="{{ r.leave_request_id or '' }}"
+                  data-leave-type-id="{{ r.leave_type_id }}" data-filed-at="{{ r.filed_at.strftime('%Y-%m-%d %H:%M:%S') if r.filed_at else '' }}"
+                  data-date="{{ r.leave_date.isoformat() }}" data-days="{{ r.days_deducted|float }}"
+                  data-hardcopy="{{ 1 if r.leave_type_id == 2 and r.sl_hardcopy_received == 0 else 0 }}"
+                  data-summary="{{ r.leave_date.strftime('%a, %b %d, %Y') }} · {{ r.leave_type_name or 'Leave' }}">
+                <td class="text-nowrap">{{ r.leave_date.strftime('%b %d, %Y') }} <span class="text-muted small">{{ r.leave_date.strftime('%a') }}</span></td>
+                <td>{{ r.leave_type_name or '—' }}{% if r.shift_half %} <span class="text-muted small">({{ r.shift_half }})</span>{% endif %}</td>
+                <td class="text-nowrap">
+                  {% if r.is_off_day %}<span class="text-muted small">Off-day</span>
+                  {% else %}{{ '%g'|format(r.days_deducted|float) }}d <span class="text-muted small">/ {{ '%g'|format(r.hours_deducted|float) }}h</span>{% endif %}
+                </td>
+                <td class="text-nowrap js-status-cell">
+                  <span class="badge" style="background:{{ st[1] }};color:{{ st[2] }};border:1px solid {{ st[3] }};">{{ st[0] }}</span>
+                  {% if r.status == 'pending' and r.sl_hr_stage == 'pending_hr' %}
+                  <div class="text-muted" style="font-size:.7rem;">awaiting HR SL verification</div>
+                  {% endif %}
+                </td>
+                <td class="text-muted small text-nowrap">{{ r.filed_at.strftime('%b %d, %Y %I:%M %p') if r.filed_at else '—' }}</td>
+                <td class="small js-approver-cell">
+                  {{ r.approver_name or '—' }}
+                  {% if r.approved_at and r.status in ('approved', 'scheduled', 'rejected') %}
+                  <div class="text-muted" style="font-size:.7rem;">{{ r.approved_at.strftime('%b %d, %Y %I:%M %p') }}</div>
+                  {% endif %}
+                </td>
+                <td class="text-muted small" style="max-width:260px;">{{ r.notes or '—' }}</td>
+                {% if can_approve %}
+                <td class="text-nowrap js-action-cell">
+                  {% if r.status == 'pending' and r.sl_hr_stage != 'pending_hr' %}
+                  <button type="button" class="btn btn-sm btn-outline-success py-0 px-2" data-pim-action="approve" data-kind="leave" title="Approve"><i data-lucide="check" style="width:14px;height:14px;"></i></button>
+                  <button type="button" class="btn btn-sm btn-outline-danger py-0 px-2" data-pim-action="reject" data-kind="leave" title="Reject"><i data-lucide="x" style="width:14px;height:14px;"></i></button>
+                  {% endif %}
+                </td>
+                {% endif %}
+              </tr>
+            {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        {% else %}
+        <div class="text-muted mt-2" style="font-size:.78rem;">
+          <i class="me-1" data-lucide="info"></i>No leaves filed for this {{ 'month' if scope_key == 'month' else 'year' }}.
+        </div>
+        {% endif %}
+      </div>
+      {% endmacro %}
+
+      <div class="card shadow-sm mb-3" id="leaveSummaryCard">
+        <div class="card-header fw-semibold d-flex align-items-center justify-content-between flex-wrap gap-2">
+          <span><i class="me-2" data-lucide="calendar-days"></i>Filed Leaves</span>
+          <div class="btn-group btn-group-sm" role="group" aria-label="Filed leaves scope">
+            <button type="button" class="btn btn-outline-secondary" data-leave-scope-btn="month">Month</button>
+            <button type="button" class="btn btn-outline-secondary active" data-leave-scope-btn="year">Year</button>
+          </div>
+        </div>
+        <div class="card-body py-3 px-3">
+          {{ leave_scope_block('month', leaves_month, false) }}
+          {{ leave_scope_block('year', leaves_year, true) }}
+        </div>
+      </div>
+      <script>
+      (function(){
+        var card = document.getElementById('leaveSummaryCard');
+        if (!card) return;
+
+        var scopeBtns = card.querySelectorAll('[data-leave-scope-btn]');
+        scopeBtns.forEach(function(btn){
+          btn.addEventListener('click', function(){
+            var scope = btn.dataset.leaveScopeBtn;
+            scopeBtns.forEach(function(b){ b.classList.toggle('active', b === btn); });
+            card.querySelectorAll('.leave-scope-block').forEach(function(block){
+              block.style.display = (block.dataset.leaveScope === scope) ? 'block' : 'none';
+            });
+          });
+        });
+
+        // Status pills filter the table rows within their own scope block.
+        card.querySelectorAll('[data-leave-filter]').forEach(function(pill){
+          function apply(){
+            var block = pill.closest('.leave-scope-block');
+            var status = pill.dataset.leaveFilter;
+            block.querySelectorAll('[data-leave-filter]').forEach(function(p){
+              p.style.boxShadow = (p === pill) ? '0 0 0 2px rgba(51,65,85,.35)' : '';
+            });
+            block.querySelectorAll('tr[data-leave-status]').forEach(function(tr){
+              tr.style.display = (!status || tr.dataset.leaveStatus === status) ? '' : 'none';
+            });
+          }
+          pill.addEventListener('click', apply);
+          pill.addEventListener('keydown', function(e){
+            if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); apply(); }
+          });
+        });
+      })();
+      </script>
+      </div>
+
+      <div class="tab-pane fade" id="tab-requests" role="tabpanel">
+      <!-- Filed Requests (OT / RDW / CWS / Magic CWS / FTS) -->
+      {% macro request_scope_block(scope_key, rq, visible) %}
+      {% set type_styles = {
+        'OT':        ('#eff6ff', '#1e40af', '#bfdbfe', 'timer'),
+        'RDW':       ('#faf5ff', '#6b21a8', '#e9d5ff', 'briefcase'),
+        'CWS':       ('#fff7ed', '#9a3412', '#fed7aa', 'arrow-left-right'),
+        'Magic CWS': ('#fdf2f8', '#9d174d', '#fbcfe8', 'sparkles'),
+        'FTS':       ('#f0fdfa', '#115e59', '#99f6e4', 'log-in'),
+      } %}
+      {% set status_styles = {
+        'Pending':   ('#fffbeb', '#92400e', '#fde68a', 'hourglass'),
+        'Approved':  ('#ecfdf5', '#065f46', '#a7f3d0', 'circle-check'),
+        'Rejected':  ('#fef2f2', '#991b1b', '#fecaca', 'circle-x'),
+        'Cancelled': ('#f8fafc', '#475569', '#e2e8f0', 'ban'),
+      } %}
+      <div class="req-scope-block" data-req-scope="{{ scope_key }}"{% if not visible %} style="display:none;"{% endif %}>
+        <div class="text-muted mb-2" style="font-size:.8rem;">for {{ rq.label }} (by request date)</div>
+        <div class="d-flex gap-2 flex-wrap align-items-center mb-2">
+          <span class="text-muted text-uppercase" style="font-size:.68rem;letter-spacing:.06em;width:48px;">Type</span>
+          <span class="badge rounded-pill px-3 py-2 perf-pill-clickable"
+                style="background:#f8fafc;color:#334155;border:1px solid #e2e8f0;font-size:.8rem;cursor:pointer;box-shadow:0 0 0 2px rgba(51,65,85,.35);"
+                data-req-filter-type="" role="button" tabindex="0">
+            <i class="me-1" data-lucide="list"></i>All: <strong>{{ rq.rows|length }}</strong>
+          </span>
+          {% for key, st in type_styles.items() %}
+          <span class="badge rounded-pill px-3 py-2{% if rq.by_type[key] %} perf-pill-clickable{% endif %}"
+                style="background:{{ st[0] }};color:{{ st[1] }};border:1px solid {{ st[2] }};font-size:.8rem;{% if rq.by_type[key] %}cursor:pointer;{% else %}opacity:.6;{% endif %}"
+                {% if rq.by_type[key] %}data-req-filter-type="{{ key }}" role="button" tabindex="0"{% endif %}>
+            <i class="me-1" data-lucide="{{ st[3] }}"></i>{{ key }}: <strong>{{ rq.by_type[key] }}</strong>
+          </span>
+          {% endfor %}
+        </div>
+        <div class="d-flex gap-2 flex-wrap align-items-center">
+          <span class="text-muted text-uppercase" style="font-size:.68rem;letter-spacing:.06em;width:48px;">Status</span>
+          <span class="badge rounded-pill px-3 py-2 perf-pill-clickable"
+                style="background:#f8fafc;color:#334155;border:1px solid #e2e8f0;font-size:.8rem;cursor:pointer;box-shadow:0 0 0 2px rgba(51,65,85,.35);"
+                data-req-filter-status="" role="button" tabindex="0">
+            <i class="me-1" data-lucide="list"></i>All
+          </span>
+          {% for key, st in status_styles.items() %}
+          <span class="badge rounded-pill px-3 py-2 perf-pill-clickable"
+                style="background:{{ st[0] }};color:{{ st[1] }};border:1px solid {{ st[2] }};font-size:.8rem;cursor:pointer;{% if not rq.by_status[key] %}opacity:.6;{% endif %}"
+                data-req-filter-status="{{ key }}" role="button" tabindex="0">
+            <i class="me-1" data-lucide="{{ st[3] }}"></i>{{ key }}: <strong data-count="{{ key }}">{{ rq.by_status[key] }}</strong>
+          </span>
+          {% endfor %}
+        </div>
+
+        {% if rq.rows %}
+        <div class="border rounded mt-2" style="max-height:320px;overflow-y:auto;">
+          <table class="table table-sm table-striped mb-0 align-middle">
+            <thead><tr><th>Date</th><th>Type</th><th>Details</th><th>Hours</th><th>Status</th><th>Filed</th><th>Approver</th><th>Reason</th>{% if can_approve %}<th></th>{% endif %}</tr></thead>
+            <tbody>
+            {% for r in rq.rows %}
+              {% set ts = type_styles.get(r.req_type, ('#f8fafc', '#475569', '#e2e8f0', '')) %}
+              {% set ss = status_styles.get(r.status, ('#f8fafc', '#475569', '#e2e8f0', '')) %}
+              <tr data-req-type="{{ r.req_type }}" data-req-status="{{ r.status }}" data-req-id="{{ r.id }}"
+                  data-summary="{{ r.req_type }} · {{ r.req_date.strftime('%a, %b %d, %Y') }} · {{ r.details or '' }}">
+                <td class="text-nowrap">{{ r.req_date.strftime('%b %d, %Y') }} <span class="text-muted small">{{ r.req_date.strftime('%a') }}</span></td>
+                <td class="text-nowrap"><span class="badge" style="background:{{ ts[0] }};color:{{ ts[1] }};border:1px solid {{ ts[2] }};">{{ r.req_type }}</span></td>
+                <td class="small">{{ r.details or '—' }}</td>
+                <td class="small text-nowrap">{{ '%g'|format(r.hours|float) ~ 'h' if r.hours is not none else '—' }}</td>
+                <td class="text-nowrap js-status-cell"><span class="badge" style="background:{{ ss[0] }};color:{{ ss[1] }};border:1px solid {{ ss[2] }};">{{ r.status }}</span></td>
+                <td class="text-muted small text-nowrap">{{ r.filed_at.strftime('%b %d, %Y %I:%M %p') if r.filed_at else '—' }}</td>
+                <td class="small js-approver-cell">
+                  {{ r.approver_name or '—' }}
+                  {% if r.approved_at and r.status in ('Approved', 'Rejected') %}
+                  <div class="text-muted" style="font-size:.7rem;">{{ r.approved_at.strftime('%b %d, %Y %I:%M %p') }}</div>
+                  {% endif %}
+                </td>
+                <td class="text-muted small" style="max-width:240px;">{{ r.reason or '—' }}</td>
+                {% if can_approve %}
+                <td class="text-nowrap js-action-cell">
+                  {% if r.status == 'Pending' %}
+                  <button type="button" class="btn btn-sm btn-outline-success py-0 px-2" data-pim-action="approve" data-kind="request" title="Approve"><i data-lucide="check" style="width:14px;height:14px;"></i></button>
+                  <button type="button" class="btn btn-sm btn-outline-danger py-0 px-2" data-pim-action="reject" data-kind="request" title="Reject"><i data-lucide="x" style="width:14px;height:14px;"></i></button>
+                  {% endif %}
+                </td>
+                {% endif %}
+              </tr>
+            {% endfor %}
+              <tr class="req-empty-row" style="display:none;"><td colspan="{{ 9 if can_approve else 8 }}" class="text-muted small text-center py-2">No requests match this filter.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        {% else %}
+        <div class="text-muted mt-2" style="font-size:.78rem;">
+          <i class="me-1" data-lucide="info"></i>No requests filed for this {{ 'month' if scope_key == 'month' else 'year' }}.
+        </div>
+        {% endif %}
+      </div>
+      {% endmacro %}
+
+      <div class="card shadow-sm mb-3" id="requestSummaryCard">
+        <div class="card-header fw-semibold d-flex align-items-center justify-content-between flex-wrap gap-2">
+          <span><i class="me-2" data-lucide="clipboard-list"></i>Filed Requests</span>
+          <div class="btn-group btn-group-sm" role="group" aria-label="Filed requests scope">
+            <button type="button" class="btn btn-outline-secondary" data-req-scope-btn="month">Month</button>
+            <button type="button" class="btn btn-outline-secondary active" data-req-scope-btn="year">Year</button>
+          </div>
+        </div>
+        <div class="card-body py-3 px-3">
+          {{ request_scope_block('month', requests_month, false) }}
+          {{ request_scope_block('year', requests_year, true) }}
+        </div>
+      </div>
+      <script>
+      (function(){
+        var card = document.getElementById('requestSummaryCard');
+        if (!card) return;
+
+        var scopeBtns = card.querySelectorAll('[data-req-scope-btn]');
+        scopeBtns.forEach(function(btn){
+          btn.addEventListener('click', function(){
+            var scope = btn.dataset.reqScopeBtn;
+            scopeBtns.forEach(function(b){ b.classList.toggle('active', b === btn); });
+            card.querySelectorAll('.req-scope-block').forEach(function(block){
+              block.style.display = (block.dataset.reqScope === scope) ? 'block' : 'none';
+            });
+          });
+        });
+
+        // Type and Status pills are two independent filters, ANDed together,
+        // each scoped to its own Month/Year block.
+        function applyFilters(block){
+          var type = block.dataset.activeType || '';
+          var status = block.dataset.activeStatus || '';
+          var shown = 0;
+          block.querySelectorAll('tr[data-req-type]').forEach(function(tr){
+            var ok = (!type || tr.dataset.reqType === type) && (!status || tr.dataset.reqStatus === status);
+            tr.style.display = ok ? '' : 'none';
+            if (ok) shown++;
+          });
+          var empty = block.querySelector('.req-empty-row');
+          if (empty) empty.style.display = shown ? 'none' : '';
+        }
+        [['reqFilterType', 'activeType', '[data-req-filter-type]'],
+         ['reqFilterStatus', 'activeStatus', '[data-req-filter-status]']].forEach(function(dim){
+          card.querySelectorAll(dim[2]).forEach(function(pill){
+            function pick(){
+              var block = pill.closest('.req-scope-block');
+              block.dataset[dim[1]] = pill.dataset[dim[0]];
+              block.querySelectorAll(dim[2]).forEach(function(p){
+                p.style.boxShadow = (p === pill) ? '0 0 0 2px rgba(51,65,85,.35)' : '';
+              });
+              applyFilters(block);
+            }
+            pill.addEventListener('click', pick);
+            pill.addEventListener('keydown', function(e){
+              if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); pick(); }
+            });
+          });
+        });
+      })();
+      </script>
+      </div>
+
+      {% if can_approve %}
+      <!-- Approver actions (Leaves + Requests tabs). Buttons only render for
+           this employee's approver; the server re-checks on every call. -->
+      <div class="modal fade" id="pimActionModal" tabindex="-1" aria-labelledby="pimActionTitle" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+          <div class="modal-content">
+            <div class="modal-header py-2">
+              <h6 class="modal-title fw-semibold" id="pimActionTitle"></h6>
+              <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+              <div class="text-muted small mb-1">For <strong class="text-body">{{ employee.schedule_name or employee.employee_id }}</strong></div>
+              <ul class="small mb-2 ps-3" id="pimActionList"></ul>
+              <div class="text-muted small mb-2" id="pimActionNote"></div>
+              <div class="form-check small mb-2" id="pimActionHardcopyWrap" style="display:none;">
+                <input class="form-check-input" type="checkbox" id="pimActionHardcopy">
+                <label class="form-check-label" for="pimActionHardcopy">I confirm the original/hard copy of the med cert was received and forwarded to HR.</label>
+              </div>
+              <div class="alert alert-danger small py-2 mb-0" id="pimActionError" style="display:none;"></div>
+            </div>
+            <div class="modal-footer py-2">
+              <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+              <button type="button" class="btn btn-sm" id="pimActionConfirm"></button>
+            </div>
+          </div>
+        </div>
+      </div>
+      <script>
+      // bootstrap.bundle loads after the content block -- wait for it.
+      document.addEventListener('DOMContentLoaded', function(){
+        var EMP_ID   = {{ employee.employee_id|tojson }};
+        var TODAY    = {{ today.isoformat()|tojson }};
+        var ME       = {{ session.get('user', {}).get('name', '')|tojson }};
+        var LEAVE_STYLES = {
+          pending: ['Pending', '#fffbeb', '#92400e', '#fde68a'], approved: ['Approved', '#ecfdf5', '#065f46', '#a7f3d0'],
+          scheduled: ['Scheduled', '#ecfeff', '#155e75', '#a5f3fc'], rejected: ['Rejected', '#fef2f2', '#991b1b', '#fecaca']
+        };
+        var REQ_STYLES = {
+          Approved: ['Approved', '#ecfdf5', '#065f46', '#a7f3d0'], Rejected: ['Rejected', '#fef2f2', '#991b1b', '#fecaca']
+        };
+
+        var modalEl   = document.getElementById('pimActionModal');
+        var modal     = bootstrap.Modal.getOrCreateInstance(modalEl);
+        var titleEl   = document.getElementById('pimActionTitle');
+        var listEl    = document.getElementById('pimActionList');
+        var noteEl    = document.getElementById('pimActionNote');
+        var hcWrap    = document.getElementById('pimActionHardcopyWrap');
+        var hcBox     = document.getElementById('pimActionHardcopy');
+        var errEl     = document.getElementById('pimActionError');
+        var confirmEl = document.getElementById('pimActionConfirm');
+        var current   = null;
+
+        // Month and Year blocks both render the same row -- act on every copy.
+        function leaveGroupRows(tr){
+          var rid = tr.dataset.leaveRid;
+          var sel = rid ? 'tr[data-leave-rid="' + CSS.escape(rid) + '"]'
+                        : 'tr[data-leave-rid=""][data-leave-type-id="' + CSS.escape(tr.dataset.leaveTypeId) +
+                          '"][data-filed-at="' + CSS.escape(tr.dataset.filedAt) + '"]';
+          return Array.prototype.filter.call(document.querySelectorAll(sel), function(r){
+            return r.dataset.leaveStatus === 'pending';
+          });
+        }
+        function requestRows(tr){
+          return Array.prototype.slice.call(document.querySelectorAll(
+            'tr[data-req-id="' + CSS.escape(tr.dataset.reqId) + '"][data-req-type="' + CSS.escape(tr.dataset.reqType) + '"]'));
+        }
+        function uniqueBy(rows, key){
+          var seen = {}; return rows.filter(function(r){ var k = r.dataset[key]; if (seen[k]) return false; seen[k] = 1; return true; });
+        }
+
+        document.addEventListener('click', function(e){
+          var btn = e.target.closest('[data-pim-action]');
+          if (!btn) return;
+          var tr = btn.closest('tr');
+          var action = btn.dataset.pimAction, kind = btn.dataset.kind;
+          var rows = kind === 'leave' ? leaveGroupRows(tr) : requestRows(tr);
+          var distinct = uniqueBy(rows, kind === 'leave' ? 'leaveId' : 'reqId');
+          current = {action: action, kind: kind, tr: tr, rows: rows};
+
+          var what = kind === 'leave' ? 'leave' : tr.dataset.reqType + ' request';
+          titleEl.textContent = (action === 'approve' ? 'Approve ' : 'Reject ') + what + '?';
+          listEl.innerHTML = '';
+          distinct.forEach(function(r){ var li = document.createElement('li'); li.textContent = r.dataset.summary; listEl.appendChild(li); });
+          noteEl.textContent = (kind === 'leave' && distinct.length > 1)
+            ? 'This applies to all ' + distinct.length + ' pending days filed together in this leave request.'
+            : (kind === 'leave' && action === 'reject' ? 'Rejecting returns the deducted leave credits.' : '');
+          var needsHc = kind === 'leave' && action === 'approve' && distinct.some(function(r){ return r.dataset.hardcopy === '1'; });
+          hcWrap.style.display = needsHc ? '' : 'none';
+          hcBox.checked = false;
+          current.needsHc = needsHc;
+          errEl.style.display = 'none';
+          confirmEl.disabled = false;
+          confirmEl.className = 'btn btn-sm ' + (action === 'approve' ? 'btn-success' : 'btn-danger');
+          confirmEl.textContent = action === 'approve' ? 'Approve' : 'Reject';
+          modal.show();
+        });
+
+        function showError(msg){ errEl.textContent = msg; errEl.style.display = ''; }
+
+        confirmEl.addEventListener('click', function(){
+          if (!current) return;
+          if (current.needsHc && !hcBox.checked) { showError('Please confirm the med cert hard copy before approving.'); return; }
+          var tr = current.tr, url, body;
+          if (current.kind === 'leave') {
+            url  = '/api/leave/action';
+            body = {action: current.action, target_emp: EMP_ID, leave_type_id: tr.dataset.leaveTypeId,
+                    leave_request_id: tr.dataset.leaveRid || null, filed_at: tr.dataset.filedAt,
+                    hardcopy_forwarded: current.needsHc && hcBox.checked};
+          } else {
+            url  = '/pim/' + encodeURIComponent(EMP_ID) + '/request-action';
+            body = {action: current.action, req_type: tr.dataset.reqType, req_id: tr.dataset.reqId};
+          }
+          confirmEl.disabled = true;
+          confirmEl.textContent = 'Saving…';
+          errEl.style.display = 'none';
+          fetch(url, {method: 'POST', credentials: 'same-origin',
+                      headers: {'Content-Type': 'application/json', 'X-CSRF-Token': getCsrfToken()},
+                      body: JSON.stringify(body)})
+            .then(function(res){ return res.json().catch(function(){ return {success: false, message: 'Unexpected server response (' + res.status + ').'}; }); })
+            .then(function(data){
+              if (!data.success) {
+                showError(data.message || 'Action failed.');
+                confirmEl.disabled = false;
+                confirmEl.textContent = current.action === 'approve' ? 'Approve' : 'Reject';
+                return;
+              }
+              applyResult(current, data);
+              modal.hide();
+            })
+            .catch(function(){
+              showError('Network error -- nothing was confirmed. Please try again.');
+              confirmEl.disabled = false;
+              confirmEl.textContent = current.action === 'approve' ? 'Approve' : 'Reject';
+            });
+        });
+
+        function bump(block, key, dCount, dDays){
+          var strong = block && block.querySelector('[data-count="' + key + '"]');
+          if (!strong) return;
+          var n = (parseInt(strong.textContent, 10) || 0) + dCount;
+          strong.textContent = n;
+          strong.closest('.badge').style.opacity = n ? '' : '.6';
+          var days = block.querySelector('[data-days="' + key + '"]');
+          if (days) {
+            var v = Math.round(((parseFloat(days.dataset.val) || 0) + dDays) * 10000) / 10000;
+            days.dataset.val = v;
+            days.textContent = '(' + v + ' day' + (v === 1 ? '' : 's') + ')';
+            days.style.display = n ? '' : 'none';
+          }
+        }
+        function badge(st){
+          var b = document.createElement('span');
+          b.className = 'badge';
+          b.style.cssText = 'background:' + st[1] + ';color:' + st[2] + ';border:1px solid ' + st[3] + ';';
+          b.textContent = st[0];
+          return b;
+        }
+        function setPendingBadge(id, block){
+          var el = document.getElementById(id), strong = block && block.querySelector('[data-count="' + (id === 'leavesPendingBadge' ? 'pending' : 'Pending') + '"]');
+          if (!el || !strong) return;
+          el.textContent = strong.textContent;
+          el.style.display = parseInt(strong.textContent, 10) ? '' : 'none';
+        }
+
+        function applyResult(cur, data){
+          var stamp = data.approved_at || new Date().toLocaleString();
+          cur.rows.forEach(function(r){
+            var oldSt, newSt, style, blk;
+            if (cur.kind === 'leave') {
+              oldSt = r.dataset.leaveStatus;
+              newSt = cur.action === 'reject' ? 'rejected' : (r.dataset.date > TODAY ? 'scheduled' : 'approved');
+              style = LEAVE_STYLES[newSt];
+              r.dataset.leaveStatus = newSt;
+              blk = r.closest('.leave-scope-block');
+              var d = parseFloat(r.dataset.days) || 0;
+              bump(blk, oldSt, -1, -d); bump(blk, newSt, 1, d);
+            } else {
+              oldSt = r.dataset.reqStatus;
+              newSt = data.status;
+              style = REQ_STYLES[newSt];
+              r.dataset.reqStatus = newSt;
+              blk = r.closest('.req-scope-block');
+              bump(blk, oldSt, -1, 0); bump(blk, newSt, 1, 0);
+            }
+            var sc = r.querySelector('.js-status-cell'); sc.innerHTML = ''; sc.appendChild(badge(style));
+            var ac = r.querySelector('.js-approver-cell'); ac.textContent = data.approver_name || ME;
+            var t = document.createElement('div'); t.className = 'text-muted'; t.style.fontSize = '.7rem'; t.textContent = stamp; ac.appendChild(t);
+            r.querySelector('.js-action-cell').innerHTML = '';
+            r.style.transition = 'background-color 1.2s';
+            r.style.backgroundColor = cur.action === 'approve' ? '#d1fae5' : '#fee2e2';
+            setTimeout(function(){ r.style.backgroundColor = ''; }, 1500);
+          });
+          setPendingBadge('leavesPendingBadge', document.querySelector('.leave-scope-block[data-leave-scope="year"]'));
+          setPendingBadge('requestsPendingBadge', document.querySelector('.req-scope-block[data-req-scope="year"]'));
+        }
+      });
+      </script>
+      {% endif %}
+
+      <div class="tab-pane fade" id="tab-balance" role="tabpanel">
+      <!-- Leave Balance (current year, same figures as the employee's own dashboard) -->
+      {% macro bal_days(hours) %}{{ '%g'|format((hours / 8)|round(2)) }}d <span class="text-muted small">/ {{ '%g'|format(hours|round(2)) }}h</span>{% endmacro %}
+      <div class="text-muted mb-2" style="font-size:.8rem;">
+        Entitlements for {{ leave_balance.year }} &middot; "Used" counts approved, scheduled and pending leave days (not rejected/cancelled, not off-days).
+      </div>
+      {% if leave_balance.ohrm %}
+      <div class="row g-3 mb-3">
+        {% for b in leave_balance.ohrm %}
+        {% set low = b.total_hours and b.remaining_hours <= 8 %}
+        <div class="col-12 col-md-6 col-xl-4">
+          <div class="card shadow-sm h-100">
+            <div class="card-body py-3 px-3">
+              <div class="d-flex justify-content-between align-items-start mb-1">
+                <span class="fw-semibold">{{ b.leave_type_name }}</span>
+                <span class="badge rounded-pill" style="background:{% if low %}#fef2f2;color:#991b1b;border:1px solid #fecaca{% else %}#ecfdf5;color:#065f46;border:1px solid #a7f3d0{% endif %};">
+                  {{ '%g'|format(b.remaining_days) }} day{{ '' if b.remaining_days == 1 else 's' }} left
+                </span>
+              </div>
+              <div class="progress my-2" style="height:6px;" title="{{ b.pct_used }}% used">
+                <div class="progress-bar" style="width:{{ b.pct_used }}%;background:{% if low %}#dc2626{% else %}#0d9488{% endif %};"></div>
+              </div>
+              <table class="table table-sm table-borderless mb-0" style="font-size:.8rem;">
+                <tr><td class="text-muted ps-0">Entitled</td><td class="text-end pe-0">{{ bal_days(b.total_hours) }}</td></tr>
+                <tr><td class="text-muted ps-0">Used</td><td class="text-end pe-0">{{ bal_days(b.used_hours) }}</td></tr>
+                {% if b.split.approved %}<tr><td class="text-muted ps-3" style="font-size:.75rem;">approved</td><td class="text-end pe-0" style="font-size:.75rem;">{{ bal_days(b.split.approved) }}</td></tr>{% endif %}
+                {% if b.split.scheduled %}<tr><td class="text-muted ps-3" style="font-size:.75rem;">scheduled</td><td class="text-end pe-0" style="font-size:.75rem;">{{ bal_days(b.split.scheduled) }}</td></tr>{% endif %}
+                {% if b.split.pending %}<tr><td class="ps-3" style="font-size:.75rem;color:#92400e;">pending</td><td class="text-end pe-0" style="font-size:.75rem;color:#92400e;">{{ bal_days(b.split.pending) }}</td></tr>{% endif %}
+                <tr class="border-top"><td class="fw-semibold ps-0">Remaining</td><td class="text-end pe-0 fw-semibold">{{ bal_days(b.remaining_hours) }}</td></tr>
+              </table>
+            </div>
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+      {% else %}
+      <div class="card p-4 text-center text-muted mb-3">
+        <i data-lucide="wallet" style="width:28px;height:28px;display:block;margin:0 auto .5rem;"></i>
+        No OrangeHRM leave entitlements found for {{ leave_balance.year }}.
+      </div>
+      {% endif %}
+
+      {% if leave_balance.portal %}
+      <div class="card shadow-sm mb-3">
+        <div class="card-header fw-semibold d-flex align-items-center gap-2">
+          <i data-lucide="database"></i> Portal Entitlements
+          {% if leave_balance.source == 'portal' %}<span class="badge bg-success ms-1">active source</span>{% endif %}
+        </div>
+        <div class="card-body p-0">
+          <table class="table table-sm table-striped mb-0 align-middle">
+            <thead><tr><th>Leave Type</th><th class="text-end">Entitled</th><th class="text-end">Used</th><th class="text-end">Remaining</th></tr></thead>
+            <tbody>
+            {% for b in leave_balance.portal %}
+              <tr>
+                <td>{{ b.leave_type_name }}</td>
+                <td class="text-end">{{ bal_days(b.total_hours) }}</td>
+                <td class="text-end">{{ bal_days(b.used_hours) }}</td>
+                <td class="text-end fw-semibold">{{ bal_days(b.remaining_hours) }}</td>
+              </tr>
+            {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+      {% endif %}
+      </div>
+
+      <script>
+      // Open the tab named in the URL hash (e.g. #tab-balance) and keep the
+      // hash in sync, so a tab can be linked to directly.
+      document.addEventListener('DOMContentLoaded', function () {
+        var btn = location.hash && document.querySelector('#profileTabs [data-bs-target="' + location.hash + '"]');
+        if (btn && window.bootstrap) bootstrap.Tab.getOrCreateInstance(btn).show();
+        document.querySelectorAll('#profileTabs [data-bs-toggle="tab"]').forEach(function (b) {
+          b.addEventListener('shown.bs.tab', function () {
+            history.replaceState(null, '', b.dataset.bsTarget);
+          });
+        });
+      });
+      </script>
 
       <div class="tab-pane fade" id="tab-details" role="tabpanel">
       <div class="row g-3">

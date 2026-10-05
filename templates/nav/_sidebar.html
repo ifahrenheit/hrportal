@@ -307,6 +307,9 @@
         <a class="nav-link {% if request.endpoint == 'admin_file_leave' %}active{% endif %}" href="{{ url_for('admin_file_leave') }}">
           <i data-lucide="user-plus"></i> <span class="nav-label">File for Employee</span>
         </a>
+        <a class="nav-link {% if request.endpoint == 'file_for_emp.index' %}active{% endif %}" href="{{ url_for('file_for_emp.index') }}">
+          <i data-lucide="clipboard-plus"></i> <span class="nav-label">File Request for Employee</span>
+        </a>
         {% endif %}
         {% if session.get("is_admin") or session.get('permissions', {}).get('can_pim') %}
         <a class="nav-link {% if request.endpoint in ['pim_index', 'pim_profile'] %}active{% endif %}" href="{{ url_for('pim_index') }}">
