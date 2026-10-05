@@ -17,11 +17,12 @@ Commit: `b8dbb0e` (changes below are **uncommitted** on top of it) · Branch: `m
   - Used is split into approved, scheduled and pending.
   - A Portal Entitlements table appears only when `leave4day_entitlements` has rows for the employee.
   - Always shows the current year. It ignores the viewed month and year.
-- **Attendance Grid tab**, using new helper `_pim_attendance_grid()` in `app.py`.
-  - A calendar of the viewed month with P/A/FI/FO/SUS/RD/leave codes and pending `*`, holidays and attendance notes. Hovering a day shows shift, punches, leave and note.
-  - Shows the attendance rate, a best-case forecast and per-code counts.
-  - The month arrows link back with `#tab-attgrid`.
-- `templates/pim/profile.html`: two new nav buttons and panes before Memos, plus a small script that opens the tab named in the URL hash and keeps the hash in sync.
+- **Work Schedule card → "Work Schedule & Attendance"**, using new helper `_pim_attendance_grid()` in `app.py`. It started as a separate Attendance Grid tab, but the user found that redundant with the Work Schedule calendar, so the grid was merged into the calendar.
+  - Evaluated days show P/A/FI/FO/SUS/RD/leave codes and pending `*`, with the admin grid's colours. Days not yet evaluated keep the old schedule look (blue with the shift, or "Rest Day").
+  - Holidays and attendance notes show on the day. Hovering a day shows shift, punches, leave and note.
+  - The header shows the attendance rate, a best-case forecast and per-code counts.
+  - With no userdata personid, the card shows the schedule only.
+- `templates/pim/profile.html`: a Leave Balance tab button and pane before Memos, the merged calendar card, and a small script that opens the tab named in the URL hash (e.g. `#tab-balance`).
 
 ### Why / decisions
 - The balances reuse `get_leave_balances()`, which is the same source as the employee's `/dashboard`. The used-hours split uses its exact filter, so approved + scheduled + pending always equals Used.
@@ -31,10 +32,10 @@ Commit: `b8dbb0e` (changes below are **uncommitted** on top of it) · Branch: `m
 
 ### Config / environment
 - No new .env keys and no DB changes. Backup: `app.py.bak.20261005212425`.
-- `leavesystem` restarted 2026-10-05 21:27 with a clean start.
+- `leavesystem` restarted 2026-10-05 at 21:27 and again at 21:32 (after the merge). Both starts were clean.
 
 ### How to verify
-- Open `https://hrportal.cohere.ph/pim/220525-01#tab-balance` and `#tab-attgrid`, then step the grid's months.
+- Open `https://hrportal.cohere.ph/pim/220525-01#tab-balance`, then step through months on the Work Schedule & Attendance card.
 
 ### Open items / next steps
 - [ ] Get user feedback on the layout and on whether the PIM grid should honour `can_absences`.
