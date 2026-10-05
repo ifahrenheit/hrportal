@@ -317,66 +317,22 @@
                  multiple accept="image/*">
           <div class="preview-wrap" id="cPreviewWrap"></div>
         </div>
- {% if user.is_admin or user.is_hr or user.is_sga or user.is_supervisor or ir_can_view() %}
+ {% if ir_role %}
         <div class="mb-3">
           <label style="font-size:12px;font-weight:600;color:var(--text-muted);">
             <i class="me-1" data-lucide="repeat"></i>Update Status (optional)
           </label>
           <select class="form-select form-select-sm mt-1" name="status_action">
             <option value="">Post comment only</option>
-
-            {% if user.is_admin %}
-              {# Admin sees everything #}
-              <option value="reviewed">👁 Mark as IR Reviewed</option>
-              <option value="rwe_request">⚠️ Request RWE (Send to HR)</option>
-              <option value="rwe_for_signature">🖊 RWE for Signature (Doc created)</option>
-              <option value="rwe_for_service">📨 RWE for Service (Signed)</option>
-              <option value="awaiting_explanation">📧 RWE Served (Awaiting Explanation)</option>
-              <option value="forwarded">📤 Explanation Received (Forward to SOM/TL)</option>
-              <option value="for_memo">⚖️ Proceed with Disciplinary Action</option>
-              <option value="resolved">✅ Mark as Resolved</option>
-              <option value="waived">⚪ Mark as Waived</option>
-
-            {% elif (user.is_hr or user.is_sga) %}
-              {# HR/SGA workflow — next valid step depends on current status #}
-              {% if report.status == 'rwe_request' %}
-                <option value="rwe_for_signature">🖊 RWE for Signature (Doc created)</option>
-                <option value="reviewed">👁 Mark as IR Reviewed (investigating)</option>
-              {% elif report.status == 'rwe_for_service' %}
-                <option value="awaiting_explanation">📧 RWE Served (Awaiting Explanation)</option>
-              {% elif report.status == 'awaiting_explanation' %}
-                <option value="forwarded">📤 Explanation Received (Forward to SOM/TL)</option>
-              {% elif report.status == 'for_memo' %}
-                <option value="resolved">✅ Mark as Resolved (file memo)</option>
-              {% elif report.status == 'reviewed' %}
-                <option value="resolved">✅ Resolve with note</option>
-              {% else %}
-                {# Fallback for legacy/edge statuses #}
-                <option value="rwe_for_signature">🖊 RWE for Signature (Doc created)</option>
-                <option value="forwarded">📧 RWE Served (Forward to SOM/TL)</option>
-                <option value="resolved">✅ Mark as Resolved</option>
-              {% endif %}
-
-            {% elif user.is_supervisor or ir_can_view() %}
-              {# TL/SOM — next valid step depends on current status #}
-              {% if report.status == 'rwe_for_signature' %}
-                <option value="rwe_for_service">📨 RWE for Service (I have signed)</option>
-              {% elif report.status == 'forwarded' %}
-                <option value="for_memo">⚖️ Proceed with Disciplinary Action</option>
-                <option value="waived">⚪ Waive IR</option>
-              {% elif report.status in ['rwe_request', 'rwe_for_service', 'awaiting_explanation', 'for_memo', 'reviewed'] %}
-                {# Waiting on HR — no TL transition #}
-              {% else %}
-                <option value="resolved">✅ Mark as Resolved</option>
-                <option value="waived">⚪ Mark as Waived</option>
-                <option value="rwe_request">⚠️ Request RWE (Send to HR)</option>
-              {% endif %}
-            {% endif %}
+            {# Options come from status_options() in modules/incident_reports.py #}
+            {% for value, label in status_opts %}
+              <option value="{{ value }}">{{ label }}</option>
+            {% endfor %}
           </select>
           <div style="font-size:11px;color:var(--text-muted);margin-top:4px;">
-            {% if user.is_admin %}
+            {% if ir_role == 'admin' %}
               As admin you can perform any status action.
-            {% elif user.is_hr or user.is_sga %}
+            {% elif ir_role == 'hr' %}
               {% if report.status == 'rwe_request' %}
                 Create the RWE document, then mark "RWE for Signature". If investigating (e.g. termination), mark "IR Reviewed".
               {% elif report.status == 'rwe_for_service' %}
@@ -454,7 +410,7 @@
           </label>
           <input type="text" class="form-control form-control-sm mt-1"
                  name="waived_by_name" id="waivedByName"
-                 placeholder="e.g. Maria Ana Angon" title="Enter the FULL NAME of the person who authorized the waiver (not the reason).>
+                 placeholder="e.g. Maria Ana Angon" title="Enter the FULL NAME of the person who authorized the waiver (not the reason).">
           <div style="font-size:11px;color:var(--text-muted);margin-top:3px;">
             Enter the FULL NAME of the person who authorized the waiver (not the reason).
           </div>

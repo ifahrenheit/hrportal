@@ -131,6 +131,88 @@ def get_group_emails(employee_id, conn):
     except Exception:
         return []
 
+# ─── Workflow permissions ─────────────────────────────────────────────────────
+# Single source of truth for which status actions each role may take, used by
+# both the view (dropdown) and add_comment (server-side enforcement).
+ALL_ACTIONS = [
+    ('reviewed',             '👁 Mark as IR Reviewed'),
+    ('rwe_request',          '⚠️ Request RWE (Send to HR)'),
+    ('rwe_for_signature',    '🖊 RWE for Signature (Doc created)'),
+    ('rwe_for_service',      '📨 RWE for Service (Signed)'),
+    ('awaiting_explanation', '📧 RWE Served (Awaiting Explanation)'),
+    ('forwarded',            '📤 Explanation Received (Forward to SOM/TL)'),
+    ('for_memo',             '⚖️ Proceed with Disciplinary Action'),
+    ('resolved',             '✅ Mark as Resolved'),
+    ('waived',               '⚪ Mark as Waived'),
+]
+
+HR_STEPS = {
+    'rwe_request':          [('rwe_for_signature', '🖊 RWE for Signature (Doc created)'),
+                             ('reviewed', '👁 Mark as IR Reviewed (investigating)')],
+    'rwe_for_service':      [('awaiting_explanation', '📧 RWE Served (Awaiting Explanation)')],
+    'awaiting_explanation': [('forwarded', '📤 Explanation Received (Forward to SOM/TL)')],
+    'for_memo':             [('resolved', '✅ Mark as Resolved (file memo)')],
+    'reviewed':             [('resolved', '✅ Resolve with note')],
+}
+HR_FALLBACK = [('rwe_for_signature', '🖊 RWE for Signature (Doc created)'),
+               ('forwarded', '📧 RWE Served (Forward to SOM/TL)'),
+               ('resolved', '✅ Mark as Resolved')]
+
+TL_STEPS = {
+    'rwe_for_signature':    [('rwe_for_service', '📨 RWE for Service (I have signed)')],
+    'forwarded':            [('for_memo', '⚖️ Proceed with Disciplinary Action'),
+                             ('waived', '⚪ Waive IR')],
+    # Waiting on HR — no TL transition
+    'rwe_request': [], 'rwe_for_service': [], 'awaiting_explanation': [],
+    'for_memo': [], 'reviewed': [],
+}
+TL_FALLBACK = [('resolved', '✅ Mark as Resolved'),
+               ('waived', '⚪ Mark as Waived'),
+               ('rwe_request', '⚠️ Request RWE (Send to HR)')]
+
+def status_options(role, status):
+    """[(value, label)] status actions available to `role` at `status`."""
+    if role == 'admin':
+        return list(ALL_ACTIONS)
+    if role == 'hr':
+        return HR_STEPS.get(status, HR_FALLBACK)
+    if role == 'tl':
+        return TL_STEPS.get(status, TL_FALLBACK)
+    return []
+
+def is_agent_lead(email, agent_eid, conn):
+    """TL-group member, or the agent's mapped supervisor, or the agent's SOM (approver)."""
+    try:
+        with conn.cursor() as cur:
+            cur.execute("""SELECT group_name FROM gsheet_employees
+                           WHERE email=%s AND status='Active' LIMIT 1""", (email,))
+            row = cur.fetchone()
+            if row and 'TL' in (row['group_name'] or '').upper().split():
+                return True
+            cur.execute("""
+                SELECT 1 FROM gsheet_employees g
+                LEFT JOIN supervisor_mapping sm
+                       ON sm.agent_email COLLATE utf8mb4_unicode_ci = g.email
+                      AND sm.supervisor_email COLLATE utf8mb4_unicode_ci = %s
+                WHERE g.employee_id = %s
+                  AND (sm.supervisor_email IS NOT NULL OR g.approver = %s)
+                LIMIT 1
+            """, (email, agent_eid, email))
+            return cur.fetchone() is not None
+    except Exception as e:
+        print(f"[IR] is_agent_lead failed for {email}/{agent_eid}: {e}", flush=True)
+        return False
+
+def ir_role(u, report, conn):
+    """Workflow role of the current user on this report: admin / hr / tl / None."""
+    if u['is_admin']:
+        return 'admin'
+    if u['is_hr'] or u['is_sga']:
+        return 'hr'
+    if is_agent_lead(u['email'], report['employee_id'], conn):
+        return 'tl'
+    return None
+
 # ─── Email ────────────────────────────────────────────────────────────────────
 def _send(to_list, subject, html_body, bcc_list=None, thread_id=None):
     """Send email using portal SMTP with IR-specific From name."""
@@ -474,7 +556,10 @@ def dashboard():
                     WHERE group_name=%s AND status='Active')""")
                 params.append(user_group)
             elif u['is_hr']:
-                conds.append("ir.status IN ('rwe_request','rwe_served')")
+                # Everything that has reached HR, including closed ones that went through RWE
+                conds.append("""(ir.rwe_requested_at IS NOT NULL OR ir.status IN
+                    ('rwe_request','rwe_for_signature','rwe_for_service','awaiting_explanation',
+                     'rwe_served','forwarded','for_memo','reviewed'))""")
             # SGA sees all reports (no filter)
 
         if status_filter != 'all':
@@ -917,11 +1002,13 @@ def view_report(report_number):
                 comment_attachments[c['id']] = cur.fetchall()
 
         can_edit_report = u['is_admin'] or (report['submitted_by_id'] == u['employee_id'])
+        role = ir_role(u, report, conn)
 
         return render_template('incident_view.html',
             report=report, attachments=attachments,
             comments=comments, comment_attachments=comment_attachments,
             can_edit_report=can_edit_report,
+            ir_role=role, status_opts=status_options(role, report['status']),
             user=u, HR_EMAILS=HR_EMAILS, SGA_EMAILS=SGA_EMAILS)
     finally:
         try:
@@ -1057,11 +1144,17 @@ def add_comment():
             return jsonify({'success': False, 'message': 'Invalid status'})
 
         with conn.cursor() as cur:
-            cur.execute("""SELECT id, employee_id, submitted_by_id
+            cur.execute("""SELECT id, employee_id, submitted_by_id, status
                            FROM incident_reports WHERE report_number=%s""", (report_number,))
             report = cur.fetchone()
         if not report:
             return jsonify({'success': False, 'message': 'Report not found'})
+
+        if status_action:
+            allowed = [v for v, _ in status_options(ir_role(u, report, conn), report['status'])]
+            if status_action not in allowed:
+                return jsonify({'success': False,
+                                'message': 'You are not allowed to make that status change at this stage.'})
 
         with conn.cursor() as cur:
             cur.execute("""INSERT INTO incident_comments
@@ -1160,7 +1253,7 @@ def add_comment():
                                      report['employee_id'], 'rwe_request')
             
             # Workflow Modification: HR serves RWE -> Notify TL/supervisor
-            elif status_action == 'rwe_served':
+            elif status_action in ('rwe_served', 'awaiting_explanation'):
                 send_rwe_served_to_tl(report_number, u['name'], comment_text,
                                       report['employee_id'])
                                      
