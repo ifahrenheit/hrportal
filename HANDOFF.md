@@ -8,6 +8,41 @@
 
 ---
 
+## 2026-10-05 — PIM profile: Leave Balance + Attendance Grid tabs
+Commit: `b8dbb0e` (changes below are **uncommitted** on top of it) · Branch: `main`
+
+### What was built / changed
+- **Leave Balance tab** on `/pim/<employee_id>`. New helper `_pim_leave_balance_data()` in `app.py`.
+  - One card per leave type showing entitled / used / remaining in days and hours, with a progress bar. A card turns red when 1 day (8h) or less remains.
+  - Used is split into approved, scheduled and pending.
+  - A Portal Entitlements table appears only when `leave4day_entitlements` has rows for the employee.
+  - Always shows the current year. It ignores the viewed month and year.
+- **Attendance Grid tab**, using new helper `_pim_attendance_grid()` in `app.py`.
+  - A calendar of the viewed month with P/A/FI/FO/SUS/RD/leave codes and pending `*`, holidays and attendance notes. Hovering a day shows shift, punches, leave and note.
+  - Shows the attendance rate, a best-case forecast and per-code counts.
+  - The month arrows link back with `#tab-attgrid`.
+- `templates/pim/profile.html`: two new nav buttons and panes before Memos, plus a small script that opens the tab named in the URL hash and keeps the hash in sync.
+
+### Why / decisions
+- The balances reuse `get_leave_balances()`, which is the same source as the employee's `/dashboard`. The used-hours split uses its exact filter, so approved + scheduled + pending always equals Used.
+- The grid copies `admin_attendance_grid()`'s day rules for a single employee instead of refactoring that live route. Verified against `/admin/attendance-grid` for 220525-01: Sep 14/15 = 93.3% and Aug 18/18 = 100% on both pages. **If the admin grid rules change, update `_pim_attendance_grid()` too.**
+- One deliberate difference: the 1 PM safe-cutoff (`perf_safe_last_day`) applies to every month. The admin grid applies it only to the current month, so future months there show A's.
+- Access: no new permission. Anyone with `is_admin` or `can_pim` (the existing PIM gate) sees both tabs, even without `can_absences`.
+
+### Config / environment
+- No new .env keys and no DB changes. Backup: `app.py.bak.20261005212425`.
+- `leavesystem` restarted 2026-10-05 21:27 with a clean start.
+
+### How to verify
+- Open `https://hrportal.cohere.ph/pim/220525-01#tab-balance` and `#tab-attgrid`, then step the grid's months.
+
+### Open items / next steps
+- [ ] Get user feedback on the layout and on whether the PIM grid should honour `can_absences`.
+- [ ] 220525-01 shows LWOP at 196.38 days left. That is real `ohrm_leave_entitlement` data, and `/dashboard` shows the same, but it is worth checking with HR.
+- [ ] Commit the uncommitted work. Earlier items are still pending too (see 2026-10-02 / 2026-10-01).
+
+---
+
 ## 2026-10-02 — Stale IR reminder email moved from old PHP dashboard to portal script
 Commit: `8ef4bb4` · Branch: `main`
 
