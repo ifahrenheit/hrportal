@@ -463,10 +463,10 @@ document.addEventListener('DOMContentLoaded', function () {
   document.getElementById('nextPeriodBtn')?.addEventListener('click', () => shiftPeriod(1));
 
   document.getElementById('currentPeriodBtn')?.addEventListener('click', () => {
-    // Reset to the default (most recently completed) payroll period,
-    // matching get_default_payroll_period() server-side.
+    // Jump to the payroll period CURRENTLY IN PROGRESS, from its start
+    // up to today (e.g. 9/23 - today), so today's lates are included.
     const today = new Date();
-    const y = today.getUTCFullYear(), m = today.getUTCMonth() + 1, d = today.getUTCDate();
+    const y = today.getFullYear(), m = today.getMonth() + 1, d = today.getDate();
     let periodStart, periodEnd;
     if (d >= 8 && d <= 22) {
       periodStart = ymd(y, m, 8);
@@ -482,30 +482,16 @@ document.addEventListener('DOMContentLoaded', function () {
       periodStart = ymd(py, pm, 23);
       periodEnd = ymd(y, m, 7);
     }
-    // Default shown is the PREVIOUS (most recently completed) period
     dateFromInput.value = fmt(periodStart);
-    dateToInput.value = fmt(periodEnd);
-    shiftPeriod(-1);  // step back once more + submits
+    dateToInput.value = fmt(ymd(y, m, d));
+    form.submit();
   });
 
-  // Today button: defaults to the last day whose shifts have fully
-  // completed (per TODAY_CUTOFF_HOUR), to avoid showing incomplete
-  // FTS/Absent/Late counts for a day still in progress. The date inputs
-  // can still be manually set to the actual current date if needed.
-  const TODAY_CUTOFF_HOUR = 13; // matches the 1 PM absence-report cron
+  // Today button: jumps to the actual current date so you can see who's
+  // already late today. Only employees who have punched in late show up;
+  // anyone who hasn't clocked in yet isn't listed.
 document.getElementById('todayBtn')?.addEventListener('click', () => {
-  const now = new Date();
-  const todayCutoff = new Date(now);
-  todayCutoff.setHours(TODAY_CUTOFF_HOUR, 0, 0, 0);
-
-  let target = new Date(now);
-  if (now < todayCutoff) {
-    // Yesterday's overnight shifts haven't hit their completion deadline yet
-    // (today's 1 PM cutoff), so the last SAFE day is two days back.
-    target.setDate(target.getDate() - 2);
-  } else {
-    target.setDate(target.getDate() - 1);
-  }
+  const target = new Date();
 
   const y = target.getFullYear();
   const m = String(target.getMonth() + 1).padStart(2, '0');
