@@ -9,7 +9,7 @@
 ---
 
 ## 2026-10-05 (3) — /admin/file-leave redesigned to match File Request for Employee
-Commit: `4c96c89` (changes below are **uncommitted** on top of it) · Branch: `main`
+Commit: `4c96c89` (changes below committed later in `c99caee` / `cc608d8` / `1085e16`) · Branch: `main`
 
 ### What was built / changed
 - `templates/admin/file_leave_admin.html` rewritten. It now has:
@@ -38,7 +38,7 @@ Commit: `4c96c89` (changes below are **uncommitted** on top of it) · Branch: `m
 ---
 
 ## 2026-10-05 (2) — File Request for Employee page (FTS / CWS / OT-RDW, incl. Separated)
-Commit: `2621cd4` (changes below are **uncommitted** on top of it) · Branch: `main`
+Commit: `2621cd4` (changes below committed later in `c99caee` / `cc608d8` / `1085e16`) · Branch: `main`
 
 ### What was built / changed
 - New page `/admin/file-request` (endpoint `file_for_emp.index`). Blueprint in `modules/file_for_employee.py`, template `templates/admin/file_request_for_employee.html`.
@@ -72,12 +72,11 @@ Commit: `2621cd4` (changes below are **uncommitted** on top of it) · Branch: `m
 ### Open items / next steps
 - [ ] Someone with All Requests access needs to approve FTS #839. Lornelyn has no approver.
 - [ ] Possibly show `filed_request` audit rows somewhere in the UI (only in the DB for now).
-- [ ] Commit the uncommitted work. The PIM tabs and this page sit alongside the older IR/tardiness items.
 
 ---
 
 ## 2026-10-05 — PIM profile: Leave Balance + Attendance Grid tabs
-Commit: `b8dbb0e` (changes below are **uncommitted** on top of it) · Branch: `main`
+Commit: `b8dbb0e` (changes below committed later in `c99caee` / `cc608d8` / `1085e16`) · Branch: `main`
 
 ### What was built / changed
 - **Leave Balance tab** on `/pim/<employee_id>`. New helper `_pim_leave_balance_data()` in `app.py`.
@@ -108,7 +107,6 @@ Commit: `b8dbb0e` (changes below are **uncommitted** on top of it) · Branch: `m
 ### Open items / next steps
 - [ ] Get user feedback on the layout and on whether the PIM grid should honour `can_absences`.
 - [ ] 220525-01 shows LWOP at 196.38 days left. That is real `ohrm_leave_entitlement` data, and `/dashboard` shows the same, but it is worth checking with HR.
-- [ ] Commit the uncommitted work. Earlier items are still pending too (see 2026-10-02 / 2026-10-01).
 
 ---
 
@@ -135,12 +133,12 @@ Commit: `8ef4bb4` · Branch: `main`
 
 ### Open items / next steps
 - [ ] Confirm that the first live reminder email from the Python script arrives with portal links.
-- [ ] Review and commit these uncommitted files: IR workflow work (`modules/incident_reports.py`, `templates/incident_view.html`, `docs/incident-report-guide.md`, `tests/test_ir_workflow.py`) and the 2026-10-01 items (`app.py`, `requirements.txt`, `templates/pim/profile.html`, `templates/tardiness.html`).
+- [x] Committed 2026-10-05: IR workflow `1085e16`, tardiness + requirements `cc608d8`, PIM/app.py work `c99caee`.
 
 ---
 
 ## 2026-10-01 — Uncommitted live work: PIM approve/reject, tardiness period buttons, requirements
-Commit: `b20e821` (changes below are **uncommitted** on top of it) · Branch: `main`
+Commit: `b20e821` (changes below committed later in `c99caee` / `cc608d8` / `1085e16`) · Branch: `main`
 
 ### What was built / changed
 - **PIM profile: Leaves + Requests tabs with approver actions.** `app.py` (+273 lines), `templates/pim/profile.html` (+509 lines)
