@@ -8,6 +8,30 @@
 
 ---
 
+## 2026-10-05 (3) — /admin/file-leave redesigned to match File Request for Employee
+Commit: `4c96c89` (changes below are **uncommitted** on top of it) · Branch: `main`
+
+### What was built / changed
+- `templates/admin/file_leave_admin.html` rewritten. It now has:
+  - a searchable employee picker (GET `?employee_id=`) and an employee card with a PIM link;
+  - clickable balance cards that pick the leave type;
+  - half-day mode that locks End Date to Start Date;
+  - a range summary line and a confirm dialog;
+  - a Recent leaves table (last 120 days and upcoming);
+  - a notice that leaves filed here are **auto-approved** (taken/scheduled) and deducted immediately.
+- `app.py` `admin_file_leave()`: display-only changes. A nested `_render()` replaces the 6 `render_template` calls; it passes `selected_emp`, `emp`, `balance_data` (from `_pim_leave_balance_data`), `recent` and `form`. GET with `?employee_id=` now loads balances. **The filing logic is untouched.**
+- Fixed a bug: validation errors used to re-render with no employee selected and the form cleared. Both the selection and the form values are now kept.
+- The employee list still excludes Separated employees (unchanged).
+
+### Config / environment
+- Backup: `app.py.bak.20261005220538`. Original template copied to the session scratchpad.
+- `leavesystem` restarted 2026-10-05 22:06 with a clean start.
+
+### How to verify
+- Open `https://hrportal.cohere.ph/admin/file-leave?employee_id=220525-01`. Validation errors (start > end, multi-day half-day) should keep the form filled in. These paths were tested with no rows written.
+
+---
+
 ## 2026-10-05 (2) — File Request for Employee page (FTS / CWS / OT-RDW, incl. Separated)
 Commit: `2621cd4` (changes below are **uncommitted** on top of it) · Branch: `main`
 
