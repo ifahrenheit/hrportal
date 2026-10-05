@@ -22,6 +22,11 @@ Commit: `4c96c89` (changes below are **uncommitted** on top of it) · Branch: `m
 - `app.py` `admin_file_leave()`: display-only changes. A nested `_render()` replaces the 6 `render_template` calls; it passes `selected_emp`, `emp`, `balance_data` (from `_pim_leave_balance_data`), `recent` and `form`. GET with `?employee_id=` now loads balances. **The filing logic is untouched.**
 - Fixed a bug: validation errors used to re-render with no employee selected and the form cleared. Both the selection and the form values are now kept.
 - The employee list still excludes Separated employees (unchanged).
+- **Follow-up (same day): Custom Hours + Use Remaining Balance + shift_half** added to `admin_file_leave()`, matching the regular `file_leave()` rules.
+  - Custom Hours: single day, whole hours, not AWOL, at most the remaining hours. It overrides that day's deduction.
+  - Use Remaining Balance: only offered when 0 < remaining < 10h. It scales the deduction to exactly the remaining hours.
+  - Inserts now also write `leave4day_requests.shift_half` ('1st Half' / '2nd Half'), which admin filing used to drop.
+  - Tested against the real DB with commits swapped for rollbacks: 3h custom, 1st half, and remaining 8h on 210528-05 all inserted correctly and were rolled back. Row counts and days_used were unchanged. Backup: `app.py.bak.20261005220954`. Restarted at 22:12.
 
 ### Config / environment
 - Backup: `app.py.bak.20261005220538`. Original template copied to the session scratchpad.
