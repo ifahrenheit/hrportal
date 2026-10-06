@@ -422,13 +422,70 @@
         </div>
       </div>
 
+      <style>
+        /* Status colours for the summary cards: colour means good / watch / bad, never category. */
+        .kpi-pill { background:#f8fafc; color:#334155; border:1px solid #e2e8f0; font-size:.8rem; }
+        .kpi-pill.is-zero { color:#94a3b8; }
+        .kpi-pill.is-warn { background:#fff7ed; color:#9a3412; border-color:#fed7aa; }
+        .kpi-pill.is-bad  { background:#fef2f2; color:#991b1b; border-color:#fecaca; }
+        .kpi-pill .kpi-val.is-good { color:#047857; }
+        .kpi-pill .kpi-val.is-warn { color:#b45309; }
+        .kpi-pill .kpi-val.is-bad  { color:#b91c1c; }
+        .kpi-tile { background:#f8fafc; border:1px solid #e2e8f0; border-radius:.75rem; padding:.5rem .9rem; flex:1 1 150px; min-width:150px; }
+        .kpi-tile .kpi-lbl { font-size:.68rem; letter-spacing:.06em; text-transform:uppercase; color:#64748b; }
+        .kpi-tile .kpi-num { font-size:1.6rem; font-weight:700; line-height:1.15; color:#0f172a; }
+        .kpi-tile .kpi-sub { font-size:.75rem; color:#64748b; }
+        .kpi-tile.is-good { background:#ecfdf5; border-color:#a7f3d0; } .kpi-tile.is-good .kpi-num, .kpi-tile.is-good .kpi-lbl { color:#065f46; }
+        .kpi-tile.is-warn { background:#fff7ed; border-color:#fed7aa; } .kpi-tile.is-warn .kpi-num, .kpi-tile.is-warn .kpi-lbl { color:#9a3412; }
+        .kpi-tile.is-bad  { background:#fef2f2; border-color:#fecaca; } .kpi-tile.is-bad  .kpi-num, .kpi-tile.is-bad  .kpi-lbl { color:#991b1b; }
+        [data-theme="dark"] .kpi-pill, [data-theme="dark"] .kpi-tile { background:rgba(148,163,184,.08); border-color:rgba(148,163,184,.25); color:#cbd5e1; }
+        [data-theme="dark"] .kpi-pill.is-zero { color:#64748b; }
+        [data-theme="dark"] .kpi-pill.is-warn, [data-theme="dark"] .kpi-tile.is-warn { background:rgba(251,146,60,.12); border-color:rgba(251,146,60,.4); color:#fdba74; }
+        [data-theme="dark"] .kpi-pill.is-bad,  [data-theme="dark"] .kpi-tile.is-bad  { background:rgba(248,113,113,.12); border-color:rgba(248,113,113,.4); color:#fca5a5; }
+        [data-theme="dark"] .kpi-tile.is-good { background:rgba(52,211,153,.10); border-color:rgba(52,211,153,.35); }
+        [data-theme="dark"] .kpi-tile .kpi-num { color:#f1f5f9; }
+        [data-theme="dark"] .kpi-tile .kpi-lbl, [data-theme="dark"] .kpi-tile .kpi-sub { color:#94a3b8; }
+        [data-theme="dark"] .kpi-tile.is-good .kpi-num, [data-theme="dark"] .kpi-tile.is-good .kpi-lbl { color:#6ee7b7; }
+        [data-theme="dark"] .kpi-tile.is-warn .kpi-num, [data-theme="dark"] .kpi-tile.is-warn .kpi-lbl { color:#fdba74; }
+        [data-theme="dark"] .kpi-tile.is-bad  .kpi-num, [data-theme="dark"] .kpi-tile.is-bad  .kpi-lbl { color:#fca5a5; }
+        [data-theme="dark"] .kpi-pill .kpi-val.is-good { color:#6ee7b7; }
+        [data-theme="dark"] .kpi-pill .kpi-val.is-warn { color:#fdba74; }
+        [data-theme="dark"] .kpi-pill .kpi-val.is-bad  { color:#fca5a5; }
+        .kpi-pill .text-muted { color:inherit !important; opacity:.75; }
+        /* CSR % tile uses the exact band colours of the CSR Percentage page (csr_percentage.html). */
+        .kpi-tile.csr-lo  { background:rgba(25,135,84,.13);  border-color:rgba(25,135,84,.30); }
+        .kpi-tile.csr-mid { background:rgba(253,126,20,.16); border-color:rgba(253,126,20,.35); }
+        .kpi-tile.csr-hi  { background:rgba(220,53,69,.16);  border-color:rgba(220,53,69,.35); }
+        .kpi-tile.csr-lo  .kpi-num, .kpi-tile.csr-lo  .kpi-lbl { color:#0f5132; }
+        .kpi-tile.csr-mid .kpi-num, .kpi-tile.csr-mid .kpi-lbl { color:#8a4b00; }
+        .kpi-tile.csr-hi  .kpi-num, .kpi-tile.csr-hi  .kpi-lbl { color:#842029; }
+        [data-theme="dark"] .kpi-tile.csr-lo  { background:rgba(25,135,84,.20); }
+        [data-theme="dark"] .kpi-tile.csr-mid { background:rgba(253,126,20,.20); }
+        [data-theme="dark"] .kpi-tile.csr-hi  { background:rgba(220,53,69,.22); }
+        [data-theme="dark"] .kpi-tile.csr-lo  .kpi-num, [data-theme="dark"] .kpi-tile.csr-lo  .kpi-lbl { color:#4ade80; }
+        [data-theme="dark"] .kpi-tile.csr-mid .kpi-num, [data-theme="dark"] .kpi-tile.csr-mid .kpi-lbl { color:#fbbf24; }
+        [data-theme="dark"] .kpi-tile.csr-hi  .kpi-num, [data-theme="dark"] .kpi-tile.csr-hi  .kpi-lbl { color:#f87171; }
+      </style>
+      {#- Attendance count status: 0 = muted, any = watch, about once a month or
+          more (3+ in a month, 12+ in a year) = bad. -#}
+      {% macro count_level(n, scope_key) -%}
+        {%- if not n -%}is-zero
+        {%- elif n >= (3 if scope_key == 'month' else 12) -%}is-bad
+        {%- else -%}is-warn{%- endif -%}
+      {%- endmacro %}
+      {#- CSAT % status against the 88% target: >= 88 good, 85-88 watch, < 85 bad. -#}
+      {% macro csat_level(v) -%}
+        {%- if v is none -%}{%- elif v >= 88 -%}is-good{%- elif v >= 85 -%}is-warn{%- else -%}is-bad{%- endif -%}
+      {%- endmacro %}
+
       <!-- Attendance Performance Summary -->
       {% macro perf_scope_block(scope_key, perf, visible) %}
       <div class="perf-scope-block" data-perf-scope="{{ scope_key }}"{% if not visible %} style="display:none;"{% endif %}>
         <div class="text-muted mb-2" style="font-size:.8rem;">for {{ perf.label }}</div>
         <div class="d-flex gap-2 flex-wrap">
-          <span class="badge rounded-pill px-3 py-2{% if perf.absences %} perf-pill-clickable{% endif %}"
-                style="background:#fef2f2;color:#991b1b;border:1px solid #fecaca;font-size:.8rem;{% if perf.absences %}cursor:pointer;{% endif %}"
+          {#- On-leave days are approved absences; only AWOL makes this red. -#}
+          <span class="badge rounded-pill px-3 py-2 kpi-pill {{ 'is-bad' if perf.awol_count else ('' if perf.absence_count else 'is-zero') }}{% if perf.absences %} perf-pill-clickable{% endif %}"
+                style="{% if perf.absences %}cursor:pointer;{% endif %}"
                 {% if perf.absences %}data-perf-toggle="perf-detail-{{ scope_key }}-absences" role="button" tabindex="0"{% endif %}>
             <i class="me-1" data-lucide="circle-x"></i>Absences:
             <strong>{{ perf.absence_count if perf.absence_count is not none else '—' }}</strong>
@@ -437,22 +494,22 @@
             {% endif %}
             {% if perf.absences %}<i class="ms-1 perf-chevron" data-lucide="chevron-down" style="font-size:.7rem;transition:transform .15s;"></i>{% endif %}
           </span>
-          <span class="badge rounded-pill px-3 py-2{% if perf.fts %} perf-pill-clickable{% endif %}"
-                style="background:#faf5ff;color:#6b21a8;border:1px solid #e9d5ff;font-size:.8rem;{% if perf.fts %}cursor:pointer;{% endif %}"
+          <span class="badge rounded-pill px-3 py-2 kpi-pill {{ count_level(perf.fts_count, scope_key) }}{% if perf.fts %} perf-pill-clickable{% endif %}"
+                style="{% if perf.fts %}cursor:pointer;{% endif %}"
                 {% if perf.fts %}data-perf-toggle="perf-detail-{{ scope_key }}-fts" role="button" tabindex="0"{% endif %}>
             <i class="me-1" data-lucide="log-in"></i>FTS:
             <strong>{{ perf.fts_count if perf.fts_count is not none else '—' }}</strong>
             {% if perf.fts %}<i class="ms-1 perf-chevron" data-lucide="chevron-down" style="font-size:.7rem;transition:transform .15s;"></i>{% endif %}
           </span>
-          <span class="badge rounded-pill px-3 py-2{% if perf.overbreaks %} perf-pill-clickable{% endif %}"
-                style="background:#fff7ed;color:#9a3412;border:1px solid #fed7aa;font-size:.8rem;{% if perf.overbreaks %}cursor:pointer;{% endif %}"
+          <span class="badge rounded-pill px-3 py-2 kpi-pill {{ count_level(perf.overbreak_count, scope_key) }}{% if perf.overbreaks %} perf-pill-clickable{% endif %}"
+                style="{% if perf.overbreaks %}cursor:pointer;{% endif %}"
                 {% if perf.overbreaks %}data-perf-toggle="perf-detail-{{ scope_key }}-overbreaks" role="button" tabindex="0"{% endif %}>
             <i class="me-1" data-lucide="coffee"></i>Overbreaks:
             <strong>{{ perf.overbreak_count }}</strong>
             {% if perf.overbreaks %}<i class="ms-1 perf-chevron" data-lucide="chevron-down" style="font-size:.7rem;transition:transform .15s;"></i>{% endif %}
           </span>
-          <span class="badge rounded-pill px-3 py-2{% if perf.tardiness %} perf-pill-clickable{% endif %}"
-                style="background:#eff6ff;color:#1e40af;border:1px solid #bfdbfe;font-size:.8rem;{% if perf.tardiness %}cursor:pointer;{% endif %}"
+          <span class="badge rounded-pill px-3 py-2 kpi-pill {{ count_level(perf.tardiness_count, scope_key) }}{% if perf.tardiness %} perf-pill-clickable{% endif %}"
+                style="{% if perf.tardiness %}cursor:pointer;{% endif %}"
                 {% if perf.tardiness %}data-perf-toggle="perf-detail-{{ scope_key }}-tardiness" role="button" tabindex="0"{% endif %}>
             <i class="me-1" data-lucide="clock-arrow-up"></i>Tardiness:
             <strong>{{ perf.tardiness_count }}</strong>
@@ -461,8 +518,8 @@
             {% endif %}
             {% if perf.tardiness %}<i class="ms-1 perf-chevron" data-lucide="chevron-down" style="font-size:.7rem;transition:transform .15s;"></i>{% endif %}
           </span>
-          <span class="badge rounded-pill px-3 py-2{% if perf.undertime %} perf-pill-clickable{% endif %}"
-                style="background:#ecfeff;color:#155e75;border:1px solid #a5f3fc;font-size:.8rem;{% if perf.undertime %}cursor:pointer;{% endif %}"
+          <span class="badge rounded-pill px-3 py-2 kpi-pill {{ count_level(perf.undertime_count, scope_key) }}{% if perf.undertime %} perf-pill-clickable{% endif %}"
+                style="{% if perf.undertime %}cursor:pointer;{% endif %}"
                 {% if perf.undertime %}data-perf-toggle="perf-detail-{{ scope_key }}-undertime" role="button" tabindex="0"{% endif %}>
             <i class="me-1" data-lucide="hourglass"></i>Undertime:
             <strong>{{ perf.undertime_count if perf.undertime_count is not none else '—' }}</strong>
@@ -668,6 +725,11 @@
           </button>
         </li>
         <li class="nav-item" role="presentation">
+          <button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-time" type="button" role="tab">
+            <i class="me-1" data-lucide="clock" style="width:14px;height:14px;"></i>Time Records
+          </button>
+        </li>
+        <li class="nav-item" role="presentation">
           <button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-details" type="button" role="tab">
             <i class="me-1" data-lucide="file-text" style="width:14px;height:14px;"></i>Memos
           </button>
@@ -679,35 +741,50 @@
       <!-- CSAT Performance Summary -->
       {% macro csat_scope_block(scope_key, csat, visible) %}
       <div class="csat-scope-block" data-csat-scope="{{ scope_key }}"{% if not visible %} style="display:none;"{% endif %}>
-        <div class="d-flex flex-wrap align-items-stretch gap-3 mb-2">
-          <div class="rounded-3 px-3 py-2" style="background:#ecfdf5;border:1px solid #a7f3d0;min-width:180px;">
-            <div class="text-uppercase" style="font-size:.68rem;letter-spacing:.06em;color:#065f46;">Volume Weighted CSAT</div>
-            <div class="fw-bold" style="font-size:1.9rem;line-height:1.15;color:#065f46;">
-              {{ '%.1f'|format(csat.weighted) ~ '%' if csat.weighted is not none else '—' }}
-            </div>
+        {% if csat.trend and csat.trend | selectattr('weighted', 'ne', none) | list %}
+        <div class="mb-3">
+          <div class="text-muted mb-1" style="font-size:.72rem;letter-spacing:.04em;text-transform:uppercase;">
+            {{ 'Last 8 weeks' if scope_key == 'month' else 'Monthly' }} &middot; Volume Weighted CSAT
           </div>
-          <div class="d-flex flex-column justify-content-center" style="gap:.3rem;">
-            <div class="text-muted" style="font-size:.8rem;">Total Responses: <strong class="text-body">{{ csat.total_responses }}</strong></div>
-            <div class="text-muted" style="font-size:.8rem;">Total Resolved: <strong class="text-body">{{ csat.total_resolved }}</strong></div>
+          <div style="position:relative;height:200px;">
+            <canvas class="csat-trend-canvas" data-csat-trend='{{ csat.trend | tojson }}'></canvas>
+          </div>
+        </div>
+        {% endif %}
+        {% set csr_pct = csat.csr.pct %}
+        <div class="d-flex flex-wrap align-items-stretch gap-2 mb-2">
+          <div class="kpi-tile {{ csat_level(csat.weighted) }}" title="Target: 88%. Green at or above target, amber 85–88%, red below 85%.">
+            <div class="kpi-lbl">Volume Weighted CSAT</div>
+            <div class="kpi-num">{{ '%.1f'|format(csat.weighted) ~ '%' if csat.weighted is not none else '—' }}</div>
+            <div class="kpi-sub">Target 88%</div>
+          </div>
+          <div class="kpi-tile {{ '' if csr_pct is none else ('csr-lo' if csr_pct < 15 else ('csr-mid' if csr_pct <= 20 else 'csr-hi')) }}"
+               title="CSR % = DSATs with root cause CSR and no rep responsible, divided by all DSATs. Under 15% good, 15–20% watch, over 20% high.">
+            <div class="kpi-lbl">CSR % of DSATs</div>
+            <div class="kpi-num">{{ '%.1f'|format(csr_pct) ~ '%' if csr_pct is not none else '—' }}</div>
+            <div class="kpi-sub">{{ csat.csr.csr }} of {{ csat.csr.dsats }} DSATs</div>
+          </div>
+          <div class="kpi-tile">
+            <div class="kpi-lbl">Responses</div>
+            <div class="kpi-num">{{ '{:,}'.format(csat.total_responses) }}</div>
+            <div class="kpi-sub">CSAT surveys</div>
+          </div>
+          <div class="kpi-tile">
+            <div class="kpi-lbl">Resolved</div>
+            <div class="kpi-num">{{ '{:,}'.format(csat.total_resolved) }}</div>
+            <div class="kpi-sub">tickets</div>
           </div>
         </div>
 
         <div class="d-flex gap-2 flex-wrap">
-          <span class="badge rounded-pill px-3 py-2" style="background:#ecfeff;color:#155e75;border:1px solid #a5f3fc;font-size:.8rem;">
-            <i class="me-1" data-lucide="message-circle"></i>Chat:
-            <strong>{{ '%.1f'|format(csat.by_channel.Chat.pct) ~ '%' if csat.by_channel.Chat.pct is not none else '—' }}</strong>
-            <span class="text-muted">({{ csat.by_channel.Chat.resolved }} resolved)</span>
+          {% for ch, icon in [('Chat', 'message-circle'), ('Email', 'mail'), ('Phone', 'phone')] %}
+          {% set c = csat.by_channel[ch] %}
+          <span class="badge rounded-pill px-3 py-2 kpi-pill{% if c.pct is none %} is-zero{% endif %}">
+            <i class="me-1" data-lucide="{{ icon }}"></i>{{ ch }}:
+            <strong class="kpi-val {{ csat_level(c.pct) }}">{{ '%.1f'|format(c.pct) ~ '%' if c.pct is not none else '—' }}</strong>
+            <span class="text-muted">({{ '{:,}'.format(c.resolved) }} resolved)</span>
           </span>
-          <span class="badge rounded-pill px-3 py-2" style="background:#fdf2f8;color:#9d174d;border:1px solid #fbcfe8;font-size:.8rem;">
-            <i class="me-1" data-lucide="mail"></i>Email:
-            <strong>{{ '%.1f'|format(csat.by_channel.Email.pct) ~ '%' if csat.by_channel.Email.pct is not none else '—' }}</strong>
-            <span class="text-muted">({{ csat.by_channel.Email.resolved }} resolved)</span>
-          </span>
-          <span class="badge rounded-pill px-3 py-2" style="background:#f0fdfa;color:#115e59;border:1px solid #99f6e4;font-size:.8rem;">
-            <i class="me-1" data-lucide="phone"></i>Phone:
-            <strong>{{ '%.1f'|format(csat.by_channel.Phone.pct) ~ '%' if csat.by_channel.Phone.pct is not none else '—' }}</strong>
-            <span class="text-muted">({{ csat.by_channel.Phone.resolved }} resolved)</span>
-          </span>
+          {% endfor %}
         </div>
 
         {% if csat.responses %}
@@ -761,10 +838,101 @@
           {{ csat_scope_block('year', csat_year, true) }}
         </div>
       </div>
+      <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
       <script>
       (function(){
         var card = document.getElementById('csatSummaryCard');
         if (!card) return;
+
+        // Trend line per scope, drawn the first time its block is visible
+        // (Chart.js can't size a canvas inside a display:none block).
+        function drawTrends(){
+          if (typeof Chart === 'undefined') return;
+          card.querySelectorAll('.csat-trend-canvas').forEach(function(cv){
+            if (cv._chart || cv.offsetParent === null) return;
+            var pts = JSON.parse(cv.dataset.csatTrend || '[]');
+            var css = getComputedStyle(document.documentElement);
+            var dark = document.documentElement.getAttribute('data-theme') === 'dark';
+            var line = dark ? '#94a3b8' : '#64748b';
+            var TARGET = 88;
+            function ptColor(v){
+              if (v == null) return line;
+              if (v >= TARGET) return dark ? '#34d399' : '#059669';
+              if (v >= 85) return dark ? '#fb923c' : '#d97706';
+              return dark ? '#f87171' : '#dc2626';
+            }
+            var text = (css.getPropertyValue('--text') || '').trim() || (dark ? '#cbd5e1' : '#475569');
+            var grid = dark ? 'rgba(148,163,184,.18)' : 'rgba(100,116,139,.15)';
+            cv._chart = new Chart(cv, {
+              type: 'line',
+              data: {
+                labels: pts.map(function(p){ return p.label; }),
+                datasets: [{
+                  label: 'Volume Weighted CSAT',
+                  data: pts.map(function(p){ return p.weighted; }),
+                  borderColor: line, borderWidth: 2,
+                  pointRadius: 4, pointHoverRadius: 6, pointBorderWidth: 2,
+                  pointBorderColor: pts.map(function(p){ return ptColor(p.weighted); }),
+                  pointBackgroundColor: pts.map(function(p){ return p.partial ? (dark ? '#0f172a' : '#ffffff') : ptColor(p.weighted); }),
+                  segment: { borderDash: function(ctx){ return pts[ctx.p1DataIndex] && pts[ctx.p1DataIndex].partial ? [4, 4] : undefined; } },
+                  tension: 0.25, spanGaps: false
+                }]
+              },
+              plugins: [{
+                // Dashed target line, then a value label above each point.
+                id: 'csatPointLabels',
+                beforeDatasetsDraw: function(chart){
+                  var y = chart.scales.y, a = chart.chartArea, c = chart.ctx;
+                  if (TARGET < y.min || TARGET > y.max) return;
+                  var py = y.getPixelForValue(TARGET);
+                  c.save();
+                  c.strokeStyle = dark ? 'rgba(52,211,153,.6)' : 'rgba(5,150,105,.55)';
+                  c.setLineDash([5, 4]); c.lineWidth = 1;
+                  c.beginPath(); c.moveTo(a.left, py); c.lineTo(a.right, py); c.stroke();
+                  c.setLineDash([]);
+                  c.font = '600 10px system-ui, sans-serif';
+                  c.fillStyle = dark ? '#6ee7b7' : '#047857';
+                  c.textAlign = 'right'; c.textBaseline = 'bottom';
+                  c.fillText('Target ' + TARGET + '%', a.right, py - 2);
+                  c.restore();
+                },
+                afterDatasetsDraw: function(chart){
+                  var c = chart.ctx;
+                  c.save();
+                  c.font = '600 11px system-ui, sans-serif';
+                  c.fillStyle = text;
+                  c.textAlign = 'center';
+                  c.textBaseline = 'bottom';
+                  chart.getDatasetMeta(0).data.forEach(function(pt, i){
+                    var v = pts[i].weighted;
+                    if (v == null) return;
+                    c.fillStyle = ptColor(v);
+                    c.fillText(v.toFixed(1) + '%' + (pts[i].partial ? ' so far' : ''), pt.x, pt.y - 7);
+                  });
+                  c.restore();
+                }
+              }],
+              options: {
+                responsive: true, maintainAspectRatio: false,
+                layout: { padding: { top: 20, left: 6, right: 6 } },
+                interaction: { mode: 'index', intersect: false },
+                plugins: {
+                  legend: { display: false },
+                  tooltip: { callbacks: {
+                    label: function(ctx){
+                      var p = pts[ctx.dataIndex];
+                      return (p.weighted == null ? 'No data' : p.weighted.toFixed(1) + '%') + '  (' + p.responses + ' responses)' + (p.partial ? ' · in progress' : '');
+                    }
+                  }}
+                },
+                scales: {
+                  x: { offset: true, ticks: { color: text, font: { size: 11 } }, grid: { display: false } },
+                  y: { suggestedMin: 80, max: 100, ticks: { color: text, font: { size: 11 }, callback: function(v){ return v + '%'; } }, grid: { color: grid } }
+                }
+              }
+            });
+          });
+        }
 
         var scopeBtns = card.querySelectorAll('[data-csat-scope-btn]');
         scopeBtns.forEach(function(btn){
@@ -774,8 +942,14 @@
             card.querySelectorAll('.csat-scope-block').forEach(function(block){
               block.style.display = (block.dataset.csatScope === scope) ? 'block' : 'none';
             });
+            drawTrends();
           });
         });
+        document.querySelectorAll('[data-bs-target="#tab-csat"]').forEach(function(t){
+          t.addEventListener('shown.bs.tab', drawTrends);
+        });
+        if (document.readyState === 'complete') drawTrends();
+        else window.addEventListener('load', drawTrends);
 
         card.querySelectorAll('[data-csat-toggle]').forEach(function(pill){
           function toggle(){
@@ -1342,6 +1516,52 @@
                 <td class="text-end">{{ bal_days(b.total_hours) }}</td>
                 <td class="text-end">{{ bal_days(b.used_hours) }}</td>
                 <td class="text-end fw-semibold">{{ bal_days(b.remaining_hours) }}</td>
+              </tr>
+            {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+      {% endif %}
+      </div>
+
+      <div class="tab-pane fade" id="tab-time" role="tabpanel">
+      <!-- Time Records: last 5 biometric IN/OUT pairs (dailytimerecord) -->
+      <div class="text-muted mb-2" style="font-size:.8rem;">
+        Last 5 biometric time in / time out records, newest first. Overnight shifts show on one row.
+      </div>
+      {% if time_records is none %}
+      <div class="card p-4 text-center text-muted">
+        <i data-lucide="clock" style="width:28px;height:28px;display:block;margin:0 auto .5rem;"></i>
+        No biometric ID is linked to this employee, so there are no time records.
+      </div>
+      {% elif not time_records %}
+      <div class="card p-4 text-center text-muted">
+        <i data-lucide="clock" style="width:28px;height:28px;display:block;margin:0 auto .5rem;"></i>
+        No time records found.
+      </div>
+      {% else %}
+      <div class="card shadow-sm">
+        <div class="table-responsive">
+          <table class="table table-sm table-striped mb-0 align-middle">
+            <thead><tr><th>Date</th><th>Time In</th><th>Time Out</th><th class="text-end">Hours</th></tr></thead>
+            <tbody>
+            {% for r in time_records %}
+              {% set d = r.time_in or r.time_out %}
+              <tr>
+                <td>{{ d.strftime('%a, %b %d, %Y') }}</td>
+                <td>{{ r.time_in.strftime('%I:%M %p') if r.time_in else '—' }}</td>
+                <td>
+                  {% if r.time_out %}
+                    {{ r.time_out.strftime('%I:%M %p') }}
+                    {% if r.time_in and r.time_out.date() != r.time_in.date() %}<span class="text-muted small">({{ r.time_out.strftime('%b %d') }})</span>{% endif %}
+                  {% elif r.on_shift %}
+                    <span class="badge rounded-pill" style="background:#ecfdf5;color:#065f46;border:1px solid #a7f3d0;">On shift</span>
+                  {% else %}
+                    <span class="badge rounded-pill" style="background:#fef2f2;color:#991b1b;border:1px solid #fecaca;">No out</span>
+                  {% endif %}
+                </td>
+                <td class="text-end">{{ '%.2f'|format(r.hours) if r.hours is not none else '—' }}</td>
               </tr>
             {% endfor %}
             </tbody>

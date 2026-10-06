@@ -12740,7 +12740,7 @@ def _perf_scope_data(conn, employee_id, date_from, date_to, perf_safe_last_day, 
     }
 
 
-def _csat_scope_data(conn, agent_email, date_from, date_to):
+def _csat_scope_data(conn, agent_email, date_from, date_to, trend_buckets=None):
     """
     Computes the CSAT Performance Summary (Volume Weighted CSAT + per-channel
     breakdown + response detail list) for ONE date range -- shared by
@@ -12769,8 +12769,16 @@ def _csat_scope_data(conn, agent_email, date_from, date_to):
     resolved/response data for that scope -- 0% would misleadingly read as
     "satisfied 0% of the time" instead of "nothing to measure" (e.g. a
     non-CS role, or a new hire with no tickets yet).
+
+    trend_buckets is an optional list of (label, start_date, end_date) used to
+    build the card's line chart (months for the Year view, the last 8 weeks
+    for the Month view). Buckets may fall outside date_from/date_to. Each
+    bucket gets the same weighted formula; buckets with no resolved tickets
+    come back as None so the chart shows a gap.
     """
     empty_channel = {'pct': None, 'responses': 0, 'resolved': 0}
+    trend_buckets = trend_buckets or []
+    empty_trend = [{'label': b[0], 'weighted': None, 'responses': 0, 'partial': False} for b in trend_buckets]
     if not agent_email:
         return {
             'weighted': None,
@@ -12778,6 +12786,8 @@ def _csat_scope_data(conn, agent_email, date_from, date_to):
             'total_resolved': 0,
             'by_channel': {'Chat': dict(empty_channel), 'Email': dict(empty_channel), 'Phone': dict(empty_channel)},
             'responses': [],
+            'trend': empty_trend,
+            'csr': {'pct': None, 'csr': 0, 'dsats': 0},
         }
 
     csat_cursor = conn.cursor(pymysql.cursors.DictCursor)
@@ -12848,6 +12858,67 @@ def _csat_scope_data(conn, agent_email, date_from, date_to):
         'qa_comment': row['qa_comment'] or '',
         'qa_name': row['qa_name'] or '',
     } for row in csat_cursor.fetchall()]
+
+    # CSR % -- same rule as modules/csr_percentage.py: of this agent's DSATs
+    # (csat_score = 0), the share with root_cause 'CSR' and no other rep named.
+    csat_cursor.execute("""
+        SELECT COUNT(*) dsats,
+               COALESCE(SUM(root_cause = 'CSR'
+                            AND (rep_responsible IS NULL OR rep_responsible = '')), 0) csr
+        FROM csat_responses
+        WHERE agent_email = %s AND performed_at_date BETWEEN %s AND %s AND csat_score = 0
+    """, (agent_email, date_from, date_to))
+    _c = csat_cursor.fetchone() or {}
+    csr_dsats = int(_c.get('dsats') or 0)
+    csr_count = int(_c.get('csr') or 0)
+    csr = {
+        'pct': (round(100.0 * csr_count / csr_dsats, 2) if csr_dsats else None),
+        'csr': csr_count,
+        'dsats': csr_dsats,
+    }
+
+    # Trend line: daily per-channel sums, rolled up into the caller's buckets.
+    trend = empty_trend
+    if trend_buckets:
+        t_from = min(b[1] for b in trend_buckets)
+        t_to = max(b[2] for b in trend_buckets)
+        csat_cursor.execute("""
+            SELECT performed_at_date d, channel_type, SUM(csat_score) s, COUNT(*) n
+            FROM csat_responses
+            WHERE agent_email = %s AND performed_at_date BETWEEN %s AND %s
+            GROUP BY performed_at_date, channel_type
+        """, (agent_email, t_from, t_to))
+        daily_scores = csat_cursor.fetchall()
+        csat_cursor.execute("""
+            SELECT performed_at_date d, COALESCE(SUM(chat_resolved),0) chat,
+                   COALESCE(SUM(email_resolved),0) email, COALESCE(SUM(phone_resolved),0) phone
+            FROM resolve_counts
+            WHERE agent_email = %s AND performed_at_date BETWEEN %s AND %s
+            GROUP BY performed_at_date
+        """, (agent_email, t_from, t_to))
+        daily_resolved = csat_cursor.fetchall()
+
+        trend = []
+        for label, b_from, b_to in trend_buckets:
+            sums, ns = {}, {}
+            for r in daily_scores:
+                if b_from <= r['d'] <= b_to:
+                    ch = r['channel_type']
+                    sums[ch] = sums.get(ch, 0.0) + float(r['s'] or 0)
+                    ns[ch] = ns.get(ch, 0) + int(r['n'])
+            res = {'Chat': 0, 'Email': 0, 'Phone': 0}
+            for r in daily_resolved:
+                if b_from <= r['d'] <= b_to:
+                    res['Chat'] += int(r['chat'] or 0)
+                    res['Email'] += int(r['email'] or 0)
+                    res['Phone'] += int(r['phone'] or 0)
+            b_total = sum(res.values())
+            b_weighted = None
+            if b_total:
+                b_weighted = round(sum((sums[ch] / ns[ch] if ns.get(ch) else 0) * res[ch]
+                                       for ch in res) / b_total * 100, 2)
+            trend.append({'label': label, 'weighted': b_weighted, 'responses': sum(ns.values()),
+                          'partial': b_from <= date.today() <= b_to})
     csat_cursor.close()
 
     return {
@@ -12856,6 +12927,8 @@ def _csat_scope_data(conn, agent_email, date_from, date_to):
         'total_resolved': total_resolved,
         'by_channel': by_channel,
         'responses': responses,
+        'trend': trend,
+        'csr': csr,
     }
 
 
@@ -13012,6 +13085,58 @@ def _pim_leave_balance_data(emp_number):
     for b in portal_rows:
         b['pct_used'] = round(min(b['used_hours'] / b['total_hours'] * 100, 100), 1) if b['total_hours'] else 0
     return {'year': date.today().year, 'ohrm': ohrm_rows, 'portal': portal_rows, 'source': get_entitlement_source()}
+
+
+def _pim_recent_punches(employee_id, limit=5):
+    """
+    Time Records tab: the employee's last `limit` biometric IN/OUT pairs from
+    dailytimerecord, newest first. Each IN is paired with the punch right
+    after it when that is an OUT within 20 hours, so overnight shifts stay on
+    one row; an unmatched IN or OUT gets its own row with the other side
+    blank. Returns None if the employee has no userdata personid.
+    """
+    max_shift = timedelta(hours=20)
+    cdb = get_central_db()
+    try:
+        with cdb.cursor() as c:
+            c.execute("""
+                SELECT personid FROM userdata WHERE companyid = %s
+                ORDER BY personid DESC LIMIT 1
+            """, (employee_id,))
+            pr = c.fetchone()
+            personid = int(pr['personid']) if pr and pr['personid'] else None
+            if not personid:
+                return None
+            c.execute("""
+                SELECT date, type FROM dailytimerecord
+                WHERE personid = %s
+                ORDER BY date DESC LIMIT %s
+            """, (personid, limit * 4))
+            punches = list(reversed(c.fetchall()))
+    finally:
+        cdb.close()
+
+    now = datetime.now()
+    rows = []
+    i = 0
+    while i < len(punches):
+        p = punches[i]
+        nxt = punches[i + 1] if i + 1 < len(punches) else None
+        if (p['type'] or '').lower() == 'in':
+            if (nxt and (nxt['type'] or '').lower() == 'out'
+                    and nxt['date'] - p['date'] <= max_shift):
+                rows.append({'time_in': p['date'], 'time_out': nxt['date'],
+                             'hours': (nxt['date'] - p['date']).total_seconds() / 3600,
+                             'on_shift': False})
+                i += 2
+                continue
+            rows.append({'time_in': p['date'], 'time_out': None, 'hours': None,
+                         'on_shift': nxt is None and now - p['date'] <= max_shift})
+        else:
+            rows.append({'time_in': None, 'time_out': p['date'], 'hours': None,
+                         'on_shift': False})
+        i += 1
+    return list(reversed(rows))[:limit]
 
 
 def _pim_attendance_grid(employee, emp_number, schedule_rows, year, month, safe_last_day):
@@ -13263,8 +13388,25 @@ def pim_profile(employee_id):
     # _csat_scope_data()'s docstring. Reuses the same date_from/date_to /
     # year_date_from/year_date_to windows already computed for Attendance. ──
     agent_email = employee.get('email')
-    csat_month = _csat_scope_data(conn, agent_email, date_from, date_to)
-    csat_year  = _csat_scope_data(conn, agent_email, year_date_from, year_date_to)
+    # Trend buckets: Month shows the last 8 Mon-Sun weeks ending in the week
+    # of the selected month's last day (or today, for the current month), so
+    # the chart has a trend even early in a month. Year uses calendar months.
+    _trend_end = min(date_to, _date.today())
+    _wk_last_start = _trend_end - timedelta(days=_trend_end.weekday())
+    csat_week_buckets = []
+    for _i in range(7, -1, -1):
+        _ws = _wk_last_start - timedelta(weeks=_i)
+        _we = _ws + timedelta(days=6)
+        _lbl = (f"{_ws.strftime('%b')} {_ws.day}\u2013{_we.day}" if _ws.month == _we.month
+                else f"{_ws.strftime('%b')} {_ws.day}\u2013{_we.strftime('%b')} {_we.day}")
+        csat_week_buckets.append((_lbl, _ws, _we))
+    csat_month_buckets = [
+        (_date(year, m, 1).strftime('%b'), _date(year, m, 1),
+         (_date(year, m + 1, 1) - timedelta(days=1)) if m < 12 else _date(year, 12, 31))
+        for m in range(1, 13)
+    ]
+    csat_month = _csat_scope_data(conn, agent_email, date_from, date_to, csat_week_buckets)
+    csat_year  = _csat_scope_data(conn, agent_email, year_date_from, year_date_to, csat_month_buckets)
 
     # ── Filed Requests (Requests tab): OT/RDW/CWS/Magic CWS/FTS for the
     # viewed year; the Month scope is filtered from the same rows. ──
@@ -13306,6 +13448,7 @@ def pim_profile(employee_id):
     # ── Leave Balance tab (current year) and Attendance Grid tab (viewed
     # month, same perf_safe_last_day cutoff as the Attendance summary). ──
     leave_balance = _pim_leave_balance_data(emp_row['emp_number'] if emp_row else None)
+    time_records = _pim_recent_punches(employee_id)
     att_grid = _pim_attendance_grid(employee, emp_row['emp_number'] if emp_row else None,
                                     schedule_rows, year, month, perf_safe_last_day)
     if emp_row:
@@ -13334,6 +13477,7 @@ def pim_profile(employee_id):
                            can_approve=can_approve,
                            leave_balance=leave_balance,
                            att_grid=att_grid,
+                           time_records=time_records,
                            next_employee=next_employee,
                            prev_employee=prev_employee)
 
