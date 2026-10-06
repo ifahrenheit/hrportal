@@ -33,9 +33,10 @@
         </div>
       </div>
       <div class="col-md-4 text-end">
-        <a href="{{ url_for('inventory_pdf') }}" class="btn btn-outline-danger me-2">
-          <i class="me-1" data-lucide="file-text"></i>Export PDF
-        </a>
+        <button type="button" id="copyItemsBtn" class="btn btn-outline-secondary me-2" onclick="copyItemsTable()"
+                title="Copy Item Name and Unit for a physical count">
+          <i class="me-1" data-lucide="copy"></i>Copy Table
+        </button>
         <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addItemModal">
           <i class="me-1" data-lucide="plus"></i>Add Item
         </button>
@@ -47,7 +48,7 @@
 
     <div class="card">
       <div class="table-responsive">
-        <table class="table table-hover mb-0">
+        <table id="itemsTable" class="table table-hover mb-0">
           <thead class="table-light">
             <tr>
               <th onclick="sortTable(0)" style="cursor:pointer;user-select:none;">
@@ -727,6 +728,39 @@ function sortTable(col) {
   document.getElementById('sort-arrow-' + col).setAttribute('data-lucide', dir === 1 ? 'arrow-up' : 'arrow-down');
   if (window.lucide) lucide.createIcons();
   sortDir[col] = dir * -1;
+}
+</script>
+<script>
+// Copies Item Name, a blank count column, and Unit (current filter/sort order) as
+// tab-separated text, so it pastes into Excel/Sheets for a physical stock count.
+function copyItemsTable() {
+  const lines = ['Item Name\tActual Count\tUnit'];
+  document.querySelectorAll('#itemsTable tbody tr').forEach(function(tr) {
+    if (tr.cells.length < 6) return;  // "No items found." row
+    lines.push(tr.cells[1].innerText.trim() + '\t\t' + tr.cells[5].innerText.trim());
+  });
+  const text = lines.join('\n');
+  const btn = document.getElementById('copyItemsBtn');
+  const done = function() {
+    const orig = btn.innerHTML;
+    btn.innerHTML = '<i class="me-1" data-lucide="check"></i>Copied ' + (lines.length - 1) + ' items';
+    if (window.lucide) lucide.createIcons();
+    setTimeout(function() { btn.innerHTML = orig; if (window.lucide) lucide.createIcons(); }, 2000);
+  };
+  const fallback = function() {
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.position = 'fixed'; ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.select();
+    try { document.execCommand('copy'); done(); } catch (e) { alert('Copy failed.'); }
+    document.body.removeChild(ta);
+  };
+  if (navigator.clipboard && window.isSecureContext) {
+    navigator.clipboard.writeText(text).then(done, fallback);
+  } else {
+    fallback();
+  }
 }
 </script>
 <script>
