@@ -8,6 +8,32 @@
 
 ---
 
+## 2026-10-07 — Inventory Copy Table, PIM Time Records tab, CSAT trend
+Commit: `e65aaa8` · Branch: `main`
+
+### What was built / changed
+- `/admin/inventory`: the **Export PDF** button is replaced by **Copy Table** (`copyItemsTable()` in `templates/admin/inventory.html`). It copies `Item Name | Actual Count (blank) | Unit` as TSV, using the current filter and sort, for physical stock counts. Commit `584daee`.
+- PIM profile: a **Time Records** tab (`#tab-time`) shows the last 5 biometric IN/OUT pairs. The data comes from `_pim_recent_punches()` in `app.py`, which reads `central_db.dailytimerecord` via the `userdata.companyid → personid` lookup. Commit `e65aaa8`.
+- PIM CSAT card: adds a trend line (8 weekly points in the Month view, 12 months in the Year view) and CSR %. These come from `_csat_scope_data(..., trend_buckets)` and were already live before this session. Committed in `e65aaa8`.
+
+### Why / decisions
+- Copy Table: the PDF duplicated the Inventory History. The admin should count stock physically, so the copy leaves out stock figures and has a blank count column.
+- Time Records pairing: each IN is paired with the next punch only if it is an OUT within 20h, so overnight shifts stay on one row. An unmatched IN shows the **On shift** badge if it is the latest punch and under 20h old, otherwise **No out**.
+- The `inventory_pdf` route is still in `app.py`; only the button was removed.
+
+### Deploy / run notes
+- `app.py` backup taken; `ast.parse` gate passed. `leavesystem` restarted cleanly.
+
+### How to verify
+- `/admin/inventory` → Copy Table → paste into Sheets.
+- `/pim/230411-01#tab-time`
+
+### Open items / next steps
+- [ ] Decide whether to delete the unused `inventory_pdf` route.
+- [ ] Suggested PIM additions (none started): IR & Coaching tab (recommended first), 201/requirements checklist, COE and issued-items history, employment timeline / probation countdown, HR-only notes, Time Records date filter/export with scheduled shift.
+
+---
+
 ## 2026-10-05 (3) — /admin/file-leave redesigned to match File Request for Employee
 Commit: `4c96c89` (changes below committed later in `c99caee` / `cc608d8` / `1085e16`) · Branch: `main`
 
