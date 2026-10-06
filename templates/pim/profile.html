@@ -601,13 +601,13 @@
         <div class="card-header fw-semibold d-flex align-items-center justify-content-between flex-wrap gap-2">
           <span><i class="me-2" data-lucide="chart-line"></i>Attendance Performance Summary</span>
           <div class="btn-group btn-group-sm" role="group" aria-label="Performance summary scope">
-            <button type="button" class="btn btn-outline-secondary active" data-perf-scope-btn="month">Month</button>
-            <button type="button" class="btn btn-outline-secondary" data-perf-scope-btn="year">Year</button>
+            <button type="button" class="btn btn-outline-secondary" data-perf-scope-btn="month">Month</button>
+            <button type="button" class="btn btn-outline-secondary active" data-perf-scope-btn="year">Year</button>
           </div>
         </div>
         <div class="card-body py-3 px-3">
-          {{ perf_scope_block('month', perf_month, true) }}
-          {{ perf_scope_block('year', perf_year, false) }}
+          {{ perf_scope_block('month', perf_month, false) }}
+          {{ perf_scope_block('year', perf_year, true) }}
         </div>
       </div>
       <script>
