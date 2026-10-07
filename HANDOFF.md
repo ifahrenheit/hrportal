@@ -8,6 +8,44 @@
 
 ---
 
+## 2026-10-07 (2) — absence_notify.py: absence alerts from portal data (parallel dry run)
+Commit: `5b2c0f7` (code changes **uncommitted**: `app.py`, `absence_notify.py`) · Branch: `main`
+
+### What was built / changed
+- `app.py`: the core of `admin_absences()` was extracted into `get_absence_records(date_from, date_to)`, which returns `(records, leave_map, cws_map)`. The route is now a thin wrapper and its output is unchanged (Oct 5 and Oct 6 checked against the old code).
+- New `absence_notify.py` (repo root) is the replacement for `/var/www/html/automation/send_absence_report.php`, which reads the Google Sheet. It is a dry run unless you pass `--live`; an optional positional `YYYY-MM-DD` picks the day.
+  - It emails only `Absent` with no leave in any non-rejected status (pending, scheduled and approved all skip). It also skips a non-rejected CWS on that date, a SUS (`central_db.absence_records` code `SUS`) or approved OT.
+  - FTS IN/OUT is **never** emailed.
+  - The email lists the absent days in a 7-day window. 2 or more turns the subject into "REPEATED ABSENCE ALERT".
+  - Recipients: To is the TL (`tl_view_map`), SOM (`gsheet_employees.approver`) and OM. BCC is the RTA and admin.
+  - A failed run sends a "FAILED to run" email.
+  - Every run logs a summary line, including 0 emailed.
+  - It refuses a date that isn't finished yet (same 13:00 cutoff as the page).
+
+### Why / decisions
+- The user reported no absence email on 2026-10-07. Cause: the sheet's `Yesterday Absences` tab was empty, and the PHP script exits silently when it is.
+- The sheet only covers about 84 employees a day, versus about 146 scheduled in `employee_schedules`. It also matches punches by calendar date only, so it misses new hires. Examples: Antonette Joy Lanuza on Oct 4–5 and Pia Katrina Algoso on Oct 1 (both genuinely had no punches).
+- The user decided: no FTS cases in the email; pending or scheduled leaves suppress the alert.
+- The logic stays in `app.py` instead of `helpers/`, because the tests patch `app.get_central_db`/`app.get_db`. The cron script imports `app`, the same way `scripts/live_sanity_check_awol.py` does.
+
+### Config / environment
+- Optional `.env` keys (defaults are in the code): `ABSENCE_NOTIFY_OM`, `ABSENCE_NOTIFY_BCC`, `ABSENCE_FAILURE_RECIPIENTS`, `ABSENCE_SENDER_NAME`.
+- Root crontab: added `5 13 * * * .../absence_notify.py >> .../absence_notify.log` with **no `--live`**, a parallel dry run. The PHP line at 13:00 is unchanged and still sends.
+- Backup: `app.py.bak.20261007210509`. `ast.parse` gate passed. `leavesystem` restarted at 21:08 with a clean start.
+
+### How to verify
+- `venv/bin/python absence_notify.py 2026-10-05` (dry run). It should report Antonette (REPEATED) and skip Randolf (SUS), James and Karlo (leave).
+- `tail absence_notify.log` after 13:05 daily.
+
+### Open items / next steps
+- [ ] About 3 days of parallel run (Oct 8–10): compare `absence_notify.log` with the PHP sends and the sheet's "Possible Absent" rows.
+- [ ] After user approval: add `--live` to the 13:05 line and remove or comment out the `send_absence_report.php` cron line (leave the PHP file in place for rollback).
+- [ ] Commit `app.py` and `absence_notify.py`.
+- [ ] Pre-existing test failures, unrelated to this change (they failed before it too): `test_empty_scheduled_renders_empty_state_no_crash` (awol + undertime) and `test_leave_covered_short_shift_is_excluded`.
+- [ ] `send_absence_report.php` has SMTP and DB passwords in plain text.
+
+---
+
 ## 2026-10-07 — Inventory Copy Table, PIM Time Records tab, CSAT trend
 Commit: `e65aaa8` · Branch: `main`
 
