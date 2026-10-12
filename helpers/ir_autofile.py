@@ -106,6 +106,15 @@ def _send_ir_notification(cur, report_number, incident_date, employee_id,
 IR_REPORT_BASE_URL = "https://hrportal.cohere.ph/incident-reports"
 
 
+def is_ir_excluded(employee_id):
+    """True for employees listed in IR_EXCLUDED_EMPLOYEE_IDS (comma-separated,
+    e.g. independent contractors). The notify crons skip them entirely: no
+    cycle counting, no auto-filed IR, no memo email. Read at call time so it
+    works regardless of when the calling script runs load_dotenv()."""
+    excluded = {e.strip() for e in os.environ.get("IR_EXCLUDED_EMPLOYEE_IDS", "").split(",") if e.strip()}
+    return (employee_id or "").strip() in excluded
+
+
 def generate_ir_report_number():
     return "IR-" + datetime.now().strftime("%Y%m%d") + "-" + str(uuid.uuid4())[:6].upper()
 

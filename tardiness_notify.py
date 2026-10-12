@@ -43,7 +43,7 @@ from dotenv import load_dotenv
 from db_core import get_db_connection
 from helpers.payroll_period import get_current_payroll_period
 from modules.tardiness import get_tardiness_for_date
-from helpers.ir_autofile import file_incident_report, ir_notice_html
+from helpers.ir_autofile import file_incident_report, ir_notice_html, is_ir_excluded
 
 load_dotenv()
 
@@ -378,6 +378,10 @@ def process_day(process_date: date):
         minutes_late = r["minutes_late"] or 0
         time_in_str = r["time_in"].strftime("%I:%M %p") if r.get("time_in") else None
 
+        if is_ir_excluded(companyid):
+            print(f"[tardiness_notify] {lname}, {fname} ({companyid}) is in IR_EXCLUDED_EMPLOYEE_IDS, skipping.")
+            continue
+
         state = get_or_create_state(cur, personid, period_start)
 
         # Idempotency guard: don't double-process the same day if the cron
@@ -478,6 +482,9 @@ def dry_run_range(date_from: date, date_to: date):
             fname, lname = r["fname"], r["lname"]
             minutes_late = r["minutes_late"] or 0
             time_in_str = r["time_in"].strftime("%I:%M %p") if r.get("time_in") else None
+
+            if is_ir_excluded(companyid):
+                continue
 
             if personid not in sim_state:
                 sim_state[personid] = {

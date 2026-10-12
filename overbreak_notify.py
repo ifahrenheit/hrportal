@@ -40,6 +40,7 @@ from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from dotenv import load_dotenv
 from db_core import get_db_connection
+from helpers.ir_autofile import is_ir_excluded
 
 load_dotenv()
 
@@ -428,6 +429,11 @@ def process_pending():
     for r in rows:
         employee_id = r["employee_id"]
         agent_name = r["agent_name"]
+        if is_ir_excluded(employee_id):
+            # Mark processed so the row isn't picked up again every run.
+            print(f"[overbreak_notify] {agent_name} ({employee_id}) is in IR_EXCLUDED_EMPLOYEE_IDS, skipping.")
+            cur.execute("UPDATE overbreak_records SET notify_processed = 1 WHERE id = %s", (r["id"],))
+            continue
         payroll_month = r["payroll_month"]
         payroll_cycle = r["payroll_cycle"]
         record_year = r["record_year"]

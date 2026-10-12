@@ -48,7 +48,7 @@ load_dotenv('/var/www/html/leavesystem/.env')
 from db_core import get_db_connection
 from helpers.payroll_period import get_payroll_period_for_date
 from modules.undertime import get_undertime_for_date
-from helpers.ir_autofile import file_incident_report, ir_notice_html
+from helpers.ir_autofile import file_incident_report, ir_notice_html, is_ir_excluded
 
 LOG = "[undertime_notify]"
 
@@ -425,6 +425,9 @@ def process_day(process_date: date, live: bool):
     try:
         for r in ut_records:
             companyid, fname, lname = r["companyid"], r["fname"], r["lname"]
+            if is_ir_excluded(companyid):
+                print(f"{LOG} {lname}, {fname} ({companyid}) is in IR_EXCLUDED_EMPLOYEE_IDS, skipping.")
+                continue
             s = get_or_create_state(cur, companyid, period_start)
 
             # Idempotency guard. Stricter than tardiness' "== date": a day on
