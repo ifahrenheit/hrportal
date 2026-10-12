@@ -8,6 +8,29 @@
 
 ---
 
+## 2026-10-12 — Fix: per-date leave Cancel silently did nothing on /supervisor/pending
+Commit: `367604b` (fix **uncommitted**: `templates/supervisor/pending.html`) · Branch: `main`
+
+### What was built / changed
+- `templates/supervisor/pending.html`: removed the outer `<form id="bulkForm" action="supervisor_bulk_action">` wrapper and its stray `csrf_token` hidden input. Backup: `templates/supervisor/pending.html.bak.20261012*`.
+
+### Why / decisions
+- An approver could not cancel Princess Anne Mier's Oct 6 SL (`leave4day_requests.id` 2761, `leave_request_id` 3955). No error was shown.
+- Cause: the per-date Cancel `<form>` (Manage Individual Dates) was nested inside `bulkForm`. Browsers drop the first nested `<form>` tag, so the **first date's Cancel on the first card** submitted `bulkForm` instead. It went to `/supervisor/bulk-action` with no selection and no action. The "No leaves selected" flash was then lost, because the page's JS redirects to add the default date range. Later dates and cards worked.
+- Logs: the approver sent 5× `POST /supervisor/bulk-action` between 18:21 and 18:22, and never `/cancel-leave/2761`.
+- The wrapper was dead code: Bulk Approve/Reject and Single Approve/Reject use `fetch` with the `<meta name="csrf-token">` token. `supervisor_bulk_action()` in `app.py` is now unused by this page, but was left in place.
+
+### Deploy / run notes
+- Template only. `debug=False` caches templates, so the user restarted `leavesystem`. Service active, clean.
+
+### How to verify
+- `/supervisor/pending?emp_search=<name>`: Manage Individual Dates → Cancel on the first date. The log should show `POST /cancel-leave/<id>`. The user confirmed the fix works.
+
+### Open items / next steps
+- [ ] Commit `templates/supervisor/pending.html`, along with the other uncommitted work below.
+
+---
+
 ## 2026-10-07 (2) — absence_notify.py: absence alerts from portal data (parallel dry run)
 Commit: `5b2c0f7` (code changes **uncommitted**: `app.py`, `absence_notify.py`) · Branch: `main`
 
@@ -43,6 +66,13 @@ Commit: `5b2c0f7` (code changes **uncommitted**: `app.py`, `absence_notify.py`) 
 - [ ] Commit `app.py` and `absence_notify.py`.
 - [ ] Pre-existing test failures, unrelated to this change (they failed before it too): `test_empty_scheduled_renders_empty_state_no_crash` (awol + undertime) and `test_leave_covered_short_shift_is_excluded`.
 - [ ] `send_absence_report.php` has SMTP and DB passwords in plain text.
+
+### 2026-10-08 follow-up: IR exclusion for independent contractors
+- New `.env` key `IR_EXCLUDED_EMPLOYEE_IDS` (currently 260706-01, Roselito "Lito" Orque). `is_ir_excluded()` in `helpers/ir_autofile.py` reads it.
+- `tardiness_notify.py` (live loop and `--dry-run` simulation), `undertime_notify.py` and `overbreak_notify.py` skip listed employees: no cycle counting, no IR, no memo. Overbreak marks their rows `notify_processed = 1`.
+- Verified: a tardiness dry run for Sep 23 – Oct 7 no longer includes him. Undertime and overbreak dry runs are clean. A `.env` backup was taken. No service restart was needed, because only the cron scripts changed.
+- [ ] His existing IRs `IR-20261001-787808` and `IR-20261007-C4FD73` are still `pending`, so the stale-IR reminder will keep listing them. The user should waive them in the portal.
+- [ ] These code changes are uncommitted, along with `app.py` and `absence_notify.py`.
 
 ---
 
