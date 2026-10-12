@@ -245,7 +245,7 @@
     <div class="d-flex flex-wrap justify-content-between align-items-center mb-2 gap-2">
       <h6 class="mb-0">Per-Agent Volume Weighted CSAT</h6>
       <div class="d-flex align-items-center gap-2">
-        <button type="button" class="btn btn-outline-secondary btn-sm text-nowrap flex-shrink-0" id="copyAgentTableBtn" onclick="copyAgentTable()">
+        <button type="button" class="btn btn-outline-secondary btn-sm text-nowrap flex-shrink-0" id="copyAgentTableBtn">
           <i class="me-1" data-lucide="clipboard"></i>Copy Table
         </button>
         <input type="text" id="agentSearch" class="form-control form-control-sm" style="max-width:240px"
@@ -846,6 +846,7 @@
       setTimeout(function(){ btn.innerHTML = orig; btn.classList.replace('btn-success','btn-outline-secondary'); if(window.lucide) lucide.createIcons(); }, 2000);
     }).catch(function(){ alert('Copy failed — please select the table manually.'); });
   }
+  $('copyAgentTableBtn').addEventListener('click', copyAgentTable);
 
   $('agentHead').addEventListener('click', function(e){
     const th = e.target.closest('th.sortable');
