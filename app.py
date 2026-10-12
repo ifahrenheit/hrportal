@@ -10785,40 +10785,18 @@ def build_attendance_map(personids, window_start, window_end, shift_starts=None)
 
     return attendance_map
 
-@app.route('/admin/absences')
-def admin_absences():
-    if not session.get('is_admin') and not session.get('permissions', {}).get('can_absences'):
-        return redirect(url_for('dashboard'))
+def get_absence_records(date_from, date_to):
+    """
+    Scheduled, active employees with no 'Present' shift between date_from
+    and date_to (inclusive): status 'Absent', 'FTS IN' or 'FTS OUT'. Shifts
+    explained by an approved OT request are left out.
 
-    from datetime import date, timedelta, datetime as dt
-    from helpers.payroll_period import get_default_payroll_period
-
-    default_period_start, default_period_end = get_default_payroll_period()
-
-    TODAY_CUTOFF_HOUR = 13  # matches the 1 PM absence-report cron / Today button logic
-    now = dt.now()
-    if now.hour < TODAY_CUTOFF_HOUR:
-        safe_last_day = date.today() - timedelta(days=2)
-    else:
-        safe_last_day = date.today() - timedelta(days=1)
-
-    def parse_date(val, fallback):
-        try:
-            return date.fromisoformat(val) if val else fallback
-        except ValueError:
-            return fallback
-
-    date_from = parse_date(request.args.get('date_from'), default_period_start)
-    date_to   = parse_date(request.args.get('date_to'),   default_period_end)
-    if date_to < date_from:
-        date_to = date_from
-    # Never show data beyond the last fully-completed day, even if the
-    # selected payroll period (or a manually-entered date) extends further.
-    if date_to > safe_last_day:
-        date_to = safe_last_day
-    if date_from > date_to:
-        date_from = date_to
-
+    Returns (records, leave_map, cws_map); the maps are keyed
+    'employee_id|YYYY-MM-DD'. Shared by /admin/absences and the
+    absence_notify.py cron so the page and the email can't disagree.
+    The caller is responsible for not asking for days whose shifts
+    haven't finished yet.
+    """
     # ── Step 1: All scheduled active employees in date range ──
     scheduled = []
     cdb = get_central_db()
@@ -10975,6 +10953,44 @@ def admin_absences():
                         cws_map.setdefault(key, []).append(row)
             finally:
                 cdb3.close()
+
+    return records, leave_map, cws_map
+
+@app.route('/admin/absences')
+def admin_absences():
+    if not session.get('is_admin') and not session.get('permissions', {}).get('can_absences'):
+        return redirect(url_for('dashboard'))
+
+    from datetime import date, timedelta, datetime as dt
+    from helpers.payroll_period import get_default_payroll_period
+
+    default_period_start, default_period_end = get_default_payroll_period()
+
+    TODAY_CUTOFF_HOUR = 13  # matches the 1 PM absence-report cron / Today button logic
+    now = dt.now()
+    if now.hour < TODAY_CUTOFF_HOUR:
+        safe_last_day = date.today() - timedelta(days=2)
+    else:
+        safe_last_day = date.today() - timedelta(days=1)
+
+    def parse_date(val, fallback):
+        try:
+            return date.fromisoformat(val) if val else fallback
+        except ValueError:
+            return fallback
+
+    date_from = parse_date(request.args.get('date_from'), default_period_start)
+    date_to   = parse_date(request.args.get('date_to'),   default_period_end)
+    if date_to < date_from:
+        date_to = date_from
+    # Never show data beyond the last fully-completed day, even if the
+    # selected payroll period (or a manually-entered date) extends further.
+    if date_to > safe_last_day:
+        date_to = safe_last_day
+    if date_from > date_to:
+        date_from = date_to
+
+    records, leave_map, cws_map = get_absence_records(date_from, date_to)
 
     summary = {
         'absent':  sum(1 for r in records if r['attendance_status'] == 'Absent'),
