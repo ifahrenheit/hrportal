@@ -48,8 +48,6 @@
 {% if not pending %}
 <div class="alert alert-success"><i class="me-2" data-lucide="circle-check"></i>No pending leave requests.</div>
 {% else %}
-<form method="POST" action="{{ url_for('supervisor_bulk_action') }}" id="bulkForm">
-<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
 <div class="d-flex gap-2 mb-3 align-items-center">
   <button type="button" class="btn btn-outline-secondary btn-sm" id="bulkToggle" onclick="toggleBulkMode()">
     <i class="me-1" data-lucide="square-check"></i>Bulk Select
