@@ -12,7 +12,7 @@
 Commit: `367604b` (fix **uncommitted**: `templates/supervisor/pending.html`) · Branch: `main`
 
 ### What was built / changed
-- `templates/supervisor/pending.html`: removed the outer `<form id="bulkForm" action="supervisor_bulk_action">` wrapper and its stray `csrf_token` hidden input. Backup: `templates/supervisor/pending.html.bak.20261012*`.
+- `templates/supervisor/pending.html`: removed the outer `<form id="bulkForm" action="supervisor_bulk_action">` wrapper and its stray `csrf_token` hidden input. Backup: `templates/supervisor/pending.html.bak.20261012182559`.
 
 ### Why / decisions
 - An approver could not cancel Princess Anne Mier's Oct 6 SL (`leave4day_requests.id` 2761, `leave_request_id` 3955). No error was shown.
