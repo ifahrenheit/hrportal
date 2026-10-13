@@ -29,6 +29,10 @@
   .pill-over{background:#fdecec;color:#c0392b;border:1.5px solid #f1998e}
   .pill-cycle{background:#fdecec;color:#c0392b}
   .pill-auto{background:#fff3cd;color:#8a6d00}
+  .pill-sched{background:#eef2ff;color:#3730a3}
+  .detail-sched{font-size:13px;margin:2px 0 8px}
+  .detail-warn{font-size:13px;margin:0 0 8px;padding:6px 10px;border-radius:6px;background:#fff3cd;color:#8a6d00}
+  .brk-outside td{opacity:.7}
   .pill-ir{background:#fdecec;color:#c0392b}
   .pill-waived{background:#e6f4ea;color:#1e7e34}
 
@@ -67,6 +71,8 @@
 
   /* pills */
   [data-theme="dark"] .pill-acct   { background: #1e3a5f; color: #93c5fd; border-color: #1e4ed8; }
+  [data-theme="dark"] .pill-sched  { background: #312e81; color: #c7d2fe; }
+  [data-theme="dark"] .detail-warn { background: #3d3200; color: #fcd34d; }
   [data-theme="dark"] .pill-dur    { background: #422006; color: #fbbf24; border-color: #78350f; }
   [data-theme="dark"] .pill-over,
   [data-theme="dark"] .pill-cycle,
@@ -98,11 +104,11 @@
   </div>
   <table class="obr">
     <thead><tr>
-      <th>Date</th><th>Agent</th><th>Account</th><th>Total Break</th>
+      <th>Shift Date</th><th>Agent</th><th>Schedule</th><th>Account</th><th>Total Break</th>
       <th>Overbreak</th><th>Flags</th><th style="text-align:right">Actions</th>
     </tr></thead>
     <tbody id="obr-pending">
-      <tr><td colspan="7" class="obr-empty">Loading…</td></tr>
+      <tr><td colspan="8" class="obr-empty">Loading…</td></tr>
     </tbody>
   </table>
 </div>
@@ -123,6 +129,15 @@
 <script>
 const fmt = m => `${Math.floor(m/60)}h ${String(m%60).padStart(2,'0')}m`;
 const nth = n => `${n}${['st','nd','rd'][n-1]||'th'}`;
+// '2026-10-12T09:31:27' -> 'Mon, Oct 12, 9:31 AM'
+const fmtDT = iso => iso ? new Date(iso).toLocaleString('en-US',
+  {weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit'}) : '—';
+const fmtTime = iso => new Date(iso).toLocaleTimeString('en-US', {hour: 'numeric', minute: '2-digit'});
+const fmtDate = ymd => new Date(ymd + 'T00:00:00').toLocaleDateString('en-US',
+  {weekday: 'short', month: 'short', day: 'numeric', year: 'numeric'});
+const fmtDur = sec => `${Math.floor(sec/60)}m ${String(sec%60).padStart(2,'0')}s`;
+const schedLabel = (shift, rest) => rest ? '<span class="pill pill-over">Rest day</span>'
+  : shift ? `<span class="pill pill-sched">${shift}</span>` : '<span style="color:#8a919e;font-size:12px">No schedule</span>';
 
 function showMsg(text, ok) {
   const el = document.getElementById('obr-msg');
@@ -169,13 +184,14 @@ async function loadData() {
 function renderPending(rows) {
   const box = document.getElementById('obr-pending');
   if (!rows.length) {
-    box.innerHTML = '<tr><td colspan="7" class="obr-empty">✅ No pending overbreaks</td></tr>';
+    box.innerHTML = '<tr><td colspan="8" class="obr-empty">✅ No pending overbreaks</td></tr>';
     return;
   }
   box.innerHTML = rows.map(r => `
     <tr id="row-${r.employee_id}-${r.shift_date}">
-      <td>${r.shift_date}</td>
+      <td>${fmtDate(r.shift_date)}</td>
       <td style="font-weight:600">${r.employee_name}</td>
+      <td>${schedLabel(r.shift_time, r.is_rest_day)}</td>
       <td><span class="pill pill-acct">${r.account_type}</span></td>
       <td><span class="pill pill-dur">${fmt(r.total_break_minutes)}</span></td>
       <td><span class="pill pill-over">+${r.overbreak_minutes}m</span></td>
@@ -209,7 +225,7 @@ function renderReviewed(rows) {
           : `<span class="pill pill-waived">Waived</span>
              <span style="color:#6b7280;font-size:12px">${r.waive_reason || ''}</span>`}</td>
       <td>${r.reviewed_by_name}</td>
-      <td style="color:#8a919e;font-size:12px">${r.reviewed_at}</td>
+      <td style="color:#8a919e;font-size:12px">${fmtDT(r.reviewed_at)}</td>
     </tr>`).join('');
 }
 
@@ -223,17 +239,29 @@ async function toggleDetail(eid, sdate) {
   const tr = document.createElement('tr');
   tr.id = `detail-${rowId}`;
   tr.className = 'detail-row';
-  tr.innerHTML = '<td colspan="7">Loading…</td>';
+  tr.innerHTML = '<td colspan="8">Loading…</td>';
   anchor.after(tr);
   const res = await fetch(`/api/supervisor/overbreaks/detail?employee_id=${encodeURIComponent(eid)}&shift_date=${encodeURIComponent(sdate)}`);
   const data = await res.json();
-  if (!data.success) { tr.innerHTML = '<td colspan="7">Failed to load</td>'; return; }
-  tr.innerHTML = `<td colspan="7"><div class="detail-inner"><table>
+  if (!data.success) { tr.innerHTML = '<td colspan="8">Failed to load</td>'; return; }
+  const sc = data.schedule || {};
+  const winStart = sc.start ? new Date(sc.start) : null, winEnd = sc.end ? new Date(sc.end) : null;
+  const outside = b => winStart && (new Date(b.break_start) < winStart || new Date(b.break_start) >= winEnd);
+  let inSec = 0, outSec = 0;
+  data.breaks.forEach(b => { if (outside(b)) outSec += b.duration; else inSec += b.duration; });
+  const schedLine = sc.is_rest_day ? 'Rest day'
+    : sc.shift_time ? `${sc.shift_time}` + (winStart ? ` &nbsp;(${fmtDT(sc.start)} – ${fmtDT(sc.end)})` : '')
+    : 'No schedule found';
+  tr.innerHTML = `<td colspan="8"><div class="detail-inner">
+    <div class="detail-sched">📅 Schedule for ${fmtDate(sdate)}: <strong>${schedLine}</strong></div>
+    ${outSec ? `<div class="detail-warn">⚠️ ${fmtDur(outSec)} of these breaks fall outside this shift, so they may belong to another day. Within shift: <strong>${fmtDur(inSec)}</strong>.</div>` : ''}
+    <table>
     <tr><th>Start</th><th>End</th><th>Duration</th><th></th></tr>
-    ${data.breaks.map(b => `<tr>
-      <td>${b.break_start}</td><td>${b.break_end}</td>
-      <td>${Math.floor(b.duration/60)}m ${b.duration%60}s</td>
-      <td>${b.auto_closed ? '<span class="pill pill-auto">auto-closed</span>' : ''}</td>
+    ${data.breaks.map(b => `<tr class="${outside(b) ? 'brk-outside' : ''}">
+      <td>${fmtDT(b.break_start)}</td>
+      <td>${b.break_end.slice(0,10) === b.break_start.slice(0,10) ? fmtTime(b.break_end) : fmtDT(b.break_end)}</td>
+      <td>${fmtDur(b.duration)}</td>
+      <td>${outside(b) ? '<span class="pill pill-over">outside shift</span> ' : ''}${b.auto_closed ? '<span class="pill pill-auto">auto-closed</span>' : ''}</td>
     </tr>`).join('')}</table></div></td>`;
 }
 

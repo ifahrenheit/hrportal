@@ -46,21 +46,62 @@ def _is_allowed_ip(ip):
 
 
 # ── Shift helpers (ported from PHP) ──────────────────────────────────────────
-def _normalize_shift(s):
-    """Convert '4pm-4am' → '16:00-04:00'. Leaves '22:00-07:00' unchanged."""
-    if not s:
-        return None
-    if re.match(r'^\d{2}:\d{2}-\d{2}:\d{2}$', s):
-        return s
-    m = re.match(r'^(\d{1,2})(am|pm)-(\d{1,2})(am|pm)$', s, re.I)
+_SHIFT_PART = re.compile(r'^(\d{1,2})(?::(\d{2}))?\s*(am|pm|mn|nn)$', re.I)
+
+def _shift_part_minutes(part):
+    """'5am' -> 300, '5:30pm' -> 1050, '12mn' -> 0 (midnight), '12nn' -> 720 (noon)."""
+    m = _SHIFT_PART.match(part.strip())
     if not m:
         return None
-    sh, sp, eh, ep = int(m[1]), m[2].lower(), int(m[3]), m[4].lower()
-    if sp == 'pm' and sh != 12: sh += 12
-    elif sp == 'am' and sh == 12: sh = 0
-    if ep == 'pm' and eh != 12: eh += 12
-    elif ep == 'am' and eh == 12: eh = 0
-    return f'{sh:02d}:00-{eh:02d}:00'
+    h, mins, suf = int(m[1]), int(m[2] or 0), m[3].lower()
+    if h > 12 or mins > 59:
+        return None
+    if suf == 'mn':
+        h = 0 if h == 12 else h
+    elif suf == 'nn':
+        h = 12 if h == 12 else h
+    elif suf == 'pm' and h != 12:
+        h += 12
+    elif suf == 'am' and h == 12:
+        h = 0
+    return h * 60 + mins
+
+def _normalize_shift(s):
+    """Convert a schedule shift string to 'HH:MM-HH:MM'.
+    Handles '4pm-4am', '5:30pm-12mn' (midnight), '1am-12nn' (noon) and
+    leaves '22:00-07:00' unchanged. Returns None for non-shifts ('VL', 'LWOP')."""
+    if not s:
+        return None
+    s = s.strip()
+    if re.match(r'^\d{2}:\d{2}-\d{2}:\d{2}$', s):
+        return s
+    parts = s.split('-')
+    if len(parts) != 2:
+        return None
+    start, end = _shift_part_minutes(parts[0]), _shift_part_minutes(parts[1])
+    if start is None or end is None:
+        return None
+    return f'{start // 60:02d}:{start % 60:02d}-{end // 60:02d}:{end % 60:02d}'
+
+def _schedule_window(shift_date, sched):
+    """Schedule for a shift date as {shift_time, is_rest_day, start, end};
+    start/end are ISO datetimes (end rolls to the next day for overnight
+    shifts), or None when there's no parseable shift."""
+    out = {'shift_time': None, 'is_rest_day': False, 'start': None, 'end': None}
+    if not sched:
+        return out
+    out['shift_time'] = sched['shift_time']
+    out['is_rest_day'] = bool(sched['is_rest_day'])
+    st = _normalize_shift(sched['shift_time'])
+    if st and not out['is_rest_day']:
+        sh, sm, eh, em = map(int, re.match(r'^(\d{2}):(\d{2})-(\d{2}):(\d{2})$', st).groups())
+        day = datetime.strptime(shift_date, '%Y-%m-%d')
+        start = day + timedelta(hours=sh, minutes=sm)
+        end = day + timedelta(hours=eh, minutes=em)
+        if end <= start:
+            end += timedelta(days=1)
+        out['start'], out['end'] = start.isoformat(), end.isoformat()
+    return out
 
 def _force_close_stale(conn):
     """Force-close any break left open past 2 hours.
@@ -643,7 +684,8 @@ def overbreaks_api():
             c.execute("""
                 SELECT p.employee_id, p.employee_name, p.account_type, p.shift_date,
                        p.total_break_minutes, p.overbreak_minutes, p.has_auto_closed,
-                       p.period_key, p.cycle_days, p.nth_in_cycle
+                       p.period_key, p.cycle_days, p.nth_in_cycle,
+                       es.shift_time, es.is_rest_day
                 FROM (
                     SELECT d.*,
                            COUNT(*)     OVER (PARTITION BY d.employee_id, d.period_key) AS cycle_days,
@@ -675,6 +717,9 @@ def overbreaks_api():
                 LEFT JOIN overbreak_reviews orv
                   ON orv.employee_id = p.employee_id
                  AND orv.shift_date  = p.shift_date
+                LEFT JOIN employee_schedules es
+                  ON es.employee_id   = p.employee_id
+                 AND es.schedule_date = p.shift_date
                 WHERE orv.id IS NULL
                   AND p.shift_date BETWEEN %s AND %s
                   AND (p.overbreak_minutes >= 31 OR p.cycle_days >= 3)
@@ -723,8 +768,14 @@ def overbreak_detail():
                   AND break_end IS NOT NULL
                 ORDER BY break_start
             """, (employee_id, shift_date))
-            return jsonify(success=True,
-                           breaks=[_serialize_row(r) for r in c.fetchall()])
+            breaks = [_serialize_row(r) for r in c.fetchall()]
+            c.execute("""
+                SELECT shift_time, is_rest_day FROM employee_schedules
+                WHERE employee_id = %s AND schedule_date = %s LIMIT 1
+            """, (employee_id, shift_date))
+            sched = c.fetchone()
+            return jsonify(success=True, breaks=breaks,
+                           schedule=_schedule_window(shift_date, sched))
     except Exception:
         _logger.exception("overbreak_detail failed")
         return jsonify(success=False, error='Server error'), 500
