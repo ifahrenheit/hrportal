@@ -133,14 +133,20 @@ function showMsg(text, ok) {
   setTimeout(() => el.style.display = 'none', 6000);
 }
 
-function monthToDate(d = new Date()) {
-  const y = d.getFullYear(), p = n => String(n).padStart(2, '0');
-  const m = p(d.getMonth() + 1);
-  return [`${y}-${m}-01`, `${y}-${m}-${p(d.getDate())}`];
+// Current payroll cycle (8th-22nd / 23rd-7th) up to today
+function cycleToDate(d = new Date()) {
+  const p = n => String(n).padStart(2, '0');
+  const fmt = x => `${x.getFullYear()}-${p(x.getMonth() + 1)}-${p(x.getDate())}`;
+  const day = d.getDate();
+  let start;
+  if (day >= 23)     start = new Date(d.getFullYear(), d.getMonth(), 23);
+  else if (day >= 8) start = new Date(d.getFullYear(), d.getMonth(), 8);
+  else               start = new Date(d.getFullYear(), d.getMonth() - 1, 23);
+  return [fmt(start), fmt(d)];
 }
 
 function setDefaults() {
-  const [s, e] = monthToDate();
+  const [s, e] = cycleToDate();
   document.getElementById('obr-start').value = s;
   document.getElementById('obr-end').value = e;
 }

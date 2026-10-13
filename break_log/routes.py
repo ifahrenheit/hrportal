@@ -609,20 +609,20 @@ def overbreak_review():
 def overbreaks_api():
     from app import get_central_db
 
+    from helpers.payroll_period import get_payroll_period_for_date
+
+    # Payroll cycles are 8th-22nd and 23rd-7th (helpers/payroll_period.py)
     def _cycle_start(d):
-        return d.replace(day=16 if d.day > 15 else 1)
+        return get_payroll_period_for_date(d)[0]
 
     def _cycle_end(d):
-        if d.day <= 15:
-            return d.replace(day=15)
-        nxt = (d.replace(day=28) + timedelta(days=4)).replace(day=1)
-        return nxt - timedelta(days=1)          # last day of month
+        return get_payroll_period_for_date(d)[1]
 
     today = date.today()
     try:
         start = datetime.strptime(request.args.get('start', ''), '%Y-%m-%d').date()
     except ValueError:
-        start = today.replace(day=1)            # default: 1st of current month
+        start = _cycle_start(today)             # default: start of current cycle
     try:
         end = datetime.strptime(request.args.get('end', ''), '%Y-%m-%d').date()
     except ValueError:
@@ -652,8 +652,15 @@ def overbreaks_api():
                     FROM (
                         SELECT bl.employee_id, bl.employee_name, bl.account_type,
                                bl.shift_date,
-                               CONCAT(DATE_FORMAT(bl.shift_date, '%%M %%Y'), '-',
-                                      IF(DAY(bl.shift_date) <= 15, '1st', '2nd')) AS period_key,
+                               -- payroll cycle: 8-22 = '<Month> 1st', 23-7 = '<Month> 2nd'
+                               -- (days 1-7 belong to the previous month's 2nd cycle)
+                               CASE
+                                 WHEN DAY(bl.shift_date) BETWEEN 8 AND 22
+                                   THEN CONCAT(DATE_FORMAT(bl.shift_date, '%%M %%Y'), '-1st')
+                                 WHEN DAY(bl.shift_date) >= 23
+                                   THEN CONCAT(DATE_FORMAT(bl.shift_date, '%%M %%Y'), '-2nd')
+                                 ELSE CONCAT(DATE_FORMAT(bl.shift_date - INTERVAL 1 MONTH, '%%M %%Y'), '-2nd')
+                               END AS period_key,
                                CAST(ROUND(SUM(bl.duration)/60) AS SIGNED) AS total_break_minutes,
                                CAST(ROUND(SUM(bl.duration)/60) - %s AS SIGNED) AS overbreak_minutes,
                                MAX(bl.auto_closed) AS has_auto_closed
