@@ -300,14 +300,18 @@ async function sendAI() {
   try {
     const res = await fetch('/api/chat', {
       method: 'POST',
-      headers: {'Content-Type': 'application/json'},
+      headers: {'Content-Type': 'application/json', 'X-CSRF-Token': getCsrfToken()},
       body: JSON.stringify({ message })
     });
     const data = await res.json();
     document.getElementById('ai-typing-row')?.remove();
-    // Format line breaks
-    const formatted = data.reply.replace(/\n/g, '<br>');
-    addMessage(formatted, 'ai');
+    if (!data.reply) {
+      addMessage('⚠️ ' + (data.error || 'Could not get a reply. Please try again.'), 'ai');
+    } else {
+      // Format line breaks
+      const formatted = data.reply.replace(/\n/g, '<br>');
+      addMessage(formatted, 'ai');
+    }
   } catch(e) {
     document.getElementById('ai-typing-row')?.remove();
     addMessage('⚠️ Could not connect to AI. Please try again.', 'ai');
