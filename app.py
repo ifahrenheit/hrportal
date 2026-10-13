@@ -1,5 +1,5 @@
 import json
-from flask import Flask, session, redirect, url_for, request, render_template, flash, jsonify, Blueprint, abort, g, send_file
+from flask import Flask, session, redirect, url_for, request, render_template, flash, jsonify, Blueprint, abort, g, send_file, has_request_context
 from authlib.integrations.flask_client import OAuth
 import pymysql
 import os
@@ -174,6 +174,31 @@ def get_central_db():
         cursorclass=pymysql.cursors.DictCursor,
         autocommit=False
     )
+
+# ── Request-scoped connection cleanup ─────────────────────────────────────
+# Many routes (and blueprint helpers) open pymysql connections and don't
+# close them on every path, which exhausted max_connections ("Too many
+# connections", 1040). Every connection opened while handling a request is
+# recorded here and closed in teardown if the code left it open. Outside a
+# request (cron scripts, threads) connect() is untouched.
+_pymysql_connect = pymysql.connect
+
+def _request_tracked_connect(*args, **kwargs):
+    conn = _pymysql_connect(*args, **kwargs)
+    if has_request_context():
+        g.setdefault('_db_conns', []).append(conn)
+    return conn
+
+pymysql.connect = _request_tracked_connect
+
+@app.teardown_request
+def _close_request_db_conns(exc):
+    for conn in g.pop('_db_conns', []):
+        try:
+            if conn.open:
+                conn.close()
+        except Exception:
+            pass
 
 def _split_recipients(to):
     """Accepts either a single address or a comma-joined string of several

@@ -286,7 +286,7 @@
     if (!breakStartTime) return;
     const diff = Math.floor((Date.now() - new Date(breakStartTime)) / 1000);
     document.getElementById('timer').textContent = formatTime(diff);
-    loadBreakLogs();
+    renderBreakTotals();  // local only -- completed breaks can't change mid-break
   }
 
   function startTimer(startTime) {
@@ -368,8 +368,6 @@
       const r = await fetch('/api/break?action=get_logs');
       const d = await r.json();
       const tbody   = document.getElementById('breakLogsTable');
-      const totalEl = document.getElementById('totalBreakTime');
-      const otAlert = document.getElementById('overtimeAlert');
 
       if (d.success) {
         if (d.breaks && d.breaks.length > 0) {
@@ -384,43 +382,53 @@
           tbody.innerHTML = '<tr><td colspan="3" class="text-center text-muted py-4">No breaks logged yet today</td></tr>';
         }
 
-        let total = d.total_break_time || 0;
-        if (isOnBreak && breakStartTime) {
-          total += Math.floor((Date.now() - new Date(breakStartTime)) / 1000);
-        }
-        totalEl.textContent = 'Total: ' + formatTime(total);
-
-        if (isOnBreak) {
-          if (total >= 85 * 60 && total < 89 * 60 && !sessionStorage.getItem('warned85')) {
-            sessionStorage.setItem('warned85', 'true');
-            showAlert('⏰ Your total break time today is almost 1 hour 30 minutes. Please end your break soon.', 'warning');
-            showBreakNotification('⏰ Break Reminder', "You're almost at your 1 hour 30 minute break limit. Please end your break soon.");
-            playBreakSound();
-            flashTitle('⏰ END YOUR BREAK');
-          }
-          if (total >= 89 * 60 && total < 90 * 60 && !sessionStorage.getItem('warned89')) {
-            sessionStorage.setItem('warned89', 'true');
-            showAlert('⚠️ You are about to reach your 1 hour 30 minute break limit. Please end it now.', 'danger');
-            showBreakNotification('⚠️ Break Limit', 'You are about to reach your 1 hour 30 minute break limit. Please end it now.');
-            playBreakSound();
-            flashTitle('⏰ END YOUR BREAK');
-          }
-        }
-
-        const MAX = 90 * 60;
-        if (total > MAX) {
-          totalEl.classList.add('overtime');
-          otAlert.style.display = 'block';
-          if (!sessionStorage.getItem('overtimeNotified')) {
-            showOvertimeNotification(total);
-            sessionStorage.setItem('overtimeNotified', 'true');
-          }
-        } else {
-          totalEl.classList.remove('overtime');
-          otAlert.style.display = 'none';
-        }
+        completedBreakSeconds = d.total_break_time || 0;
+        renderBreakTotals();
       }
     } catch(e) { console.error(e); }
+  }
+
+  // Total = completed breaks (from the last get_logs) + the running break.
+  // Called every second by updateTimer without hitting the server.
+  let completedBreakSeconds = 0;
+  function renderBreakTotals() {
+    const totalEl = document.getElementById('totalBreakTime');
+    const otAlert = document.getElementById('overtimeAlert');
+    let total = completedBreakSeconds;
+    if (isOnBreak && breakStartTime) {
+      total += Math.floor((Date.now() - new Date(breakStartTime)) / 1000);
+    }
+    totalEl.textContent = 'Total: ' + formatTime(total);
+
+    if (isOnBreak) {
+      if (total >= 85 * 60 && total < 89 * 60 && !sessionStorage.getItem('warned85')) {
+        sessionStorage.setItem('warned85', 'true');
+        showAlert('⏰ Your total break time today is almost 1 hour 30 minutes. Please end your break soon.', 'warning');
+        showBreakNotification('⏰ Break Reminder', "You're almost at your 1 hour 30 minute break limit. Please end your break soon.");
+        playBreakSound();
+        flashTitle('⏰ END YOUR BREAK');
+      }
+      if (total >= 89 * 60 && total < 90 * 60 && !sessionStorage.getItem('warned89')) {
+        sessionStorage.setItem('warned89', 'true');
+        showAlert('⚠️ You are about to reach your 1 hour 30 minute break limit. Please end it now.', 'danger');
+        showBreakNotification('⚠️ Break Limit', 'You are about to reach your 1 hour 30 minute break limit. Please end it now.');
+        playBreakSound();
+        flashTitle('⏰ END YOUR BREAK');
+      }
+    }
+
+    const MAX = 90 * 60;
+    if (total > MAX) {
+      totalEl.classList.add('overtime');
+      otAlert.style.display = 'block';
+      if (!sessionStorage.getItem('overtimeNotified')) {
+        showOvertimeNotification(total);
+        sessionStorage.setItem('overtimeNotified', 'true');
+      }
+    } else {
+      totalEl.classList.remove('overtime');
+      otAlert.style.display = 'none';
+    }
   }
 
   function showBreakNotification(title, body) {
