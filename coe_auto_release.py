@@ -6,7 +6,9 @@ Safety net for the CoE self-confirm flow: any request still sitting in
 so nothing lingers indefinitely if the employee forgets to confirm.
 
 Intended to run once daily via cron, e.g.:
-    30 13 * * * /usr/bin/python3 /var/www/html/leavesystem/coe_auto_release.py >> /var/log/coe_auto_release.log 2>&1
+    30 13 * * * /var/www/html/leavesystem/venv/bin/python /var/www/html/leavesystem/coe_auto_release.py >> /var/log/coe_auto_release.log 2>&1
+
+Pass --dry-run to list what would be released without changing anything.
 
 (Placed alongside your existing absence-alert cron pipeline at 12:30/12:45/1:00 PM
  -- pick a time that doesn't collide, e.g. 1:30 PM.)
@@ -18,12 +20,17 @@ from datetime import datetime
 
 sys.path.insert(0, "/var/www/html/leavesystem")
 
+from dotenv import load_dotenv  # noqa: E402
+
+# cron doesn't inherit the service's environment; db_core reads MAIN_DB_*
+load_dotenv("/var/www/html/leavesystem/.env")
+
 from db_core import get_db_connection  # noqa: E402
 
 COE_AUTO_RELEASE_DAYS = int(os.environ.get("COE_AUTO_RELEASE_DAYS", 3))
 
 
-def main():
+def main(dry_run=False):
     conn = get_db_connection()
     try:
         with conn.cursor() as cur:
@@ -45,6 +52,9 @@ def main():
                 return
 
             ids = [r["id"] for r in stale]
+            if dry_run:
+                print(f"[{datetime.now()}] DRY RUN -- would auto-release {len(ids)} request(s): {ids}")
+                return
             print(f"[{datetime.now()}] Auto-releasing {len(ids)} request(s): {ids}")
 
             cur.execute(
@@ -63,4 +73,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    main(dry_run="--dry-run" in sys.argv)
