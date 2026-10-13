@@ -22,6 +22,14 @@
   .perm-group-label { font-size:.6rem; font-weight:700; text-transform:uppercase; letter-spacing:.09em; color:var(--accent); margin-bottom:.45rem; padding-bottom:.3rem; border-bottom:1px solid var(--border); display:flex; align-items:center; gap:.3rem; }
   .perm-group-label::before { content:''; display:inline-block; width:3px; height:10px; border-radius:2px; background:var(--accent); }
   .perms-grid { display:flex; flex-wrap:wrap; gap:.3rem; }
+  .perm-toggle.perm-hit { border-color:var(--accent); box-shadow:0 0 0 2px rgba(59,130,246,.25); }
+  /* ── Who Has What overview ── */
+  .perm-chip { display:flex; align-items:center; gap:.35rem; padding:.28rem .55rem; border-radius:6px; border:1px solid var(--border); background:var(--surface); color:inherit; font-size:.78rem; white-space:nowrap; cursor:pointer; }
+  .perm-chip:hover, .perm-chip.active { border-color:var(--accent); }
+  .perm-chip.active { background:var(--accent); color:#fff; }
+  .perm-chip.is-empty { opacity:.55; }
+  .perm-count { font-weight:700; font-size:.7rem; padding:0 .4rem; border-radius:8px; background:var(--bg); color:var(--accent); }
+  .perm-chip.active .perm-count { background:#fff; }
   @media(max-width:900px) { .perms-grouped { grid-template-columns:1fr; } }
 </style>
 
@@ -66,23 +74,6 @@
 <div class="alert alert-info mb-4">
   <i class="me-2" data-lucide="info"></i>
   Sub-admins can access specific features you enable. They <strong>cannot</strong> manage other sub-admins or change admin accounts.
-</div>
-
-<div class="mb-3 d-flex gap-2 align-items-center">
-  <input type="text" id="empSearch" class="form-control form-control-sm"
-         placeholder="Search employee..." style="max-width:280px;" oninput="filterEmps()">
-  <select id="groupFilter" class="form-select form-select-sm" style="width:auto;" onchange="filterEmps()">
-    <option value="">All Groups</option>
-    {% for g in groups %}
-    <option value="{{ g }}">{{ g }}</option>
-    {% endfor %}
-  </select>
-  <select id="roleFilter" class="form-select form-select-sm" style="width:auto;" onchange="filterEmps()">
-    <option value="">All Employees</option>
-    <option value="subadmin">Sub-Admins Only</option>
-    <option value="none">No Role Assigned</option>
-  </select>
-  <span class="text-muted small ms-auto" id="empCount"></span>
 </div>
 
 {% set perm_groups = [
@@ -136,13 +127,71 @@
   ]),
 ] %}
 
+<div class="card mb-3 p-3">
+  <div class="d-flex align-items-center justify-content-between">
+    <h6 class="fw-semibold mb-0"><i class="me-2" data-lucide="shield-check"></i>Who Has What</h6>
+    <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-toggle="collapse" data-bs-target="#permOverview">
+      <i class="me-1" data-lucide="chevrons-up-down"></i>Show / Hide
+    </button>
+  </div>
+  <div class="collapse show" id="permOverview">
+    <div class="text-muted small mt-2 mb-2">Counts are saved permissions. Click one to list the employees who have it.</div>
+    <div class="perms-grouped mt-0">
+      {% for group_name, group_perms in perm_groups %}
+      <div class="perm-group">
+        <div class="perm-group-label">{{ group_name }}</div>
+        <div class="perms-grid">
+          {% for perm, icon, label in group_perms %}
+          {% set n = employees|selectattr(perm)|list|length %}
+          <button type="button" class="perm-chip{% if not n %} is-empty{% endif %}" data-perm="{{ perm }}" onclick="pickPerm('{{ perm }}')">
+            <i data-lucide="{{ icon }}"></i> {{ label }} <span class="perm-count">{{ n }}</span>
+          </button>
+          {% endfor %}
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+</div>
+
+<div class="mb-3 d-flex gap-2 align-items-center">
+  <input type="text" id="empSearch" class="form-control form-control-sm"
+         placeholder="Search employee..." style="max-width:280px;" oninput="filterEmps()">
+  <select id="groupFilter" class="form-select form-select-sm" style="width:auto;" onchange="filterEmps()">
+    <option value="">All Groups</option>
+    {% for g in groups %}
+    <option value="{{ g }}">{{ g }}</option>
+    {% endfor %}
+  </select>
+  <select id="roleFilter" class="form-select form-select-sm" style="width:auto;" onchange="filterEmps()">
+    <option value="">All Employees</option>
+    <option value="subadmin">Sub-Admins Only</option>
+    <option value="none">No Role Assigned</option>
+  </select>
+  <select id="permFilter" class="form-select form-select-sm" style="width:auto;" onchange="filterEmps()">
+    <option value="">Any Permission</option>
+    {% for group_name, group_perms in perm_groups %}
+    <optgroup label="{{ group_name }}">
+      {% for perm, icon, label in group_perms %}
+      <option value="{{ perm }}">{{ label }}</option>
+      {% endfor %}
+    </optgroup>
+    {% endfor %}
+  </select>
+  <button type="button" class="btn btn-sm btn-outline-secondary" onclick="clearFilters()">Clear</button>
+  <span class="text-muted small ms-auto" id="empCount"></span>
+</div>
+
+
+
 <div id="empList">
 {% for e in employees %}
 {% set is_sub = e.can_all_leaves is not none %}
 <div class="emp-card {% if is_sub %}is-subadmin{% endif %}" 
      data-name="{{ e.emp_lastname }} {{ e.emp_firstname }}" 
      data-role="{{ 'subadmin' if is_sub else 'none' }}"
-     data-group="{{ e.group_name or '' }}">
+     data-group="{{ e.group_name or '' }}"
+     data-perms="{% for gn, gp in perm_groups %}{% for perm, icon, label in gp %}{% if e[perm] %}{{ perm }} {% endif %}{% endfor %}{% endfor %}">
   <form method="POST">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <input type="hidden" name="emp_number" value="{{ e.emp_number }}">
@@ -179,7 +228,7 @@
         <div class="perm-group-label">{{ group_name }}</div>
         <div class="perms-grid">
           {% for perm, icon, label in group_perms %}
-          <label class="perm-toggle">
+          <label class="perm-toggle" data-perm="{{ perm }}">
             <input type="checkbox" name="{{ perm }}" {% if e[perm] %}checked{% endif %}>
             <span class="pill"></span>
             <i data-lucide="{{ icon }}"></i> {{ label }}
@@ -201,6 +250,8 @@ function filterEmps() {
   const q     = document.getElementById('empSearch').value.toLowerCase();
   const role  = document.getElementById('roleFilter').value;
   const group = document.getElementById('groupFilter') ? document.getElementById('groupFilter').value : '';
+  const perm  = document.getElementById('permFilter').value;
+  sessionStorage.setItem('subadmin_perm', perm);
   sessionStorage.setItem('subadmin_search', document.getElementById('empSearch').value);
   sessionStorage.setItem('subadmin_role', role);
   if (document.getElementById('groupFilter')) sessionStorage.setItem('subadmin_group', group);
@@ -212,12 +263,30 @@ function filterEmps() {
     const matchQ     = !q || name.includes(q);
     const matchRole  = !role || cardRole === role;
     const matchGroup = !group || cardGroup === group;
-    const show = matchQ && matchRole && matchGroup;
+    const matchPerm  = !perm || (card.dataset.perms || '').split(' ').includes(perm);
+    const show = matchQ && matchRole && matchGroup && matchPerm;
     card.style.display = show ? '' : 'none';
+    card.querySelectorAll('.perm-toggle').forEach(t => t.classList.toggle('perm-hit', !!perm && t.dataset.perm === perm));
     if (show) count++;
   });
   var el = document.getElementById('empCount');
   if (el) el.textContent = count + ' employee' + (count !== 1 ? 's' : '');
+  document.querySelectorAll('.perm-chip').forEach(c => c.classList.toggle('active', c.dataset.perm === perm));
+}
+
+function pickPerm(perm) {
+  const sel = document.getElementById('permFilter');
+  sel.value = sel.value === perm ? '' : perm;
+  filterEmps();
+  if (sel.value) document.getElementById('empSearch').scrollIntoView({behavior: 'smooth', block: 'start'});
+}
+
+function clearFilters() {
+  document.getElementById('empSearch').value = '';
+  document.getElementById('groupFilter').value = '';
+  document.getElementById('roleFilter').value = '';
+  document.getElementById('permFilter').value = '';
+  filterEmps();
 }
 
 document.addEventListener("DOMContentLoaded", function() {
@@ -227,6 +296,8 @@ document.addEventListener("DOMContentLoaded", function() {
   if (saved) document.getElementById('empSearch').value = saved;
   if (savedRole) document.getElementById('roleFilter').value = savedRole;
   if (savedGroup && document.getElementById('groupFilter')) document.getElementById('groupFilter').value = savedGroup;
+  const savedPerm = sessionStorage.getItem('subadmin_perm');
+  if (savedPerm) document.getElementById('permFilter').value = savedPerm;
   filterEmps();
 });
 function loginAs(empNumber) {
