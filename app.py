@@ -6404,9 +6404,8 @@ MATERIAL_CATEGORIES   = ['IT Equipment', 'Office Supplies', 'Peripherals', 'Othe
 
 def get_material_admin_emails():
     """Get all emails of users with can_material_requests permission + MATERIAL_ADMIN_EMAIL."""
-    emails = set()
-    if MATERIAL_ADMIN_EMAIL:
-        emails.add(MATERIAL_ADMIN_EMAIL)
+    # MATERIAL_ADMIN_EMAIL may list several addresses separated by commas
+    emails = {e.lower() for e in _split_recipients(MATERIAL_ADMIN_EMAIL or '')}
     db = get_db()
     try:
         with db.cursor() as c:
@@ -6443,21 +6442,8 @@ def get_material_final_emails():
     return list(emails)
 
 def send_material_email(to, subject, body_html):
-    """Send email for material request notifications."""
-    try:
-        from email.mime.multipart import MIMEMultipart
-        from email.mime.text import MIMEText
-        from email.utils import formataddr
-        msg = MIMEMultipart('alternative')
-        msg['Subject'] = subject
-        msg['From']    = formataddr(("Cohere HR Portal - Material Requests", os.getenv('SMTP_USER')))
-        msg['To']      = to
-        msg.attach(MIMEText(body_html, 'html'))
-        with smtplib.SMTP(os.getenv('SMTP_SERVER'), int(os.getenv('SMTP_PORT', 2525))) as s:
-            s.login(os.getenv('SMTP_USER'), os.getenv('SMTP_PASSWORD'))
-            s.sendmail(os.getenv('SMTP_USER'), [to], msg.as_string())
-    except Exception as e:
-        app.logger.warning(f'material email failed: {e}')
+    """Send email for material request notifications (background thread)."""
+    send_email_as(to, subject, body_html, "Cohere HR Portal - Material Requests")
 
 
 @app.route('/file-requests/material/edit/<group_id>', methods=['GET', 'POST'])
@@ -7568,21 +7554,8 @@ def get_facilities_final_emails():
     return list(emails)
 
 def send_facilities_email(to, subject, body_html):
-    """Send email for facilities request notifications."""
-    try:
-        from email.mime.multipart import MIMEMultipart
-        from email.mime.text import MIMEText
-        from email.utils import formataddr
-        msg = MIMEMultipart('alternative')
-        msg['Subject'] = subject
-        msg['From']    = formataddr(("Cohere HR Portal - Facilities", os.getenv('SMTP_USER')))
-        msg['To']      = to
-        msg.attach(MIMEText(body_html, 'html'))
-        with smtplib.SMTP(os.getenv('SMTP_SERVER'), int(os.getenv('SMTP_PORT', 2525))) as s:
-            s.login(os.getenv('SMTP_USER'), os.getenv('SMTP_PASSWORD'))
-            s.sendmail(os.getenv('SMTP_USER'), [to], msg.as_string())
-    except Exception as e:
-        app.logger.warning(f'facilities email failed: {e}')
+    """Send email for facilities request notifications (background thread)."""
+    send_email_as(to, subject, body_html, "Cohere HR Portal - Facilities")
 
 # ── FACILITIES & REPAIR REQUEST ───────────────────────────────────────────────
 @app.route('/file-requests/facilities', methods=['GET', 'POST'])
