@@ -14104,11 +14104,17 @@ def admin_attrition():
     )
 
 
+def _sync_token_ok():
+    """X-Sync-Token check for the Apps Script attrition / exit-interview syncs.
+    Fails closed when SYNC_SECRET is not configured."""
+    expected = os.environ.get('SYNC_SECRET', '')
+    return bool(expected) and hmac.compare_digest(request.headers.get('X-Sync-Token', ''), expected)
+
+
 @app.route('/api/sync-attrition', methods=['POST'])
 def api_sync_attrition():
     """Called by Google Apps Script to sync attrition data."""
-    token = request.headers.get('X-Sync-Token', '')
-    if token != os.environ.get('SYNC_SECRET', 'cohere-sync-2025'):
+    if not _sync_token_ok():
         return jsonify({'error': 'unauthorized'}), 401
 
     data = request.get_json()
@@ -14175,8 +14181,7 @@ def api_sync_attrition():
 
 @app.route('/api/sync-exit-interview', methods=['POST'])
 def api_sync_exit_interview():
-    token = request.headers.get('X-Sync-Token', '')
-    if token != os.environ.get('SYNC_SECRET', 'cohere-sync-2025'):
+    if not _sync_token_ok():
         return jsonify({'error': 'unauthorized'}), 401
 
     data = request.get_json()
