@@ -363,7 +363,7 @@ def admin_required(f):
     def decorated(*args, **kwargs):
         if 'user' not in session:
             return redirect(url_for('login'))
-        if not session.get('is_admin') and not session.get('permissions', {}).get('can_attrition_report'):
+        if not session.get('is_admin'):
             flash('Admin access required.', 'danger')
             return redirect(url_for('dashboard'))
         return f(*args, **kwargs)
@@ -4675,7 +4675,7 @@ def supervisor_active_leaves():
             where  = ["r.status != 'cancelled'"]
             params = []
 
-            if not session.get('is_admin') and not session.get('permissions', {}).get('can_attrition_report'):
+            if not session.get('is_admin'):
                 fmt = ','.join(['%s'] * len(subordinates))
                 where.append(f"r.emp_number IN ({fmt})")
                 params.extend(subordinates)
@@ -4740,7 +4740,7 @@ def supervisor_action():
     target_emp = resolve_emp_number(raw_emp, raw_emp)
     target_eid = raw_emp  # keep original employee_id string for DB query
 
-    if not session.get('is_admin') and not session.get('permissions', {}).get('can_attrition_report'):
+    if not session.get('is_admin'):
         # Fail closed: an unresolved target_emp must not bypass the subordinate check.
         if not target_emp or target_emp not in subordinates:
             flash('Unauthorized action.', 'danger')
@@ -8907,258 +8907,235 @@ def file_requests_approvals():
                            date_to=date_to, type_filter=type_filter)
 
 
+# OT/FTS/CWS/RDW approve/reject -- shared by the form and JSON endpoints below.
+# table, employee-id column, email label
+FILE_REQUEST_TABLES = {
+    'fts': ('fts_requests', 'employeeID',  'FTS'),
+    'ot':  ('ot_requests',  'employee_id', 'OT'),
+    'cws': ('cws_requests', 'employee_id', 'CWS'),
+    'rdw': ('rd_requests',  'employee_id', 'Rest Day Work'),
+}
+
+def _can_act_on_file_requests():
+    return bool(session.get('is_supervisor') or session.get('is_admin') or
+                session.get('permissions', {}).get('can_material_requests'))
+
+def _file_request_scope():
+    """None for full admins (any employee). Otherwise (allowed employee_ids,
+    own employee_id) -- the same scope the Approvals page lists."""
+    if session.get('is_admin'):
+        return None
+    email = session['user']['email']
+    allowed = {str(e).strip() for e in (get_supervisor_file_request_employees(email) or []) if e}
+    own = get_central_employee_id(email)
+    return allowed, (str(own).strip() if own else None)
+
+def _decide_file_request(cursor, scope, req_type, req_id, action, approver_name, now):
+    """Approve/reject one Pending request. Returns (ok, message, notice) where
+    notice is (email, name, label, new_status) to send after commit, or None."""
+    if req_type not in FILE_REQUEST_TABLES:
+        return False, 'Invalid request type', None
+    table, emp_col, label = FILE_REQUEST_TABLES[req_type]
+    cursor.execute(f"SELECT id, {emp_col} AS employee_id, status FROM {table} "
+                   f"WHERE id = %s AND deleted_at IS NULL", (req_id,))
+    row = cursor.fetchone()
+    if not row:
+        return False, 'Request not found', None
+    emp_id = str(row['employee_id'] or '').strip()
+    if scope is not None:
+        allowed, own = scope
+        if own and emp_id == own:
+            return False, 'You cannot approve or reject your own request', None
+        if emp_id not in allowed:
+            return False, 'You are not the approver for this employee', None
+    if row['status'] != 'Pending':
+        return False, f"Request is already {row['status']}", None
+
+    new_status = 'Approved' if action == 'approve' else 'Rejected'
+    cursor.execute(f"UPDATE {table} SET status=%s, approver_name=%s, approved_at=%s "
+                   f"WHERE id=%s AND status='Pending'",
+                   (new_status, approver_name, now, req_id))
+    if cursor.rowcount == 0:  # decided by someone else in the meantime
+        return False, 'Request was already decided', None
+
+    cursor.execute("SELECT Email, CONCAT(FirstName,' ',LastName) AS name FROM Employees WHERE EmployeeID=%s",
+                   (emp_id,))
+    emp = cursor.fetchone()
+    notice = (emp['Email'], emp['name'], label, new_status) if emp and emp['Email'] else None
+    return True, f'Request {new_status.lower()} successfully.', notice
+
+def _send_file_request_notice(notice, approver_name):
+    email, name, label, new_status = notice
+    send_email(
+        email,
+        f'{label} Request {new_status}',
+        f"""<p>Hi {name},</p>
+        <p>Your <b>{label}</b> request has been
+        <b>{new_status.lower()}</b> by {approver_name}.</p>
+        <p><a href="https://hrportal.cohere.ph">View HR Portal</a></p>"""
+    )
+
+def _local_next(default_endpoint):
+    """Only follow `next` when it is a path on this site."""
+    nxt = request.form.get('next') or ''
+    if nxt.startswith('/') and not nxt.startswith('//') and '\\' not in nxt:
+        return nxt
+    return url_for(default_endpoint)
+
+def _decide_file_requests(items, action):
+    """items: [(req_type, req_id)]. Commits once; returns (done, skipped_msgs)."""
+    approver_name = session['user']['name']
+    now     = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    scope   = _file_request_scope()
+    notices = []
+    done    = 0
+    skipped = []
+    conn = get_central_db()
+    try:
+        with conn.cursor() as cursor:
+            for req_type, req_id in items:
+                ok, msg, notice = _decide_file_request(cursor, scope, req_type, req_id,
+                                                       action, approver_name, now)
+                if ok:
+                    done += 1
+                    if notice:
+                        notices.append(notice)
+                else:
+                    skipped.append(f'{req_type.upper()} #{req_id}: {msg}')
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+    for n in notices:
+        _send_file_request_notice(n, approver_name)
+    return done, skipped
+
+def _parse_selected(selected):
+    """'req_type|req_id|emp_id' strings -> [(req_type, req_id)]; emp_id is ignored."""
+    items = []
+    for item in selected or []:
+        parts = str(item).split('|')
+        if len(parts) >= 2 and parts[1]:
+            items.append((parts[0].lower(), parts[1]))
+    return items
+
+
 @app.route('/file-requests/approvals/bulk-action', methods=['POST'])
 @login_required
 def file_requests_bulk_action():
-    if not (session.get('is_supervisor') or session.get('is_admin') or session.get('permissions', {}).get('can_material_requests')):
+    if not _can_act_on_file_requests():
         flash('Access denied.', 'danger')
         return redirect(url_for('file_requests_approvals'))
     if not validate_csrf():
         flash('Security check failed, please try again.', 'danger')
         return redirect(url_for('file_requests_approvals'))
 
-    action   = request.form.get('action')
-    selected = request.form.getlist('selected_reqs')  # "req_type|req_id|emp_id"
-
-    if not selected:
+    action = request.form.get('action')
+    items  = _parse_selected(request.form.getlist('selected_reqs'))
+    if action not in ('approve', 'reject'):
+        flash('Invalid action.', 'danger')
+        return redirect(url_for('file_requests_approvals'))
+    if not items:
         flash('No requests selected.', 'warning')
         return redirect(url_for('file_requests_approvals'))
 
-    new_status    = 'Approved' if action == 'approve' else 'Rejected'
-    approver_name = session['user']['name']
-    now           = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-    table_map     = {'fts': 'fts_requests', 'ot': 'ot_requests',
-                     'cws': 'cws_requests', 'rdw': 'rd_requests'}
-    count = 0
-    conn  = get_central_db()
     try:
-        cursor = conn.cursor()
-        for item in selected:
-            parts = item.split('|')
-            if len(parts) != 3:
-                continue
-            req_type, req_id, emp_id = parts[0], parts[1], parts[2]
-            if req_type not in table_map:
-                continue
-            table = table_map[req_type]
-            cursor.execute(f"UPDATE {table} SET status=%s, approver_name=%s, approved_at=%s WHERE id=%s",
-                           (new_status, approver_name, now, req_id))
-            count += 1
-            # Notify employee
-            cursor.execute("SELECT Email, CONCAT(FirstName,' ',LastName) AS name FROM Employees WHERE EmployeeID=%s", (emp_id,))
-            emp = cursor.fetchone()
-            if emp and emp['Email']:
-                req_label = {'fts':'FTS','ot':'OT','cws':'CWS','rdw':'Rest Day Work'}[req_type]
-                send_email(emp['Email'], f'{req_label} Request {new_status}',
-                    f"<p>Your <b>{req_label}</b> request has been <b>{new_status}</b> by {approver_name}.</p>")
-        conn.commit()
+        done, skipped = _decide_file_requests(items, action)
     except Exception as e:
-        conn.rollback()
         flash(f'Error: {e}', 'danger')
         return redirect(url_for('file_requests_approvals'))
-    finally:
-        cursor.close()
-        conn.close()
 
-    flash(f'{count} request(s) {new_status.lower()} successfully.', 'success')
-    next_url = request.form.get('next', url_for('file_requests_approvals'))
-    return redirect(next_url)
+    verb = 'approved' if action == 'approve' else 'rejected'
+    flash(f'{done} request(s) {verb} successfully.', 'success')
+    if skipped:
+        flash(f'{len(skipped)} skipped: ' + '; '.join(skipped), 'warning')
+    return redirect(_local_next('file_requests_approvals'))
 
 
 @app.route('/file-requests/approvals/action', methods=['POST'])
 @login_required
 def file_requests_action():
-    if not (session.get('is_supervisor') or session.get('is_admin') or session.get('permissions', {}).get('can_material_requests')):
+    if not _can_act_on_file_requests():
         flash('Access denied.', 'danger')
         return redirect(url_for('dashboard'))
     if not validate_csrf():
         flash('Security check failed, please try again.', 'danger')
         return redirect(url_for('dashboard'))
 
-    req_type  = request.form.get('req_type')   # fts|ot|cws|rdw
-    req_id    = request.form.get('req_id')
-    action    = request.form.get('action')      # approve|reject
-    emp_id    = request.form.get('emp_id')      # for email lookup
-
-    if action not in ('approve', 'reject') or not req_id or not req_type:
+    req_type = (request.form.get('req_type') or '').lower()   # fts|ot|cws|rdw
+    req_id   = request.form.get('req_id')
+    action   = request.form.get('action')                      # approve|reject
+    if action not in ('approve', 'reject') or not req_id or req_type not in FILE_REQUEST_TABLES:
         flash('Invalid action.', 'danger')
         return redirect(url_for('file_requests_approvals'))
 
-    new_status    = 'Approved' if action == 'approve' else 'Rejected'
-    approver_name = session['user']['name']
-    now           = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-
-    table_map = {
-        'fts': ('fts_requests', 'id'),
-        'ot':  ('ot_requests',  'id'),
-        'cws': ('cws_requests', 'id'),
-        'rdw': ('rd_requests',  'id'),
-    }
-
-    if req_type not in table_map:
-        flash('Invalid request type.', 'danger')
+    try:
+        done, skipped = _decide_file_requests([(req_type, req_id)], action)
+    except Exception as e:
+        flash(f'Error: {e}', 'danger')
         return redirect(url_for('file_requests_approvals'))
 
-    table, id_col = table_map[req_type]
-
-    conn   = get_central_db()
-    cursor = conn.cursor()
-
-    cursor.execute(f"""
-        UPDATE {table}
-        SET status = %s, approver_name = %s, approved_at = %s
-        WHERE {id_col} = %s
-    """, (new_status, approver_name, now, req_id))
-    conn.commit()
-
-    # Get employee email for notification
-    if emp_id:
-        cursor.execute(
-            "SELECT Email, CONCAT(FirstName,' ',LastName) AS name FROM Employees WHERE EmployeeID = %s",
-            (emp_id,)
-        )
-        emp = cursor.fetchone()
-        if emp and emp['Email']:
-            req_label = {'fts':'FTS','ot':'OT','cws':'CWS','rdw':'Rest Day Work'}[req_type]
-            send_email(
-                emp['Email'],
-                f'{req_label} Request {new_status}',
-                f"""<p>Hi {emp['name']},</p>
-                <p>Your <b>{req_label}</b> request has been
-                <b>{'approved ✅' if action == 'approve' else 'rejected ❌'}</b>
-                by {approver_name}.</p>
-                <p><a href="https://hrportal.cohere.ph">View HR Portal</a></p>"""
-            )
-
-    cursor.close()
-    conn.close()
-
-    flash(f'Request {new_status.lower()} successfully.', 'success')
-    next_url = request.form.get('next', url_for('file_requests_approvals'))
-    return redirect(next_url)
-
-
-
+    if done:
+        flash(f"Request {'approved' if action == 'approve' else 'rejected'} successfully.", 'success')
+    else:
+        flash(skipped[0].split(': ', 1)[-1], 'danger')
+    return redirect(_local_next('file_requests_approvals'))
 
 
 @app.route('/api/approvals/action', methods=['POST'])
 @login_required
 def api_approvals_action():
-    if not (session.get('is_supervisor') or session.get('is_admin') or
-            session.get('permissions', {}).get('can_material_requests')):
-        return jsonify({'success': False, 'message': 'Access denied'}), 403
-    if not validate_csrf():
-        return jsonify({'success': False, 'message': 'Security check failed, please try again.'}), 403
-
-    data      = request.get_json(silent=True) or {}
-    req_type  = data.get('req_type', '').lower()
-    req_id    = data.get('req_id')
-    action    = data.get('action')
-    emp_id    = data.get('emp_id', '')
-
-    if action not in ('approve', 'reject') or not req_id or not req_type:
-        return jsonify({'success': False, 'message': 'Invalid action'}), 400
-
-    new_status    = 'Approved' if action == 'approve' else 'Rejected'
-    approver_name = session['user']['name']
-    now           = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-    table_map     = {'fts': 'fts_requests', 'ot': 'ot_requests',
-                     'cws': 'cws_requests', 'rdw': 'rd_requests'}
-
-    if req_type not in table_map:
-        return jsonify({'success': False, 'message': 'Invalid request type'}), 400
-
-    conn   = get_central_db()
-    cursor = conn.cursor()
-    try:
-        cursor.execute(
-            f"UPDATE {table_map[req_type]} SET status=%s, approver_name=%s, approved_at=%s WHERE id=%s",
-            (new_status, approver_name, now, req_id)
-        )
-        conn.commit()
-        if emp_id:
-            cursor.execute(
-                "SELECT Email, CONCAT(FirstName,' ',LastName) AS name FROM Employees WHERE EmployeeID=%s",
-                (emp_id,)
-            )
-            emp = cursor.fetchone()
-            if emp and emp['Email']:
-                req_label = {'fts':'FTS','ot':'OT','cws':'CWS','rdw':'Rest Day Work'}[req_type]
-                send_email(
-                    emp['Email'],
-                    f'{req_label} Request {new_status}',
-                    f"""<p>Hi {emp['name']},</p>
-                    <p>Your <b>{req_label}</b> request has been
-                    <b>{'approved' if action == 'approve' else 'rejected'}</b>
-                    by {approver_name}.</p>
-                    <p><a href="https://hrportal.cohere.ph">View HR Portal</a></p>"""
-                )
-    except Exception as e:
-        conn.rollback()
-        return jsonify({'success': False, 'message': str(e)}), 500
-    finally:
-        cursor.close()
-        conn.close()
-
-    return jsonify({'success': True, 'message': f'Request {new_status.lower()} successfully.'})
-
-
-@app.route('/api/approvals/bulk-action', methods=['POST'])
-@login_required
-def api_approvals_bulk_action():
-    if not (session.get('is_supervisor') or session.get('is_admin') or
-            session.get('permissions', {}).get('can_material_requests')):
+    if not _can_act_on_file_requests():
         return jsonify({'success': False, 'message': 'Access denied'}), 403
     if not validate_csrf():
         return jsonify({'success': False, 'message': 'Security check failed, please try again.'}), 403
 
     data     = request.get_json(silent=True) or {}
+    req_type = str(data.get('req_type') or '').lower()
+    req_id   = data.get('req_id')
     action   = data.get('action')
-    selected = data.get('selected', [])
+    if action not in ('approve', 'reject') or not req_id or req_type not in FILE_REQUEST_TABLES:
+        return jsonify({'success': False, 'message': 'Invalid action'}), 400
 
-    if not selected:
+    try:
+        done, skipped = _decide_file_requests([(req_type, req_id)], action)
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+    if not done:
+        return jsonify({'success': False, 'message': skipped[0].split(': ', 1)[-1]}), 409
+    verb = 'approved' if action == 'approve' else 'rejected'
+    return jsonify({'success': True, 'message': f'Request {verb} successfully.'})
+
+
+@app.route('/api/approvals/bulk-action', methods=['POST'])
+@login_required
+def api_approvals_bulk_action():
+    if not _can_act_on_file_requests():
+        return jsonify({'success': False, 'message': 'Access denied'}), 403
+    if not validate_csrf():
+        return jsonify({'success': False, 'message': 'Security check failed, please try again.'}), 403
+
+    data   = request.get_json(silent=True) or {}
+    action = data.get('action')
+    items  = _parse_selected(data.get('selected'))
+    if action not in ('approve', 'reject'):
+        return jsonify({'success': False, 'message': 'Invalid action'}), 400
+    if not items:
         return jsonify({'success': False, 'message': 'No requests selected'}), 400
 
-    new_status    = 'Approved' if action == 'approve' else 'Rejected'
-    approver_name = session['user']['name']
-    now           = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-    table_map     = {'fts': 'fts_requests', 'ot': 'ot_requests',
-                     'cws': 'cws_requests', 'rdw': 'rd_requests'}
-    count = 0
-    conn  = get_central_db()
     try:
-        cursor = conn.cursor()
-        for item in selected:
-            parts = item.split('|')
-            if len(parts) != 3:
-                continue
-            req_type, req_id, emp_id = parts[0].lower(), parts[1], parts[2]
-            if req_type not in table_map:
-                continue
-            cursor.execute(
-                f"UPDATE {table_map[req_type]} SET status=%s, approver_name=%s, approved_at=%s WHERE id=%s",
-                (new_status, approver_name, now, req_id)
-            )
-            count += 1
-            cursor.execute(
-                "SELECT Email, CONCAT(FirstName,' ',LastName) AS name FROM Employees WHERE EmployeeID=%s",
-                (emp_id,)
-            )
-            emp = cursor.fetchone()
-            if emp and emp['Email']:
-                req_label = {'fts':'FTS','ot':'OT','cws':'CWS','rdw':'Rest Day Work'}[req_type]
-                send_email(emp['Email'], f'{req_label} Request {new_status}',
-                    f"<p>Your <b>{req_label}</b> request has been <b>{new_status}</b> by {approver_name}.</p>")
-        conn.commit()
+        done, skipped = _decide_file_requests(items, action)
     except Exception as e:
-        conn.rollback()
         return jsonify({'success': False, 'message': str(e)}), 500
-    finally:
-        cursor.close()
-        conn.close()
 
-    return jsonify({'success': True, 'count': count,
-                    'message': f'{count} request(s) {new_status.lower()} successfully.'})
+    verb = 'approved' if action == 'approve' else 'rejected'
+    msg  = f'{done} request(s) {verb} successfully.'
+    if skipped:
+        msg += f' {len(skipped)} skipped: ' + '; '.join(skipped)
+    return jsonify({'success': done > 0, 'count': done, 'skipped': skipped, 'message': msg})
 
 @app.route('/admin/delete-request', methods=['POST'])
 @login_required
