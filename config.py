@@ -20,4 +20,4 @@ class Config:
     )
 
     # API key for AppScript imports
-    IMPORT_API_KEY = os.environ.get('IMPORT_API_KEY', 'change-this-api-key')
+    IMPORT_API_KEY = os.environ.get('IMPORT_API_KEY', '')  # unset = import disabled

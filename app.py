@@ -3,6 +3,7 @@ from flask import Flask, session, redirect, url_for, request, render_template, f
 from authlib.integrations.flask_client import OAuth
 import pymysql
 import os
+import hmac
 import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
@@ -473,6 +474,42 @@ def _get_awol_type():
         db.close()
     _AWOL_TYPE_CACHE['row'] = ({'id': r['id'], 'name': r['name']} if r else None)
     return _AWOL_TYPE_CACHE['row']
+
+def adjust_leave_entitlement(c, emp_number, leave_type_id, items, refund=False):
+    """Deduct (or refund) leave credits on the one entitlement row per leave year.
+
+    items: iterable of (leave_date, days). Days are grouped by the leave date's
+    year; each group goes to that year's leave4day_entitlements row if one
+    exists, else that year's active ohrm_leave_entitlement row. Filing and the
+    reject/cancel refunds both go through here so they hit the same row.
+    AWOL is never charged against entitlements."""
+    awol = _get_awol_type()
+    if awol and int(leave_type_id) == awol['id']:
+        return
+    by_year = {}
+    for leave_date, days in items:
+        if days:
+            by_year[leave_date.year] = by_year.get(leave_date.year, 0) + days
+    op = 'GREATEST(0, days_used - %s)' if refund else 'days_used + %s'
+    for year, days in by_year.items():
+        c.execute("""
+            SELECT id FROM leave4day_entitlements
+            WHERE emp_number = %s AND leave_type_id = %s AND YEAR(from_date) = %s
+            ORDER BY id LIMIT 1
+        """, (emp_number, leave_type_id, year))
+        row = c.fetchone()
+        table = 'leave4day_entitlements'
+        if not row:
+            c.execute("""
+                SELECT id FROM ohrm_leave_entitlement
+                WHERE emp_number = %s AND leave_type_id = %s AND deleted = 0
+                  AND YEAR(from_date) = %s
+                ORDER BY id LIMIT 1
+            """, (emp_number, leave_type_id, year))
+            row = c.fetchone()
+            table = 'ohrm_leave_entitlement'
+        if row:
+            c.execute(f"UPDATE {table} SET days_used = {op} WHERE id = %s", (days, row['id']))
 
 @app.route('/api/is-holiday')
 @login_required
@@ -1568,28 +1605,8 @@ def file_leave():
 
                 # 4. Deduct from correct entitlement source
                 if total_days > 0 and not is_awol:
-                    # Check if portal entitlement exists for this employee/type/year
-                    c.execute("""
-                        SELECT id FROM leave4day_entitlements
-                        WHERE emp_number = %s AND leave_type_id = %s
-                          AND YEAR(from_date) = YEAR(CURDATE())
-                        LIMIT 1
-                    """, (emp_number, leave_type_id))
-                    portal_ent = c.fetchone()
-                    if portal_ent:
-                        c.execute("""
-                            UPDATE leave4day_entitlements
-                            SET days_used = days_used + %s
-                            WHERE emp_number = %s AND leave_type_id = %s
-                              AND YEAR(from_date) = YEAR(CURDATE())
-                        """, (total_days, emp_number, leave_type_id))
-                    else:
-                        c.execute("""
-                            UPDATE ohrm_leave_entitlement
-                            SET days_used = days_used + %s
-                            WHERE emp_number = %s AND leave_type_id = %s AND deleted = 0
-                              AND YEAR(from_date) = YEAR(CURDATE())
-                        """, (total_days, emp_number, leave_type_id))
+                    adjust_leave_entitlement(c, emp_number, leave_type_id,
+                                             [(d['date'], d['days']) for d in deductions])
 
             db.commit()
             flash(f'Leave filed! {total_hours:.1f} hrs ({total_days:.2f} days) deducted. Awaiting supervisor approval.', 'success')
@@ -4234,7 +4251,10 @@ def admin_all_leaves():
 
 @app.route('/api/import-schedule', methods=['POST'])
 def import_schedule():
-    if request.headers.get('X-API-Key', '') != app.config['IMPORT_API_KEY']:
+    expected = app.config.get('IMPORT_API_KEY') or ''
+    if not expected:
+        return jsonify({'error': 'Schedule import is not configured'}), 503
+    if not hmac.compare_digest(request.headers.get('X-API-Key', ''), expected):
         return jsonify({'error': 'Unauthorized'}), 401
     data = request.get_json(force=True, silent=True)
     if not data or 'schedules' not in data:
@@ -4589,11 +4609,9 @@ def supervisor_bulk_action():
 
                 # ✅ Reverse credits ONLY if rejected
                 if action == 'reject' and total_days > 0:
-                    c.execute("""
-                        UPDATE ohrm_leave_entitlement
-                        SET days_used = GREATEST(0, days_used - %s)
-                        WHERE emp_number=%s AND leave_type_id=%s AND deleted=0
-                    """, (total_days, target_emp, leave_type_id))
+                    adjust_leave_entitlement(c, target_emp, leave_type_id,
+                                             [(r['leave_date'], r['days_deducted']) for r in records],
+                                             refund=True)
 
             db.commit()
             processed += 1
@@ -4820,11 +4838,9 @@ def supervisor_action():
 
             # ✅ Reverse credits ONCE (not per row)
             if action == 'reject' and total_days > 0:
-                c.execute("""
-                    UPDATE ohrm_leave_entitlement
-                    SET days_used = GREATEST(0, days_used - %s)
-                    WHERE emp_number = %s AND leave_type_id = %s AND deleted = 0
-                """, (total_days, target_emp, leave_type_id))
+                adjust_leave_entitlement(c, target_emp, leave_type_id,
+                                         [(r['leave_date'], r['days_deducted']) for r in records],
+                                         refund=True)
 
         db.commit()
 
@@ -4958,10 +4974,9 @@ def api_leave_action():
                     """, (target_emp, r['leave_date'], leave_type_id))
 
             if action == 'reject' and total_days > 0:
-                c.execute("""UPDATE ohrm_leave_entitlement
-                    SET days_used = GREATEST(0, days_used - %s)
-                    WHERE emp_number=%s AND leave_type_id=%s AND deleted=0
-                """, (total_days, target_emp, leave_type_id))
+                adjust_leave_entitlement(c, target_emp, leave_type_id,
+                                         [(r['leave_date'], r['days_deducted']) for r in records],
+                                         refund=True)
 
         db.commit()
 
@@ -5333,10 +5348,9 @@ def api_leave_bulk_action():
                         """, (target_emp, r['leave_date'], leave_type_id))
 
                 if action == 'reject' and total_days > 0:
-                    c.execute("""UPDATE ohrm_leave_entitlement
-                        SET days_used = GREATEST(0, days_used - %s)
-                        WHERE emp_number=%s AND leave_type_id=%s AND deleted=0
-                    """, (total_days, target_emp, leave_type_id))
+                    adjust_leave_entitlement(c, target_emp, leave_type_id,
+                                             [(r['leave_date'], r['days_deducted']) for r in records],
+                                             refund=True)
 
             db.commit()
             processed += 1
@@ -5421,12 +5435,9 @@ def cancel_leave(leave_id):
                     c.execute("DELETE FROM ohrm_leave_request WHERE id = %s",
                               (leave['leave_request_id'],))
 
-            # Reverse credits in ohrm_leave_entitlement
-            c.execute("""
-                UPDATE ohrm_leave_entitlement
-                SET days_used = GREATEST(0, days_used - %s)
-                WHERE emp_number = %s AND leave_type_id = %s AND deleted = 0
-            """, (leave['days_deducted'], leave['emp_number'], leave['leave_type_id']))
+            # Reverse credits on the entitlement row they were deducted from
+            adjust_leave_entitlement(c, leave['emp_number'], leave['leave_type_id'],
+                                     [(leave['leave_date'], leave['days_deducted'])], refund=True)
 
             # Mark as cancelled in leave4day_requests
             c.execute("""
@@ -5497,10 +5508,8 @@ def api_leave_cancel(leave_id):
                 row = c.fetchone()
                 if row['cnt'] == 0:
                     c.execute("DELETE FROM ohrm_leave_request WHERE id=%s", (leave['leave_request_id'],))
-            c.execute("""UPDATE ohrm_leave_entitlement
-                SET days_used = GREATEST(0, days_used - %s)
-                WHERE emp_number=%s AND leave_type_id=%s AND deleted=0
-            """, (leave['days_deducted'], leave['emp_number'], leave['leave_type_id']))
+            adjust_leave_entitlement(c, leave['emp_number'], leave['leave_type_id'],
+                                     [(leave['leave_date'], leave['days_deducted'])], refund=True)
             c.execute("UPDATE leave4day_requests SET status='cancelled' WHERE id=%s", (leave_id,))
         db.commit()
         db_mail = get_db()
@@ -5709,11 +5718,8 @@ def admin_file_leave():
                           d['days'], d['is_off_day'], leave4day_status, notes, leave_request_id,
                           shift_value))
 
-                c.execute("""
-                    UPDATE ohrm_leave_entitlement
-                    SET days_used = days_used + %s
-                    WHERE emp_number = %s AND leave_type_id = %s AND deleted = 0
-                """, (total_days, target_emp, leave_type_id))
+                adjust_leave_entitlement(c, target_emp, leave_type_id,
+                                         [(d['date'], d['days']) for d in deductions])
 
             db2.commit()
             flash(f'Leave filed successfully for employee.', 'success')
