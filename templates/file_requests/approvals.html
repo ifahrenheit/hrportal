@@ -236,6 +236,12 @@ function RequestCard({ item, bulkMode, selected, onToggle, onAction, loading, re
             </div>
 
             {/* Sub-meta */}
+            <div className="fr-meta mt-1">
+              <i className="me-1" data-lucide="user-check"></i>Approver: {item.approver
+                ? <span className="text-body">{item.approver}
+                    {item.approver_via_tl && <span className="text-muted"> (TL {item.tl}'s SOM)</span>}</span>
+                : <span className="text-danger">Not set</span>}
+            </div>
             {(rtype === 'FTS' || rtype === 'CWS') && (
               <div className="fr-meta mt-1">
                 <i className="me-1" data-lucide="clock"></i>Filed: {r.created_at}

@@ -256,6 +256,95 @@ def get_supervisor_email(emp_number):
     finally:
         db.close()
 
+def get_approver_names(employee_ids):
+    """Batch version of get_supervisor_email for display: returns
+    {employee_id: {'name': approver display name, 'via_tl': bool}}, using the
+    same order (override -> gsheet approver/SOM -> OrangeHRM reportto), then
+    the TL's team SOM as a last resort (via_tl=True)."""
+    ids = sorted({str(e) for e in employee_ids if e})
+    if not ids:
+        return {}
+    ph = ','.join(['%s'] * len(ids))
+    emails = {}
+    db = get_db()
+    try:
+        with db.cursor() as c:
+            # Step 3 first so steps 2 and 1 overwrite it (lowest priority first)
+            c.execute(f"""
+                SELECT h.employee_id, u.user_name AS email
+                FROM hs_hr_employee h
+                JOIN hs_hr_emp_reportto r ON r.erep_sub_emp_number = h.emp_number
+                JOIN ohrm_user u ON u.emp_number = r.erep_sup_emp_number
+                WHERE h.employee_id IN ({ph})
+            """, ids)
+            for row in c.fetchall():
+                emails.setdefault(row['employee_id'], row['email'])
+
+            c.execute(f"""
+                SELECT employee_id, approver AS email FROM central_db.gsheet_employees
+                WHERE employee_id IN ({ph}) AND approver IS NOT NULL AND approver != ''
+            """, ids)
+            for row in c.fetchall():
+                emails[row['employee_id']] = row['email']
+
+            c.execute(f"""
+                SELECT h.employee_id, COALESCE(g.email, u.user_name) AS email
+                FROM leave4day_supervisor_assignments sa
+                JOIN hs_hr_employee h ON h.emp_number = sa.emp_number
+                LEFT JOIN central_db.gsheet_employees g ON g.employee_id = sa.sup_employee_id COLLATE utf8mb4_unicode_ci
+                LEFT JOIN hs_hr_employee he ON he.employee_id = sa.sup_employee_id COLLATE utf8mb4_unicode_ci
+                LEFT JOIN ohrm_user u ON u.emp_number = he.emp_number
+                WHERE h.employee_id IN ({ph})
+            """, ids)
+            for row in c.fetchall():
+                if row['email']:
+                    emails[row['employee_id']] = row['email']
+
+            # Fallback: the sheet sync blanks `approver` for Separated rows, so
+            # use the SOM most of the TL's active team has.
+            via_tl = set()
+            missing = [e for e in ids if not emails.get(e)]
+            if missing:
+                mph = ','.join(['%s'] * len(missing))
+                c.execute(f"""
+                    SELECT m.employee_id, a.approver AS email, COUNT(*) AS n
+                    FROM central_db.gsheet_employees m
+                    JOIN central_db.gsheet_employees a
+                      ON a.tl = m.tl AND a.status = 'Active'
+                     AND a.approver IS NOT NULL AND a.approver != ''
+                    WHERE m.employee_id IN ({mph}) AND m.tl IS NOT NULL AND m.tl != ''
+                    GROUP BY m.employee_id, a.approver
+                    ORDER BY n DESC
+                """, missing)
+                for row in c.fetchall():
+                    if row['employee_id'] not in emails:
+                        emails[row['employee_id']] = row['email']
+                        via_tl.add(row['employee_id'])
+
+            # Email -> display name (gsheet first, then OrangeHRM)
+            names = {}
+            addrs = sorted({e.lower().strip() for e in emails.values() if e})
+            if addrs:
+                aph = ','.join(['%s'] * len(addrs))
+                c.execute(f"""
+                    SELECT LOWER(u.user_name) AS email,
+                           CONCAT(e.emp_firstname, ' ', e.emp_lastname) AS name
+                    FROM ohrm_user u JOIN hs_hr_employee e ON e.emp_number = u.emp_number
+                    WHERE LOWER(u.user_name) IN ({aph})
+                """, addrs)
+                names.update({r['email']: r['name'] for r in c.fetchall()})
+                c.execute(f"""
+                    SELECT LOWER(email) AS email, schedule_name AS name
+                    FROM central_db.gsheet_employees
+                    WHERE LOWER(email) IN ({aph}) AND schedule_name IS NOT NULL AND schedule_name != ''
+                """, addrs)
+                names.update({r['email']: r['name'] for r in c.fetchall()})
+    finally:
+        db.close()
+    return {eid: {'name': names.get(em.lower().strip(), em), 'email': em.lower().strip(),
+                  'via_tl': eid in via_tl}
+            for eid, em in emails.items() if em}
+
 def login_required(f):
     @wraps(f)
     def decorated(*args, **kwargs):
@@ -747,6 +836,35 @@ def get_supervisor_central_employees(supervisor_email):
             return [r['employee_id'] for r in c.fetchall()]
     finally:
         db.close()
+
+def get_supervisor_file_request_employees(supervisor_email):
+    """get_supervisor_central_employees plus employees with no approver from
+    any source (e.g. Separated rows the sheet sync blanked) whose TL's team
+    SOM is this supervisor -- the same fallback get_approver_names labels with
+    "(TL x's SOM)". Used only for OT/FTS/CWS/RDW approvals."""
+    sup_email = supervisor_email.lower().strip()
+    emp_ids = get_supervisor_central_employees(sup_email)
+    conn = get_central_db()
+    try:
+        with conn.cursor() as c:
+            c.execute("""
+                SELECT employee_id FROM gsheet_employees
+                WHERE (approver IS NULL OR approver = '')
+                  AND tl IN (SELECT DISTINCT tl FROM gsheet_employees
+                             WHERE LOWER(approver) = %s AND status = 'Active'
+                               AND tl IS NOT NULL AND tl != '')
+            """, (sup_email,))
+            candidates = [r['employee_id'] for r in c.fetchall()]
+    finally:
+        conn.close()
+    if not candidates:
+        return emp_ids
+    seen = set(emp_ids)
+    for eid, a in get_approver_names(candidates).items():
+        if a['via_tl'] and a['email'] == sup_email and eid not in seen:
+            emp_ids.append(eid)
+            seen.add(eid)
+    return emp_ids
 
 def resolve_emp_number(emp_number=None, employee_id=None):
     """
@@ -4252,6 +4370,12 @@ def supervisor_pending():
             pending = c.fetchall()
     finally:
         db.close()
+
+    approver_map = get_approver_names(r['employee_id'] for r in pending)
+    for r in pending:
+        a = approver_map.get(r['employee_id']) or {}
+        r['approver'] = a.get('name', '')
+        r['approver_via_tl'] = a.get('via_tl', False)
 
     return render_template('supervisor/pending.html', pending=pending,
                            tl_list=tl_list, emp_search=emp_search,
@@ -8582,7 +8706,7 @@ def file_requests_approvals():
 
     sup_email  = session['user']['email']
     is_admin   = session.get('is_admin')
-    emp_ids    = get_supervisor_central_employees(sup_email) if not is_admin else []
+    emp_ids    = get_supervisor_file_request_employees(sup_email) if not is_admin else []
 
 
     type_filter = request.args.get('req_type', '')
@@ -8742,6 +8866,11 @@ def file_requests_approvals():
     for r in rdw_list:
         combined.append({'req_type':'RDW','tl':r.get('tl') or '—','r':dict(r)})
     combined.sort(key=lambda x: (x['tl'].lower(), x['req_type']))
+    approver_map = get_approver_names(x['r'].get('employee_id') or x['r'].get('employeeID') for x in combined)
+    for x in combined:
+        a = approver_map.get(x['r'].get('employee_id') or x['r'].get('employeeID')) or {}
+        x['approver'] = a.get('name', '')
+        x['approver_via_tl'] = a.get('via_tl', False)
 
 
     # Serialize timedelta/datetime fields for JSON (React)
@@ -9137,7 +9266,7 @@ def file_requests_pending_count():
 
     sup_email = session['user']['email']
     is_admin  = session.get('is_admin')
-    emp_ids   = get_supervisor_central_employees(sup_email) if not is_admin else []
+    emp_ids   = get_supervisor_file_request_employees(sup_email) if not is_admin else []
 
     conn   = get_central_db()
     cursor = conn.cursor()
@@ -16546,7 +16675,7 @@ def api_notifications():
             total += len(items)
 
     if is_admin or is_sup:
-        emp_ids = [] if is_admin else get_supervisor_central_employees(email)
+        emp_ids = [] if is_admin else get_supervisor_file_request_employees(email)
         if is_admin or emp_ids:
             conn = get_central_db()
             try:

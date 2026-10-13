@@ -82,6 +82,16 @@
           </div>
         <span class="badge bg-warning text-dark me-2">{{ r.leave_type_name }}</span>
         <span class="text-muted small">Filed: {{ r.filed_at.strftime('%b %d, %Y %H:%M') }}</span>
+        <div class="text-muted small mt-1">
+          <i class="me-1" data-lucide="users"></i>TL: <span class="text-body">{{ r.tl or '—' }}</span>
+          <span class="mx-2">·</span>
+          <i class="me-1" data-lucide="user-check"></i>Approver:
+          {% if r.approver %}
+            <span class="text-body">{{ r.approver }}</span>{% if r.approver_via_tl %} <span>(TL {{ r.tl }}'s SOM)</span>{% endif %}
+          {% else %}
+            <span class="text-danger">Not set</span>
+          {% endif %}
+        </div>
       </div>
       </div><!-- end name+checkbox wrapper -->
       <div class="text-end">
