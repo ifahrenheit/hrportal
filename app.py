@@ -1028,18 +1028,27 @@ def _is_separated_non_admin(employee_id, email):
 @app.route('/login')
 def login():
     redirect_uri = url_for('auth_callback', _external=True)
-    return keycloak.authorize_redirect(redirect_uri)
+    try:
+        return keycloak.authorize_redirect(redirect_uri)
+    except Exception as e:  # Keycloak down / metadata fetch failed
+        app.logger.warning(f'Login redirect failed: {type(e).__name__}: {e}')
+        flash('The login service is temporarily unavailable. Please try again in a minute.', 'warning')
+        return redirect(url_for('index'))
 
 @app.route('/auth/callback')
 def auth_callback():
     try:
         token = keycloak.authorize_access_token()
     except Exception as e:
+        session.clear()
         if 'mismatching_state' in str(e).lower() or 'mismatchingstate' in str(type(e).__name__).lower():
-            session.clear()
             flash('Session expired. Please log in again.', 'warning')
             return redirect(url_for('login'))
-        raise
+        # e.g. OAuthError authentication_expired, InvalidClaimError (nonce),
+        # or Keycloak unreachable -- show the login page, not a 500
+        app.logger.warning(f'Login callback failed: {type(e).__name__}: {e}')
+        flash('Login could not be completed. Please try again.', 'warning')
+        return redirect(url_for('index'))
     userinfo = token.get('userinfo', {})
     email    = userinfo.get('email', '').lower().strip()
     employee = get_employee_by_email(email)
@@ -7049,7 +7058,7 @@ def material_confirm_receipt(token):
                           WHERE confirmation_token=%s AND status='Awaiting Confirmation'""", (token,))
             req = c.fetchone()
         if not req:
-            return render_template('error.html', message='This confirmation link is invalid or has already been used.'), 404
+            return render_template('file_requests/material_confirm.html', invalid=True), 404
         error = None
         if request.method == 'POST':
             released_by_name = request.form.get('released_by_name', '').strip()
@@ -7059,8 +7068,11 @@ def material_confirm_receipt(token):
                 with cdb.cursor() as c:
                     c.execute("""UPDATE material_requests
                                   SET status='Served', confirmed_at=NOW(), released_by_name=%s
-                                  WHERE id=%s""", (released_by_name, req['id']))
+                                  WHERE id=%s AND status='Awaiting Confirmation'""", (released_by_name, req['id']))
+                    updated = c.rowcount
                 cdb.commit()
+                if not updated:  # confirmed in the meantime (double submit)
+                    return render_template('file_requests/material_confirm.html', invalid=True), 404
                 return render_template('file_requests/material_confirm.html', req=req, confirmed=True)
     finally:
         cdb.close()
