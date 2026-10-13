@@ -83,9 +83,10 @@ app.register_blueprint(routines_bp)
 from coaching import coaching_bp
 app.register_blueprint(coaching_bp)
 
-IR_SGA      = os.getenv('IR_SGA', '').split(',')
-IR_RTA      = os.getenv('IR_RTA', '').split(',')
-IR_OVERHEAD   = os.getenv('IR_OVERHEAD', '').split(',')
+# Comma-separated .env lists; entries are trimmed so 'a@x, b@x' works
+IR_SGA      = [e.strip().lower() for e in os.getenv('IR_SGA', '').split(',') if e.strip()]
+IR_RTA      = [e.strip().lower() for e in os.getenv('IR_RTA', '').split(',') if e.strip()]
+IR_OVERHEAD   = [g.strip() for g in os.getenv('IR_OVERHEAD', '').split(',') if g.strip()]
 IR_ALL_ACCESS = [e.strip() for e in os.getenv('IR_ALL_ACCESS', '').split(',') if e.strip()]
 
 def _ir_is_overhead(email):
