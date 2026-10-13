@@ -1005,6 +1005,26 @@ def index():
         return redirect(url_for('dashboard'))
     return render_template('login.html')
 
+def _is_separated_non_admin(employee_id, email):
+    """True when the employee's gsheet row (matched by employee_id) is
+    Separated. Portal admins (central_db.Employees.role = 'Admin') are never
+    blocked, so a sheet mistake can't lock out an administrator."""
+    if not employee_id:
+        return False
+    cdb = get_central_db()
+    try:
+        with cdb.cursor() as c:
+            c.execute("SELECT status FROM gsheet_employees WHERE employee_id = %s LIMIT 1",
+                      (employee_id,))
+            row = c.fetchone()
+            if not row or (row['status'] or '').strip() != 'Separated':
+                return False
+            c.execute("SELECT role FROM Employees WHERE LOWER(Email) = %s LIMIT 1", (email,))
+            role = c.fetchone()
+            return not (role and (role['role'] or '').strip() == 'Admin')
+    finally:
+        cdb.close()
+
 @app.route('/login')
 def login():
     redirect_uri = url_for('auth_callback', _external=True)
@@ -1023,6 +1043,11 @@ def auth_callback():
     userinfo = token.get('userinfo', {})
     email    = userinfo.get('email', '').lower().strip()
     employee = get_employee_by_email(email)
+
+    if employee and _is_separated_non_admin(employee.get('employee_id'), email):
+        session.clear()
+        flash('Your account is no longer active. Please contact HR if this is a mistake.', 'danger')
+        return redirect(url_for('index'))
 
     if not employee:
         # Fallback: check gsheet_employees
