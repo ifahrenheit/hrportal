@@ -4585,6 +4585,7 @@ def supervisor_bulk_action():
                         SELECT * FROM leave4day_requests
                         WHERE (emp_number = %s OR employee_id = %s)
                           AND leave_request_id = %s AND status = 'pending'
+                          FOR UPDATE
                     """, (target_emp, emp_raw, leave_request_id))
                 else:
                     c.execute("""
@@ -4592,11 +4593,13 @@ def supervisor_bulk_action():
                         WHERE (emp_number = %s OR employee_id = %s)
                           AND leave_type_id = %s
                           AND filed_at = %s AND status = 'pending'
+                          FOR UPDATE
                     """, (target_emp, emp_raw, leave_type_id, filed_at))
 
                 records = c.fetchall()
 
                 if not records:
+                    db.rollback()  # release the FOR UPDATE locks
                     continue
 
                 total_days = sum(r['days_deducted'] for r in records)
@@ -4803,12 +4806,14 @@ def supervisor_action():
                         SELECT * FROM leave4day_requests
                         WHERE (emp_number = %s OR employee_id = %s) AND leave_request_id = %s
                           AND status = 'pending'
+                          FOR UPDATE
                     """, (target_emp, target_eid, leave_request_id))
                 else:
                     c.execute("""
                         SELECT * FROM leave4day_requests
                         WHERE employee_id = %s AND leave_request_id = %s
                           AND status = 'pending'
+                          FOR UPDATE
                     """, (target_eid, leave_request_id))
             else:
                 if target_emp:
@@ -4816,12 +4821,14 @@ def supervisor_action():
                         SELECT * FROM leave4day_requests
                         WHERE (emp_number = %s OR employee_id = %s) AND leave_type_id = %s
                           AND filed_at = %s AND status = 'pending'
+                          FOR UPDATE
                     """, (target_emp, target_eid, leave_type_id, filed_at))
                 else:
                     c.execute("""
                         SELECT * FROM leave4day_requests
                         WHERE employee_id = %s AND leave_type_id = %s
                           AND filed_at = %s AND status = 'pending'
+                          FOR UPDATE
                     """, (target_eid, leave_type_id, filed_at))
 
             records = c.fetchall()
@@ -4948,20 +4955,24 @@ def api_leave_action():
                 if target_emp:
                     c.execute("""SELECT * FROM leave4day_requests
                         WHERE (emp_number=%s OR employee_id=%s) AND leave_request_id=%s AND status='pending'
+                        FOR UPDATE
                     """, (target_emp, target_eid, leave_request_id))
                 else:
                     c.execute("""SELECT * FROM leave4day_requests
                         WHERE employee_id=%s AND leave_request_id=%s AND status='pending'
+                        FOR UPDATE
                     """, (target_eid, leave_request_id))
             else:
                 if target_emp:
                     c.execute("""SELECT * FROM leave4day_requests
                         WHERE (emp_number=%s OR employee_id=%s) AND leave_type_id=%s
                           AND filed_at=%s AND status='pending'
+                          FOR UPDATE
                     """, (target_emp, target_eid, leave_type_id, filed_at))
                 else:
                     c.execute("""SELECT * FROM leave4day_requests
                         WHERE employee_id=%s AND leave_type_id=%s AND filed_at=%s AND status='pending'
+                        FOR UPDATE
                     """, (target_eid, leave_type_id, filed_at))
 
             records = c.fetchall()
@@ -5342,15 +5353,18 @@ def api_leave_bulk_action():
                 if leave_request_id:
                     c.execute("""SELECT * FROM leave4day_requests
                         WHERE (emp_number=%s OR employee_id=%s) AND leave_request_id=%s AND status='pending'
+                        FOR UPDATE
                     """, (target_emp, raw_emp, leave_request_id))
                 else:
                     c.execute("""SELECT * FROM leave4day_requests
                         WHERE (emp_number=%s OR employee_id=%s) AND leave_type_id=%s
                           AND filed_at=%s AND status='pending'
+                          FOR UPDATE
                     """, (target_emp, raw_emp, leave_type_id, filed_at))
 
                 records = c.fetchall()
                 if not records:
+                    db.rollback()  # release the FOR UPDATE locks
                     continue
 
                 total_days = sum(r['days_deducted'] for r in records)
