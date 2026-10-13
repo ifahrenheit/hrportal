@@ -33,49 +33,6 @@
   @media(max-width:900px) { .perms-grouped { grid-template-columns:1fr; } }
 </style>
 
-<div class="card mb-4 p-3">
-  <h6 class="fw-semibold mb-3"><i class="me-2" data-lucide="users"></i>Bulk Assign by Group</h6>
-  <form method="POST">
-    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-    <input type="hidden" name="action" value="bulk_group">
-    <div class="row g-2 align-items-end">
-      <div class="col-md-3">
-        <label class="form-label small mb-1">Group</label>
-        <select name="bulk_group" class="form-select form-select-sm" required>
-          <option value="">— Select Group —</option>
-          {% for g in groups %}
-          <option value="{{ g }}">{{ g }}</option>
-          {% endfor %}
-        </select>
-      </div>
-      <div class="col-md-9">
-        <label class="form-label small mb-1">Permissions to assign</label>
-        <div class="d-flex flex-wrap gap-2">
-          {% for group_name, group_perms in perm_groups %}
-          <div class="w-100 mt-1 mb-1" style="font-size:.65rem;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--text-muted);">{{ group_name }}</div>
-          {% for key, icon, label in group_perms %}
-          <div class="form-check form-check-inline">
-            <input class="form-check-input" type="checkbox" name="{{ key }}" id="bulk_{{ key }}">
-            <label class="form-check-label small" for="bulk_{{ key }}">{{ label }}</label>
-          </div>
-          {% endfor %}
-          {% endfor %}
-        </div>
-      </div>
-      <div class="col-12 mt-2">
-        <button type="submit" class="btn btn-primary btn-sm">
-          <i class="me-1" data-lucide="check-check"></i>Apply to Group
-        </button>
-        <span class="text-muted small ms-2">This will override existing permissions for all employees in the selected group.</span>
-      </div>
-    </div>
-  </form>
-</div>
-<div class="alert alert-info mb-4">
-  <i class="me-2" data-lucide="info"></i>
-  Sub-admins can access specific features you enable. They <strong>cannot</strong> manage other sub-admins or change admin accounts.
-</div>
-
 {% set perm_groups = [
   ('Leave & Requests', [
     ('can_all_leaves',        'users',              'All Leaves'),
@@ -126,6 +83,51 @@
     ('can_hr_tickets',        'id-card',        'HR Ticket Queue'),
   ]),
 ] %}
+
+<div class="card mb-4 p-3">
+  <h6 class="fw-semibold mb-3"><i class="me-2" data-lucide="users"></i>Bulk Assign by Group</h6>
+  <form method="POST">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <input type="hidden" name="action" value="bulk_group">
+    <div class="row g-2 align-items-end">
+      <div class="col-md-3">
+        <label class="form-label small mb-1">Group</label>
+        <select name="bulk_group" class="form-select form-select-sm" required>
+          <option value="">— Select Group —</option>
+          {% for g in groups %}
+          <option value="{{ g }}">{{ g }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-md-9">
+        <label class="form-label small mb-1">Permissions to assign</label>
+        <div class="d-flex flex-wrap gap-2">
+          {% for group_name, group_perms in perm_groups %}
+          <div class="w-100 mt-1 mb-1" style="font-size:.65rem;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--text-muted);">{{ group_name }}</div>
+          {% for key, icon, label in group_perms %}
+          <div class="form-check form-check-inline">
+            <input class="form-check-input" type="checkbox" name="{{ key }}" id="bulk_{{ key }}">
+            <label class="form-check-label small" for="bulk_{{ key }}">{{ label }}</label>
+          </div>
+          {% endfor %}
+          {% endfor %}
+        </div>
+      </div>
+      <div class="col-12 mt-2">
+        <button type="submit" class="btn btn-primary btn-sm">
+          <i class="me-1" data-lucide="check-check"></i>Apply to Group
+        </button>
+        <span class="text-muted small ms-2">This will override existing permissions for all employees in the selected group.</span>
+      </div>
+    </div>
+  </form>
+</div>
+<div class="alert alert-info mb-4">
+  <i class="me-2" data-lucide="info"></i>
+  Sub-admins can access specific features you enable. They <strong>cannot</strong> manage other sub-admins or change admin accounts.
+</div>
+
+
 
 <div class="card mb-3 p-3">
   <div class="d-flex align-items-center justify-content-between">

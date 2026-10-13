@@ -2368,7 +2368,7 @@ def admin_sub_admins():
                     with db.cursor() as c:
                         c.execute("""
                             SELECT h.emp_number FROM hs_hr_employee h
-                            JOIN central_db.gsheet_employees g ON g.employee_id = h.employee_id COLLATE utf8mb4_unicode_ci
+                            JOIN central_db.gsheet_employees g ON g.employee_id COLLATE utf8mb4_unicode_ci = h.employee_id
                             WHERE g.group_name = %s AND g.status != 'Separated'
                         """, (group_name,))
                         emps = [r['emp_number'] for r in c.fetchall()]
@@ -9160,28 +9160,20 @@ def admin_delete_request():
     try:
         # Supervisors: validate ownership before allowing delete
         if not is_admin and is_supervisor:
-            table_map_check = {
-                'fts': ('fts_requests', 'employee_id'),
-                'ot':  ('ot_requests',  'employee_id'),
-                'cws': ('cws_requests', 'employee_id'),
-                'rdw': ('rd_requests',  'employee_id'),
-            }
-            if req_type not in table_map_check:
+            if req_type not in FILE_REQUEST_TABLES:
                 return jsonify({'success': False, 'message': 'Invalid request type'}), 400
-            tbl, emp_col = table_map_check[req_type]
+            tbl, emp_col, _label = FILE_REQUEST_TABLES[req_type]
             _conn = get_central_db()
             _cur  = _conn.cursor()
-            _cur.execute(f"SELECT {emp_col} FROM {tbl} WHERE id = %s", (req_id,))
+            _cur.execute(f"SELECT {emp_col} AS employee_id FROM {tbl} WHERE id = %s", (req_id,))
             _row = _cur.fetchone()
             _cur.close(); _conn.close()
             if not _row:
                 return jsonify({'success': False, 'message': 'Record not found'}), 404
-            record_emp_id   = _row[emp_col]
-            sup_email       = session['user']['email']
-            subordinate_ids = get_supervisor_central_employees(sup_email) or []
-            own_emp_id      = get_central_employee_id(sup_email)
-            allowed         = set(subordinate_ids) | ({own_emp_id} if own_emp_id else set())
-            if record_emp_id not in allowed:
+            record_emp_id = str(_row['employee_id'] or '').strip()
+            # Same scope as the approvals page, plus the supervisor's own requests
+            allowed, own_emp_id = _file_request_scope()
+            if record_emp_id not in allowed and record_emp_id != own_emp_id:
                 return jsonify({'success': False, 'message': 'You can only delete requests from your own team'}), 403
     except Exception as _oe:
         return jsonify({'success': False, 'message': str(_oe)}), 500
