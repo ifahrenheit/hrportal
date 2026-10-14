@@ -4,6 +4,7 @@ coaching_reminders.py — daily nag for incomplete coaching action plans.
 
 Rule (per Binbin): first reminder 2 days after the session, then DAILY until
 the agent completes. Sessions past a 3-day SLA get 'overdue' framing.
+Agents whose gsheet status is Separated are never reminded.
 
 Recipients: agent (gsheet_employees.email), cc TL (tl_view_map.login_email for
 the agent's tl name) + SOM (agent's approver email). Sent via the portal's
@@ -104,6 +105,7 @@ def main():
                 LEFT JOIN gsheet_employees s
                   ON s.employee_id = cs.supervisor_id COLLATE utf8mb4_unicode_ci
                 WHERE cs.status IN %s
+                  AND COALESCE(a.status, '') <> 'Separated'   -- no reminders after the agent leaves
                   AND cs.session_date <= (CURDATE() - INTERVAL %s DAY)
                   AND (cs.last_reminder_at IS NULL
                        OR cs.last_reminder_at < (NOW() - INTERVAL %s HOUR))
@@ -111,11 +113,20 @@ def main():
             """, (PENDING, FIRST_DAY, REMIND_EVERY_HOURS))
             rows = cur.fetchall()
 
+            cur.execute("""
+                SELECT COUNT(*) AS n FROM coaching_sessions cs
+                JOIN gsheet_employees a
+                  ON a.employee_id = cs.agent_id COLLATE utf8mb4_unicode_ci
+                WHERE cs.status IN %s AND a.status = 'Separated'
+            """, (PENDING,))
+            separated = cur.fetchone()["n"]
+
             # TL email map
             cur.execute("SELECT tl_name, login_email FROM tl_view_map")
             tlmap = {x["tl_name"]: x["login_email"] for x in cur.fetchall()}
 
-        print(f"  {len(rows)} session(s) due for a reminder\n")
+        print(f"  {len(rows)} session(s) due for a reminder"
+              f" ({separated} pending session(s) of separated agents skipped)\n")
         for r in rows:
             agent = (r.get("agent_email") or "").strip()
             if not agent:
