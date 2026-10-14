@@ -5,7 +5,7 @@
 <div class="container-fluid py-4">
   <div class="d-flex justify-content-between align-items-center mb-3">
     <h4 style="color: var(--text);">Certificate of Employment - Requests</h4>
-    <div class="btn-group btn-group-sm">
+    <div class="btn-group btn-group-sm flex-wrap">
       <a href="{{ url_for('coe.manage_queue') }}"
          class="btn btn-outline-secondary {{ 'active' if not active_filter }}">All</a>
       {% for key, label in status_labels.items() %}

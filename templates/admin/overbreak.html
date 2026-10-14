@@ -34,7 +34,7 @@
   .search-wrap { position: relative; flex: 1; min-width: 200px; }
   .search-wrap i { position: absolute; left: .7rem; top: 50%; transform: translateY(-50%); color: var(--text-muted); font-size: .85rem; }
   .search-wrap input { padding-left: 2rem; }
-  .date-nav { display: flex; align-items: center; gap: .25rem; }
+  .date-nav { display: flex; align-items: center; gap: .25rem; flex-wrap: wrap; }
   .date-nav .btn-icon {
     width: 32px; height: 32px; display: flex; align-items: center; justify-content: center;
     border: 1px solid var(--border); border-radius: 8px; background: var(--bg); color: var(--text-muted);
@@ -84,7 +84,7 @@
     <div class="w-100">
       <form method="get" id="triggerFilterForm" class="d-flex align-items-center flex-wrap gap-2">
         <input type="hidden" name="view" value="triggers">
-        <div class="d-flex align-items-center gap-2">
+        <div class="d-flex align-items-center gap-2 flex-wrap">
           <button type="button" class="btn btn-outline-secondary btn-sm" id="prevPeriodBtn" title="Previous payroll period">
             <i data-lucide="chevron-left"></i>
           </button>

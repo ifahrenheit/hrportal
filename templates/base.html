@@ -217,6 +217,18 @@
     ::-webkit-scrollbar-track { background: transparent; }
     ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
 
+
+    /* ── Mobile safety net for every page ───────────────────────── */
+    .main-content img, .main-content video, .main-content canvas { max-width: 100%; }
+    .table-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; max-width: 100%; }
+    .min-w-0 { min-width: 0 !important; }   /* used by templates; not in Bootstrap 5.3 */
+    .main-content { overflow-wrap: break-word; }
+    @media (max-width: 768px) {
+      /* 16px stops iPhones zooming in when a field is tapped */
+      .main-content input:not([type=checkbox]):not([type=radio]), .main-content select, .main-content textarea { font-size: 16px; }
+      .main-content .modal-dialog { margin: .5rem; }
+      .main-content pre { white-space: pre-wrap; word-break: break-word; }
+    }
   </style>
 </head>
 <body>
@@ -224,7 +236,7 @@
 {% if nav_style == 'topnav' %}{% include 'nav/_topnav.html' %}{% else %}{% include 'nav/_sidebar.html' %}{% endif %}
 {% endif %}
 
-<div class="{% if session.get('user') %}main-content{% else %}container py-5{% endif %}" id="mainContent">
+<div class="{% if session.get('user') %}main-content {% block main_class %}{% endblock %}{% else %}container py-5{% endif %}" id="mainContent">
   {% if session.get('user') %}
   <div class="topbar">
     <span class="page-title">{% block page_title %}{% endblock %}</span>
@@ -253,6 +265,26 @@
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+/* Tables wider than their box scroll inside it instead of stretching the
+   whole page sideways (phones). Only overflowing tables not already in a
+   scrolling container are wrapped. */
+(function(){
+  function wrapWideTables(){
+    document.querySelectorAll('#mainContent table').forEach(function(t){
+      var host = t.parentElement; if(!host || host.classList.contains('table-scroll')) return;
+      for(var p = host; p && p.id !== 'mainContent'; p = p.parentElement){
+        var ox = getComputedStyle(p).overflowX; if(ox === 'auto' || ox === 'scroll') return;
+      }
+      if(t.scrollWidth <= host.clientWidth + 1) return;
+      var w = document.createElement('div'); w.className = 'table-scroll';
+      host.insertBefore(w, t); w.appendChild(t);
+    });
+  }
+  if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', wrapWideTables); else wrapWideTables();
+  window.addEventListener('load', wrapWideTables);
+})();
+</script>
 <script src="https://cdn.jsdelivr.net/npm/lucide@1.47.0/dist/umd/lucide.js"></script>
 
 <script>

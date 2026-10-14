@@ -67,7 +67,7 @@
   .search-wrap input { padding-left: 2rem; }
 
   /* Date nav buttons */
-  .date-nav { display: flex; align-items: center; gap: .25rem; }
+  .date-nav { display: flex; align-items: center; gap: .25rem; flex-wrap: wrap; }
   .date-nav .btn-icon {
     width: 32px; height: 32px; display: flex; align-items: center; justify-content: center;
     border: 1px solid var(--border); border-radius: 8px; background: var(--bg); color: var(--text-muted);
@@ -123,7 +123,7 @@
 <div class="filter-bar">
   <form method="get" id="dateForm" class="d-flex align-items-center gap-2 flex-wrap" style="flex:1;">
     <input type="hidden" name="view" value="{{ view }}">
-    <div id="rangeDateGroup" class="d-flex align-items-center gap-2">
+    <div id="rangeDateGroup" class="d-flex align-items-center gap-2 flex-wrap">
       <button type="button" class="btn-icon" id="prevPeriodBtn" title="Previous payroll period">
         <i data-lucide="chevron-left"></i>
       </button>
