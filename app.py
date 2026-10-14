@@ -8423,10 +8423,12 @@ def file_requests_hub():
                            CONCAT(m.original_shift, ' > ', DATE_FORMAT(m.new_date, '%%b %%e'), ' ',
                                   m.new_shift, ' · ', m.deduction_hours, ' hrs') AS details,
                            m.status, m.filed_at AS created_at, m.approved_at,
-                           m.approved_by AS approver_name,
+                           CASE WHEN m.approved_by = 0 THEN 'System'
+                                ELSE CONCAT(ae.emp_firstname, ' ', ae.emp_lastname) END AS approver_name,
                            g.tl AS TL, g.group_name
                     FROM magic_cws_requests m
                     LEFT JOIN gsheet_employees g ON g.employee_id = m.employee_id COLLATE utf8mb4_unicode_ci
+                    LEFT JOIN orangehrm2.hs_hr_employee ae ON ae.emp_number = m.approved_by
                     WHERE {w}
                 """, p)
                 records.extend(c.fetchall())
@@ -9182,11 +9184,32 @@ def file_requests_approvals():
             """, rdw_params)
             rdw_list = cursor.fetchall()
 
+        # Magic CWS
+        mcws_list = []
+        if not type_filter or type_filter == 'MCWS':
+            m_base = emp_filter.replace("o.employee_id", "m.employee_id")
+            m_extra, m_params = add_filters(m_base, emp_params,
+                'm.original_date', 'COALESCE(g.schedule_name, m.employee_name)', 'm.employee_id')
+            cursor.execute(f"""
+                SELECT m.id, m.employee_id,
+                       COALESCE(g.schedule_name, m.employee_name) AS employee_name,
+                       m.original_date, m.original_shift, m.new_date, m.new_shift,
+                       m.deduction_hours, m.reason, m.filed_at AS created_at, g.tl
+                FROM magic_cws_requests m
+                LEFT JOIN gsheet_employees g ON g.employee_id COLLATE utf8mb4_unicode_ci = m.employee_id COLLATE utf8mb4_unicode_ci
+                WHERE m.status = 'Pending'
+                {m_extra}
+                ORDER BY m.filed_at DESC
+            """, m_params)
+            mcws_list = cursor.fetchall()
+
         cursor.close()
         conn.close()
 
     # Combine and sort all records by TL then date
     combined = []
+    for r in (mcws_list if 'mcws_list' in locals() else []):
+        combined.append({'req_type':'MCWS','tl':r.get('tl') or '—','r':dict(r)})
     for r in fts_list:
         combined.append({'req_type':'FTS','tl':r.get('tl') or '—','r':dict(r)})
     for r in ot_list:
@@ -9244,6 +9267,9 @@ FILE_REQUEST_TABLES = {
     'ot':  ('ot_requests',  'employee_id', 'OT'),
     'cws': ('cws_requests', 'employee_id', 'CWS'),
     'rdw': ('rd_requests',  'employee_id', 'Rest Day Work'),
+    # Magic CWS: no deleted_at / approver_name columns, and approval deducts
+    # the employee's Magic CWS hours -- handled by _decide_magic_cws.
+    'mcws': ('magic_cws_requests', 'employee_id', 'Magic CWS'),
 }
 
 def _can_act_on_file_requests():
@@ -9265,6 +9291,8 @@ def _decide_file_request(cursor, scope, req_type, req_id, action, approver_name,
     notice is (email, name, label, new_status) to send after commit, or None."""
     if req_type not in FILE_REQUEST_TABLES:
         return False, 'Invalid request type', None
+    if req_type == 'mcws':
+        return _decide_magic_cws(cursor, scope, req_id, action, now)
     table, emp_col, label = FILE_REQUEST_TABLES[req_type]
     cursor.execute(f"SELECT id, {emp_col} AS employee_id, status FROM {table} "
                    f"WHERE id = %s AND deleted_at IS NULL", (req_id,))
@@ -9292,6 +9320,50 @@ def _decide_file_request(cursor, scope, req_type, req_id, action, approver_name,
                    (emp_id,))
     emp = cursor.fetchone()
     notice = (emp['Email'], emp['name'], label, new_status) if emp and emp['Email'] else None
+    return True, f'Request {new_status.lower()} successfully.', notice
+
+def _decide_magic_cws(cursor, scope, req_id, action, now, approver_emp=None):
+    """Approve/reject one Pending Magic CWS. Same scope rules as the other
+    request types; approving adds the request's deduction to the employee's
+    magic_cws_balance.used_hrs (creating the balance row if missing, the
+    same way _init_magic_cws_balance does)."""
+    cursor.execute("""SELECT id, emp_number, employee_id, status, deduction_hours
+                      FROM magic_cws_requests WHERE id = %s AND status <> 'Deleted'""", (req_id,))
+    row = cursor.fetchone()
+    if not row:
+        return False, 'Request not found', None
+    emp_id = str(row['employee_id'] or '').strip()
+    if scope is not None:
+        allowed, own = scope
+        if own and emp_id == own:
+            return False, 'You cannot approve or reject your own request', None
+        if emp_id not in allowed:
+            return False, 'You are not the approver for this employee', None
+    if row['status'] != 'Pending':
+        return False, f"Request is already {row['status']}", None
+
+    new_status = 'Approved' if action == 'approve' else 'Rejected'
+    if approver_emp is None:
+        approver_emp = (session.get('user') or {}).get('emp_number')
+    cursor.execute("""UPDATE magic_cws_requests SET status=%s, approved_by=%s, approved_at=%s
+                      WHERE id=%s AND status='Pending'""", (new_status, approver_emp, now, req_id))
+    if cursor.rowcount == 0:
+        return False, 'Request was already decided', None
+    if new_status == 'Approved':
+        cursor.execute("SELECT id FROM magic_cws_balance WHERE emp_number = %s", (row['emp_number'],))
+        if not cursor.fetchone():
+            from modules.request_hub import _peek_magic_balance
+            cursor.execute("""INSERT INTO magic_cws_balance (emp_number, employee_id, initial_hrs, used_hrs)
+                              VALUES (%s, %s, %s, 0)""",
+                           (row['emp_number'], row['employee_id'],
+                            _peek_magic_balance(cursor.connection, row['emp_number'])))
+        cursor.execute("UPDATE magic_cws_balance SET used_hrs = used_hrs + %s WHERE emp_number = %s",
+                       (float(row['deduction_hours'] or 0), row['emp_number']))
+
+    cursor.execute("SELECT Email, CONCAT(FirstName,' ',LastName) AS name FROM Employees WHERE EmployeeID=%s",
+                   (emp_id,))
+    emp = cursor.fetchone()
+    notice = (emp['Email'], emp['name'], 'Magic CWS', new_status) if emp and emp['Email'] else None
     return True, f'Request {new_status.lower()} successfully.', notice
 
 def _send_file_request_notice(notice, approver_name):
@@ -12303,68 +12375,52 @@ def _send_magic_cws_email(employee_name, employee_id,
 @app.route("/file-requests/magic-cws/action", methods=["POST"])
 @login_required
 def magic_cws_action():
+    """Form-post endpoint for Magic CWS decisions. Approve/reject go through the
+    shared, scoped _decide_file_requests path; delete is admin-only and gives
+    back the hours of an approved request. (Previously crashed on every call:
+    url_for('approvals') does not exist, and the DictCursor row was zipped
+    with column names, so req['status'] was the string 'status'.)"""
+    next_url = _local_next('file_requests_hub')
     if not validate_csrf():
         flash('Security check failed, please try again.', 'danger')
-        return redirect(request.form.get('next') or url_for('dashboard'))
-    action        = request.form.get("action")
-    req_id        = request.form.get("req_id")
-    delete_reason = request.form.get("delete_reason", "")
-    next_url      = request.form.get("next", url_for("approvals"))
-
-    is_admin = session.get("is_admin")
-    is_sup   = session.get("is_supervisor")
-    if not (is_admin or is_sup):
+        return redirect(next_url)
+    if not (session.get("is_admin") or session.get("is_supervisor")):
         flash("Access denied.", "danger")
         return redirect(next_url)
+    action = request.form.get("action")
+    req_id = request.form.get("req_id")
 
-    conn = get_central_db()
-    c    = conn.cursor()
-    c.execute("SELECT * FROM magic_cws_requests WHERE id = %s", (req_id,))
-    row = c.fetchone()
-    if not row:
-        flash("Request not found.", "danger")
+    if action in ("approve", "reject"):
+        done, skipped = _decide_file_requests([("mcws", req_id)], action)
+        if done:
+            flash("Magic CWS approved." if action == "approve" else "Magic CWS rejected.",
+                  "success" if action == "approve" else "warning")
+        else:
+            flash(skipped[0].split(': ', 1)[-1], "danger")
         return redirect(next_url)
 
-    cols = [d[0] for d in c.description]
-    req  = dict(zip(cols, row))
-
-    if action == "approve" and req["status"] == "Pending":
-        deduction = float(req["deduction_hours"] or 0)
-        _init_magic_cws_balance(conn, req["emp_number"], req["employee_id"])
-        c.execute("""
-            UPDATE magic_cws_balance
-            SET used_hrs = used_hrs + %s
-            WHERE emp_number = %s
-        """, (deduction, req["emp_number"]))
-        c.execute("""
-            UPDATE magic_cws_requests
-            SET status = 'Approved', approved_by = %s, approved_at = NOW()
-            WHERE id = %s
-        """, (session.get("emp_number"), req_id))
-        conn.commit()
-        flash("Magic CWS approved.", "success")
-
-    elif action == "reject" and req["status"] == "Pending":
-        c.execute("UPDATE magic_cws_requests SET status = 'Rejected' WHERE id = %s", (req_id,))
-        conn.commit()
-        flash("Magic CWS rejected.", "warning")
-
-    elif action == "delete" and is_admin:
-        if req["status"] == "Approved":
-            deduction = float(req["deduction_hours"] or 0)
-            c.execute("""
-                UPDATE magic_cws_balance
-                SET used_hrs = GREATEST(0, used_hrs - %s)
-                WHERE emp_number = %s
-            """, (deduction, req["emp_number"]))
-        c.execute("""
-            UPDATE magic_cws_requests
-            SET status = 'Deleted', delete_reason = %s
-            WHERE id = %s
-        """, (delete_reason, req_id))
-        conn.commit()
+    if action == "delete" and session.get("is_admin"):
+        conn = get_central_db()
+        try:
+            with conn.cursor() as c:
+                c.execute("SELECT status, deduction_hours, emp_number FROM magic_cws_requests WHERE id = %s FOR UPDATE",
+                          (req_id,))
+                req = c.fetchone()
+                if not req or req["status"] == "Deleted":
+                    flash("Request not found.", "danger")
+                    return redirect(next_url)
+                if req["status"] == "Approved":
+                    c.execute("""UPDATE magic_cws_balance SET used_hrs = GREATEST(0, used_hrs - %s)
+                                 WHERE emp_number = %s""", (float(req["deduction_hours"] or 0), req["emp_number"]))
+                c.execute("UPDATE magic_cws_requests SET status = 'Deleted', delete_reason = %s WHERE id = %s",
+                          (request.form.get("delete_reason", ""), req_id))
+            conn.commit()
+        finally:
+            conn.close()
         flash("Magic CWS deleted.", "info")
+        return redirect(next_url)
 
+    flash("Invalid action.", "danger")
     return redirect(next_url)
 
 # ─────────────────────────────────────────────────────────────

@@ -237,8 +237,20 @@
             <td class="text-muted small">{{ r.approver_name or '—' }}</td>
             {% if is_admin or is_supervisor %}
             <td class="text-nowrap">
-              {% if r.req_type == 'MCWS' %}
-              {# Magic CWS isn't handled by the approval actions on this page #}
+              {% if r.req_type == 'MCWS' and r.status == 'Pending' %}
+              {# Magic CWS: approve/reject only (delete gives hours back; admins use the Magic CWS action) #}
+              <div class="d-flex gap-1 align-items-center">
+                <input type="checkbox" class="form-check-input hub-checkbox me-1"
+                       data-type="mcws" data-id="{{ r.id }}" data-emp="{{ r.emp_id }}"
+                       style="display:none;" onchange="hubUpdateCount()">
+                <button type="button" class="btn btn-success btn-sm py-0 px-2"
+                        onclick="hubAction('approve','mcws','{{ r.id }}','{{ r.emp_id }}')"
+                        title="Approve"><i data-lucide="check"></i></button>
+                <button type="button" class="btn btn-danger btn-sm py-0 px-2"
+                        onclick="hubAction('reject','mcws','{{ r.id }}','{{ r.emp_id }}')"
+                        title="Reject"><i data-lucide="x"></i></button>
+              </div>
+              {% elif r.req_type == 'MCWS' %}
               <span class="text-muted small">—</span>
               {% elif r.status in ('Pending', 'pending') %}
               <div class="d-flex gap-1 align-items-center">

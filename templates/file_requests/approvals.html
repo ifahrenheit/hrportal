@@ -67,6 +67,7 @@ window.__APPROVALS__ = {
           <option value="OT"  {% if type_filter == 'OT'  %}selected{% endif %}>OT</option>
           <option value="CWS" {% if type_filter == 'CWS' %}selected{% endif %}>CWS</option>
           <option value="RDW" {% if type_filter == 'RDW' %}selected{% endif %}>RDW</option>
+          <option value="MCWS" {% if type_filter == 'MCWS' %}selected{% endif %}>Magic CWS</option>
         </select>
       </div>
       <div class="col-12 col-md-2 d-flex gap-2">
@@ -154,8 +155,8 @@ function showRdTickets(rdRequestId, employeeName) {
 const { useState, useMemo, useCallback } = React;
 
 /* ── Badge colours ── */
-const TYPE_COLORS = { FTS:'#0dcaf0', OT:'#0d6efd', CWS:'#6f42c1', RDW:'#ffc107' };
-const TYPE_TEXT   = { FTS:'dark',    OT:'white',    CWS:'white',    RDW:'dark'    };
+const TYPE_COLORS = { FTS:'#0dcaf0', OT:'#0d6efd', CWS:'#6f42c1', RDW:'#ffc107', MCWS:'#9333ea' };
+const TYPE_TEXT   = { FTS:'dark',    OT:'white',    CWS:'white',    RDW:'dark',    MCWS:'white' };
 
 /* ── Single request card ── */
 function RequestCard({ item, bulkMode, selected, onToggle, onAction, loading, removing }) {
@@ -185,7 +186,7 @@ function RequestCard({ item, bulkMode, selected, onToggle, onAction, loading, re
                       title="Click to copy">{empId}</span>
                 <span className="badge ms-1"
                       style={{background: TYPE_COLORS[rtype], color: TYPE_TEXT[rtype]==='dark'?'#000':'#fff'}}>
-                  {rtype}
+                  {rtype === 'MCWS' ? 'Magic CWS' : rtype}
                 </span>
 
                 {/* Type-specific badges */}
@@ -202,6 +203,9 @@ function RequestCard({ item, bulkMode, selected, onToggle, onAction, loading, re
                     </span>
                   )}
                 </>)}
+                {rtype === 'MCWS' && (
+                  <span className="badge bg-light text-dark ms-1" title="Deducted from Magic CWS hours on approval">−{r.deduction_hours}h</span>
+                )}
                 {rtype === 'RDW' && (<>
                   <span className="badge bg-info text-dark ms-1">{r.work_category}</span>
                   {r.rd_hours && <span className="badge ms-1" style={{backgroundColor: parseFloat(r.rd_hours) >= 8 ? '#c95c00' : '#0d6efd', color: '#fff'}}>{r.rd_hours}h</span>}
@@ -228,6 +232,10 @@ function RequestCard({ item, bulkMode, selected, onToggle, onAction, loading, re
                   <div className="fw-bold text-body">{r.new_date} {r.new_time}</div>
                   <div className="fr-meta">from {r.original_date} {r.original_time}</div>
                 </>)}
+                {rtype === 'MCWS' && (<>
+                  <div className="fw-bold text-body">{r.new_date} {r.new_shift}</div>
+                  <div className="fr-meta">from {r.original_date} {r.original_shift}</div>
+                </>)}
                 {rtype === 'RDW' && (<>
                   <div className="fw-bold text-body">{r.rd_date}</div>
                   <div>{r.start_time} → {r.end_time}</div>
@@ -242,12 +250,12 @@ function RequestCard({ item, bulkMode, selected, onToggle, onAction, loading, re
                     {item.approver_via_tl && <span className="text-muted"> (TL {item.tl}'s SOM)</span>}</span>
                 : <span className="text-danger">Not set</span>}
             </div>
-            {(rtype === 'FTS' || rtype === 'CWS') && (
+            {(rtype === 'FTS' || rtype === 'CWS' || rtype === 'MCWS') && (
               <div className="fr-meta mt-1">
                 <i className="me-1" data-lucide="clock"></i>Filed: {r.created_at}
               </div>
             )}
-            {rtype === 'CWS' && r.reason && (
+            {(rtype === 'CWS' || rtype === 'MCWS') && r.reason && (
               <div className="fr-meta mt-1">
                 <i className="me-1" data-lucide="message-square-text"></i>{r.reason}
               </div>
