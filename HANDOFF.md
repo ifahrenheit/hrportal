@@ -8,6 +8,43 @@
 
 ---
 
+## 2026-10-15 (2) — CSAT Year view, Break Log fixes, nav/search audit, page permissions enforced
+Commit: `40e9d9a` (pushed) · Branch: `main`
+
+### What was built / changed
+- **My CSAT Year view:** `/api/my-csat?range=year&year=YYYY` in `app.py`, plus a Year button and year dropdown in `templates/dashboard.html`. The first column is the whole year, then one column per month. It uses the same weighting as the month view (Oct 2026 = 66.71% in both).
+- **Break Log:**
+  - `break_log/routes.py` `_cached_for_user()`: the `bl_account_ok` / `bl_is_overhead` caches are now tied to the email. Login As used to keep the admin's cached "no", which hid Break Log while viewing as a Numa agent.
+  - The `/break-log` banner shows the scheduled shift ("Thu, Oct 15, 2026 · 1pm – 10pm"). The "Overnight shift" tag now comes from the schedule; it used to depend on the viewer's clock being before 9 AM.
+- **Nav + search** (`templates/nav/_topnav.html`), audited against 42 roles:
+  - Fixed the empty Analytics dropdown for `can_holiday_awol`-only users, and hid Night Differential (the route is a stub).
+  - New items: Overbreak Review, Requirements, Medicine Inventory. QA Updates Data moved next to Manage QA.
+  - Every page now has a sub-nav row. New Coaching and Routine Tracker groups replace the in-page tab bars (`coaching/_nav.html` keeps only the width CSS; `routines/_tabs.html` is now empty).
+  - Search: `data-k` keywords per item, every word must match at a word start, title matches rank first, plus permission-gated search-only entries (`EXTRA`).
+- **Page permissions now match their menu links:**
+  - `modules/floor_map.py`: viewing requires admin or `can_floor_map`; Seat Setup and the seat APIs are admin-only.
+  - `modules/incident_reports.py`: `/new` and `/submit` require `ir_can_file()`.
+  - `modules/fts_review.py`: admin or `can_file_requests` (was any sub-admin).
+  - `_has_supervisor_access` (Break Monitoring, Overbreak Review): admin, supervisor, `can_overbreak` or an overhead group (was any sub-admin).
+  - `permission.py` catalog lists all 38 permissions (it had 28).
+
+### Why / decisions
+- User chose the nav/search fixes first, then asked for all permission fixes. Access was matched to what the menu already showed, rather than inventing new rules.
+
+### How to verify
+- `/dashboard` My CSAT → Year. Log in as a Numa agent → Break Log banner. Ctrl K and search "overtime", "swipe", "ir", "certificate".
+- Nav audit harness approach: test-client sessions per role, collect `.tn-item` links from `/dashboard`, then GET each link (no writes).
+
+### Open items / next steps
+- [ ] Magic CWS form duplicate-submission check (`magic_cws_form`).
+- [ ] Topnav: at about 1280px the search pill overlaps Operations/Analytics/Admin.
+- [ ] **#19** `tardiness_notify.py` duplicate IRs, live by default. Then #20–#22 and #25–#35.
+- [ ] Night Differential report (`admin_night_diff`) was never built; re-add the nav item when it is.
+- [ ] Incident Reports dashboard shows agents the IRs filed within their own group. Confirm this is intended.
+- [ ] Carried over from the previous entry: #6 peak-hour check, retiring the break autofix trigger, separated sub-admins, negative Magic CWS balances, 2025 entitlement drift.
+
+---
+
 ## 2026-10-15 — Audit fixes #1–#24, dashboard redesign, File a Request, Magic CWS approvals, standard page header
 Commit: `9de4757` (pushed) · Branch: `main`
 
