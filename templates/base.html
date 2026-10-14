@@ -218,6 +218,19 @@
     ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
 
 
+    /* ── Standard page header ───────────────────────────────────── */
+    .page-head { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: .75rem 1rem; margin-bottom: 1.5rem; }
+    .page-head-text { min-width: 0; }
+    .page-h1 { margin: 0; font-family: 'Outfit', sans-serif; font-size: 1.75rem; font-weight: 600; line-height: 1.2; color: var(--text); letter-spacing: -.01em; }
+    .page-sub { margin-top: .25rem; font-size: .9rem; color: var(--text-muted); }
+    .page-actions { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; }
+    @media (max-width: 576px) { .page-h1 { font-size: 1.45rem; } .page-head { margin-bottom: 1.1rem; } }
+    /* Pages wrap their content in .container / .container-fluid with their own
+       padding and centring; line them up with the page header instead. */
+    #mainContent > .container, #mainContent > .container-fluid {
+      padding-left: 0 !important; padding-right: 0 !important; padding-top: 0 !important;
+      margin-left: 0 !important; margin-top: 0 !important; }
+
     /* ── Mobile safety net for every page ───────────────────────── */
     .main-content img, .main-content video, .main-content canvas { max-width: 100%; }
     .table-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; max-width: 100%; }
@@ -254,6 +267,24 @@
     </div>
   </div>
   {% endif %}
+  {% if session.get('user') %}
+  {# Standard page header (title outside any card). Pages set page_title, and
+     optionally page_subtitle / page_actions; override page_head to replace it
+     entirely (the dashboard uses its greeting instead). #}
+  {% block page_head %}
+  {% set _pt = self.page_title() | trim %}
+  {% if _pt %}
+  <div class="page-head">
+    <div class="page-head-text">
+      <h1 class="page-h1">{{ _pt }}</h1>
+      {% set _ps = self.page_subtitle() | trim %}{% if _ps %}<div class="page-sub">{{ _ps }}</div>{% endif %}
+    </div>
+    {% set _pa = self.page_actions() | trim %}{% if _pa %}<div class="page-actions">{{ _pa }}</div>{% endif %}
+  </div>
+  {% endif %}
+  {% endblock %}
+  {% endif %}
+  {% if false %}{% block page_subtitle %}{% endblock %}{% block page_actions %}{% endblock %}{% endif %}
   {% with messages = get_flashed_messages(with_categories=true) %}
     {% for cat, msg in messages %}
       <div class="alert alert-{{ cat }} alert-dismissible fade show" role="alert">

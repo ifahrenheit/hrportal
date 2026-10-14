@@ -1,14 +1,10 @@
 {% extends "base.html" %}
+{% block page_title %}Attrition Report{% endblock %}
+{% block page_actions %}<button class="btn btn-sm btn-outline-secondary" onclick="exportCSV()" id="exportBtn"><i class="me-1" data-lucide="download"></i>Export CSV</button>{% endblock %}
 {% block title %}Attrition Report{% endblock %}
 {% block content %}
 <div class="container-fluid mt-3">
 
-  <div class="d-flex justify-content-between align-items-center mb-3">
-    <h4 class="mb-0"><i class="text-danger me-2" data-lucide="user-minus"></i>Attrition Report</h4>
-    <button class="btn btn-sm btn-outline-secondary" onclick="exportCSV()" id="exportBtn">
-      <i class="me-1" data-lucide="download"></i>Export CSV
-    </button>
-  </div>
 
   <ul class="nav nav-tabs mb-4" id="attritionTabs">
     <li class="nav-item">

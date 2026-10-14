@@ -1,16 +1,12 @@
 {% extends "base.html" %}
+{% block page_title %}My Records{% endblock %}
+{% block page_subtitle %}Your own attendance records. Only you can see these.{% endblock %}
+{% block page_actions %}{% if account %}<span class="badge bg-light text-muted border">{{ account }}</span>{% endif %}{% endblock %}
 {% block title %}My Records{% endblock %}
 
 {% block content %}
 <div class="container-fluid py-4" style="max-width: 960px;">
 
-  <div class="d-flex align-items-center justify-content-between mb-4">
-    <div>
-      <h4 class="mb-1" style="font-family: 'Outfit', sans-serif; font-weight: 600;">My Records</h4>
-      <div class="text-muted" style="font-size: 0.85rem;">Your own attendance records. Only you can see these.</div>
-    </div>
-    {% if account %}<span class="badge bg-light text-muted border">{{ account }}</span>{% endif %}
-  </div>
 
   <ul class="nav nav-pills mb-4" style="gap: 0.5rem;">
     <li class="nav-item">

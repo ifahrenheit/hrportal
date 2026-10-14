@@ -1,9 +1,10 @@
 {% extends 'base.html' %}
+{% block page_title %}New Incident Report{% endblock %}
 {% block title %}New Incident Report{% endblock %}
 
 {% block content %}
 <style>
-  .ir-form-wrap { max-width:760px; margin:0 auto; }
+  .ir-form-wrap { max-width:760px; }
   .ir-form-header {
     display:flex; align-items:center; gap:10px; margin-bottom:24px;
   }
@@ -60,14 +61,6 @@
 </style>
 
 <div class="ir-form-wrap">
-  <div class="ir-form-header">
-    <a href="{{ url_for('incident_reports.dashboard') }}">
-      <i class="me-1" data-lucide="arrow-left"></i>Back to Dashboard
-    </a>
-  </div>
-  <div class="ir-form-title mb-4">
-    <i class="me-2" data-lucide="clipboard-plus" style="color:var(--accent);"></i>New Incident Report
-  </div>
 
   <div class="ir-card">
     <form id="irForm">

@@ -1,4 +1,6 @@
 {% extends 'base.html' %}
+{% block page_title %}Incident Reports{% endblock %}
+{% block page_actions %}<a href="{{ url_for('incident_reports.new_report') }}" class="btn-ir"><i data-lucide="plus"></i> New Report</a>{% endblock %}
 {% block title %}Incident Reports{% endblock %}
 
 {% block content %}
@@ -114,14 +116,6 @@
   .report-table tbody tr:hover { background:var(--bg); }
 </style>
 
-<div class="ir-page-header">
-  <div class="ir-page-title">
-    <i data-lucide="activity"></i> Incident Reports
-  </div>
-  <a href="{{ url_for('incident_reports.new_report') }}" class="btn-ir">
-    <i data-lucide="plus"></i> New Report
-  </a>
-</div>
 
 {# Stats #}
 {% if user.is_admin or user.is_hr or user.is_sga %}

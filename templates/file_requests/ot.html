@@ -1,6 +1,6 @@
 {% extends "base.html" %}
+{% block page_title %}Overtime &amp; Rest Day Request{% endblock %}
 {% block title %}File OT / RDW{% endblock %}
-{% block page_title %}Overtime & Rest Day Request{% endblock %}
 {% block content %}
 
 <div class="mb-3">
@@ -16,7 +16,6 @@
 
 <div class="card mb-4">
   <div class="card-body p-4">
-    <h6 class="fw-bold mb-3">Submit Request</h6>
     <form method="POST" id="otForm">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <div class="row g-3">

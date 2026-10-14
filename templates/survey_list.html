@@ -1,11 +1,9 @@
 {% extends "base.html" %}
+{% block page_title %}Surveys{% endblock %}
+{% block page_subtitle %}Please take a moment to answer the surveys below.{% endblock %}
 {% block title %}Surveys{% endblock %}
 {% block content %}
 <div class="container py-4" style="max-width: 760px;">
-  <h3 class="mb-1" style="font-family: 'Outfit', sans-serif; color: var(--text);">Surveys</h3>
-  <p class="text-muted mb-4" style="font-family: 'DM Sans', sans-serif;">
-    Please take a moment to answer the surveys below.
-  </p>
 
   {% if not surveys %}
     <div class="card border-0 shadow-sm" style="border-radius: 14px; background: var(--surface);">

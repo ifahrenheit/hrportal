@@ -1,19 +1,10 @@
 {% extends "base.html" %}
+{% block page_title %}Who Can Manage Entitlements{% endblock %}
+{% block page_subtitle %}Sub-admins currently holding the <code>can_entitlements</code> permission. Read-only &mdash; manage this on the <a href="{{ url_for('admin_sub_admins') }}">Sub-Admins</a> page.{% endblock %}
+{% block page_actions %}<a href="{{ url_for('admin_sub_admins') }}" class="btn btn-sm btn-outline-secondary"><i class="me-1" data-lucide="shield-check"></i>Manage Sub-Admins</a>{% endblock %}
 {% block title %}Entitlements Permission Audit{% endblock %}
-{% block page_title %}Entitlements Permission Audit{% endblock %}
 {% block content %}
 <div class="container-fluid py-4">
-  <div class="row align-items-center mb-3">
-    <div class="col-md-8">
-      <h4 class="mb-0">Who Can Manage Entitlements</h4>
-      <small class="text-muted">Sub-admins currently holding the <code>can_entitlements</code> permission. Read-only &mdash; manage this on the <a href="{{ url_for('admin_sub_admins') }}">Sub-Admins</a> page.</small>
-    </div>
-    <div class="col-md-4 text-end">
-      <a href="{{ url_for('admin_sub_admins') }}" class="btn btn-sm btn-outline-secondary">
-        <i class="me-1" data-lucide="shield-check"></i>Manage Sub-Admins
-      </a>
-    </div>
-  </div>
 
   <div class="card mb-3">
     <div class="card-body">

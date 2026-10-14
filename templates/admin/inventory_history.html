@@ -1,17 +1,9 @@
 {% extends "base.html" %}
+{% block page_title %}Inventory — Historical Snapshot{% endblock %}
+{% block page_subtitle %}Item details shown as of today; stock quantity reconstructed as of the selected date.{% endblock %}
+{% block page_actions %}<a href="{{ url_for('admin_inventory') }}" class="btn btn-sm btn-outline-secondary"><i class="me-1" data-lucide="arrow-left"></i>Back to Inventory</a>{% endblock %}
 {% block content %}
 <div class="container-fluid py-4">
-  <div class="row align-items-center mb-3">
-    <div class="col-md-8">
-      <h4 class="mb-0">Inventory — Historical Snapshot</h4>
-      <small class="text-muted">Item details shown as of today; stock quantity reconstructed as of the selected date.</small>
-    </div>
-    <div class="col-md-4 text-end">
-      <a href="{{ url_for('admin_inventory') }}" class="btn btn-sm btn-outline-secondary">
-        <i class="me-1" data-lucide="arrow-left"></i>Back to Inventory
-      </a>
-    </div>
-  </div>
 
   <div class="card mb-3">
     <div class="card-body d-flex align-items-center gap-2 flex-wrap">

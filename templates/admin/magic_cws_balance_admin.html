@@ -1,21 +1,17 @@
 {% extends "base.html" %}
-{% block title %}Magic CWS Balance Management{% endblock %}
-
-{% block content %}
-<div class="container-fluid py-3">
-
-  <div class="d-flex align-items-center justify-content-between mb-3 flex-wrap gap-2">
-    <h5 class="mb-0 fw-bold">
-      <i class="me-2" data-lucide="zap" style="color:#6f42c1"></i>Magic CWS Balance Management
-    </h5>
-    <form method="POST" action="/admin/magic-cws-balance/prepopulate"
+{% block page_title %}Magic CWS Balance{% endblock %}
+{% block page_actions %}<form method="POST" action="/admin/magic-cws-balance/prepopulate"
           onsubmit="return confirm('Pre-populate from OrangeHRM Magic Leave? Existing rows will be skipped.')">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <button class="btn btn-sm btn-outline-secondary">
         <i class="me-1" data-lucide="cloud-download"></i>Pre-populate from OrangeHRM
       </button>
-    </form>
-  </div>
+    </form>{% endblock %}
+{% block title %}Magic CWS Balance Management{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-3">
+
 
   <!-- Bulk Add Card -->
   <div class="card border-0 shadow-sm mb-4">

@@ -1,4 +1,6 @@
 {% extends "base.html" %}
+{% block page_title %}CSAT Dashboard{% endblock %}
+{% block page_subtitle %}{% if scoped_tl %}{{ scoped_tl }} team{% endif %}{% endblock %}
 {% block content %}
 <style>
   .csat-kpi { border-radius: 14px; padding: 18px 20px; color:#fff; }
@@ -65,11 +67,6 @@
 </style>
 
 <div class="container-fluid py-3">
-  <div class="d-flex flex-wrap justify-content-between align-items-center mb-3">
-    <h3 class="mb-0"><i data-lucide="heart"></i> CSAT Dashboard
-      {% if scoped_tl %}<span class="badge bg-secondary">{{ scoped_tl }} team</span>{% endif %}
-    </h3>
-  </div>
 
   <div class="csat-card mb-3 csat-filters">
     <div class="d-flex flex-wrap align-items-start" style="gap:1rem;">

@@ -1,6 +1,8 @@
 {% extends 'base.html' %}
-{% block title %}File a Request{% endblock %}
 {% block page_title %}File a Request{% endblock %}
+{% block page_subtitle %}Overtime, rest day work, schedule changes and missed swipes — all in one place.{% endblock %}
+{% block page_actions %}<a href="{{ url_for('file_requests_hub') }}" class="btn btn-sm btn-outline-secondary">View my requests</a>{% endblock %}
+{% block title %}File a Request{% endblock %}
 {% block content %}
 <style>
   .rq-wrap { display: flex; flex-direction: column; gap: 1.5rem; }
@@ -71,13 +73,6 @@
 </style>
 
 <div class="rq-wrap">
-  <div style="display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:space-between;gap:.75rem;">
-    <div>
-      <h1 class="rq-h1">File a Request</h1>
-      <div class="rq-muted" style="font-size:.9rem;">Overtime, rest day work, schedule changes and missed swipes — all in one place.</div>
-    </div>
-    <a href="{{ url_for('file_requests_hub') }}" class="rq-link">View my requests</a>
-  </div>
 
   {% if not has_employee_id %}
   <div class="rq-note bad">Your account is not linked to an Employee ID yet, so requests can't be filed. Please contact HR.</div>

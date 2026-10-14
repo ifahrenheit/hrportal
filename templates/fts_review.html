@@ -1,9 +1,10 @@
 {% extends "base.html" %}
+{% block page_title %}FTS Review{% endblock %}
+{% block page_subtitle %}Path B{% endblock %}
 {% block content %}
 <div class="container-fluid py-3">
 
-  <div class="d-flex flex-wrap align-items-center justify-content-between mb-3 gap-2">
-    <h4 class="mb-0"><i data-lucide="fingerprint-pattern"></i> FTS Review <span class="text-muted fs-6">(Path B)</span></h4>
+  <div class="d-flex flex-wrap align-items-center justify-content-end mb-3 gap-2">
 
     {% if not denied %}
     <form id="periodForm" method="get" class="d-flex align-items-center gap-2">

@@ -1,20 +1,12 @@
 {% extends "base.html" %}
+{% block page_title %}Floor Map — Seat Setup{% endblock %}
+{% block page_subtitle %}Click a seat to edit · Shift+click to multi-select · <strong>Right-click</strong> to clear a seat{% endblock %}
+{% block page_actions %}<span class="badge bg-primary" id="selected-count">0 selected</span>
+<a href="/floor-map/" class="btn btn-sm btn-outline-secondary"><i data-lucide="map"></i> View Floor Map</a>{% endblock %}
 {% block title %}Floor Map — Seat Admin{% endblock %}
 {% block content %}
 <div class="container-fluid px-4 py-3">
 
-  <div class="d-flex align-items-center justify-content-between mb-3 flex-wrap gap-2">
-    <div>
-      <h4 class="mb-0 fw-semibold">Floor Map — Seat Setup</h4>
-      <small class="text-muted">Click a seat to edit · Shift+click to multi-select · <strong>Right-click</strong> to clear a seat</small>
-    </div>
-    <div class="d-flex gap-2">
-      <span class="badge bg-primary" id="selected-count">0 selected</span>
-      <a href="/floor-map/" class="btn btn-sm btn-outline-secondary">
-        <i data-lucide="map"></i> View Floor Map
-      </a>
-    </div>
-  </div>
 
   <!-- Bulk toolbar (shows when multi-selected) -->
   <div id="bulk-toolbar" class="alert alert-primary py-2 px-3 d-none mb-3">

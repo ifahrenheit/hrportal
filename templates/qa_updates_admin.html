@@ -1,4 +1,6 @@
 {% extends "base.html" %}
+{% block page_title %}QA Updates — Admin{% endblock %}
+{% block page_actions %}<button class="qaa-btn-primary" id="qaaNewBtn" onclick="qaaOpenModal()"><i data-lucide="plus"></i> New QA Update</button>{% endblock %}
 {% block title %}QA Updates - Admin{% endblock %}
 
 {% block content %}
@@ -50,10 +52,6 @@
   .qaa-deactivated-row { opacity: 0.6; }
 </style>
 
-<div class="qaa-header">
-  <h2><i data-lucide="activity"></i> QA Updates &mdash; Admin</h2>
-  <button class="qaa-btn-primary" id="qaaNewBtn" onclick="qaaOpenModal()"><i data-lucide="plus"></i> New QA Update</button>
-</div>
 
 <div style="display:flex;gap:8px;margin-bottom:20px;border-bottom:1px solid var(--border);">
   <button class="qaa-tab-btn active" data-tab="manage" onclick="qaaSwitchTab('manage')">

@@ -1,4 +1,6 @@
 {% extends 'base.html' %}
+{% block page_title %}Ticket Queue{% endblock %}
+{% block page_subtitle %}{{ tickets|length }} ticket{{ "s" if tickets|length != 1 }}{% endblock %}
 {% block title %}Ticket Queue{% endblock %}
 
 {% block content %}
@@ -12,10 +14,6 @@
     {% endfor %}
   {% endwith %}
 
-  <div class="d-flex align-items-center justify-content-between mb-3">
-    <h5 class="fw-bold mb-0"><i class="me-2" data-lucide="headset"></i>Ticket Queue</h5>
-    <span class="badge bg-secondary">{{ tickets|length }} ticket(s)</span>
-  </div>
 
   {# ── Filters ── #}
   <form method="GET" class="row g-2 mb-3 align-items-end">
