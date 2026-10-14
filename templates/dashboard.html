@@ -97,7 +97,9 @@
   .csat-ch .db-bar { height: 6px; }
 
   /* punches + quick links */
-  .db-punch { display: flex; justify-content: space-between; align-items: center; padding: .6rem 0; border-bottom: 1px solid var(--border); font-size: .88rem; }
+  .db-punch { display: grid; grid-template-columns: minmax(0, 1fr) 5.6rem 3.4rem; align-items: center; column-gap: .6rem; padding: .6rem 0; border-bottom: 1px solid var(--border); font-size: .88rem; }
+  .db-punch-time { text-align: left; font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .db-punch .db-pill { justify-self: stretch; text-align: center; }
   .db-punch:last-child { border-bottom: none; }
   .db-ql { display: flex; align-items: center; gap: .75rem; min-height: 48px; padding: .5rem .75rem; border-radius: 10px; background: var(--bg); color: var(--text); text-decoration: none; }
   .db-ql:hover { color: var(--accent); }
@@ -712,7 +714,8 @@ loadData();                   // default Monthly / current month
         {% for p in dash.recent_punches %}
         <div class="db-punch">
           <span>{{ p.day }}</span>
-          <span><strong>{{ p.time }}</strong> <span class="db-pill {{ 'ok' if p.type == 'IN' else 'muted' }}" style="margin-left:.35rem">{{ p.type }}</span></span>
+          <span class="db-punch-time">{{ p.time }}</span>
+          <span class="db-pill {{ 'ok' if p.type == 'IN' else 'muted' }}">{{ p.type }}</span>
         </div>
         {% endfor %}
       </div>
