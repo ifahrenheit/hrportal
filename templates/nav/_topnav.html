@@ -568,8 +568,10 @@
           <i data-lucide="gauge"></i> Dashboard</a>
         <a class="tn-item {% if EP == 'history' %}active{% endif %}" href="{{ url_for('history') }}">
           <i data-lucide="clock-arrow-up"></i> My History</a>
+        {% if break_log_user_access() %}
         <a class="tn-item {% if EP == 'break_log.break_log' %}active{% endif %}" href="{{ url_for('break_log.break_log') }}">
           <i data-lucide="timer"></i> Break Log</a>
+        {% endif %}
         <a class="tn-item {% if EP == 'survey.survey_list' %}active{% endif %}" href="{{ url_for('survey.survey_list') }}">
           <i data-lucide="clipboard-list"></i> Survey</a>
         <a class="tn-item {% if EP == 'qa_updates.bulletin' %}active{% endif %}" href="{{ url_for('qa_updates.bulletin') }}">
@@ -904,7 +906,9 @@
   <span class="tn-subnav-label">Main</span>
   <a class="tn-subtab {% if EP == 'dashboard' %}active{% endif %}" href="{{ url_for('dashboard') }}">Dashboard</a>
   <a class="tn-subtab {% if EP == 'history' %}active{% endif %}" href="{{ url_for('history') }}">My History</a>
+  {% if break_log_user_access() %}
   <a class="tn-subtab {% if EP == 'break_log.break_log' %}active{% endif %}" href="{{ url_for('break_log.break_log') }}">Break Log</a>
+  {% endif %}
   <a class="tn-subtab {% if EP == 'survey.survey_list' %}active{% endif %}" href="{{ url_for('survey.survey_list') }}">Survey</a>
   <a class="tn-subtab {% if EP == 'qa_updates.bulletin' %}active{% endif %}" href="{{ url_for('qa_updates.bulletin') }}">QA Updates<span class="tn-subbadge" data-src="qaUpdatesBadge"></span></a>
   {% if qa_can_view_data() %}

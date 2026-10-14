@@ -219,7 +219,23 @@ def supervisor_required(f):
 
 @break_log_bp.app_context_processor
 def _inject_break_log_access():
-    return {'break_log_supervisor_access': _has_supervisor_access}
+    return {'break_log_supervisor_access': _has_supervisor_access,
+            'break_log_user_access': _has_break_log_access}
+
+BREAK_LOG_ACCOUNTS = ('Arctic', 'Numa', 'Test')
+
+def _has_break_log_access():
+    """Same account rule as the /break-log page itself, for showing its
+    links. Cached in the session like bl_is_overhead."""
+    if 'user' not in session:
+        return False
+    if 'bl_account_ok' not in session:
+        try:
+            emp = _get_employee_id(session['user'].get('email', ''))
+            session['bl_account_ok'] = bool(emp and emp.get('account') in BREAK_LOG_ACCOUNTS)
+        except Exception:
+            return False
+    return session['bl_account_ok']
 
 def _get_employee_id(email):
     """Resolve employee_id from gsheet_employees using email."""
@@ -253,7 +269,7 @@ def break_log():
     email = session['user'].get('email', '')
     emp = _get_employee_id(email)
 
-    if not emp or emp['account'] not in ('Arctic', 'Numa', 'Test'):
+    if not emp or emp['account'] not in BREAK_LOG_ACCOUNTS:
         return render_template('break_log/access_denied.html',
                                account_type=emp['account'] if emp else 'Unknown'), 403
 
