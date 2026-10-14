@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% block title %}Break Log{% endblock %}
-{% block page_title %}⏱ Break Log System{% endblock %}
+{% block page_title %}Break Log{% endblock %}
 
 {% block content %}
 <style>
@@ -176,13 +176,11 @@
 <div class="shift-banner">
   <i data-lucide="calendar" style="color:var(--accent)"></i>
   <span class="shift-label">
-    Current Shift: {{ shift_date | replace('-', '-') }}
+    Current shift: {{ shift_day }} · {{ shift_label }}
   </span>
-  {% set hour = now().hour if now is defined else '' %}
-  {# overnight tag shown via JS below #}
-  <span class="overnight-tag" id="overnightTag" style="display:none;">
-    ⏰ Overnight shift
-  </span>
+  {% if overnight %}
+  <span class="overnight-tag" style="display:inline-block;">Overnight shift</span>
+  {% endif %}
 </div>
 
 <div id="alertContainer"></div>
@@ -238,11 +236,6 @@
 
 {% block scripts %}
 <script>
-  // Show overnight tag if before 9 AM
-  if (new Date().getHours() < 9) {
-    document.getElementById('overnightTag').style.display = 'inline-block';
-  }
-
   let timerInterval  = null;
   let breakStartTime = null;
   let isOnBreak      = false;

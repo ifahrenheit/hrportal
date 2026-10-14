@@ -284,13 +284,32 @@ def break_log():
     db = get_central_db()
     try:
         shift_date = _shift_date(db, employee_id)
+        with db.cursor() as c:
+            c.execute("""SELECT shift_time, is_rest_day FROM employee_schedules
+                         WHERE employee_id = %s AND schedule_date = %s LIMIT 1""",
+                      (employee_id, shift_date))
+            sched = c.fetchone()
     finally:
         db.close()
+
+    # Shift shown in the banner; "overnight" only when the scheduled shift
+    # actually crosses midnight (it used to depend on the viewer's clock).
+    shift_label, overnight = 'No schedule on file', False
+    if sched and sched['is_rest_day']:
+        shift_label = 'Rest day'
+    elif sched and sched['shift_time']:
+        shift_label = sched['shift_time'].replace('-', ' – ')
+        st = _normalize_shift(sched['shift_time'])
+        if st:
+            start, end = st.split('-')
+            overnight = end < start and end != '00:00'
+    shift_day = datetime.strptime(shift_date, '%Y-%m-%d').strftime('%a, %b %-d, %Y')
 
     return render_template('break_log/break_log.html',
                            account_type=emp['account'],
                            group_name=emp.get('group_name'),
-                           shift_date=shift_date)
+                           shift_date=shift_date, shift_day=shift_day,
+                           shift_label=shift_label, overnight=overnight)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
