@@ -1005,7 +1005,7 @@
   {% if ADMIN or P.get('can_absences') %}
   <a class="tn-subtab {% if EP == 'on_shift' %}active{% endif %}" href="{{ url_for('on_shift') }}">On Shift</a>
   {% endif %}
-  {% if WRAP %}
+  {% if ADMIN or P.get('can_file_requests') %}
   <a class="tn-subtab {% if EP == 'fts_review.review_page' %}active{% endif %}" href="{{ url_for('fts_review.review_page') }}">FTS Review</a>
   {% endif %}
 </div></div>
@@ -1296,7 +1296,7 @@
   {% if ADMIN or P.get('can_absences') %}
   EXTRA.push({title: 'On Shift', icon: 'users', section: 'Analytics', href: '{{ url_for("on_shift") }}', keys: 'on shift present who is working headcount'});
   {% endif %}
-  {% if WRAP %}
+  {% if ADMIN or P.get('can_file_requests') %}
   EXTRA.push({title: 'FTS Review', icon: 'fingerprint-pattern', section: 'Analytics', href: '{{ url_for("fts_review.review_page") }}', keys: 'fts failure to swipe review path b'});
   {% endif %}
   {% if ADMIN or P.get('can_coaching') %}

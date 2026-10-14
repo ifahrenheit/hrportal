@@ -196,11 +196,13 @@ def login_required(f):
 OVERHEAD_GROUPS = {'Finest', 'RTA', 'QA', 'IT', 'TL', 'Trainer', 'BO TL'}
 
 def _has_supervisor_access():
-    """Admin/supervisor/sub-admin session flags, or overhead group (RTA, QA, etc.).
+    """Admin/supervisor, the can_overbreak permission, or overhead group (RTA, QA, etc.).
     Group lookup is cached in session to avoid a DB hit on every page render."""
     if 'user' not in session:
         return False
-    if session.get('is_admin') or session.get('is_supervisor') or session.get('is_sub_admin'):
+    # Sub-admins need the Overbreak permission (previously any sub-admin got in)
+    if (session.get('is_admin') or session.get('is_supervisor')
+            or session.get('permissions', {}).get('can_overbreak')):
         return True
     return _cached_for_user('bl_is_overhead',
                             lambda emp: bool(emp and emp.get('group_name') in OVERHEAD_GROUPS))

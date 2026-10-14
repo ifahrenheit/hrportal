@@ -855,6 +855,12 @@ def dashboard():
 @ir_bp.route('/new')
 @login_required
 def new_report():
+    # Same rule as the "File Incident Report" menu link (app.ir_can_file)
+    from app import ir_can_file
+    if not ir_can_file():
+        from flask import flash
+        flash('You do not have permission to file incident reports.', 'danger')
+        return redirect(url_for('incident_reports.dashboard'))
     u = ir_user()
     conn = get_db()
     try:
@@ -879,6 +885,9 @@ def new_report():
 def submit_report():
     if not validate_csrf():
         return jsonify({'success': False, 'message': 'Security check failed, please try again.'})
+    from app import ir_can_file
+    if not ir_can_file():
+        return jsonify({'success': False, 'message': 'You do not have permission to file incident reports.'}), 403
     u = ir_user()
     incident_date    = request.form.get('incident_date', '').strip()
     agent_eid        = request.form.get('employee_id', '').strip()

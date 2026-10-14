@@ -18,6 +18,35 @@ def login_required(f):
         return f(*args, **kwargs)
     return decorated
 
+def _can_view_map():
+    """Same rule as the Floor Map menu link: admin or can_floor_map."""
+    return bool(session.get("is_admin") or session.get("permissions", {}).get("can_floor_map"))
+
+def viewer_required(f):
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        if "user" not in session:
+            return redirect(url_for("login"))
+        if not _can_view_map():
+            if request.path.startswith("/floor-map/api/"):
+                return jsonify({"error": "forbidden"}), 403
+            return redirect(url_for("dashboard"))
+        return f(*args, **kwargs)
+    return decorated
+
+def admin_only(f):
+    """Seat Setup and seat edits: admins only (same as the Seat Setup menu link)."""
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        if "user" not in session:
+            return redirect(url_for("login"))
+        if not session.get("is_admin"):
+            if request.path.startswith("/floor-map/api/"):
+                return jsonify({"error": "forbidden"}), 403
+            return redirect(url_for("dashboard"))
+        return f(*args, **kwargs)
+    return decorated
+
 def get_db():
     return pymysql.connect(
         host=os.environ.get("MAIN_DB_HOST", "localhost"),
@@ -29,12 +58,12 @@ def get_db():
     )
 
 @floor_map_bp.route("/")
-@login_required
+@viewer_required
 def index():
     return render_template("floor_map/index.html")
 
 @floor_map_bp.route("/api/seats")
-@login_required
+@viewer_required
 def api_seats():
     db = get_db()
     try:
@@ -51,7 +80,7 @@ def api_seats():
         db.close()
 
 @floor_map_bp.route("/api/presence")
-@login_required
+@viewer_required
 def api_presence():
     db = get_db()
     try:
@@ -168,7 +197,7 @@ def floor_event():
 
 
 @floor_map_bp.route('/api/update-seat', methods=['POST'])
-@login_required
+@admin_only
 def api_update_seat():
     if not validate_csrf():
         return jsonify({'error': 'Security check failed, please try again.'}), 403
@@ -217,13 +246,13 @@ def api_update_seat():
         db.close()
 
 @floor_map_bp.route('/admin')
-@login_required
+@admin_only
 def admin():
     return render_template('floor_map/admin.html')
 
 
 @floor_map_bp.route('/api/add-seat', methods=['POST'])
-@login_required
+@admin_only
 def api_add_seat():
     if not validate_csrf():
         return jsonify({'error': 'Security check failed, please try again.'}), 403
@@ -254,7 +283,7 @@ def api_add_seat():
         db.close()
 
 @floor_map_bp.route('/api/delete-seat', methods=['POST'])
-@login_required
+@admin_only
 def api_delete_seat():
     if not validate_csrf():
         return jsonify({'error': 'Security check failed, please try again.'}), 403

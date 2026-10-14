@@ -34,40 +34,56 @@ all pick it up automatically without manual placeholder counting.
 
 
 # ---------------------------------------------------------------------------
-# Single source of truth: (db_column, bootstrap_icon, display_label)
+# Single source of truth: (db_column, lucide_icon, display_label) -- all 38
+# columns of leave4day_sub_admins, grouped as on the Sub-Admins page.
 # This list also drives the sub-admin permissions page UI (sub_admins.html
 # should eventually import PERMISSION_DEFINITIONS instead of hardcoding its
 # own copy of this list — see migration notes at the bottom of this file).
 # ---------------------------------------------------------------------------
 PERMISSION_DEFINITIONS = [
-    ('can_all_leaves',          'bi-people',                'All Leaves'),
-    ('can_all_requests',        'bi-inbox',                 'All Requests'),
-    ('can_approve',             'bi-check-circle',          'Approve/Reject'),
-    ('can_file_for_emp',        'bi-person-plus',           'File for Employee'),
-    ('can_schedules',           'bi-table',                 'Schedules'),
-    ('can_reports',             'bi-bar-chart-line',        'Reports'),
-    ('can_work_mode',           'bi-people-fill',           'Work Mode'),
-    ('can_settings',            'bi-gear',                  'Settings'),
-    ('can_entitlements',        'bi-credit-card',           'Entitlements'),
-    ('can_file_requests',       'bi-file-earmark-text',     'File Requests'),
-    ('can_material_requests',   'bi-box-seam',               'Material Requests'),
-    ('can_final_approval',      'bi-patch-check',           'Final Approval'),
-    ('can_view_tickets',        'bi-ticket-perforated',     'View OT/RDW Tickets'),
-    ('can_facilities_review',   'bi-tools',                 'Facilities Reviewer'),
-    ('can_facilities_final',    'bi-patch-check-fill',      'Facilities Final Approver'),
-    ('can_view_approved_items', 'bi-bag-check',             'Purchaser View (Materials)'),
-    ('can_onboarding',          'bi-person-check',          'Onboarding / Offboarding'),
-    ('can_inventory',           'bi-boxes',                 'Inventory Management'),
-    ('can_absences',            'bi-person-x',              'Absence Report'),
-    ('can_tardiness',           'bi-clock-history',         'Tardiness Report'),
-    ('can_attrition_report',    'bi-person-dash',           'Attrition Report'),
-    ('can_csat',                'bi-emoji-smile',           'CSAT Dashboard'),
-    ('can_surveys',             'bi-clipboard-data',        'Survey Results'),
-    ('can_floor_map',           'bi-geo-alt',               'Floor Map'),
-    ('can_pim',                 'bi-person-bounding-box',   'Employee Database (PIM)'),
-    ('can_qa_updates',          'bi-megaphone',             'QA Updates'),
-    ('can_it_tickets',          'bi-headset',               'IT Ticket Queue'),
-    ('can_hr_tickets',          'bi-person-badge',          'HR Ticket Queue'),
+    # ── Leave & Requests
+    ('can_all_leaves'            , 'users'             , 'All Leaves'),
+    ('can_all_requests'          , 'inbox'             , 'All Requests'),
+    ('can_approve'               , 'circle-check'      , 'Approve / Reject'),
+    ('can_file_for_emp'          , 'user-plus'         , 'File for Employee'),
+    ('can_file_requests'         , 'file-text'         , 'File Requests'),
+    ('can_view_tickets'          , 'ticket'            , 'View OT/RDW Tickets'),
+    ('can_team_calendar'         , 'calendar'          , 'Leave Calendar (all leavers)'),
+    # ── People & HR
+    ('can_pim'                   , 'scan-face'         , 'Employee Database (PIM)'),
+    ('can_requirements'          , 'clipboard-check'   , 'Requirements'),
+    ('can_coaching'              , 'presentation'      , 'Coaching'),
+    ('can_coaching_reports'      , 'chart-line'        , 'Coaching Reports'),
+    ('can_memos'                 , 'file-text'         , 'Employee Memos'),
+    ('can_work_mode'             , 'users'             , 'Work Mode'),
+    ('can_onboarding'            , 'user-check'        , 'Onboarding / Offboarding'),
+    ('can_wfm'                   , 'cloud-upload'      , 'WFM Onboarding'),
+    ('can_schedules'             , 'table'             , 'Schedules'),
+    ('can_settings'              , 'settings'          , 'Settings'),
+    # ── Analytics & Reports
+    ('can_reports'               , 'chart-column'      , 'Reports'),
+    ('can_absences'              , 'user-x'            , 'Absence Report'),
+    ('can_tardiness'             , 'clock-arrow-up'    , 'Tardiness Report'),
+    ('can_attrition_report'      , 'user-minus'        , 'Attrition Report'),
+    ('can_night_differential'    , 'moon-star'         , 'Night Differential'),
+    ('can_holiday_awol'          , 'calendar-x'        , 'Holiday AWOL'),
+    ('can_overbreak'             , 'cup-soda'          , 'Overbreak Report'),
+    ('can_qa_updates'            , 'megaphone'         , 'QA Updates'),
+    ('can_ot_hours'              , 'timer'             , 'OT Hours Report'),
+    # ── Finance & Operations
+    ('can_entitlements'          , 'credit-card'       , 'Entitlements'),
+    ('can_material_requests'     , 'package'           , 'Material Requests'),
+    ('can_final_approval'        , 'badge-check'       , 'Final Approval'),
+    ('can_view_approved_items'   , 'package-check'     , 'Purchaser View (Materials)'),
+    ('can_facilities_review'     , 'wrench'            , 'Facilities Reviewer'),
+    ('can_facilities_final'      , 'badge-check'       , 'Facilities Final Approver'),
+    ('can_inventory'             , 'boxes'             , 'Inventory Management'),
+    # ── Tools & Access
+    ('can_csat'                  , 'heart'             , 'CSAT Dashboard'),
+    ('can_surveys'               , 'clipboard-list'    , 'Survey Results'),
+    ('can_floor_map'             , 'map-pin'           , 'Floor Map'),
+    ('can_it_tickets'            , 'headset'           , 'IT Ticket Queue'),
+    ('can_hr_tickets'            , 'id-card'           , 'HR Ticket Queue'),
 ]
 
 ALL_PERMISSIONS = [key for key, _, _ in PERMISSION_DEFINITIONS]

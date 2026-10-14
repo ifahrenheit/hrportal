@@ -21,7 +21,8 @@ def login_required(f):
     return decorated
 
 def can_review():
-    return bool(session.get('is_admin') or session.get('is_sub_admin'))
+    # Admins and holders of the File Requests permission (previously any sub-admin)
+    return bool(session.get('is_admin') or session.get('permissions', {}).get('can_file_requests'))
 
 # ── Payroll period helpers (match app.py convention) ──────────────────────────
 def prev_month(d):
