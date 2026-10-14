@@ -8,6 +8,91 @@
 
 ---
 
+## 2026-10-15 — Audit fixes #1–#24, dashboard redesign, File a Request, Magic CWS approvals, standard page header
+Commit: `9de4757` (pushed) · Branch: `main`
+
+A read-only debugger audit listed 35 issues. This session fixed most Critical, High and Medium ones, then built UI work on request. #13 was deliberately left alone, and #7 is infrastructure.
+
+### What was built / changed
+- **#1** `admin_required`, the active-leaves list and `supervisor_action` no longer treat `can_attrition_report` as admin.
+- **#2** OT/RDW/CWS/FTS approve/reject now share one path: `_decide_file_request` / `_decide_file_requests` / `_file_request_scope` in `app.py`.
+  - Team scope (`get_supervisor_file_request_employees`), no self-approval, and a `status='Pending'` guard against concurrent approvers.
+  - The email goes to the record's own employee. `_local_next()` blocks open redirects.
+  - Policy: the "All Requests" permission means view only.
+- **#3** `adjust_leave_entitlement()` charges and refunds exactly one entitlement row: the one for the leave date's year, from the portal table if it has a row, otherwise OrangeHRM. All 8 filing, reject and cancel sites use it, and AWOL is never refunded.
+- **#4** `/api/import-schedule` returns 503 when `IMPORT_API_KEY` is unset.
+- **#5** `_sync_token_ok()`: the attrition and exit-interview syncs require `SYNC_SECRET`; the hard-coded fallback was removed.
+- **#6** connection leaks and polling:
+  - `pymysql.connect` is wrapped so every connection opened during a request is closed in `teardown_request`.
+  - The break page no longer refetches `get_logs` every second.
+- **#8** `coe_auto_release.py` now loads `.env` and has a `--dry-run` flag.
+- **#9** material and facilities emails split the admin list and send through `send_email_as`.
+- **#10** collation fix in the sub-admin "bulk by group" action.
+- **#11** FTS delete used the wrong column (`employeeID`).
+- **#12** `SELECT … FOR UPDATE` in all four leave approve/reject handlers.
+- **#14** separated (non-admin) staff can't log in: `_is_separated_non_admin` in `auth_callback`.
+- **#15** Keycloak/OAuth errors land on the login page with a message instead of a 500.
+- **#16** the material-confirm invalid-link page.
+- **#17** CSRF tokens sent by the ticket update modal, CoE "Mark as Received" and the assistant chat.
+- **#18** the overbreak review counts by payroll cycle (8–22 / 23–7).
+- **#23** coaching reminders skip separated agents.
+- **#24** IR env lists are trimmed and lowercased.
+- **Overbreak Review:** schedule column, readable times, "outside shift" flags.
+  - `_normalize_shift` now parses `12mn`, `12nn` and `5:30pm`.
+  - Report: `docs/break_log_dating_error_report.md`, **untracked on purpose** (employee names).
+- **UMMS-Core** `webapp/app.py` `/webhook/break-autofix` is now schedule-aware: it only moves a pre-9 AM break back a day for overnight shifts.
+  - This app is not under git. Backup: `UMMS-Core/webapp/app.py.bak.20261014040400`. The `employee-sync` service was restarted.
+- **Dashboard** (`templates/dashboard.html`, `_dashboard_extras()` in `app.py`):
+  - today tiles, rest days from the schedule, balances in days (LWOP marked Unpaid)
+  - this-week strip, recent requests, and a full-width CSAT row with an 88% target (hidden for staff with no CSAT history)
+  - aligned time records, equal-height calendar and DTR
+- **Break Log links** only show for Arctic/Numa/Test accounts (`break_log_user_access()`).
+- **File a Request** (`modules/request_hub.py`, `/file-requests/new`, `templates/file_requests/new.html` + `_new_times.html`) files OT, RDW, CWS, Magic CWS and FTS.
+  - Each form posts to its **existing** handler with `return_to=hub`, and the handler redirects back.
+  - The old forms still work by URL. The menu now shows one "File a Request" link.
+- **Magic CWS** joins the shared decision path as `mcws` (`_decide_magic_cws`). Approving adds `deduction_hours` to `magic_cws_balance.used_hrs`.
+  - Shown on the Approvals page and in the requests list with a Type filter.
+  - `magic_cws_action` repaired (#26). The `employee_name` bug fixed (it read `session["name"]`).
+- **Layout:**
+  - Content is capped at 1560px (the topnav width).
+  - Phone fixes on 10 pages, plus a mobile safety net in `base.html`: `.min-w-0`, table scroll wrapper, 16px inputs.
+  - **Standard page header** in `base.html` built from `page_title` / `page_subtitle` / `page_actions`. Override `page_head` to replace it; the dashboard does this to keep its greeting.
+  - ~55 templates converted. `#mainContent > .container(-fluid)` padding is removed.
+
+### Database changes (all on live data, each checked first)
+```sql
+-- central_db.break_logs: 133 early-shift (5am-2pm) breaks re-dated to DATE(break_start)
+--   rollback file: /root/break_logs_shiftdate_rollback_20261014.sql
+-- central_db.magic_cws_requests: employee_name backfilled for ids 1-11 from orangehrm2.hs_hr_employee
+-- central_db.magic_cws_requests ids 1-11: status='Approved', approved_by=0 ("System"), approved_at=now;
+--   magic_cws_balance.used_hrs += 10 each (Jasmin -8 hrs, Marian -10 hrs remaining: duplicate submissions, user chose "approve all")
+-- central_db.coaching_sessions ids 140, 202 -> status='cancelled' (separated agents)
+-- orangehrm2: no writes. 2025 entitlement drift NOT corrected (user: report only)
+```
+
+### Config / environment
+- `.env`: added `SYNC_SECRET`. The Apps Script reads it from the Script Property `SYNC_SECRET`, and both syncs were verified. `IMPORT_API_KEY` is intentionally unset (the endpoint is disabled).
+- Root crontab: `coe_auto_release.py` now runs on `venv/bin/python`. Backup: `/root/crontab.bak.20261014025643`.
+- Apps Script: the duplicate `autoFixBreaksViaWebhook` trigger was removed by the user.
+- Backups kept: `/root/.env.leavesystem.bak.*` and the 3 newest `app.py.bak.*` (older ones deleted).
+
+### How to verify
+- `/dashboard`, `/file-requests/new`, `/file-requests?req_type=MCWS`, `/file-requests/approvals?req_type=MCWS`, `/overbreak-review`
+- Phone-width audit approach: render a page through the test client, then run `~/.cache/ms-playwright/chromium_headless_shell-1243/*/chrome-headless-shell --window-size=390,900 --dump-dom` with a probe script.
+
+### Open items / next steps
+- [ ] Add a duplicate-submission check to the Magic CWS form (`magic_cws_form`), like the CWS form has.
+- [ ] Topnav: at about 1280px the search pill overlaps Operations/Analytics/Admin.
+- [ ] **#19** `tardiness_notify.py`: one commit after emailing can cause duplicate IRs, it runs live by default, and its idempotency check uses `==`.
+- [ ] #20–#22, #25–#35 from the audit (#21 is partly done).
+- [ ] Check peak-hour journal for `Too many connections` after the #6 fix. Consider gunicorn after #7 (2 GB RAM, heavy swap).
+- [ ] Retire the remaining break-autofix Apps Script trigger once the portal is confirmed to date breaks correctly on its own.
+- [ ] Remove the separated sub-admins (Jed Sagardui, Honey Bea Cortes, Anamarie Muñez, Judy Hel Abuloc), and Honey Bea from `IR_SGA`.
+- [ ] HR: Jasmin's and Marian's negative Magic CWS balances. 2025 entitlement drift: see `docs/leave_entitlement_2025_reconciliation.md` (SQL not run).
+- [ ] #13 (approver/reportto mismatch, Jovin as reportto for 162 employees): left as is by the user's choice.
+
+---
+
 ## 2026-10-12 — Fix: per-date leave Cancel silently did nothing on /supervisor/pending
 Commit: `367604b` (fix **uncommitted**: `templates/supervisor/pending.html`) · Branch: `main`
 
