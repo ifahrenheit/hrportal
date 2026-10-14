@@ -15693,7 +15693,7 @@ def api_my_csat():
     if not email:
         return jsonify({"error": "no session email"}), 400
 
-    gran  = (request.args.get('range') or 'month').lower()       # day | week | month
+    gran  = (request.args.get('range') or 'month').lower()       # day | week | month | year
     qmonth = (request.args.get('month') or '').strip()           # 'YYYY-MM'
     qweek  = (request.args.get('week') or '').strip()            # 'NN'
 
@@ -15711,6 +15711,57 @@ def api_my_csat():
             latest = row['latest'] if row else None
             if not latest:
                 return jsonify({"has_data": False, "range": gran})
+
+            # ============ YEAR: year total + one column per month ============
+            if gran == 'year':
+                qyear = (request.args.get('year') or '').strip()
+                year = qyear if (qyear.isdigit() and len(qyear) == 4) else str(latest)[:4]
+                ys, ye = f"{year}-01-01", f"{year}-12-31"
+                c.execute("""
+                    SELECT DATE_FORMAT(performed_at_date,'%%Y-%%m') AS ym, channel_type,
+                           AVG(csat_score) pct, COUNT(*) n
+                    FROM csat_responses
+                    WHERE agent_email=%s AND performed_at_date BETWEEN %s AND %s
+                    GROUP BY ym, channel_type
+                """, [email, ys, ye])
+                mp_by, mn = {}, {}
+                for r in c.fetchall():
+                    mp_by.setdefault(r['ym'], {})[r['channel_type']] = {"pct": float(r['pct'] or 0), "n": int(r['n'])}
+                    mn[r['ym']] = mn.get(r['ym'], 0) + int(r['n'])
+                c.execute("""
+                    SELECT DATE_FORMAT(performed_at_date,'%%Y-%%m') AS ym,
+                           COALESCE(SUM(chat_resolved),0) cw, COALESCE(SUM(email_resolved),0) ew,
+                           COALESCE(SUM(phone_resolved),0) pw
+                    FROM resolve_counts
+                    WHERE agent_email=%s AND performed_at_date BETWEEN %s AND %s
+                    GROUP BY ym
+                """, [email, ys, ye])
+                mw = {r['ym']: (int(r['cw']), int(r['ew']), int(r['pw'])) for r in c.fetchall()}
+
+                def col(mp, resp_n, cw, ew, pw):
+                    d2 = cw + ew + pw
+                    wv = None
+                    if resp_n > 0 and d2:
+                        wv = round((mp.get('Chat',{}).get('pct',0)*cw + mp.get('Email',{}).get('pct',0)*ew
+                                    + mp.get('Phone',{}).get('pct',0)*pw) / d2 * 100, 2)
+                    return {"weighted": wv, "responses": resp_n, "resolved": d2,
+                            "chat": chn(mp,'Chat',cw), "email": chn(mp,'Email',ew), "phone": chn(mp,'Phone',pw)}
+
+                months = []
+                for ym in sorted(set(mp_by) | set(mw)):
+                    cw, ew, pw = mw.get(ym, (0, 0, 0))
+                    c.execute("SELECT LAST_DAY(%s) AS e", [ym + '-01'])
+                    months.append({"month": ym, "start": ym + '-01', "end": str(c.fetchone()['e']),
+                                   **col(mp_by.get(ym, {}), mn.get(ym, 0), cw, ew, pw)})
+                # year total: per-channel CSAT over the whole year, weighted by the year's resolves
+                c.execute("""
+                    SELECT channel_type, AVG(csat_score) pct, COUNT(*) n FROM csat_responses
+                    WHERE agent_email=%s AND performed_at_date BETWEEN %s AND %s GROUP BY channel_type
+                """, [email, ys, ye])
+                ymp = {r['channel_type']: {"pct": float(r['pct'] or 0), "n": int(r['n'])} for r in c.fetchall()}
+                tcw = sum(v[0] for v in mw.values()); tew = sum(v[1] for v in mw.values()); tpw = sum(v[2] for v in mw.values())
+                total = {"start": ys, "end": ye, **col(ymp, sum(mn.values()), tcw, tew, tpw)}
+                return jsonify({"has_data": True, "range": "year", "year": year, "total": total, "months": months})
 
             # Resolve the working month (YYYY-MM): explicit param, else month of latest data.
             if qmonth:

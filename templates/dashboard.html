@@ -339,10 +339,12 @@
     <div class="d-flex align-items-center gap-2 flex-wrap">
       <select id="myCsatMonth" class="form-select form-select-sm" style="width:auto;min-width:120px" aria-label="Month"></select>
       <select id="myCsatWeek"  class="form-select form-select-sm" style="width:auto;min-width:80px;display:none" aria-label="Week"></select>
+      <select id="myCsatYear"  class="form-select form-select-sm" style="width:auto;min-width:90px;display:none" aria-label="Year"></select>
       <div class="btn-group btn-group-sm" role="group" id="myCsatRange" aria-label="Range">
         <button type="button" class="btn btn-outline-primary" data-range="day">Day</button>
         <button type="button" class="btn btn-outline-primary" data-range="week">Week</button>
         <button type="button" class="btn btn-primary active" data-range="month">Month</button>
+        <button type="button" class="btn btn-outline-primary" data-range="year">Year</button>
       </div>
     </div>
   </div>
@@ -416,6 +418,7 @@
   let curRange = 'month';
   let curMonth = '';     // 'YYYY-MM'
   let curWeek  = '';     // 'NN'
+  let curYear  = '';     // 'YYYY'
 
   // ----- modal -----
   let myCsatModal = null;
@@ -491,7 +494,10 @@ if(!d.months || !d.months.length) return;
 const monthSel = $('myCsatMonth');
 monthSel.innerHTML = d.months.map(function(m){ return '<option value="'+m+'">'+monthLabel(m)+'</option>'; }).join('');
 curMonth = (selectMonth && d.months.indexOf(selectMonth)>=0) ? selectMonth : d.months[0];
-monthSel.value = curMonth;
+  monthSel.value = curMonth;
+  const years = d.months.map(function(m){ return m.slice(0,4); }).filter(function(y,i,a){ return a.indexOf(y)===i; });
+  $('myCsatYear').innerHTML = years.map(function(y){ return '<option value="'+y+'">'+y+'</option>'; }).join('');
+  curYear = curMonth.slice(0,4); $('myCsatYear').value = curYear;
   }
   async function loadWeeksFor(month){
 let d;
@@ -514,12 +520,15 @@ $('myCsatLoading').style.display='block';
 $('myCsatEmpty').style.display='none';
 $('myCsatWindowView').style.display='none';
 $('myCsatMatrixView').style.display='none';
-$('myCsatWeek').style.display = (curRange==='day') ? '' : 'none';
+  $('myCsatWeek').style.display = (curRange==='day') ? '' : 'none';
+  $('myCsatYear').style.display = (curRange==='year') ? '' : 'none';
+  $('myCsatMonth').style.display = (curRange==='year') ? 'none' : '';
 
 const p = new URLSearchParams();
 p.set('range', curRange);
 if(curMonth) p.set('month', curMonth);
-if(curRange==='day' && curWeek) p.set('week', curWeek);
+  if(curRange==='day' && curWeek) p.set('week', curWeek);
+  if(curRange==='year' && curYear) p.set('year', curYear);
 
 let d;
 try { const r = await fetch('/api/my-csat?'+p.toString()); if(!r.ok){ card.style.display='none'; return; } d = await r.json(); }
@@ -529,7 +538,28 @@ card.style.display='block';
 $('myCsatLoading').style.display='none';
 if(!d.has_data){ $('myCsatEmpty').style.display='block'; return; }
 
-if(d.range === 'week'){
+  if(d.range === 'year'){
+    const mkCol = function(o, head, label){
+      const base = {start: o.start, end: o.end};
+      return {
+        head: head, weighted: o.weighted, responses: o.responses, resolved: o.resolved,
+        chat: o.chat, email: o.email, phone: o.phone,
+        totalMeta: Object.assign({}, base, {label: label}),
+        chatMeta:  Object.assign({}, base, {channel:'Chat',  label: label+' \u00b7 Chat'}),
+        emailMeta: Object.assign({}, base, {channel:'Email', label: label+' \u00b7 Email'}),
+        phoneMeta: Object.assign({}, base, {channel:'Phone', label: label+' \u00b7 Phone'})
+      };
+    };
+    const cols = [mkCol(d.total, d.year+' total', d.year)].concat((d.months||[]).map(function(m){
+      return mkCol(m, MONTHS[parseInt(m.month.slice(5),10)-1], monthLabel(m.month));
+    }));
+    renderMatrix(cols);
+    $('myCsatMatrixNote').textContent = d.year+' \u00b7 first column = whole year \u00b7 Total = weighted \u00b7 channels = response CSAT \u00b7 (n) = responses (click to view tickets)';
+    $('myCsatMatrixView').style.display='block';
+    return;
+  }
+
+  if(d.range === 'week'){
   const cols = (d.weeks||[]).map(function(w){
     const base = {week: w.week, month: d.month};
     const lbl = monthLabel(d.month)+' \u00b7 '+w.label;
@@ -635,6 +665,7 @@ curMonth = this.value;
 })();
   });
   $('myCsatWeek').addEventListener('change', function(){ curWeek = this.value; loadData(); });
+  $('myCsatYear').addEventListener('change', function(){ curYear = this.value; loadData(); });
 
   // ----- init -----
   (async function(){
