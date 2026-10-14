@@ -1349,6 +1349,240 @@ def get_on_shift_rows(cdb):
         """)
         return c.fetchall()
 
+# ── Dashboard: today / week / requests summary ──────────────────────────────
+_REQ_STATUS_STYLE = {
+    'approved': 'ok', 'served': 'ok', 'completed': 'ok', 'taken': 'ok',
+    'scheduled': 'info', 'pending': 'warn',
+    'rejected': 'bad', 'cancelled': 'muted',
+}
+
+def _fmt_shift(s):
+    return (s or '').replace('-', ' – ') if s else ''
+
+def _fmt_days(x):
+    x = round(float(x or 0), 2)
+    return ('%g' % x)
+
+def _fmt_range(d1, d2):
+    if not d1:
+        return ''
+    if not d2 or d1 == d2:
+        return d1.strftime('%b %-d')
+    if d1.month == d2.month:
+        return f"{d1.strftime('%b %-d')} – {d2.day}"
+    return f"{d1.strftime('%b %-d')} – {d2.strftime('%b %-d')}"
+
+def _fmt_clock(v):
+    """time/timedelta/datetime -> '12:54 PM'."""
+    if v is None:
+        return ''
+    if isinstance(v, timedelta):
+        secs = int(v.total_seconds()) % 86400
+        v = datetime(2000, 1, 1) + timedelta(seconds=secs)
+    return v.strftime('%-I:%M %p')
+
+def _dashboard_balance_cards(balances, portal_balances):
+    """One list of cards; a portal entitlement replaces the OrangeHRM one of
+    the same leave type (filing deducts from the portal row when it exists)."""
+    merged = {}
+    for b in list(balances) + list(portal_balances):
+        merged[b['leave_type_name'].strip().lower()] = b
+    cards = []
+    for b in merged.values():
+        name = b['leave_type_name']
+        unpaid = 'without pay' in name.lower() or 'lwop' in name.lower()
+        total, left = float(b['total_hours'] or 0), float(b['remaining_hours'] or 0)
+        pct = round(left / total * 100) if total > 0 else 0
+        cards.append({
+            'name': name, 'unpaid': unpaid,
+            'days_left': _fmt_days(b['remaining_days']),
+            'days_total': _fmt_days(total / 8),
+            'hours_left': _fmt_days(left),
+            'pct': max(0, min(pct, 100)),
+            'low': (not unpaid) and total > 0 and pct <= 15,
+        })
+    # paid leave first, LWOP last
+    cards.sort(key=lambda c: (c['unpaid'], c['name']))
+    return cards
+
+def _dashboard_extras(emp_number, user):
+    """Everything above the fold on the dashboard. Each part is best-effort:
+    a failing query hides that part instead of breaking the page."""
+    today = date.today()
+    out = {
+        'greeting': 'Good morning' if datetime.now().hour < 12 else
+                    ('Good afternoon' if datetime.now().hour < 18 else 'Good evening'),
+        'first_name': (user.get('name') or '').split(' ')[0],
+        'today_label': today.strftime('%A, %B %-d, %Y'),
+        'today_shift': None, 'today_rest': False, 'last_punch': None,
+        'week': [], 'pending_leave': 0, 'pending_other': 0,
+        'next_leave': None, 'recent_requests': [], 'recent_punches': [],
+    }
+    employee_id = (user.get('employee_id') or '').strip()
+    email = (user.get('email') or '').lower()
+    week_start = today - timedelta(days=today.weekday())
+    week_days = [week_start + timedelta(days=i) for i in range(7)]
+
+    # Schedule + punches (central_db)
+    try:
+        cdb = get_central_db()
+        with cdb.cursor() as c:
+            sched = {}
+            if employee_id:
+                c.execute("""SELECT schedule_date, shift_time, is_rest_day FROM employee_schedules
+                             WHERE employee_id = %s AND schedule_date BETWEEN %s AND %s""",
+                          (employee_id, week_days[0], week_days[-1]))
+                sched = {r['schedule_date']: r for r in c.fetchall()}
+            t = sched.get(today)
+            if t:
+                out['today_rest'] = bool(t['is_rest_day'])
+                out['today_shift'] = None if t['is_rest_day'] else _fmt_shift(t['shift_time'])
+            out['_sched'] = sched
+            if email:
+                c.execute("""SELECT d.date, d.type FROM dailytimerecord d
+                             JOIN userdata u ON u.personid = d.personid
+                             WHERE LOWER(u.email) = %s AND d.date > '2000-01-01'
+                             ORDER BY d.date DESC LIMIT 6""", (email,))
+                punches = c.fetchall()
+                out['recent_punches'] = [{
+                    'day': p['date'].strftime('%a, %b %-d'),
+                    'time': _fmt_clock(p['date']),
+                    'type': (p['type'] or '').upper(),
+                } for p in punches]
+                if punches and punches[0]['date'] >= datetime.now() - timedelta(hours=18):
+                    out['last_punch'] = {'type': punches[0]['type'],
+                                         'time': _fmt_clock(punches[0]['date'])}
+        cdb.close()
+    except Exception as e:
+        app.logger.warning(f'dashboard schedule/punches: {e}')
+    sched = out.pop('_sched', {})
+
+    # Leave: this week, pending, next leave, recent (orangehrm2)
+    week_leave = {}
+    recent = []
+    try:
+        db = get_db()
+        with db.cursor() as c:
+            c.execute("""SELECT r.leave_date, r.status, lt.name
+                         FROM leave4day_requests r JOIN ohrm_leave_type lt ON lt.id = r.leave_type_id
+                         WHERE r.emp_number = %s AND r.leave_date BETWEEN %s AND %s
+                           AND r.status NOT IN ('rejected','cancelled','Deleted')""",
+                      (emp_number, week_days[0], week_days[-1]))
+            for r in c.fetchall():
+                week_leave[r['leave_date']] = r
+            c.execute("""SELECT COUNT(DISTINCT COALESCE(leave_request_id, id)) AS n
+                         FROM leave4day_requests WHERE emp_number = %s AND status = 'pending'""",
+                      (emp_number,))
+            out['pending_leave'] = c.fetchone()['n'] or 0
+            c.execute("""SELECT r.leave_request_id, r.leave_date FROM leave4day_requests r
+                         WHERE r.emp_number = %s AND r.leave_date >= %s
+                           AND r.status IN ('pending','scheduled','approved')
+                         ORDER BY r.leave_date LIMIT 1""", (emp_number, today))
+            nxt = c.fetchone()
+            if nxt:
+                if nxt['leave_request_id']:
+                    c.execute("""SELECT MIN(r.leave_date) d1, MAX(r.leave_date) d2,
+                                        MAX(lt.name) name, MAX(r.status) status
+                                 FROM leave4day_requests r JOIN ohrm_leave_type lt ON lt.id = r.leave_type_id
+                                 WHERE r.emp_number = %s AND r.leave_request_id = %s
+                                   AND r.leave_date >= %s
+                                   AND r.status IN ('pending','scheduled','approved')""",
+                              (emp_number, nxt['leave_request_id'], today))
+                    g = c.fetchone()
+                else:
+                    c.execute("""SELECT r.leave_date d1, r.leave_date d2, lt.name, r.status
+                                 FROM leave4day_requests r JOIN ohrm_leave_type lt ON lt.id = r.leave_type_id
+                                 WHERE r.emp_number = %s AND r.leave_date = %s LIMIT 1""",
+                              (emp_number, nxt['leave_date']))
+                    g = c.fetchone()
+                if g:
+                    out['next_leave'] = {'dates': _fmt_range(g['d1'], g['d2']), 'name': g['name'],
+                                         'status': (g['status'] or '').capitalize()}
+            c.execute("""SELECT COALESCE(r.leave_request_id, -r.id) AS grp, MAX(lt.name) AS name,
+                                MIN(r.leave_date) d1, MAX(r.leave_date) d2,
+                                SUM(r.days_deducted) days, MAX(r.status) status, MAX(r.filed_at) filed
+                         FROM leave4day_requests r JOIN ohrm_leave_type lt ON lt.id = r.leave_type_id
+                         WHERE r.emp_number = %s AND r.status <> 'Deleted'
+                         GROUP BY grp ORDER BY filed DESC LIMIT 6""", (emp_number,))
+            for r in c.fetchall():
+                days = float(r['days'] or 0)
+                recent.append({'type': r['name'], 'date': _fmt_range(r['d1'], r['d2']),
+                               'detail': (_fmt_days(days) + (' day' if days == 1 else ' days')) if days else '',
+                               'status': r['status'], 'filed': r['filed']})
+        db.close()
+    except Exception as e:
+        app.logger.warning(f'dashboard leave: {e}')
+
+    # OT / CWS / RDW / FTS (central_db)
+    if employee_id:
+        try:
+            cdb = get_central_db()
+            with cdb.cursor() as c:
+                c.execute("""SELECT
+                    (SELECT COUNT(*) FROM ot_requests  WHERE employee_id=%s AND status='Pending' AND deleted_at IS NULL) +
+                    (SELECT COUNT(*) FROM cws_requests WHERE employee_id=%s AND status='Pending' AND deleted_at IS NULL) +
+                    (SELECT COUNT(*) FROM rd_requests  WHERE employee_id=%s AND status='Pending' AND deleted_at IS NULL) +
+                    (SELECT COUNT(*) FROM fts_requests WHERE employeeID=%s  AND status='Pending' AND deleted_at IS NULL) AS n""",
+                          (employee_id,) * 4)
+                out['pending_other'] = c.fetchone()['n'] or 0
+                c.execute("""SELECT ot_date d, start_time s, end_time e, status, `timestamp` filed FROM ot_requests
+                             WHERE employee_id=%s AND deleted_at IS NULL ORDER BY id DESC LIMIT 6""", (employee_id,))
+                for r in c.fetchall():
+                    recent.append({'type': 'Overtime', 'date': _fmt_range(r['d'], None),
+                                   'detail': f"{_fmt_clock(r['s'])} – {_fmt_clock(r['e'])}" if r['s'] else '',
+                                   'status': r['status'], 'filed': r['filed']})
+                c.execute("""SELECT original_date d, new_date nd, new_time nt, status, created_at filed FROM cws_requests
+                             WHERE employee_id=%s AND deleted_at IS NULL ORDER BY id DESC LIMIT 6""", (employee_id,))
+                for r in c.fetchall():
+                    recent.append({'type': 'Change of Schedule', 'date': _fmt_range(r['d'], None),
+                                   'detail': ('Moved to ' + _fmt_range(r['nd'], None) + (' · ' + _fmt_shift(str(r['nt'])) if r['nt'] else '')) if r['nd'] else '',
+                                   'status': r['status'], 'filed': r['filed']})
+                c.execute("""SELECT rd_date d, start_time s, end_time e, status, created_at filed FROM rd_requests
+                             WHERE employee_id=%s AND deleted_at IS NULL ORDER BY id DESC LIMIT 6""", (employee_id,))
+                for r in c.fetchall():
+                    recent.append({'type': 'Rest Day Work', 'date': _fmt_range(r['d'], None),
+                                   'detail': f"{_fmt_clock(r['s'])} – {_fmt_clock(r['e'])}" if r['s'] else '',
+                                   'status': r['status'], 'filed': r['filed']})
+                c.execute("""SELECT fts_date d, fts_time t, fts_type ft, status, created_at filed FROM fts_requests
+                             WHERE employeeID=%s AND deleted_at IS NULL ORDER BY id DESC LIMIT 6""", (employee_id,))
+                for r in c.fetchall():
+                    recent.append({'type': 'Failure to Swipe', 'date': _fmt_range(r['d'], None),
+                                   'detail': ' · '.join(x for x in [str(r['ft'] or ''), _fmt_clock(r['t']) if r['t'] else ''] if x),
+                                   'status': r['status'], 'filed': r['filed']})
+            cdb.close()
+        except Exception as e:
+            app.logger.warning(f'dashboard file requests: {e}')
+
+    def _filed_key(r):
+        f = r.get('filed')
+        if isinstance(f, datetime):
+            return f
+        if isinstance(f, date):
+            return datetime.combine(f, datetime.min.time())
+        return datetime.min
+    recent.sort(key=_filed_key, reverse=True)
+    for r in recent[:6]:
+        st = (r['status'] or '').strip()
+        r['status'] = st.capitalize()
+        r['style'] = _REQ_STATUS_STYLE.get(st.lower(), 'muted')
+        r.pop('filed', None)
+        out['recent_requests'].append(r)
+
+    for d in week_days:
+        s, lv = sched.get(d), week_leave.get(d)
+        if lv:
+            label, kind = lv['name'].replace(' Leave', '') + ' leave', 'leave'
+        elif s and s['is_rest_day']:
+            label, kind = 'Rest day', 'off'
+        elif s and s['shift_time']:
+            label, kind = _fmt_shift(s['shift_time']), 'work'
+        else:
+            label, kind = 'No schedule', 'none'
+        out['week'].append({'dow': d.strftime('%a'), 'num': d.day, 'label': label,
+                            'kind': kind, 'today': d == today})
+    return out
+
+
 @app.route('/dashboard')
 @login_required
 def dashboard():
@@ -1435,7 +1669,10 @@ def dashboard():
     finally:
         db_ql.close()
 
+    extras = _dashboard_extras(emp_number, session['user'])
     return render_template("dashboard.html", balances=balances, portal_balances=portal_balances, recent=recent,
+                           balance_cards=_dashboard_balance_cards(balances, portal_balances),
+                           dash=extras,
                            off_day=off_day, schedule_exists=schedule_exists,
                            today=today, user=session["user"],
                            dtr_records=dtr_records,

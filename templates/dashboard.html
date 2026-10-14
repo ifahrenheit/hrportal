@@ -4,15 +4,155 @@
 {% block content %}
 
 <style>
-  .schedule-banner { border-radius: 10px; padding: .7rem 1rem; font-size: .87rem; display: flex; align-items: center; gap: .6rem; margin-bottom: 1.5rem; border: 1px solid; }
-  .balance-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px,1fr)); gap: 1rem; margin-bottom: 1.5rem; }
-  .balance-card { padding: 1.25rem; position: relative; overflow: hidden; }
-  .balance-card::after { content: ''; position: absolute; right: -10px; top: -10px; width: 70px; height: 70px; border-radius: 50%; background: var(--accent); opacity: .06; }
-  .balance-card .b-label { font-size: .75rem; text-transform: uppercase; letter-spacing: .08em; color: var(--text-muted); margin-bottom: .4rem; font-weight: 600; }
-  .balance-card .b-num { font-family: 'Outfit', sans-serif; font-size: 2rem; font-weight: 700; color: var(--text); line-height: 1; }
-  .balance-card .b-sub { font-size: .8rem; color: var(--text-muted); margin-top: .2rem; }
-  .progress { height: 4px; margin-top: .6rem; border-radius: 2px; }
-  .dash-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; }
+  .db-wrap { display: flex; flex-direction: column; gap: 1.5rem; max-width: 1560px; margin: 0 auto; }  /* same width as the top menu */
+  .db-h1 { margin: 0; font-family: 'Outfit', sans-serif; font-size: 1.85rem; font-weight: 600; letter-spacing: -.01em; color: var(--text); }
+  .db-h2 { margin: 0; font-family: 'Outfit', sans-serif; font-size: 1.1rem; font-weight: 600; color: var(--text); }
+  .db-muted { color: var(--text-muted); }
+  .db-head { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 1rem; }
+  .db-actions { display: flex; flex-wrap: wrap; gap: .6rem; }
+  .db-btn { display: inline-flex; align-items: center; gap: .5rem; min-height: 44px; padding: 0 1.1rem; border-radius: 10px; font-weight: 600; font-size: .9rem; text-decoration: none; border: 1px solid var(--border); background: var(--surface); color: var(--text); }
+  .db-btn:hover { border-color: var(--accent); color: var(--accent); }
+  .db-btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .db-btn.primary:hover { background: #1a4fc4; color: #fff; }
+  .db-btn svg, .db-btn i { width: 18px; height: 18px; }
+  .db-card { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; box-shadow: var(--card-shadow); }
+  .db-pad { padding: 1.25rem; }
+  .db-sec-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: .5rem; }
+  .db-link { font-size: .88rem; font-weight: 500; text-decoration: none; color: var(--accent); }
+  .db-link:hover { text-decoration: underline; }
+
+  /* today tiles */
+  .db-tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 1rem; }
+  .db-tile { display: flex; gap: .9rem; align-items: flex-start; padding: 1.1rem 1.25rem; }
+  .db-tile-ico { width: 40px; height: 40px; border-radius: 10px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; background: rgba(30,95,212,.10); color: var(--accent); }
+  .db-tile-ico.warn { background: rgba(217,119,6,.13); color: #b45309; }
+  .db-tile-ico svg, .db-tile-ico i { width: 20px; height: 20px; }
+  .db-tile-label { font-size: .72rem; font-weight: 600; text-transform: uppercase; letter-spacing: .06em; color: var(--text-muted); }
+  .db-tile-val { font-family: 'Outfit', sans-serif; font-size: 1.35rem; font-weight: 600; color: var(--text); line-height: 1.25; }
+  .db-tile-sub { font-size: .82rem; color: var(--text-muted); }
+  .db-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: .35rem; vertical-align: middle; }
+  .db-on { color: #15803d; font-weight: 500; }
+  [data-theme="dark"] .db-on { color: #4ade80; }
+
+  /* balances */
+  .db-bal-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 1rem; }
+  .db-bal { padding: 1.2rem; display: flex; flex-direction: column; gap: .7rem; }
+  .db-bal-top { display: flex; align-items: center; justify-content: space-between; gap: .5rem; }
+  .db-bal-name { font-size: .82rem; font-weight: 600; color: var(--text); }
+  .db-bal-num { font-family: 'Outfit', sans-serif; font-size: 2.1rem; font-weight: 700; line-height: 1; color: var(--text); }
+  .db-bar { height: 8px; border-radius: 4px; background: var(--border); overflow: hidden; }
+  .db-bar > div { height: 100%; border-radius: 4px; background: var(--accent); }
+  .db-bar.low > div { background: #d97706; }
+  .db-bar.unpaid > div { background: #7c8aa5; }
+  .db-tag { padding: .1rem .5rem; border-radius: 999px; font-size: .68rem; font-weight: 600; background: var(--bg); color: var(--text-muted); border: 1px solid var(--border); }
+
+  /* two-column body */
+  .db-cols { display: flex; flex-wrap: wrap; gap: 1.5rem; align-items: flex-start; }
+  .db-main { flex: 999 1 560px; min-width: 0; display: flex; flex-direction: column; gap: 1.5rem; }
+  .db-side { flex: 1 1 340px; min-width: 0; display: flex; flex-direction: column; gap: 1.5rem; }
+
+  /* week strip */
+  .db-week-scroll { overflow-x: auto; }
+  .db-week { display: grid; grid-template-columns: repeat(7, minmax(84px, 1fr)); gap: .5rem; min-width: 620px; }
+  .db-day { border-radius: 10px; padding: .75rem .6rem; display: flex; flex-direction: column; gap: .3rem; border: 1px solid var(--border); background: var(--surface); }
+  .db-day-dow { font-size: .72rem; font-weight: 600; text-transform: uppercase; letter-spacing: .05em; color: var(--text-muted); }
+  .db-day-num { font-family: 'Outfit', sans-serif; font-size: 1.25rem; font-weight: 600; color: var(--text); }
+  .db-day-lbl { font-size: .76rem; font-weight: 500; color: var(--text); }
+  .db-day.off { background: var(--bg); }
+  .db-day.off .db-day-num, .db-day.off .db-day-lbl, .db-day.none .db-day-lbl { color: var(--text-muted); }
+  .db-day.leave { background: rgba(217,119,6,.08); }
+  .db-day.leave .db-day-lbl { color: #b45309; }
+  .db-day.today { border: 2px solid var(--accent); }
+  .db-day.today .db-day-lbl { color: var(--accent); }
+  [data-theme="dark"] .db-day.leave .db-day-lbl { color: #fbbf24; }
+
+  /* requests table */
+  .db-table { width: 100%; border-collapse: collapse; font-size: .88rem; color: var(--text); min-width: 520px; }
+  .db-table th { text-align: left; font-size: .72rem; font-weight: 600; text-transform: uppercase; letter-spacing: .05em; color: var(--text-muted); padding: .5rem .6rem; border-bottom: 1px solid var(--border); }
+  .db-table td { padding: .7rem .6rem; border-bottom: 1px solid var(--border); vertical-align: middle; }
+  .db-table tr:last-child td { border-bottom: none; }
+  .db-pill { display: inline-block; padding: .15rem .6rem; border-radius: 999px; font-size: .74rem; font-weight: 600; white-space: nowrap; }
+  .db-pill.ok    { background: #dcfce7; color: #166534; }
+  .db-pill.info  { background: #dbeafe; color: #1e40af; }
+  .db-pill.warn  { background: #fef3c7; color: #92400e; }
+  .db-pill.bad   { background: #fee2e2; color: #991b1b; }
+  .db-pill.muted { background: var(--bg); color: var(--text-muted); border: 1px solid var(--border); }
+  [data-theme="dark"] .db-pill.ok   { background: #022c22; color: #34d399; }
+  [data-theme="dark"] .db-pill.info { background: #1e3a5f; color: #93c5fd; }
+  [data-theme="dark"] .db-pill.warn { background: #422006; color: #fcd34d; }
+  [data-theme="dark"] .db-pill.bad  { background: #450a0a; color: #fca5a5; }
+
+  /* CSAT */
+  .csat-head { display: flex; align-items: flex-end; justify-content: space-between; gap: .75rem; }
+  .csat-big { font-family: 'Outfit', sans-serif; font-size: 2.5rem; font-weight: 700; line-height: 1.05; }
+  .csat-counts { text-align: right; font-size: .82rem; color: var(--text-muted); line-height: 1.5; }
+  .csat-counts strong, .csat-counts a { color: var(--text); }
+  .csat-track { position: relative; height: 10px; border-radius: 5px; background: var(--border); }
+  .csat-fill { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 5px; width: 0; }
+  .csat-mark { position: absolute; left: 88%; top: -4px; bottom: -4px; width: 2px; background: var(--text); }
+  .csat-scale { display: flex; justify-content: space-between; font-size: .74rem; color: var(--text-muted); margin-top: .35rem; }
+  .csat-ch { display: grid; grid-template-columns: 56px minmax(0,1fr) auto; align-items: center; gap: .6rem; font-size: .82rem; }
+  .csat-ch .db-bar { height: 6px; }
+
+  /* punches + quick links */
+  .db-punch { display: flex; justify-content: space-between; align-items: center; padding: .6rem 0; border-bottom: 1px solid var(--border); font-size: .88rem; }
+  .db-punch:last-child { border-bottom: none; }
+  .db-ql { display: flex; align-items: center; gap: .75rem; min-height: 48px; padding: .5rem .75rem; border-radius: 10px; background: var(--bg); color: var(--text); text-decoration: none; }
+  .db-ql:hover { color: var(--accent); }
+  .db-ql-ico { width: 32px; height: 32px; border-radius: 8px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+  .db-ql-ico i, .db-ql-ico svg { color: #fff; width: 16px; height: 16px; }
+
+  /* ── Phone layout ─────────────────────────────────────────── */
+  @media (max-width: 576px) {
+    .db-wrap { gap: 1.1rem; }
+    .db-h1 { font-size: 1.5rem; }
+    .db-actions { width: 100%; }
+    .db-actions .db-btn { flex: 1 1 auto; justify-content: center; }
+    /* tiles + balances: two per row, compact */
+    .db-tiles, .db-bal-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .65rem; }
+    .db-tile { padding: .85rem .9rem; gap: 0; }
+    .db-tile-ico { display: none; }
+    .db-tile-label { font-size: .64rem; }
+    .db-tile-val { font-size: 1.05rem; }
+    .db-tile-sub { font-size: .76rem; }
+    .db-bal { padding: .9rem; gap: .5rem; }
+    .db-bal:last-child:nth-child(odd) { grid-column: 1 / -1; }  /* odd count: last card full width */
+    .db-bal-top { flex-wrap: wrap; gap: .3rem; }
+    .db-bal-name { font-size: .76rem; }
+    .db-bal-num { font-size: 1.65rem; }
+    .db-bal .db-muted { font-size: .74rem !important; }
+    .db-pad { padding: 1rem; }
+    /* this week: a 7-line list instead of a sideways strip */
+    .db-week { grid-template-columns: 1fr; min-width: 0; gap: .35rem; }
+    .db-day { flex-direction: row; align-items: center; gap: .75rem; padding: .55rem .75rem; }
+    .db-day-dow { width: 5.2rem; flex-shrink: 0; }
+    .db-day-num { font-size: 1rem; width: 1.6rem; }
+    .db-day-lbl { margin-left: auto; text-align: right; font-size: .82rem; }
+    /* recent requests: stacked rows, status always visible */
+    .db-table { min-width: 0; }
+    .db-table thead { display: none; }
+    .db-table, .db-table tbody { display: block; }
+    .db-table tr { display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: .75rem; row-gap: .1rem; padding: .7rem 0; border-bottom: 1px solid var(--border); }
+    .db-table tr:last-child { border-bottom: none; }
+    .db-table td { padding: 0; border: 0; }
+    .db-table td:nth-child(1) { grid-column: 1; grid-row: 1; font-weight: 600; }
+    .db-table td:nth-child(4) { grid-column: 2; grid-row: 1; text-align: right; }
+    .db-table td:nth-child(2) { grid-column: 1 / -1; grid-row: 2; font-size: .82rem; color: var(--text-muted); }
+    .db-table td:nth-child(3) { grid-column: 1 / -1; grid-row: 3; font-size: .82rem; }
+    .db-table td:nth-child(3):empty { display: none; }
+    /* month calendar: tighter cells */
+    .cal-day { min-height: 56px; padding: .3rem .25rem; }
+    .cal-day .day-shift { font-size: .6rem; }
+    .cal-day .day-badge { font-size: .55rem; padding: .05rem .2rem; }
+  }
+
+  /* month calendar (unchanged look) */
+  .dash-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; align-items: stretch; }
+  /* calendar + time records: equal-height cards side by side */
+  .dash-grid > div { display: flex; flex-direction: column; }
+  .dash-grid > div > .cal-wrap, .dash-grid > div > .card { flex: 1; display: flex; flex-direction: column; }
+  #cal-body { flex: 1; grid-auto-rows: 1fr; }
+  .dtr-body { flex: 1; }
   @media (max-width: 1100px) { .dash-grid { grid-template-columns: 1fr; } }
   .cal-wrap { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; box-shadow: var(--card-shadow); overflow: hidden; }
   .cal-header { display: flex; align-items: center; justify-content: space-between; padding: 1rem 1.25rem; border-bottom: 1px solid var(--border); }
@@ -45,15 +185,6 @@
   .legend-item { display: flex; align-items: center; gap: .5rem; font-size: .78rem; color: var(--text); font-weight: 500; }
   .legend-dot { width: 18px; height: 18px; border-radius: 5px; flex-shrink: 0; }
   .section-title { font-family: 'Outfit', sans-serif; font-size: .75rem; font-weight: 600; text-transform: uppercase; letter-spacing: .09em; color: var(--text-muted); margin-bottom: .85rem; }
-  .filing-row { display: flex; align-items: center; gap: .75rem; padding: .7rem 0; border-bottom: 1px solid var(--border); }
-  .filing-row:last-child { border-bottom: none; }
-  .filing-date { font-family: 'Outfit', sans-serif; font-weight: 600; font-size: .88rem; color: var(--text); min-width: 80px; }
-  .filing-day  { font-size: .75rem; color: var(--text-muted); }
-  .filing-type { flex: 1; font-size: .85rem; color: var(--text); }
-  .fab { display: inline-flex; align-items: center; gap: .5rem; background: var(--accent); color: #fff; border: none; border-radius: 10px; padding: .6rem 1.2rem; font-family: 'Outfit', sans-serif; font-weight: 500; font-size: .9rem; cursor: pointer; text-decoration: none; margin-bottom: 1.5rem; }
-  .fab:hover { background: #1a4fc4; color: #fff; }
-
-  /* Shift Colors — Light Mode */
   .cal-day.shift-morning   { background: #f0fdf4; }
   .cal-day.shift-afternoon { background: #fffbeb; }
   .cal-day.shift-evening   { background: #faf5ff; }
@@ -62,8 +193,6 @@
   .cal-day.shift-afternoon .day-shift { color: #92400e; font-weight: 600; }
   .cal-day.shift-evening   .day-shift { color: #7e22ce; font-weight: 600; }
   .cal-day.shift-night     .day-shift { color: #1e40af; font-weight: 600; }
-
-  /* Shift Colors — Dark Mode */
   [data-theme="dark"] .cal-day.shift-morning   { background: #052e16; }
   [data-theme="dark"] .cal-day.shift-afternoon { background: #422006; }
   [data-theme="dark"] .cal-day.shift-evening   { background: #3b0764; }
@@ -72,161 +201,231 @@
   [data-theme="dark"] .cal-day.shift-afternoon .day-shift { color: #fcd34d; }
   [data-theme="dark"] .cal-day.shift-evening   .day-shift { color: #c084fc; }
   [data-theme="dark"] .cal-day.shift-night     .day-shift { color: #93c5fd; }
-
   .cal-day.leave-approved  { background: #d1fae5; }
   .cal-day.leave-scheduled { background: #dbeafe; }
   .cal-day.leave-pending   { background: #fef3c7; }
-  @media (max-width: 768px) {
-    .quick-links-col { width: 100% !important; }
-  }
   [data-theme="dark"] .cal-day.leave-approved  { background: #022c22; }
   [data-theme="dark"] .cal-day.leave-scheduled { background: #1e3a5f; }
   [data-theme="dark"] .cal-day.leave-pending   { background: #422006; }
-
 </style>
 
-{% if off_day %}
-<div class="schedule-banner" style="background:#eff6ff;border-color:#bfdbfe;color:#1e40af;">
-  <i data-lucide="info"></i>
-  Your off-day this week is <strong>{{ off_day }}</strong> — leave filed on that day won't deduct credits.
-</div>
-{% elif schedule_exists %}
-<div class="schedule-banner" style="background:#f0fdf4;border-color:#bbf7d0;color:#15803d;">
-  <i data-lucide="circle-check"></i>
-  Schedule loaded — no off-day this week. All working days deduct 10 hrs.
-</div>
-{% else %}
-<div class="schedule-banner" style="background:#fffbeb;border-color:#fde68a;color:#92400e;">
-  <i data-lucide="triangle-alert"></i>
-  No schedule found for this week. Contact your manager or admin.
-</div>
-{% endif %}
+<div class="db-wrap">
 
-<div style="display:flex;gap:1.5rem;align-items:flex-start;flex-wrap:wrap;">
-<div style="flex:1;min-width:0;">
-<div class="section-title">Leave Balances</div>
-
-<!-- OrangeHRM Balances -->
-<div style="font-size:.72rem;font-weight:600;text-transform:uppercase;letter-spacing:.08em;color:var(--text-muted);margin-bottom:.5rem;">
-  <i class="me-1" data-lucide="building"></i>OrangeHRM
+<!-- Greeting + main actions -->
+<div class="db-head">
+  <div>
+    <div class="db-muted" style="font-size:.85rem;font-weight:500;">{{ dash.today_label }}</div>
+    <h1 class="db-h1">{{ dash.greeting }}{% if dash.first_name %}, {{ dash.first_name }}{% endif %}</h1>
+  </div>
+  <div class="db-actions">
+    <a href="{{ url_for('file_leave') }}" class="db-btn primary"><i data-lucide="calendar-plus"></i> File Leave</a>
+    <a href="{{ url_for('file_requests_hub') }}" class="db-btn"><i data-lucide="file-plus"></i> OT / CWS / RDW</a>
+    {% if break_log_user_access() %}
+    <a href="{{ url_for('break_log.break_log') }}" class="db-btn"><i data-lucide="coffee"></i> Break Log</a>
+    {% endif %}
+  </div>
 </div>
-<div class="balance-grid">
-  {% for b in balances %}
-  <div class="card balance-card">
-    <div class="b-label">{{ b.leave_type_name }}</div>
-    <div class="b-num">{{ "%.1f"|format(b.remaining_hours) }} <span style="font-size:1rem;font-weight:400;color:var(--text-muted);">hrs</span></div>
-    <div class="b-sub">{{ "%.2f"|format(b.remaining_days) }} days remaining</div>
-    <div class="progress mt-2">
-      {% set pct = (b.remaining_hours / b.total_hours * 100) if b.total_hours > 0 else 0 %}
-      <div class="progress-bar" style="width:{{ pct }}%"></div>
+
+<!-- Today at a glance -->
+<div class="db-tiles">
+  <div class="db-card db-tile">
+    <div class="db-tile-ico"><i data-lucide="clock"></i></div>
+    <div>
+      <div class="db-tile-label">Today's shift</div>
+      {% if dash.today_rest %}
+        <div class="db-tile-val">Rest day</div>
+      {% elif dash.today_shift %}
+        <div class="db-tile-val">{{ dash.today_shift }}</div>
+      {% else %}
+        <div class="db-tile-val">No schedule</div>
+      {% endif %}
+      {% if dash.last_punch and dash.last_punch.type == 'in' %}
+        <div class="db-tile-sub db-on"><span class="db-dot" style="background:#16a34a"></span>Timed in at {{ dash.last_punch.time }}</div>
+      {% elif dash.last_punch %}
+        <div class="db-tile-sub"><span class="db-dot" style="background:#94a3b8"></span>Timed out at {{ dash.last_punch.time }}</div>
+      {% elif dash.today_shift %}
+        <div class="db-tile-sub">No time-in yet</div>
+      {% endif %}
     </div>
-    <div style="font-size:.72rem;color:var(--text-muted);margin-top:.3rem;">of {{ "%.1f"|format(b.total_hours) }} total hrs</div>
+  </div>
+
+  {# Rest days come from this week's schedule (same data as the "This week" strip) #}
+  {% set rest_days = dash.week | selectattr('kind', 'equalto', 'off') | map(attribute='dow') | list %}
+  {% set has_sched = dash.week | rejectattr('kind', 'equalto', 'none') | list | length > 0 %}
+  <div class="db-card db-tile">
+    <div class="db-tile-ico {% if not has_sched %}warn{% endif %}"><i data-lucide="calendar"></i></div>
+    <div>
+      <div class="db-tile-label">Rest days this week</div>
+      {% if rest_days %}
+        <div class="db-tile-val">{{ rest_days | join(', ') }}</div>
+        <div class="db-tile-sub">Leave on a rest day doesn't use credits</div>
+      {% elif has_sched %}
+        <div class="db-tile-val">None</div>
+        <div class="db-tile-sub">Every day this week is a working day</div>
+      {% else %}
+        <div class="db-tile-val">No schedule</div>
+        <div class="db-tile-sub">Contact your manager or admin</div>
+      {% endif %}
+    </div>
+  </div>
+
+  {% set pending_total = dash.pending_leave + dash.pending_other %}
+  <div class="db-card db-tile">
+    <div class="db-tile-ico {% if pending_total %}warn{% endif %}"><i data-lucide="inbox"></i></div>
+    <div>
+      <div class="db-tile-label">Awaiting approval</div>
+      {% if pending_total %}
+        <div class="db-tile-val">{{ pending_total }} request{{ 's' if pending_total != 1 }}</div>
+        <div class="db-tile-sub">{{ dash.pending_leave }} leave · {{ dash.pending_other }} OT/CWS/RDW/FTS</div>
+      {% else %}
+        <div class="db-tile-val">Nothing pending</div>
+        <div class="db-tile-sub">All your requests are decided</div>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="db-card db-tile">
+    <div class="db-tile-ico"><i data-lucide="plane"></i></div>
+    <div>
+      <div class="db-tile-label">Next leave</div>
+      {% if dash.next_leave %}
+        <div class="db-tile-val">{{ dash.next_leave.dates }}</div>
+        <div class="db-tile-sub">{{ dash.next_leave.name }} · {{ dash.next_leave.status }}</div>
+      {% else %}
+        <div class="db-tile-val">None planned</div>
+        <div class="db-tile-sub">No upcoming leave on file</div>
+      {% endif %}
+    </div>
+  </div>
+</div>
+
+<!-- Leave balances -->
+<div style="display:flex;flex-direction:column;gap:.75rem;">
+  <div class="db-sec-head">
+    <h2 class="db-h2">Leave balances</h2>
+    <a href="{{ url_for('history') }}" class="db-link">View leave history</a>
+  </div>
+  {% if balance_cards %}
+  <div class="db-bal-grid">
+    {% for b in balance_cards %}
+    <div class="db-card db-bal">
+      <div class="db-bal-top">
+        <span class="db-bal-name">{{ b.name }}</span>
+        {% if b.unpaid %}<span class="db-tag">Unpaid</span>{% endif %}
+      </div>
+      <div style="display:flex;align-items:baseline;gap:.4rem;">
+        <span class="db-bal-num">{{ b.days_left }}</span>
+        <span class="db-muted" style="font-size:.88rem;">days left</span>
+      </div>
+      <div class="db-bar {% if b.unpaid %}unpaid{% elif b.low %}low{% endif %}" role="img"
+           aria-label="{{ b.name }}: {{ b.days_left }} of {{ b.days_total }} days remaining"><div style="width:{{ b.pct }}%"></div></div>
+      <div class="db-muted" style="font-size:.82rem;">{{ b.days_left }} of {{ b.days_total }} days · {{ b.hours_left }} hrs</div>
+    </div>
+    {% endfor %}
   </div>
   {% else %}
-  <p style="color:var(--text-muted);">No OrangeHRM entitlements found.</p>
-  {% endfor %}
+  <div class="db-card db-pad db-muted">No leave entitlements found.</div>
+  {% endif %}
 </div>
 
-<!-- Portal DB Balances -->
-{% if portal_balances %}
-<div style="font-size:.72rem;font-weight:600;text-transform:uppercase;letter-spacing:.08em;color:var(--text-muted);margin-top:1rem;margin-bottom:.5rem;">
-  <i class="me-1" data-lucide="database"></i>Portal DB
-</div>
-<div class="balance-grid">
-  {% for b in portal_balances %}
-  <div class="card balance-card" style="border-left:3px solid var(--accent);">
-    <div class="b-label">{{ b.leave_type_name }}</div>
-    <div class="b-num">{{ "%.1f"|format(b.remaining_hours) }} <span style="font-size:1rem;font-weight:400;color:var(--text-muted);">hrs</span></div>
-    <div class="b-sub">{{ "%.2f"|format(b.remaining_days) }} days remaining</div>
-    <div class="progress mt-2">
-      {% set pct = (b.remaining_hours / b.total_hours * 100) if b.total_hours > 0 else 0 %}
-      <div class="progress-bar" style="width:{{ pct }}%"></div>
-    </div>
-    <div style="font-size:.72rem;color:var(--text-muted);margin-top:.3rem;">of {{ "%.1f"|format(b.total_hours) }} total hrs</div>
-  </div>
-  {% endfor %}
-</div>
-{% endif %}
-<!-- end balance-grid -->
-</div><!-- end left col -->
-{% if quick_links_visible and quick_links %}
-<div style="width:260px;flex-shrink:0;" class="quick-links-col">
-<div class="section-title">Quick Links</div>
-<div style="display:flex;flex-direction:column;gap:.75rem;">
-  {% for link in quick_links %}
-  <a href="{{ link.url }}" target="_blank"
-     style="display:flex;align-items:center;gap:.75rem;padding:.75rem 1rem;background:var(--surface);border:1px solid var(--border);border-radius:12px;text-decoration:none;color:var(--text);transition:box-shadow .2s;"
-     onmouseover="this.style.boxShadow='0 4px 16px rgba(0,0,0,.12)'" onmouseout="this.style.boxShadow=''">
-    <div style="width:38px;height:38px;border-radius:10px;background:linear-gradient(135deg,{{ link.color_from }},{{ link.color_to }});display:flex;align-items:center;justify-content:center;flex-shrink:0;">
-      <i data-lucide="{{ link.icon }}" style="color:#fff;font-size:1rem;"></i>
-    </div>
-    <div>
-      <div style="font-weight:600;font-size:.88rem;">{{ link.title }}</div>
-      <div style="font-size:.75rem;color:var(--text-muted);">{{ link.url | replace('https://','') | replace('http://','') | truncate(30, True, '') }}</div>
-    </div>
-    <i class="ms-auto" data-lucide="external-link" style="color:var(--text-muted);font-size:.75rem;"></i>
-  </a>
-  {% endfor %}
-</div>
-</div>
-{% endif %}
-</div><!-- end outer flex -->
+<!-- Two-column body -->
+<div class="db-cols">
+  <div class="db-main">
 
-<!-- ===================== MY CSAT CARD ===================== -->
-<div class="card balance-card mb-4" id="myCsatCard" style="display:none">
-  <div class="card-body">
-    <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
-      <h5 class="fw-semibold mb-0"><i class="me-2" data-lucide="heart"></i>My CSAT</h5>
-      <div class="d-flex align-items-center gap-2 flex-wrap">
-        <select id="myCsatMonth" class="form-select form-select-sm" style="width:auto;min-width:130px"></select>
-        <select id="myCsatWeek"  class="form-select form-select-sm" style="width:auto;min-width:90px;display:none"></select>
-        <div class="btn-group btn-group-sm" role="group" id="myCsatRange">
-          <button type="button" class="btn btn-outline-primary" data-range="day">Daily</button>
-          <button type="button" class="btn btn-outline-primary" data-range="week">Weekly</button>
-          <button type="button" class="btn btn-primary active" data-range="month">Monthly</button>
+    <!-- This week -->
+    <div class="db-card db-pad" style="display:flex;flex-direction:column;gap:1rem;">
+      <div class="db-sec-head">
+        <h2 class="db-h2">This week</h2>
+        <a href="#my-calendar" class="db-link">Full calendar</a>
+      </div>
+      <div class="db-week-scroll">
+        <div class="db-week">
+          {% for d in dash.week %}
+          <div class="db-day {{ d.kind }}{% if d.today %} today{% endif %}">
+            <div class="db-day-dow">{{ d.dow }}{% if d.today %} · Today{% endif %}</div>
+            <div class="db-day-num">{{ d.num }}</div>
+            <div class="db-day-lbl">{{ d.label }}</div>
+          </div>
+          {% endfor %}
         </div>
       </div>
     </div>
 
-    <div id="myCsatLoading" class="text-muted small py-3">Loading…</div>
-    <div id="myCsatEmpty" class="text-muted py-3" style="display:none">
-      <i class="me-1" data-lucide="info"></i> No CSAT data yet.
+    <!-- Recent requests -->
+    <div class="db-card db-pad" style="display:flex;flex-direction:column;gap:.75rem;">
+      <div class="db-sec-head">
+        <h2 class="db-h2">My recent requests</h2>
+        <span style="display:flex;gap:1rem;">
+          <a href="{{ url_for('history') }}" class="db-link">Leave history</a>
+          <a href="{{ url_for('file_requests_hub') }}" class="db-link">All requests</a>
+        </span>
+      </div>
+      {% if dash.recent_requests %}
+      <div style="overflow-x:auto;">
+        <table class="db-table">
+          <thead><tr><th>Type</th><th>Date</th><th>Details</th><th>Status</th></tr></thead>
+          <tbody>
+            {% for r in dash.recent_requests %}
+            <tr>
+              <td style="font-weight:500;">{{ r.type }}</td>
+              <td style="white-space:nowrap;">{{ r.date }}</td>
+              <td class="db-muted">{{ r.detail }}</td>
+              <td><span class="db-pill {{ r.style }}">{{ r.status }}</span></td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+      <div class="db-muted" style="font-size:.9rem;">You haven't filed any requests yet.</div>
+      {% endif %}
     </div>
+  </div>
 
-    <!-- Monthly summary -->
-    <div id="myCsatWindowView" style="display:none">
-      <div class="row g-3 align-items-center">
-        <div class="col-auto">
-          <div class="text-muted small">Weighted CSAT</div>
-          <div id="myCsatWeighted" style="font-size:2.4rem;font-weight:700;line-height:1">—</div>
-          <div id="myCsatWindow" class="text-muted" style="font-size:.75rem"></div>
-        </div>
-        <div class="col">
-          <div class="row g-2">
-            <div class="col-6 col-md-3">
-              <div class="text-muted small">Responses</div>
-              <div id="myCsatResp" style="font-size:1.2rem;font-weight:600">—</div>
-            </div>
-            <div class="col-6 col-md-3">
-              <div class="text-muted small">Resolved</div>
-              <div id="myCsatResolved" style="font-size:1.2rem;font-weight:600">—</div>
-            </div>
-            <div class="col-12 col-md-6">
-              <div class="text-muted small">By channel</div>
-              <div id="myCsatChannels" style="font-size:.85rem;line-height:1.5"></div>
-            </div>
+  <div class="db-side">
+    <!-- My CSAT (hidden until /api/my-csat answers for this user) -->
+    <div class="db-card db-pad" id="myCsatCard" style="display:none">
+      <div class="db-sec-head" style="margin-bottom:1rem;align-items:center;">
+        <h2 class="db-h2">My CSAT</h2>
+        <div class="d-flex align-items-center gap-2 flex-wrap">
+          <select id="myCsatMonth" class="form-select form-select-sm" style="width:auto;min-width:120px" aria-label="Month"></select>
+          <select id="myCsatWeek"  class="form-select form-select-sm" style="width:auto;min-width:80px;display:none" aria-label="Week"></select>
+          <div class="btn-group btn-group-sm" role="group" id="myCsatRange" aria-label="Range">
+            <button type="button" class="btn btn-outline-primary" data-range="day">Day</button>
+            <button type="button" class="btn btn-outline-primary" data-range="week">Week</button>
+            <button type="button" class="btn btn-primary active" data-range="month">Month</button>
           </div>
         </div>
       </div>
-    </div>
 
-    <!-- Matrix (Daily = days, Weekly = weeks) -->
-    <div id="myCsatMatrixView" style="display:none">
-      <div id="myCsatMatrix"></div>
-      <div class="text-muted mt-2" style="font-size:.72rem" id="myCsatMatrixNote"></div>
+      <div id="myCsatLoading" class="db-muted small py-2">Loading…</div>
+      <div id="myCsatEmpty" class="db-muted py-2" style="display:none">No CSAT data yet.</div>
+
+      <!-- Monthly summary -->
+      <div id="myCsatWindowView" style="display:none">
+        <div class="csat-head">
+          <div>
+            <div id="myCsatWindow" class="db-muted" style="font-size:.82rem"></div>
+            <div id="myCsatWeighted" class="csat-big">—</div>
+          </div>
+          <div class="csat-counts"><span id="myCsatResp">—</span> responses<br><strong id="myCsatResolved">—</strong> resolved</div>
+        </div>
+        <div style="margin:1rem 0 .25rem;">
+          <div class="csat-track" role="img" id="myCsatTrack" aria-label="CSAT against the 88% target">
+            <div class="csat-fill" id="myCsatFill"></div>
+            <div class="csat-mark"></div>
+          </div>
+          <div class="csat-scale"><span>0%</span><span>Target 88%</span></div>
+        </div>
+        <div id="myCsatChannels" style="display:flex;flex-direction:column;gap:.55rem;border-top:1px solid var(--border);padding-top:.85rem;margin-top:.75rem;"></div>
+      </div>
+
+      <!-- Matrix (Day = days, Week = weeks) -->
+      <div id="myCsatMatrixView" style="display:none">
+        <div id="myCsatMatrix"></div>
+        <div class="db-muted mt-2" style="font-size:.72rem" id="myCsatMatrixNote"></div>
+      </div>
     </div>
-  </div>
-</div>
 
 <!-- ticket drill-down modal -->
 <div class="modal fade" id="myCsatModal" tabindex="-1" aria-hidden="true">
@@ -258,9 +457,10 @@
 
   const ZENDESK_BASE = 'https://getyourguidesupport.zendesk.com/agent/tickets/';
   const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-  function gradeColor(v){ return v==null ? 'var(--text-muted)' : (v>=90 ? '#198754' : (v>=80 ? '#fd7e14' : '#dc3545')); }
+  // Same target as the PIM profile: >= 88 good, 85-88 watch, < 85 below target
+  function gradeColor(v){ return v==null ? 'var(--text-muted)' : (v>=88 ? '#15803d' : (v>=85 ? '#b45309' : '#b42318')); }
   function pct(v){ return (v==null? '—' : v.toFixed(2)+'%'); }
-  function tint(v){ if(v==null) return 'transparent'; if(v>=90) return 'rgba(25,135,84,.10)'; if(v>=80) return 'rgba(253,126,20,.12)'; return 'rgba(220,53,69,.10)'; }
+  function tint(v){ if(v==null) return 'transparent'; if(v>=88) return 'rgba(21,128,61,.10)'; if(v>=85) return 'rgba(180,83,9,.12)'; return 'rgba(180,35,24,.10)'; }
   function monthLabel(ym){ const p=ym.split('-'); return MONTHS[parseInt(p[1],10)-1]+' '+p[0]; }
   function dayLabel(iso, isToday){ if(isToday) return 'Today'; const p=iso.split('-'); return MONTHS[parseInt(p[1],10)-1]+' '+parseInt(p[2],10); }
 
@@ -420,7 +620,11 @@
     // monthly summary
     const s = d.window.start, e2 = d.window.end;
     const wEl = $('myCsatWeighted'); wEl.textContent = pct(d.weighted); wEl.style.color = gradeColor(d.weighted);
-    $('myCsatWindow').textContent = s + (s!==e2 ? (' \u2192 '+e2) : '');
+    $('myCsatWindow').textContent = monthLabel(d.month) + ' \u00b7 weighted';
+    const fill = $('myCsatFill');
+    fill.style.width = (d.weighted==null ? 0 : Math.max(0, Math.min(100, d.weighted))) + '%';
+    fill.style.background = gradeColor(d.weighted);
+    $('myCsatTrack').setAttribute('aria-label', 'CSAT ' + pct(d.weighted) + ' against the 88% target');
     $('myCsatResp').innerHTML = d.total_responses>0
       ? '<a href="#" class="myc-cell text-reset" data-meta="'+encodeURIComponent(JSON.stringify({start:s,end:e2,label:monthLabel(d.month)}))+'" style="text-decoration:underline;cursor:pointer">'+d.total_responses.toLocaleString()+'</a>'
       : d.total_responses.toLocaleString();
@@ -430,10 +634,14 @@
       const link = o.responses>0
         ? '<a href="#" class="myc-cell" data-meta="'+encodeURIComponent(JSON.stringify({start:s,end:e2,channel:name,label:monthLabel(d.month)+' \u00b7 '+name}))+'" style="text-decoration:underline;cursor:pointer">'+o.responses+'</a>'
         : '0';
-      return name+' '+pct(o.pct)+' <span class="text-muted" style="font-size:.8rem">('+link+' resp \u00b7 '+(o.resolved||0)+' res)</span>';
+      const w = (o.pct==null ? 0 : Math.max(0, Math.min(100, o.pct)));
+      return '<div class="csat-ch"><span style="font-weight:500">'+name+'</span>'+
+             '<div class="db-bar"><div style="width:'+w+'%;background:'+gradeColor(o.pct)+'"></div></div>'+
+             '<span style="text-align:right;white-space:nowrap"><strong style="color:'+gradeColor(o.pct)+'">'+pct(o.pct)+'</strong> '+
+             '<span class="db-muted" style="font-size:.76rem">('+link+' resp \u00b7 '+(o.resolved||0)+' res)</span></span></div>';
     }
     $('myCsatChannels').innerHTML =
-      winCh('Chat', ch.Chat)+' &nbsp; '+ winCh('Email', ch.Email)+' &nbsp; '+ winCh('Phone', ch.Phone);
+      winCh('Chat', ch.Chat)+ winCh('Email', ch.Email)+ winCh('Phone', ch.Phone);
     $('myCsatWindowView').style.display='block';
   }
 
@@ -476,17 +684,53 @@
   // ----- init -----
   (async function(){
     await loadPeriods();          // sets curMonth to latest
-    if(!curMonth){ card.style.display='block'; $('myCsatLoading').style.display='none'; $('myCsatEmpty').style.display='block'; return; }
+    // No CSAT history at all (e.g. non-production staff): keep the card hidden.
+    // A month with no responses still shows "No CSAT data yet" for agents who have history.
+    if(!curMonth){ card.style.display='none'; return; }
     loadData();                   // default Monthly / current month
   })();
 })();
 </script>
 
-<a href="{{ url_for('file_leave') }}" class="fab" style="margin-top:1.5rem;"><i data-lucide="calendar-plus"></i> File Leave</a>
+    <!-- Recent time records -->
+    <div class="db-card db-pad" style="display:flex;flex-direction:column;gap:.5rem;">
+      <div class="db-sec-head">
+        <h2 class="db-h2">Recent time records</h2>
+        <a href="#time-records" class="db-link">All records</a>
+      </div>
+      {% if dash.recent_punches %}
+      <div>
+        {% for p in dash.recent_punches %}
+        <div class="db-punch">
+          <span>{{ p.day }}</span>
+          <span><strong>{{ p.time }}</strong> <span class="db-pill {{ 'ok' if p.type == 'IN' else 'muted' }}" style="margin-left:.35rem">{{ p.type }}</span></span>
+        </div>
+        {% endfor %}
+      </div>
+      {% else %}
+      <div class="db-muted" style="font-size:.9rem;">No time records yet.</div>
+      {% endif %}
+    </div>
+
+    {% if quick_links_visible and quick_links %}
+    <!-- Quick links -->
+    <div class="db-card db-pad" style="display:flex;flex-direction:column;gap:.6rem;">
+      <h2 class="db-h2">Quick links</h2>
+      {% for link in quick_links %}
+      <a href="{{ link.url }}" target="_blank" rel="noopener" class="db-ql">
+        <span class="db-ql-ico" style="background:linear-gradient(135deg,{{ link.color_from }},{{ link.color_to }});"><i data-lucide="{{ link.icon }}"></i></span>
+        <span style="font-weight:600;font-size:.9rem;">{{ link.title }}</span>
+        <i class="ms-auto db-muted" data-lucide="external-link" style="width:15px;height:15px;"></i>
+      </a>
+      {% endfor %}
+    </div>
+    {% endif %}
+  </div><!-- /db-side -->
+</div><!-- /db-cols -->
 
 <div class="dash-grid">
   <!-- Calendar -->
-  <div>
+  <div id="my-calendar" style="scroll-margin-top:90px;">
     <div class="section-title">My Schedule</div>
     <div class="cal-wrap">
       <div class="cal-header">
@@ -515,11 +759,11 @@
   </div>
 
   <!-- Time Records (DTR) -->
-  <div>
+  <div id="time-records" style="scroll-margin-top:90px;">
     <div class="section-title">Time Records <span style="font-size:.75rem;font-weight:400;color:var(--text-muted);">· Last 1 year</span></div>
     <div class="card" style="overflow:hidden;">
       <div class="px-3 pt-3 pb-2 border-bottom">
-        <form method="GET" class="d-flex gap-2 align-items-end flex-wrap mb-0">
+        <form method="GET" action="{{ url_for('dashboard') }}#time-records" class="d-flex gap-2 align-items-end flex-wrap mb-0">
           <div>
             <label class="form-label small mb-1">From</label>
             <input type="date" name="dtr_from" class="form-control form-control-sm" value="{{ dtr_from }}">
@@ -530,12 +774,12 @@
           </div>
           <button type="submit" class="btn btn-primary btn-sm">Apply</button>
           {% if dtr_from or dtr_to %}
-          <a href="{{ url_for('dashboard') }}" class="btn btn-outline-secondary btn-sm">Clear</a>
+          <a href="{{ url_for('dashboard') }}#time-records" class="btn btn-outline-secondary btn-sm">Clear</a>
           {% endif %}
         </form>
       </div>
       {% if dtr_records %}
-      <div class="table-responsive">
+      <div class="table-responsive dtr-body">
         <table class="table mb-0" style="font-size:.85rem;color:var(--text);background:var(--card-bg);">
           <thead>
             <tr style="background:var(--bg-secondary);color:var(--text-muted);font-size:.75rem;text-transform:uppercase;letter-spacing:.04em;">
@@ -577,16 +821,16 @@
         <span class="text-muted">Page {{ dtr_page }} of {{ dtr_pages }}</span>
         <div class="d-flex gap-1">
           {% if dtr_page > 1 %}
-          <a href="?dtr_page={{ dtr_page - 1 }}" class="btn btn-sm btn-outline-secondary">‹ Prev</a>
+          <a href="{{ url_for('dashboard', dtr_page=dtr_page - 1, dtr_from=dtr_from or None, dtr_to=dtr_to or None) }}#time-records" class="btn btn-sm btn-outline-secondary">‹ Prev</a>
           {% endif %}
           {% if dtr_page < dtr_pages %}
-          <a href="?dtr_page={{ dtr_page + 1 }}" class="btn btn-sm btn-outline-secondary">Next ›</a>
+          <a href="{{ url_for('dashboard', dtr_page=dtr_page + 1, dtr_from=dtr_from or None, dtr_to=dtr_to or None) }}#time-records" class="btn btn-sm btn-outline-secondary">Next ›</a>
           {% endif %}
         </div>
       </div>
       {% endif %}
       {% else %}
-      <div style="text-align:center;padding:2rem;color:var(--text-muted);font-size:.85rem;">
+      <div class="dtr-body" style="text-align:center;padding:2rem;color:var(--text-muted);font-size:.85rem;">
         <i data-lucide="clock" style="font-size:1.5rem;display:block;margin-bottom:.5rem;"></i>
         No time records found.
       </div>
@@ -594,6 +838,8 @@
     </div>
   </div>
 </div>
+
+</div><!-- /db-wrap -->
 {% endblock %}
 
 {% block scripts %}
