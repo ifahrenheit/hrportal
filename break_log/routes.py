@@ -202,10 +202,8 @@ def _has_supervisor_access():
         return False
     if session.get('is_admin') or session.get('is_supervisor') or session.get('is_sub_admin'):
         return True
-    if 'bl_is_overhead' not in session:
-        emp = _get_employee_id(session['user'].get('email', ''))
-        session['bl_is_overhead'] = bool(emp and emp.get('group_name') in OVERHEAD_GROUPS)
-    return session['bl_is_overhead']
+    return _cached_for_user('bl_is_overhead',
+                            lambda emp: bool(emp and emp.get('group_name') in OVERHEAD_GROUPS))
 
 def supervisor_required(f):
     @wraps(f)
@@ -224,18 +222,27 @@ def _inject_break_log_access():
 
 BREAK_LOG_ACCOUNTS = ('Arctic', 'Numa', 'Test')
 
+def _cached_for_user(key, decide):
+    """Per-session cache of an access answer, tied to the email it was worked
+    out for. Login As swaps session['user'] without clearing other keys, so an
+    unkeyed cache would keep the admin's answer while viewing as someone else."""
+    email = (session['user'].get('email') or '').lower()
+    cached = session.get(key)
+    if isinstance(cached, dict) and cached.get('email') == email:
+        return cached['ok']
+    try:
+        ok = decide(_get_employee_id(email))
+    except Exception:
+        return False
+    session[key] = {'email': email, 'ok': ok}
+    return ok
+
 def _has_break_log_access():
-    """Same account rule as the /break-log page itself, for showing its
-    links. Cached in the session like bl_is_overhead."""
+    """Same account rule as the /break-log page itself, for showing its links."""
     if 'user' not in session:
         return False
-    if 'bl_account_ok' not in session:
-        try:
-            emp = _get_employee_id(session['user'].get('email', ''))
-            session['bl_account_ok'] = bool(emp and emp.get('account') in BREAK_LOG_ACCOUNTS)
-        except Exception:
-            return False
-    return session['bl_account_ok']
+    return _cached_for_user('bl_account_ok',
+                            lambda emp: bool(emp and emp.get('account') in BREAK_LOG_ACCOUNTS))
 
 def _get_employee_id(email):
     """Resolve employee_id from gsheet_employees using email."""
