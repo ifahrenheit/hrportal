@@ -83,20 +83,10 @@
       <a class="nav-link {% if request.endpoint == 'file_leave' %}active{% endif %}" href="{{ url_for('file_leave') }}">
         <i data-lucide="calendar-plus"></i> <span class="nav-label">File Leave</span>
       </a>
-      <a class="nav-link {% if request.endpoint == 'file_fts' %}active{% endif %}"
-         href="{{ url_for('file_fts') }}">
-        <i data-lucide="clock"></i>
-        <span class="nav-label">Failure to Swipe</span>
-      </a>
-      <a class="nav-link {% if request.endpoint in ['file_ot', 'file_rdw'] %}active{% endif %}"
-         href="{{ url_for('file_ot') }}">
-        <i data-lucide="hourglass"></i>
-        <span class="nav-label">OT / Rest Day Work</span>
-      </a>
-      <a class="nav-link {% if request.endpoint == 'file_cws' %}active{% endif %}"
-         href="{{ url_for('file_cws') }}">
-        <i data-lucide="arrow-left-right"></i>
-        <span class="nav-label">Change Work Schedule</span>
+      <a class="nav-link {% if request.endpoint in ['request_hub.new', 'file_fts', 'file_ot', 'file_rdw', 'file_cws', 'magic_cws_form'] %}active{% endif %}"
+         href="{{ url_for('request_hub.new') }}">
+        <i data-lucide="file-plus"></i>
+        <span class="nav-label">File a Request</span>
       </a>
       <a class="nav-link {% if request.endpoint == 'file_material' %}active{% endif %}"
          href="{{ url_for('file_material') }}">
@@ -107,11 +97,6 @@
          href="{{ url_for('facilities_request') }}">
         <i data-lucide="wrench"></i>
         <span class="nav-label">Facilities &amp; Repair</span>
-      </a>
-      <a class="nav-link {% if request.endpoint == 'magic_cws_form' %}active{% endif %}"
-         href="{{ url_for('magic_cws_form') }}">
-        <i data-lucide="zap" style="color:#a78bfa"></i>
-        <span class="nav-label">Magic CWS</span>
       </a>
       <a class="nav-link {% if request.endpoint in ['tickets_index', 'ticket_detail', 'ticket_add_comment'] %}active{% endif %}"
          href="{{ url_for('tickets_index') }}">

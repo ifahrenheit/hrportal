@@ -1,0 +1,27 @@
+{# Shared by the Overtime and Rest Day Work forms on file_requests/new.html #}
+<div class="rq-grid">
+  <label class="rq-field">Start time
+    <select name="start_time" class="form-select" required>
+      <option value="">Select…</option>
+      {% for t in time_options %}{% set h = t[:2]|int %}<option value="{{ t }}">{{ ((h + 11) % 12) + 1 }}:{{ t[3:5] }} {{ 'AM' if h < 12 else 'PM' }}</option>{% endfor %}
+    </select>
+  </label>
+  <label class="rq-field">End time
+    <select name="end_time" class="form-select" required>
+      <option value="">Select…</option>
+      {% for t in time_options %}{% set h = t[:2]|int %}<option value="{{ t }}">{{ ((h + 11) % 12) + 1 }}:{{ t[3:5] }} {{ 'AM' if h < 12 else 'PM' }}</option>{% endfor %}
+    </select>
+  </label>
+</div>
+<div class="rq-note" style="display:none"><span class="js-duration"></span></div>
+<div class="js-tickets-box" style="display:none">
+  <label class="rq-field">Ticket numbers
+    <span class="rq-help">One per line or comma-separated · letters or numbers, at least 5 characters each</span>
+    <textarea name="ticket_numbers" rows="4" class="form-control" placeholder="123456&#10;123457"></textarea>
+  </label>
+  <div class="js-ticket-count rq-help" style="margin-top:.35rem;">0 tickets detected</div>
+</div>
+<div class="rq-foot">
+  <div class="rq-muted" style="font-size:.85rem;">{% if approver %}Goes to <strong style="color:var(--text)">{{ approver }}</strong> for approval{% endif %}</div>
+  <button type="submit" class="rq-submit">{{ 'Submit overtime' if form_key == 'ot' else 'Submit rest day work' }}</button>
+</div>

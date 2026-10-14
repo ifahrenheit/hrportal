@@ -1,0 +1,419 @@
+{% extends 'base.html' %}
+{% block title %}File a Request{% endblock %}
+{% block page_title %}File a Request{% endblock %}
+{% block content %}
+<style>
+  .rq-wrap { display: flex; flex-direction: column; gap: 1.5rem; }
+  .rq-h1 { margin: 0; font-family: 'Outfit', sans-serif; font-size: 1.75rem; font-weight: 600; color: var(--text); }
+  .rq-h2 { margin: 0; font-family: 'Outfit', sans-serif; font-size: 1.1rem; font-weight: 600; color: var(--text); }
+  .rq-muted { color: var(--text-muted); }
+  .rq-link { font-size: .88rem; font-weight: 500; text-decoration: none; color: var(--accent); }
+  .rq-card { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; box-shadow: var(--card-shadow); }
+  /* type picker */
+  .rq-types { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: .75rem; }
+  .rq-type { text-align: left; cursor: pointer; display: flex; gap: .85rem; align-items: flex-start; padding: 1rem 1.1rem; border-radius: 14px;
+             background: var(--surface); border: 1px solid var(--border); color: var(--text); font: inherit; min-height: 44px; }
+  .rq-type:hover { border-color: var(--accent); }
+  .rq-type[aria-checked="true"] { border: 2px solid var(--accent); background: rgba(30,95,212,.06); padding: calc(1rem - 1px) calc(1.1rem - 1px); }
+  .rq-type-code { width: 42px; height: 42px; border-radius: 10px; flex-shrink: 0; display: flex; align-items: center; justify-content: center;
+                  background: rgba(30,95,212,.10); color: var(--accent); font-family: 'Outfit', sans-serif; font-weight: 700; font-size: .78rem; }
+  .rq-type[aria-checked="true"] .rq-type-code { background: var(--accent); color: #fff; }
+  .rq-type-name { font-family: 'Outfit', sans-serif; font-size: 1rem; font-weight: 600; display: block; }
+  .rq-type-hint { font-size: .82rem; color: var(--text-muted); line-height: 1.4; display: block; margin-top: .15rem; }
+  /* layout */
+  .rq-cols { display: flex; flex-wrap: wrap; gap: 1.5rem; align-items: flex-start; }
+  .rq-main { flex: 999 1 560px; min-width: 0; }
+  .rq-side { flex: 1 1 320px; min-width: 0; display: flex; flex-direction: column; gap: 1rem; }
+  .rq-form { padding: 1.5rem; display: flex; flex-direction: column; gap: 1.1rem; }
+  .rq-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 1rem; }
+  .rq-field { display: flex; flex-direction: column; gap: .4rem; font-size: .9rem; font-weight: 500; color: var(--text); }
+  .rq-field .form-control, .rq-field .form-select { min-height: 44px; }
+  .rq-help { font-size: .8rem; color: var(--text-muted); font-weight: 400; }
+  .rq-seg { display: flex; gap: .5rem; flex-wrap: wrap; }
+  .rq-seg input { position: absolute; opacity: 0; pointer-events: none; }
+  .rq-seg label { min-height: 44px; min-width: 96px; padding: 0 1rem; display: inline-flex; align-items: center; justify-content: center;
+                  border-radius: 10px; border: 1px solid var(--border); background: var(--surface); color: var(--text); font-weight: 600; font-size: .9rem; cursor: pointer; }
+  .rq-seg input:checked + label { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .rq-seg input:focus-visible + label { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .rq-note { display: flex; align-items: center; gap: .6rem; padding: .75rem .9rem; border-radius: 10px; background: var(--bg); font-size: .88rem; color: var(--text); }
+  .rq-note.warn { background: rgba(217,119,6,.10); color: #92400e; }
+  .rq-note.bad  { background: rgba(220,38,38,.09); color: #991b1b; }
+  [data-theme="dark"] .rq-note.warn { color: #fcd34d; }
+  [data-theme="dark"] .rq-note.bad  { color: #fca5a5; }
+  .rq-box { padding: 1rem; border-radius: 12px; background: var(--bg); display: flex; flex-direction: column; gap: .75rem; }
+  .rq-box-label { font-size: .72rem; font-weight: 600; text-transform: uppercase; letter-spacing: .06em; color: var(--text-muted); }
+  .rq-foot { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .75rem; padding-top: .9rem; border-top: 1px solid var(--border); }
+  .rq-submit { min-height: 44px; padding: 0 1.4rem; border-radius: 10px; border: 0; background: var(--accent); color: #fff; font-weight: 600; font-size: .95rem; }
+  .rq-submit:disabled { opacity: .5; cursor: not-allowed; }
+  .rq-pick-first { padding: 2.5rem 1.5rem; text-align: center; color: var(--text-muted); }
+  /* side */
+  .rq-side-card { padding: 1.1rem 1.2rem; display: flex; flex-direction: column; gap: .5rem; }
+  .rq-day { display: flex; justify-content: space-between; gap: .75rem; font-size: .88rem; padding: .45rem .6rem; border-radius: 8px; color: var(--text); }
+  .rq-day.today { background: rgba(30,95,212,.08); font-weight: 600; }
+  .rq-day.rest { color: var(--text-muted); }
+  .rq-recent { display: flex; justify-content: space-between; align-items: center; gap: .75rem; font-size: .86rem; padding: .5rem 0; border-bottom: 1px solid var(--border); }
+  .rq-recent:last-child { border-bottom: none; }
+  .rq-pill { display: inline-block; padding: .12rem .55rem; border-radius: 999px; font-size: .72rem; font-weight: 600; white-space: nowrap; }
+  .rq-pill.ok { background: #dcfce7; color: #166534; } .rq-pill.warn { background: #fef3c7; color: #92400e; }
+  .rq-pill.bad { background: #fee2e2; color: #991b1b; } .rq-pill.info { background: #dbeafe; color: #1e40af; }
+  .rq-pill.muted { background: var(--bg); color: var(--text-muted); border: 1px solid var(--border); }
+  [data-theme="dark"] .rq-pill.ok { background: #022c22; color: #34d399; } [data-theme="dark"] .rq-pill.warn { background: #422006; color: #fcd34d; }
+  [data-theme="dark"] .rq-pill.bad { background: #450a0a; color: #fca5a5; } [data-theme="dark"] .rq-pill.info { background: #1e3a5f; color: #93c5fd; }
+  @media (max-width: 576px) {
+    .rq-types { grid-template-columns: 1fr 1fr; gap: .6rem; }
+    .rq-type { padding: .8rem; gap: .6rem; }
+    .rq-type[aria-checked="true"] { padding: calc(.8rem - 1px); }
+    .rq-type-code { width: 36px; height: 36px; font-size: .7rem; }
+    .rq-type-hint { display: none; }
+    .rq-form { padding: 1.1rem; }
+    .rq-submit { width: 100%; }
+  }
+</style>
+
+<div class="rq-wrap">
+  <div style="display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:space-between;gap:.75rem;">
+    <div>
+      <a href="{{ url_for('dashboard') }}" class="rq-link">← Dashboard</a>
+      <h1 class="rq-h1">File a Request</h1>
+      <div class="rq-muted" style="font-size:.9rem;">Overtime, rest day work, schedule changes and missed swipes — all in one place.</div>
+    </div>
+    <a href="{{ url_for('file_requests_hub') }}" class="rq-link">View my requests</a>
+  </div>
+
+  {% if not has_employee_id %}
+  <div class="rq-note bad">Your account is not linked to an Employee ID yet, so requests can't be filed. Please contact HR.</div>
+  {% endif %}
+
+  <div class="rq-types" role="radiogroup" aria-label="Request type">
+    {% for code, key, name, hint in [
+        ('OT',  'ot',    'Overtime',           'Worked before or after your shift'),
+        ('RDW', 'rdw',   'Rest Day Work',      'Worked on your scheduled rest day'),
+        ('CWS', 'cws',   'Change of Schedule', 'Move a shift to another date or time'),
+        ('MCWS','magic', 'Magic CWS',          'Shift change paid from your Magic CWS hours'),
+        ('FTS', 'fts',   'Failure to Swipe',   'Missed a time-in or time-out')] %}
+    <button type="button" class="rq-type" role="radio" aria-checked="{{ 'true' if selected == key else 'false' }}" data-type="{{ key }}">
+      <span class="rq-type-code" aria-hidden="true">{{ code }}</span>
+      <span><span class="rq-type-name">{{ name }}</span><span class="rq-type-hint">{{ hint }}</span></span>
+    </button>
+    {% endfor %}
+  </div>
+
+  <div class="rq-cols">
+    <div class="rq-main">
+      <div class="rq-card rq-pick-first" id="rqPickFirst" {% if selected %}style="display:none"{% endif %}>
+        Choose a request type above to start.
+      </div>
+
+      {# ───────── Overtime ───────── #}
+      <form method="POST" action="{{ url_for('file_ot') }}" class="rq-card rq-form" data-form="ot" style="display:none" novalidate>
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="return_to" value="hub">
+        <input type="hidden" name="work_day_type" value="REGULAR">
+        <div><h2 class="rq-h2">Overtime</h2><div class="rq-muted" style="font-size:.85rem;">For hours worked before or after your scheduled shift.</div></div>
+        <div class="rq-grid">
+          <label class="rq-field">Work date
+            <input type="date" name="ot_date" class="form-control js-date" data-sched="otSched" required>
+            <span class="rq-help" id="otSched"></span>
+          </label>
+          <label class="rq-field">OT type
+            <select name="ot_type" class="form-select js-ottype" required>
+              <option value="">Select…</option>
+              <option value="PRE">Pre — before shift</option>
+              <option value="POST">Post — after shift</option>
+              <option value="OVERHEAD_OT">Overhead OT</option>
+              <option value="TEAM_MEETING">Team meeting</option>
+              <option value="QA_REFRESHER">QA refresher training</option>
+              <option value="OT260">OT260</option>
+              <option value="DAILY_OT">Daily OT</option>
+            </select>
+          </label>
+        </div>
+        <fieldset class="rq-field" style="border:0;margin:0;padding:0;">
+          <legend class="rq-field" style="margin-bottom:.4rem;font-size:.9rem;">Regular rate?</legend>
+          <div class="rq-seg">
+            <input type="radio" name="regular_rate" id="otRateY" value="Yes" required><label for="otRateY">Yes</label>
+            <input type="radio" name="regular_rate" id="otRateN" value="No"><label for="otRateN">No</label>
+          </div>
+        </fieldset>
+        {% set form_key = 'ot' %}{% include 'file_requests/_new_times.html' %}
+      </form>
+
+      {# ───────── Rest Day Work ───────── #}
+      <form method="POST" action="{{ url_for('file_ot') }}" class="rq-card rq-form" data-form="rdw" style="display:none" novalidate>
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="return_to" value="hub">
+        <input type="hidden" name="work_day_type" value="REST_DAY">
+        <div><h2 class="rq-h2">Rest Day Work</h2><div class="rq-muted" style="font-size:.85rem;">For work done on a day your schedule marks as a rest day.</div></div>
+        <div class="rq-grid">
+          <label class="rq-field">Rest day you worked
+            <input type="date" name="ot_date" class="form-control js-date" data-sched="rdwSched" required>
+            <span class="rq-help" id="rdwSched"></span>
+          </label>
+          <label class="rq-field">Work category
+            <select name="work_category" class="form-select js-category">
+              <option value="REGULAR">Regular work</option>
+              <option value="OVERHEAD_OT">Overhead OT</option>
+              <option value="TEAM_MEETING">Team meeting</option>
+              <option value="OT260">OT260</option>
+              <option value="DAILY_OT">Daily OT</option>
+            </select>
+          </label>
+        </div>
+        <fieldset class="rq-field" style="border:0;margin:0;padding:0;">
+          <legend class="rq-field" style="margin-bottom:.4rem;font-size:.9rem;">Did you take a 1-hour break?</legend>
+          <div class="rq-seg">
+            <input type="radio" name="took_break" id="rdwBreakN" value="N" class="js-break" required><label for="rdwBreakN">No</label>
+            <input type="radio" name="took_break" id="rdwBreakY" value="Y" class="js-break"><label for="rdwBreakY">Yes</label>
+          </div>
+          <span class="rq-help">If yes, 1 hour is deducted from your paid RDW hours.</span>
+        </fieldset>
+        {% set form_key = 'rdw' %}{% include 'file_requests/_new_times.html' %}
+      </form>
+
+      {# ───────── Change of Schedule ───────── #}
+      <form method="POST" action="{{ url_for('file_cws') }}" class="rq-card rq-form" data-form="cws" style="display:none" novalidate>
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="return_to" value="hub">
+        <div><h2 class="rq-h2">Change of Schedule</h2><div class="rq-muted" style="font-size:.85rem;">Move one shift to a different date or time.</div></div>
+        <div class="rq-grid">
+          <div class="rq-box">
+            <div class="rq-box-label">From</div>
+            <label class="rq-field">Original date
+              <input type="date" name="original_date" class="form-control js-cws-orig" required>
+            </label>
+            <label class="rq-field">Original shift
+              <input type="text" name="original_time" class="form-control js-cws-origtime" placeholder="e.g. 11pm-10am" required>
+              <span class="rq-help">Filled in from your schedule — change it if it's wrong.</span>
+            </label>
+          </div>
+          <div class="rq-box" style="background:rgba(30,95,212,.07);">
+            <div class="rq-box-label" style="color:var(--accent);">To</div>
+            <label class="rq-field">New date
+              <input type="date" name="new_date" class="form-control" required>
+            </label>
+            <label class="rq-field">New shift
+              <input type="text" name="new_time" class="form-control" placeholder="e.g. 2pm-11pm" required>
+            </label>
+          </div>
+        </div>
+        <label class="rq-field">Reason
+          <textarea name="reason" rows="3" class="form-control" placeholder="Why do you need to change this shift?" required></textarea>
+        </label>
+        <div class="rq-foot">
+          <div class="rq-muted" style="font-size:.85rem;">{% if approver %}Goes to <strong style="color:var(--text)">{{ approver }}</strong> for approval{% endif %}</div>
+          <button type="submit" class="rq-submit">Submit schedule change</button>
+        </div>
+      </form>
+
+      {# ───────── Magic CWS ───────── #}
+      <form method="POST" action="{{ url_for('magic_cws_form') }}" class="rq-card rq-form" data-form="magic" style="display:none" novalidate>
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="return_to" value="hub">
+        <div style="display:flex;flex-wrap:wrap;justify-content:space-between;align-items:flex-start;gap:.75rem;">
+          <div><h2 class="rq-h2">Magic CWS</h2><div class="rq-muted" style="font-size:.85rem;">A shift change paid from your Magic CWS hours.</div></div>
+          <div style="text-align:right;"><div class="rq-box-label">Balance</div><div style="font-family:'Outfit',sans-serif;font-size:1.4rem;font-weight:700;">{{ magic_balance }} hrs</div></div>
+        </div>
+        <div class="rq-grid">
+          <div class="rq-box">
+            <div class="rq-box-label">From</div>
+            <label class="rq-field">Original date
+              <input type="date" name="original_date" class="form-control js-magic" required>
+            </label>
+            <label class="rq-field">Original shift
+              <select name="original_shift" class="form-select js-magic" required>
+                <option value="">Select…</option>
+                {% for label, start, end in magic_shifts %}<option value="{{ label }}" data-start="{{ start }}">{{ label }} ({{ start }}–{{ end }})</option>{% endfor %}
+              </select>
+            </label>
+          </div>
+          <div class="rq-box" style="background:rgba(30,95,212,.07);">
+            <div class="rq-box-label" style="color:var(--accent);">To</div>
+            <label class="rq-field">New date
+              <input type="date" name="new_date" class="form-control js-magic" required>
+            </label>
+            <label class="rq-field">New shift
+              <select name="new_shift" class="form-select js-magic" required>
+                <option value="">Select…</option>
+                {% for label, start, end in magic_shifts %}<option value="{{ label }}" data-start="{{ start }}">{{ label }} ({{ start }}–{{ end }})</option>{% endfor %}
+              </select>
+            </label>
+          </div>
+        </div>
+        <div class="rq-note" id="magicCalc" style="display:none"></div>
+        <label class="rq-field">Reason <span class="rq-help">(optional)</span>
+          <textarea name="reason" rows="2" class="form-control"></textarea>
+        </label>
+        <div class="rq-foot">
+          <div class="rq-muted" style="font-size:.85rem;">{% if approver %}Goes to <strong style="color:var(--text)">{{ approver }}</strong> for approval{% endif %}</div>
+          <button type="submit" class="rq-submit" id="magicSubmit">Submit Magic CWS</button>
+        </div>
+      </form>
+
+      {# ───────── Failure to Swipe ───────── #}
+      <form method="POST" action="{{ url_for('file_fts') }}" class="rq-card rq-form" data-form="fts" style="display:none" novalidate>
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="return_to" value="hub">
+        <div><h2 class="rq-h2">Failure to Swipe</h2><div class="rq-muted" style="font-size:.85rem;">Add a time-in or time-out you forgot to record.</div></div>
+        <div class="rq-grid">
+          <label class="rq-field">Date of the missed swipe
+            <input type="date" name="fts_date" class="form-control js-fts-date" required>
+          </label>
+          <label class="rq-field">Time it should show
+            <input type="time" name="fts_time" class="form-control" required>
+          </label>
+        </div>
+        <fieldset class="rq-field" style="border:0;margin:0;padding:0;">
+          <legend class="rq-field" style="margin-bottom:.4rem;font-size:.9rem;">Which swipe did you miss?</legend>
+          <div class="rq-seg">
+            <input type="radio" name="fts_type" id="ftsIn" value="IN" required><label for="ftsIn">Time in</label>
+            <input type="radio" name="fts_type" id="ftsOut" value="OUT"><label for="ftsOut">Time out</label>
+          </div>
+        </fieldset>
+        <div class="rq-note warn" id="ftsHint" style="display:none"></div>
+        <div class="rq-foot">
+          <div class="rq-muted" style="font-size:.85rem;">{% if approver %}Goes to <strong style="color:var(--text)">{{ approver }}</strong> for approval{% endif %}</div>
+          <button type="submit" class="rq-submit">Submit missed swipe</button>
+        </div>
+      </form>
+    </div>
+
+    <div class="rq-side">
+      <div class="rq-card rq-side-card">
+        <h2 class="rq-h2">Your schedule this week</h2>
+        {% for d in week %}
+        <div class="rq-day{% if d.today %} today{% endif %}{% if d.rest %} rest{% endif %}"><span>{{ d.label }}{% if d.today %} · today{% endif %}</span><span>{{ d.shift }}</span></div>
+        {% endfor %}
+      </div>
+      {% for key, label in [('ot','overtime'),('rdw','rest day work'),('cws','schedule change'),('magic','Magic CWS'),('fts','missed swipe')] %}
+      <div class="rq-card rq-side-card" data-recent="{{ key }}" style="display:none">
+        <h2 class="rq-h2">Recent {{ label }} requests</h2>
+        {% for r in recent[key] %}
+        <div class="rq-recent"><span><span style="font-weight:500;">{{ r.date }}</span><br><span class="rq-muted" style="font-size:.8rem;">{{ r.detail }}</span></span><span class="rq-pill {{ r.style }}">{{ r.status }}</span></div>
+        {% else %}
+        <div class="rq-muted" style="font-size:.88rem;">None yet.</div>
+        {% endfor %}
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function(){
+  const SCHED = {{ schedule_json | safe }};
+  const PUNCH = {{ punches_json | safe }};
+  const OT_TICKET_TYPES = {{ ot_ticket_types | tojson }};
+  const MAGIC_BAL = {{ magic_balance | tojson }}, MAGIC_MAX = {{ magic_max | tojson }};
+  const $all = (s, r) => Array.from((r || document).querySelectorAll(s));
+  const prettyDate = iso => new Date(iso + 'T00:00:00').toLocaleDateString('en-US', {weekday:'short', month:'short', day:'numeric'});
+
+  // ── type switching (keeps ?type= in the URL so refresh/back keep it) ──
+  function show(type){
+    $all('.rq-type').forEach(b => b.setAttribute('aria-checked', b.dataset.type === type ? 'true' : 'false'));
+    $all('[data-form]').forEach(f => f.style.display = f.dataset.form === type ? '' : 'none');
+    $all('[data-recent]').forEach(c => c.style.display = c.dataset.recent === type ? '' : 'none');
+    document.getElementById('rqPickFirst').style.display = type ? 'none' : '';
+    if (type) history.replaceState(null, '', '?type=' + type);
+  }
+  $all('.rq-type').forEach(b => b.addEventListener('click', () => show(b.dataset.type)));
+  show({{ selected | tojson }});
+
+  // ── schedule hint under OT / RDW date ──
+  $all('.js-date').forEach(inp => inp.addEventListener('change', function(){
+    const s = SCHED[this.value], el = document.getElementById(this.dataset.sched);
+    el.textContent = this.value ? ('Your schedule: ' + (s ? s : 'none on file')) : '';
+  }));
+
+  // ── tickets + duration (OT and RDW share _new_times.html) ──
+  function updateTimes(form){
+    const type = form.dataset.form;
+    let needs = false;
+    if (type === 'ot')  needs = OT_TICKET_TYPES.indexOf(form.querySelector('.js-ottype').value) >= 0;
+    if (type === 'rdw') needs = ['REGULAR', 'OT260'].indexOf(form.querySelector('.js-category').value) >= 0;
+    const box = form.querySelector('.js-tickets-box'), ta = form.querySelector('[name=ticket_numbers]');
+    box.style.display = needs ? '' : 'none'; ta.required = needs;
+    const s = form.querySelector('[name=start_time]').value, e = form.querySelector('[name=end_time]').value;
+    const note = form.querySelector('.js-duration');
+    if (s && e) {
+      const toMin = t => parseInt(t.slice(0,2),10)*60 + parseInt(t.slice(3,5),10);
+      let mins = toMin(e) - toMin(s); if (mins <= 0) mins += 1440;
+      let hrs = mins / 60;
+      if (type === 'rdw') {
+        const br = form.querySelector('.js-break:checked');
+        note.textContent = br && br.value === 'Y'
+          ? hrs.toFixed(1) + ' hrs worked − 1 hr break = ' + Math.max(hrs - 1, 0).toFixed(1) + ' paid hours'
+          : hrs.toFixed(1) + ' hours of rest day work';
+      } else {
+        note.textContent = hrs.toFixed(1) + ' hours of overtime';
+      }
+      note.parentElement.style.display = '';
+    } else { note.parentElement.style.display = 'none'; }
+  }
+  function countTickets(form){
+    const ta = form.querySelector('[name=ticket_numbers]'), out = form.querySelector('.js-ticket-count');
+    const list = ta.value.split(/[\s,]+/).map(t => t.trim()).filter(Boolean);
+    const bad = list.filter(t => !/^[A-Za-z0-9]{5,}$/.test(t));
+    out.textContent = list.length + ' ticket' + (list.length === 1 ? '' : 's') + ' detected' + (bad.length ? ' · ' + bad.length + ' invalid: ' + bad.slice(0,3).join(', ') : '');
+    out.style.color = bad.length ? '#b42318' : (list.length ? '#15803d' : 'var(--text-muted)');
+    return bad.length === 0;
+  }
+  $all('[data-form=ot],[data-form=rdw]').forEach(form => {
+    form.addEventListener('change', () => updateTimes(form));
+    form.querySelector('[name=ticket_numbers]').addEventListener('input', () => countTickets(form));
+    updateTimes(form);
+  });
+
+  // ── CWS: fill original shift from schedule ──
+  const cwsOrig = document.querySelector('.js-cws-orig'), cwsTime = document.querySelector('.js-cws-origtime');
+  cwsOrig.addEventListener('change', function(){
+    const s = SCHED[this.value];
+    if (s && s !== 'Rest day' && (!cwsTime.value || cwsTime.dataset.auto === '1')) { cwsTime.value = s; cwsTime.dataset.auto = '1'; }
+  });
+  cwsTime.addEventListener('input', function(){ this.dataset.auto = '0'; });
+
+  // ── Magic CWS: same deduction math as the Magic CWS form ──
+  const magicForm = document.querySelector('[data-form=magic]');
+  function magicCalc(){
+    const od = magicForm.querySelector('[name=original_date]').value, nd = magicForm.querySelector('[name=new_date]').value;
+    const os = magicForm.querySelector('[name=original_shift]'), ns = magicForm.querySelector('[name=new_shift]');
+    const o = os.options[os.selectedIndex], n = ns.options[ns.selectedIndex];
+    const box = document.getElementById('magicCalc'), btn = document.getElementById('magicSubmit');
+    if (!od || !nd || !o.dataset.start || !n.dataset.start) { box.style.display = 'none'; btn.disabled = false; return; }
+    const diff = Math.round(Math.abs(new Date(nd + 'T' + n.dataset.start + ':00') - new Date(od + 'T' + o.dataset.start + ':00')) / 3600000 * 100) / 100;
+    const ded = Math.min(diff, MAGIC_MAX), after = Math.round((MAGIC_BAL - ded) * 100) / 100;
+    box.className = 'rq-note' + (after < 0 ? ' bad' : '');
+    box.textContent = diff + ' hrs apart · deducts ' + ded + ' hrs · balance after: ' + after + ' hrs' + (after < 0 ? ' — not enough Magic CWS hours' : '');
+    box.style.display = ''; btn.disabled = after < 0;
+  }
+  $all('.js-magic').forEach(el => el.addEventListener('change', magicCalc));
+
+  // ── FTS: show the time records for that date ──
+  document.querySelector('.js-fts-date').addEventListener('change', function(){
+    const hint = document.getElementById('ftsHint'), p = PUNCH[this.value];
+    if (!this.value) { hint.style.display = 'none'; return; }
+    hint.textContent = 'Your time records for ' + prettyDate(this.value) + ': ' + (p && p.length ? p.join(' · ') : 'none recorded');
+    hint.style.display = '';
+  });
+
+  // ── required-field check before posting (the server checks again) ──
+  $all('[data-form]').forEach(form => form.addEventListener('submit', function(e){
+    const missing = $all('[required]', form).filter(el => {
+      if (el.offsetParent === null && el.type !== 'radio') return false;      // hidden section
+      if (el.type === 'radio') return !form.querySelector('[name="' + el.name + '"]:checked');
+      return !el.value.trim();
+    });
+    const ta = form.querySelector('[name=ticket_numbers]');
+    const ticketsOk = !ta || !ta.required || countTickets(form);
+    if (missing.length || !ticketsOk) {
+      e.preventDefault();
+      let msg = form.querySelector('.js-form-error');
+      if (!msg) { msg = document.createElement('div'); msg.className = 'rq-note bad js-form-error'; form.querySelector('.rq-foot').before(msg); }
+      msg.textContent = missing.length ? 'Please fill in all required fields.' : 'Please fix the ticket numbers (letters or numbers, at least 5 characters each).';
+      (missing[0] || ta).focus();
+    }
+  }));
+})();
+</script>
+{% endblock %}

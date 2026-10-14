@@ -62,6 +62,8 @@ app.register_blueprint(memos_bp)
 # CSR % Blueprint
 from modules.csr_percentage import csr_bp
 app.register_blueprint(csr_bp)
+from modules.request_hub import request_hub_bp
+app.register_blueprint(request_hub_bp)
 
 # FTS EMail Blueprint
 from blueprints.fts_automation import fts_bp
@@ -8409,6 +8411,26 @@ def file_requests_hub():
                 """, p)
                 records.extend(c.fetchall())
 
+            if not req_type or req_type == 'MCWS':
+                # Magic CWS has no deleted_at column; deletion is status='Deleted'
+                w, p = build_filters('m.original_date', 'm.employee_id',
+                                     'COALESCE(g.schedule_name, m.employee_name)', 'm')
+                w = w.replace("m.deleted_at IS NULL", "m.status <> 'Deleted'")
+                c.execute(f"""
+                    SELECT 'MCWS' AS req_type, m.id, m.employee_id AS emp_id,
+                           COALESCE(g.schedule_name, m.employee_name) AS employee_name,
+                           m.original_date AS req_date,
+                           CONCAT(m.original_shift, ' > ', DATE_FORMAT(m.new_date, '%%b %%e'), ' ',
+                                  m.new_shift, ' · ', m.deduction_hours, ' hrs') AS details,
+                           m.status, m.filed_at AS created_at, m.approved_at,
+                           m.approved_by AS approver_name,
+                           g.tl AS TL, g.group_name
+                    FROM magic_cws_requests m
+                    LEFT JOIN gsheet_employees g ON g.employee_id = m.employee_id COLLATE utf8mb4_unicode_ci
+                    WHERE {w}
+                """, p)
+                records.extend(c.fetchall())
+
     finally:
         cdb.close()
 
@@ -8519,6 +8541,11 @@ def file_fts():
                     <li><b>Type:</b> {fts_type}</li>
                     </ul>""")
             cursor.close()
+
+    # Filed from the combined request page: go back there with the same message
+    if request.method == 'POST' and request.form.get('return_to') == 'hub' and message:
+        flash(message, msg_type)
+        return redirect(url_for('request_hub.new', type='fts'))
 
     # Fetch history
     history = []
@@ -8759,6 +8786,11 @@ def file_ot():
             cursor.close()
             conn.close()
 
+    # Filed from the combined request page: go back there with the same message
+    if request.method == 'POST' and request.form.get('return_to') == 'hub' and message:
+        flash(message, msg_type)
+        return redirect(url_for('request_hub.new', type='rdw' if request.form.get('work_day_type') == 'REST_DAY' else 'ot'))
+
     # ── History: OT ─────────────────────────────────────────
     ot_history = []
     rd_history = []
@@ -8867,6 +8899,11 @@ def file_cws():
                     <li><b>Reason:</b> {reason}</li>
                     </ul>""")
             cursor.close()
+
+    # Filed from the combined request page: go back there with the same message
+    if request.method == 'POST' and request.form.get('return_to') == 'hub' and message:
+        flash(message, msg_type)
+        return redirect(url_for('request_hub.new', type='cws'))
 
     # Fetch history
     history = []
@@ -12186,15 +12223,17 @@ def magic_cws_form():
 
         shift_map = SHIFT_MAP_4DAY if work_mode == "4day" else SHIFT_MAP_5DAY
 
+        back = (url_for('request_hub.new', type='magic')
+                if request.form.get('return_to') == 'hub' else url_for("magic_cws_form"))
         if orig_shift not in shift_map or new_shift not in shift_map:
             flash("Invalid shift selected.", "danger")
-            return redirect(url_for("magic_cws_form"))
+            return redirect(back)
 
         orig_start, orig_end = shift_map[orig_shift]
         new_start,  new_end  = shift_map[new_shift]
         hours_diff, deduction = _calc_deduction(orig_date, orig_start, new_date, new_start, work_mode)
 
-        employee_name = session.get("name", "")
+        employee_name = session['user'].get('name', '')
         c = conn.cursor()
         c.execute("""
             INSERT INTO magic_cws_requests
@@ -12220,7 +12259,7 @@ def magic_cws_form():
             app.logger.warning(f"Magic CWS email error: {e}")
 
         flash("Magic CWS request filed successfully.", "success")
-        return redirect(url_for("magic_cws_form"))
+        return redirect(back)
 
     c = conn.cursor()
     c.execute("""

@@ -20,6 +20,13 @@
 <style>
 /* topnav owns the page top; neutralise sidebar layout remnants */
 .main-content { margin-left: 0 !important; }
+/* Every page: same content width as the menu bar (1560px + side padding) */
+.main-content { margin-left: auto !important; margin-right: auto !important; max-width: calc(1560px + 4rem); }
+.main-content.full-width { max-width: none; }
+@media (max-width: 768px) {
+  /* no sidebar phone bar in topnav mode, so no 5rem gap above the page */
+  .main-content { padding: 1.25rem 1rem 1.5rem !important; }
+}
 
 .tn-header {
   position: sticky; top: 0; z-index: 300;
@@ -591,14 +598,10 @@
           <i data-lucide="grid-3x2"></i> All Requests</a>
         <a class="tn-item {% if EP == 'file_leave' %}active{% endif %}" href="{{ url_for('file_leave') }}">
           <i data-lucide="calendar-plus"></i> File Leave</a>
-        <a class="tn-item {% if EP == 'file_fts' %}active{% endif %}" href="{{ url_for('file_fts') }}">
-          <i data-lucide="clock"></i> Failure to Swipe</a>
-        <a class="tn-item {% if EP in ['file_ot', 'file_rdw'] %}active{% endif %}" href="{{ url_for('file_ot') }}">
-          <i data-lucide="hourglass"></i> OT / Rest Day Work</a>
-        <a class="tn-item {% if EP == 'file_cws' %}active{% endif %}" href="{{ url_for('file_cws') }}">
-          <i data-lucide="arrow-left-right"></i> Change Work Schedule</a>
-        <a class="tn-item {% if EP == 'magic_cws_form' %}active{% endif %}" href="{{ url_for('magic_cws_form') }}">
-          <i data-lucide="zap" style="color:#a78bfa"></i> Magic CWS</a>
+        {# OT, RDW, CWS, Magic CWS and FTS are filed from one page; the individual
+           forms still work by URL (/file-requests/ot, /cws, /fts, /magic-cws) #}
+        <a class="tn-item {% if EP in ['request_hub.new', 'file_fts', 'file_ot', 'file_rdw', 'file_cws', 'magic_cws_form'] %}active{% endif %}" href="{{ url_for('request_hub.new') }}">
+          <i data-lucide="file-plus"></i> File a Request</a>
         <a class="tn-item {% if EP == 'file_material' %}active{% endif %}" href="{{ url_for('file_material') }}">
           <i data-lucide="package"></i> Material Request</a>
         <a class="tn-item {% if EP == 'facilities_request' %}active{% endif %}" href="{{ url_for('facilities_request') }}">
@@ -915,15 +918,12 @@
   <a class="tn-subtab {% if EP == 'qa_updates.data_dashboard' %}active{% endif %}" href="{{ url_for('qa_updates.data_dashboard') }}">QA Data</a>
   {% endif %}
 </div></div>
-{% elif EP in ['file_requests_hub', 'file_leave', 'file_fts', 'file_ot', 'file_rdw', 'file_cws', 'magic_cws_form', 'file_material', 'facilities_request', 'tickets_index', 'ticket_detail', 'ticket_add_comment', 'coe.request_coe'] %}
+{% elif EP in ['file_requests_hub', 'file_leave', 'request_hub.new', 'file_fts', 'file_ot', 'file_rdw', 'file_cws', 'magic_cws_form', 'file_material', 'facilities_request', 'tickets_index', 'ticket_detail', 'ticket_add_comment', 'coe.request_coe'] %}
 <div class="tn-subnav"><div class="tn-subnav-inner">
   <span class="tn-subnav-label">File a Request</span>
   <a class="tn-subtab {% if EP == 'file_requests_hub' %}active{% endif %}" href="{{ url_for('file_requests_hub') }}">All Requests</a>
   <a class="tn-subtab {% if EP == 'file_leave' %}active{% endif %}" href="{{ url_for('file_leave') }}">Leave</a>
-  <a class="tn-subtab {% if EP == 'file_fts' %}active{% endif %}" href="{{ url_for('file_fts') }}">FTS</a>
-  <a class="tn-subtab {% if EP in ['file_ot', 'file_rdw'] %}active{% endif %}" href="{{ url_for('file_ot') }}">OT / RDW</a>
-  <a class="tn-subtab {% if EP == 'file_cws' %}active{% endif %}" href="{{ url_for('file_cws') }}">CWS</a>
-  <a class="tn-subtab {% if EP == 'magic_cws_form' %}active{% endif %}" href="{{ url_for('magic_cws_form') }}">Magic CWS</a>
+  <a class="tn-subtab {% if EP in ['request_hub.new', 'file_fts', 'file_ot', 'file_rdw', 'file_cws', 'magic_cws_form'] %}active{% endif %}" href="{{ url_for('request_hub.new') }}">OT · RDW · CWS · FTS</a>
   <a class="tn-subtab {% if EP == 'file_material' %}active{% endif %}" href="{{ url_for('file_material') }}">Material</a>
   <a class="tn-subtab {% if EP == 'facilities_request' %}active{% endif %}" href="{{ url_for('facilities_request') }}">Facilities</a>
   <a class="tn-subtab {% if EP in ['tickets_index', 'ticket_detail', 'ticket_add_comment'] %}active{% endif %}" href="{{ url_for('tickets_index') }}">My Tickets</a>
