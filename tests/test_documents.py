@@ -131,21 +131,31 @@ class DocumentLibraryTests(unittest.TestCase):
         self.assertTrue(f.data.startswith(b"%PDF"))
         self.assertIn("attachment", c.get(f"/documents/{did}/file?download=1").headers["Content-Disposition"])
 
-        # plain employee: HR-only docs are invisible, uploads refused
+        # no can_documents: the whole library is hidden (404) and not in the menu
+        for perms in (None, {"can_memos": True}):
+            n = self.app.test_client()
+            _login(n, perms=perms)
+            self.assertEqual(n.get("/documents").status_code, 404)
+            self.assertEqual(n.get(f"/documents/{did}").status_code, 404)
+            self.assertEqual(n.get(f"/documents/{did}/file").status_code, 404)
+            self.assertEqual(self._upload(n, [(f"{PREFIX}-emp.pdf", _pdf("x"))]).status_code, 404)
+
+        # can_documents alone: library opens, HR-only docs stay invisible, no managing
         e = self.app.test_client()
-        _login(e)
+        _login(e, perms={"can_documents": True})
+        self.assertEqual(e.get("/documents").status_code, 200)
         self.assertEqual(e.get(f"/documents/{did}").status_code, 404)
         self.assertEqual(e.get(f"/documents/{did}/file").status_code, 404)
         self.assertNotIn(f"{PREFIX}-text", e.get(f"/documents?q={WORD}").get_data(as_text=True))
         self.assertEqual(self._upload(e, [(f"{PREFIX}-emp.pdf", _pdf("x"))]).status_code, 403)
 
-        # can_memos sub-admin sees HR docs but can't manage
+        # can_documents + can_memos sees HR docs but can't manage
         h = self.app.test_client()
-        _login(h, perms={"can_memos": True})
+        _login(h, perms={"can_documents": True, "can_memos": True})
         self.assertEqual(h.get(f"/documents/{did}").status_code, 200)
         self.assertEqual(h.post(f"/documents/{did}/delete", data={"csrf_token": "zztoken"}).status_code, 403)
 
-        # edit to "everyone" -> plain employee can open it
+        # edit to "everyone" -> a can_documents user can open it
         r = c.post(f"/documents/{did}/edit", data={
             "csrf_token": "zztoken", "title": f"{PREFIX}-text", "category": "Policy",
             "visibility": "everyone", "doc_date": "2024-05-01"})
@@ -159,6 +169,13 @@ class DocumentLibraryTests(unittest.TestCase):
         c.post(f"/documents/{did}/delete", data={"csrf_token": "zztoken"})
         self.assertIsNone(self._id_for(f"{PREFIX}-text"))
         self.assertEqual(c.get(f"/documents/{did}").status_code, 404)
+
+    def test_menu_item_follows_permission(self):
+        for perms, shown in ((None, False), ({"can_memos": True}, False), ({"can_documents": True}, True)):
+            n = self.app.test_client()
+            _login(n, perms=perms)
+            html = n.get("/history").get_data(as_text=True)
+            self.assertEqual("Document Library" in html, shown, perms)
 
     def test_requires_login(self):
         c = self.app.test_client()

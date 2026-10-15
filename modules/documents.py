@@ -10,11 +10,12 @@ searchable by title, notes and the text inside PDFs.
   PDFs are marked text_status='needs_ocr' until an OCR pass fills them in;
   until then they are found by title, reference no., employee and notes.
 
-Access:
+Access (anyone else gets a 404 and no menu item):
+  open the library:            admins, DOCUMENTS_EDITORS, sub-admins with can_documents
   manage (upload/edit/delete): admins + DOCUMENTS_EDITORS (.env, emails or
       employee IDs, comma-separated)
-  'hr' documents:              managers + sub-admins with can_memos
-  'everyone' documents:        any logged-in user
+  'hr' documents:              managers + library users who also have can_memos
+  'everyone' documents:        everyone who can open the library
 """
 
 import hashlib
@@ -58,7 +59,7 @@ CATEGORIES = [
     "Other",
 ]
 
-VISIBILITY = {"hr": "HR only", "everyone": "All employees"}
+VISIBILITY = {"hr": "HR only", "everyone": "Everyone with library access"}
 
 # extension -> (mime type, magic-byte prefixes)
 ALLOWED = {
@@ -133,21 +134,29 @@ def docs_can_manage():
     return bool(ident & _editors())
 
 
+def docs_can_access():
+    if docs_can_manage():
+        return True
+    return bool((session.get("permissions") or {}).get("can_documents"))
+
+
 def docs_can_see_hr():
     if docs_can_manage():
         return True
-    return bool((session.get("permissions") or {}).get("can_memos"))
+    return docs_can_access() and bool((session.get("permissions") or {}).get("can_memos"))
 
 
 def _visible_levels():
     return ("hr", "everyone") if docs_can_see_hr() else ("everyone",)
 
 
-def _page_login_required(f):
+def _library_access_required(f):
     @wraps(f)
     def wrapped(*args, **kwargs):
         if "user" not in session:
             return redirect("/")
+        if not docs_can_access():
+            abort(404)
         return f(*args, **kwargs)
     return wrapped
 
@@ -261,7 +270,7 @@ def _metadata_from_form(form):
 # ---------- pages ----------
 
 @documents_bp.route("/documents")
-@_page_login_required
+@_library_access_required
 def library():
     q = request.args.get("q", "").strip()
     category = request.args.get("category", "").strip()
@@ -360,7 +369,7 @@ def library():
 
 
 @documents_bp.route("/documents/<int:doc_id>")
-@_page_login_required
+@_library_access_required
 def detail(doc_id):
     conn = get_db_connection()
     try:
@@ -387,7 +396,7 @@ def detail(doc_id):
 
 
 @documents_bp.route("/documents/<int:doc_id>/file")
-@_page_login_required
+@_library_access_required
 def serve_file(doc_id):
     download = request.args.get("download") == "1"
     conn = get_db_connection()
@@ -415,7 +424,7 @@ def serve_file(doc_id):
 # ---------- manage ----------
 
 @documents_bp.route("/documents/upload", methods=["POST"])
-@_page_login_required
+@_library_access_required
 def upload():
     if not docs_can_manage():
         abort(403)
@@ -511,7 +520,7 @@ def upload():
 
 
 @documents_bp.route("/documents/<int:doc_id>/edit", methods=["POST"])
-@_page_login_required
+@_library_access_required
 def edit(doc_id):
     if not docs_can_manage():
         abort(403)
@@ -546,7 +555,7 @@ def edit(doc_id):
 
 
 @documents_bp.route("/documents/<int:doc_id>/delete", methods=["POST"])
-@_page_login_required
+@_library_access_required
 def delete(doc_id):
     """Soft delete: the row and file stay so a mistake can be undone in SQL."""
     if not docs_can_manage():
@@ -570,6 +579,11 @@ def delete(doc_id):
         conn.close()
     flash("Document removed from the library.", "success")
     return redirect(url_for("documents.library"))
+
+
+@documents_bp.app_context_processor
+def _inject_access():
+    return {"docs_can_access": docs_can_access}
 
 
 @documents_bp.app_template_filter("filesize")

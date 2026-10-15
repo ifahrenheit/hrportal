@@ -13,24 +13,29 @@ as by title, memo number, employee and notes.
 | Manage routes | `POST /documents/upload`, `POST /documents/<id>/edit`, `POST /documents/<id>/delete` |
 | Code | `modules/documents.py` (`documents_bp`, registered in `app.py` ~line 75) |
 | Templates | `templates/documents/library.html`, `templates/documents/detail.html` |
-| Entry point | Top nav → **Main** → **Document Library** (also a "Documents" tab in the Main sub-nav, and searchable with Ctrl K: "documents", "memos", "policies") |
+| Entry point | Top nav → **Main** → **Document Library** (also a "Documents" tab in the Main sub-nav, and searchable with Ctrl K: "documents", "memos", "policies"). Shown only to people with access |
+| Permission | `can_documents` ("Document Library" checkbox under People & HR on the Sub-Admins page), or admin, or `DOCUMENTS_EDITORS` |
 | Tests | `tests/test_documents.py` |
 
 ### Who can do what
 
-| Who | Sees "All employees" docs | Sees "HR only" docs | Upload / edit / remove |
-|---|---|---|---|
-| Any logged-in employee | Yes | No | No |
-| Sub-admin with **Employee Memos** (`can_memos`) | Yes | Yes | No |
-| Admin (`is_admin`) | Yes | Yes | Yes |
-| Anyone listed in `DOCUMENTS_EDITORS` (`.env`) | Yes | Yes | Yes |
+The library is hidden from everyone without access: no menu item, and every
+`/documents` URL returns 404.
+
+| Who | Opens the library | Sees "Everyone with library access" docs | Sees "HR only" docs | Upload / edit / remove |
+|---|---|---|---|---|
+| Employee without `can_documents` (even with `can_memos`) | No | No | No | No |
+| Sub-admin with **Document Library** (`can_documents`) | Yes | Yes | No | No |
+| Sub-admin with `can_documents` **and** **Employee Memos** (`can_memos`) | Yes | Yes | Yes | No |
+| Admin (`is_admin`) | Yes | Yes | Yes | Yes |
+| Anyone listed in `DOCUMENTS_EDITORS` (`.env`) | Yes | Yes | Yes | Yes |
 
 `DOCUMENTS_EDITORS` is a comma-separated list of emails or employee IDs. Changing it
-needs a service restart. There is no separate `can_documents` permission checkbox;
-the existing `can_memos` flag grants read access to HR-only documents.
+needs a service restart. A `can_documents` change takes effect at the person's next
+login, like other sub-admin permissions.
 
-An HR-only document is invisible to people without access: it doesn't appear in
-search, and its page and file URLs return 404 rather than "forbidden".
+Inside the library, an HR-only document is invisible to people who can't see it:
+it doesn't appear in search, and its page and file URLs return 404.
 
 ## 2. Using it (for HR)
 
@@ -49,7 +54,7 @@ search, and its page and file URLs return 404 rather than "forbidden".
      document is about one person).
    - **Notes / keywords**: searchable. Use it for scans that have no readable text
      yet (see below).
-   - **Who can see it**: **HR only** (default) or **All employees**.
+   - **Who can see it**: **HR only** (default) or **Everyone with library access**.
 4. **Upload**. A summary appears at the top of the page, including any skipped files
    and why.
 
@@ -156,6 +161,10 @@ activity** on the document page (admins and editors only).
 
 ## 6. Admin tasks
 
+**Give someone read access**: Admin → **Sub-Admins** → tick **Document Library**
+(`can_documents`) for that person; also tick **Employee Memos** if they should see
+HR-only documents.
+
 **Let HR staff upload**: add them to `.env`, then restart:
 
 ```bash
@@ -194,5 +203,3 @@ set -a; . ./.env; set +a
   tree, takes category, date, reference no. and title from folder and file names, and
   reuses the upload checks (type, size, duplicates).
 - Showing an employee's linked documents on their PIM profile.
-- A dedicated `can_documents` permission, if `can_memos` + `DOCUMENTS_EDITORS`
-  stops being enough.

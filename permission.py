@@ -34,7 +34,7 @@ all pick it up automatically without manual placeholder counting.
 
 
 # ---------------------------------------------------------------------------
-# Single source of truth: (db_column, lucide_icon, display_label) -- all 38
+# Single source of truth: (db_column, lucide_icon, display_label) -- all 39
 # columns of leave4day_sub_admins, grouped as on the Sub-Admins page.
 # This list also drives the sub-admin permissions page UI (sub_admins.html
 # should eventually import PERMISSION_DEFINITIONS instead of hardcoding its
@@ -55,6 +55,7 @@ PERMISSION_DEFINITIONS = [
     ('can_coaching'              , 'presentation'      , 'Coaching'),
     ('can_coaching_reports'      , 'chart-line'        , 'Coaching Reports'),
     ('can_memos'                 , 'file-text'         , 'Employee Memos'),
+    ('can_documents'             , 'library'           , 'Document Library'),
     ('can_work_mode'             , 'users'             , 'Work Mode'),
     ('can_onboarding'            , 'user-check'        , 'Onboarding / Offboarding'),
     ('can_wfm'                   , 'cloud-upload'      , 'WFM Onboarding'),
