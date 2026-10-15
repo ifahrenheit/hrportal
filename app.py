@@ -72,6 +72,8 @@ app.register_blueprint(fts_bp)
 ## Requirements Blueprint
 from modules.requirements import requirements_bp
 app.register_blueprint(requirements_bp)
+from modules.documents import documents_bp
+app.register_blueprint(documents_bp)
 
 ## Entitlements Permission Audit Blueprint
 from modules.entitlements_audit import entitlements_audit_bp
@@ -1405,7 +1407,35 @@ def _dashboard_balance_cards(balances, portal_balances):
         })
     # paid leave first, LWOP last
     cards.sort(key=lambda c: (c['unpaid'], c['name']))
+    spare = iter(['blue', 'orange', 'amber', 'green'] * 3)
+    for c in cards:
+        c['code'], c['hue'] = _leave_badge(c['name'], c['unpaid'], spare)
     return cards
+
+def _leave_badge(name, unpaid, spare):
+    """Short code + colour for a leave type's dashboard card."""
+    n = name.lower()
+    if unpaid:
+        return 'LWOP', 'slate'
+    for key, code, hue in (('carry', 'CO', 'violet'), ('sick', 'SL', 'rose'), ('vacation', 'VL', 'teal')):
+        if key in n:
+            return code, hue
+    words = [w for w in name.replace('-', ' ').split() if w.lower() != 'leave']
+    return (''.join(w[0] for w in words)[:3].upper() or 'L') + 'L', next(spare, 'blue')
+
+def _shift_bucket(shift_time):
+    """Same buckets as the dashboard calendar (by start hour)."""
+    import re
+    h, _ = parse_shift_time(re.sub(r':\d{2}', '', shift_time or ''))   # '5:30pm' -> '5pm'
+    if h is None:
+        return ''
+    if 5 <= h < 12:
+        return 'morning'
+    if 12 <= h < 17:
+        return 'afternoon'
+    if 17 <= h < 21:
+        return 'evening'
+    return 'night'
 
 def _dashboard_extras(emp_number, user):
     """Everything above the fold on the dashboard. Each part is best-effort:
@@ -1581,7 +1611,8 @@ def _dashboard_extras(emp_number, user):
         else:
             label, kind = 'No schedule', 'none'
         out['week'].append({'dow': d.strftime('%a'), 'num': d.day, 'label': label,
-                            'kind': kind, 'today': d == today})
+                            'kind': kind, 'today': d == today,
+                            'shift': _shift_bucket(s['shift_time']) if kind == 'work' else ''})
     return out
 
 

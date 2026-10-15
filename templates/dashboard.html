@@ -97,7 +97,7 @@
   .csat-ch .db-bar { height: 6px; }
 
   /* punches + quick links */
-  .db-punch { display: grid; grid-template-columns: minmax(0, 1fr) 5.6rem 3.4rem; align-items: center; column-gap: .6rem; padding: .6rem 0; border-bottom: 1px solid var(--border); font-size: .88rem; }
+  .db-punch { display: grid; grid-template-columns: 10px minmax(0, 1fr) 5.6rem 3.4rem; align-items: center; column-gap: .6rem; padding: .6rem 0; border-bottom: 1px solid var(--border); font-size: .88rem; }
   .db-punch-time { text-align: left; font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
   .db-punch .db-pill { justify-self: stretch; text-align: center; }
   .db-punch:last-child { border-bottom: none; }
@@ -105,6 +105,43 @@
   .db-ql:hover { color: var(--accent); }
   .db-ql-ico { width: 32px; height: 32px; border-radius: 8px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
   .db-ql-ico i, .db-ql-ico svg { color: #fff; width: 16px; height: 16px; }
+
+  /* ── Colour: one pastel hue per card (light) / faint tint (dark) ── */
+  .hue-blue   { --h-card:#f2f6ff; --h-edge:#d9e4fd; --h-chip:#dfe8ff; --h-ink:#1d4ed8; --h-bar:#2563eb; }
+  .hue-violet { --h-card:#f7f3ff; --h-edge:#e6dbfd; --h-chip:#ebe1fe; --h-ink:#6d28d9; --h-bar:#7c3aed; }
+  .hue-amber  { --h-card:#fff8ec; --h-edge:#f8e3be; --h-chip:#ffecc9; --h-ink:#a14a07; --h-bar:#d97706; }
+  .hue-teal   { --h-card:#effaf7; --h-edge:#cdece4; --h-chip:#d5f2ea; --h-ink:#0f766e; --h-bar:#0d9488; }
+  .hue-rose   { --h-card:#fff4f6; --h-edge:#fbd5de; --h-chip:#ffdfe6; --h-ink:#be123c; --h-bar:#e11d48; }
+  .hue-slate  { --h-card:#f5f7fa; --h-edge:#e1e6ee; --h-chip:#e6ebf2; --h-ink:#475569; --h-bar:#64748b; }
+  .hue-orange { --h-card:#fff6ef; --h-edge:#fbdcc6; --h-chip:#ffe4d1; --h-ink:#c2410c; --h-bar:#ea580c; }
+  .hue-green  { --h-card:#f0fbf3; --h-edge:#cdebd6; --h-chip:#d6f3de; --h-ink:#15803d; --h-bar:#16a34a; }
+  [data-theme="dark"] .hue-blue   { --h-card:rgba(37,99,235,.10);  --h-edge:rgba(37,99,235,.28);  --h-chip:rgba(37,99,235,.22);  --h-ink:#93b4ff; --h-bar:#93b4ff; }
+  [data-theme="dark"] .hue-violet { --h-card:rgba(124,58,237,.10); --h-edge:rgba(124,58,237,.28); --h-chip:rgba(124,58,237,.22); --h-ink:#c4a8ff; --h-bar:#c4a8ff; }
+  [data-theme="dark"] .hue-amber  { --h-card:rgba(217,119,6,.10);  --h-edge:rgba(217,119,6,.28);  --h-chip:rgba(217,119,6,.22);  --h-ink:#fbbf6a; --h-bar:#fbbf6a; }
+  [data-theme="dark"] .hue-teal   { --h-card:rgba(13,148,136,.10); --h-edge:rgba(13,148,136,.28); --h-chip:rgba(13,148,136,.22); --h-ink:#5eead4; --h-bar:#5eead4; }
+  [data-theme="dark"] .hue-rose   { --h-card:rgba(225,29,72,.10);  --h-edge:rgba(225,29,72,.28);  --h-chip:rgba(225,29,72,.22);  --h-ink:#fda4b4; --h-bar:#fda4b4; }
+  [data-theme="dark"] .hue-slate  { --h-card:rgba(100,116,139,.10); --h-edge:rgba(100,116,139,.28); --h-chip:rgba(100,116,139,.22); --h-ink:#b6c2d4; --h-bar:#b6c2d4; }
+  [data-theme="dark"] .hue-orange { --h-card:rgba(234,88,12,.10);  --h-edge:rgba(234,88,12,.28);  --h-chip:rgba(234,88,12,.22);  --h-ink:#fdba8c; --h-bar:#fdba8c; }
+  [data-theme="dark"] .hue-green  { --h-card:rgba(22,163,74,.10);  --h-edge:rgba(22,163,74,.28);  --h-chip:rgba(22,163,74,.22);  --h-ink:#86efac; --h-bar:#86efac; }
+  .db-card.hued { background: var(--h-card); border-color: var(--h-edge); box-shadow: none; }
+  .hued .db-tile-ico { background: var(--h-chip); color: var(--h-ink); }
+  .hued .db-tile-label { color: var(--h-ink); font-weight: 700; }
+  .hued .db-bal-num { color: var(--h-ink); }
+  .db-bal.hued .db-bar { background: var(--h-chip); }
+  .db-bal.hued .db-bar:not(.low) > div { background: var(--h-bar); }
+  .db-code { min-width: 34px; height: 24px; padding: 0 .45rem; box-sizing: border-box; border-radius: 999px; background: var(--h-chip); color: var(--h-ink); font-family: 'Outfit', sans-serif; font-weight: 700; font-size: .7rem; display: inline-flex; align-items: center; justify-content: center; }
+  .db-day.hued { background: var(--h-card); border-color: var(--h-edge); }
+  .db-day.hued .db-day-dow, .db-day.hued .db-day-lbl { color: var(--h-ink); }
+  .db-day.hued .db-day-dow { font-weight: 700; }
+  .db-day.hued .db-day-lbl { font-weight: 600; }
+  .db-day.hued.today { border: 2px solid var(--accent); }
+  .db-legend { display: flex; flex-wrap: wrap; align-items: center; gap: .75rem; font-size: .75rem; color: var(--text-muted); }
+  .db-legend span { display: inline-flex; align-items: center; gap: .3rem; }
+  .db-legend i { width: 10px; height: 10px; border-radius: 3px; background: var(--h-bar); display: inline-block; }
+  .db-type { display: inline-block; padding: .2rem .6rem; border-radius: 8px; font-size: .8rem; font-weight: 600; background: var(--h-chip); color: var(--h-ink); white-space: nowrap; }
+  .db-pdot { width: 10px; height: 10px; border-radius: 50%; background: #94a3b8; box-shadow: 0 0 0 3px rgba(148,163,184,.22); }
+  .db-pdot.in { background: #16a34a; box-shadow: 0 0 0 3px rgba(22,163,74,.2); }
+  .db-ql.tinted { background: var(--bg); background: color-mix(in srgb, var(--ql) 9%, var(--surface)); }
 
   /* ── Phone layout ─────────────────────────────────────────── */
   @media (max-width: 576px) {
@@ -232,7 +269,7 @@
 
 <!-- Today at a glance -->
 <div class="db-tiles">
-  <div class="db-card db-tile">
+  <div class="db-card db-tile hued hue-blue">
     <div class="db-tile-ico"><i data-lucide="clock"></i></div>
     <div>
       <div class="db-tile-label">Today's shift</div>
@@ -256,8 +293,8 @@
   {# Rest days come from this week's schedule (same data as the "This week" strip) #}
   {% set rest_days = dash.week | selectattr('kind', 'equalto', 'off') | map(attribute='dow') | list %}
   {% set has_sched = dash.week | rejectattr('kind', 'equalto', 'none') | list | length > 0 %}
-  <div class="db-card db-tile">
-    <div class="db-tile-ico {% if not has_sched %}warn{% endif %}"><i data-lucide="calendar"></i></div>
+  <div class="db-card db-tile hued {{ 'hue-violet' if has_sched else 'hue-amber' }}">
+    <div class="db-tile-ico"><i data-lucide="calendar"></i></div>
     <div>
       <div class="db-tile-label">Rest days this week</div>
       {% if rest_days %}
@@ -274,8 +311,8 @@
   </div>
 
   {% set pending_total = dash.pending_leave + dash.pending_other %}
-  <div class="db-card db-tile">
-    <div class="db-tile-ico {% if pending_total %}warn{% endif %}"><i data-lucide="inbox"></i></div>
+  <div class="db-card db-tile hued hue-amber">
+    <div class="db-tile-ico"><i data-lucide="inbox"></i></div>
     <div>
       <div class="db-tile-label">Awaiting approval</div>
       {% if pending_total %}
@@ -288,7 +325,7 @@
     </div>
   </div>
 
-  <div class="db-card db-tile">
+  <div class="db-card db-tile hued hue-teal">
     <div class="db-tile-ico"><i data-lucide="plane"></i></div>
     <div>
       <div class="db-tile-label">Next leave</div>
@@ -312,10 +349,10 @@
   {% if balance_cards %}
   <div class="db-bal-grid">
     {% for b in balance_cards %}
-    <div class="db-card db-bal">
+    <div class="db-card db-bal hued hue-{{ b.hue }}">
       <div class="db-bal-top">
         <span class="db-bal-name">{{ b.name }}</span>
-        {% if b.unpaid %}<span class="db-tag">Unpaid</span>{% endif %}
+        <span class="db-code"{% if b.unpaid %} title="Unpaid"{% endif %}>{{ b.code }}</span>
       </div>
       <div style="display:flex;align-items:baseline;gap:.4rem;">
         <span class="db-bal-num">{{ b.days_left }}</span>
@@ -687,12 +724,19 @@ loadData();                   // default Monthly / current month
     <div class="db-card db-pad" style="display:flex;flex-direction:column;gap:1rem;">
       <div class="db-sec-head">
         <h2 class="db-h2">This week</h2>
-        <a href="#my-calendar" class="db-link">Full calendar</a>
+        {% set shift_hue = {'morning': 'green', 'afternoon': 'amber', 'evening': 'violet', 'night': 'blue'} %}
+        {% set week_shifts = dash.week | map(attribute='shift') | select | list %}
+        <div class="db-legend">
+          {% for k in ['morning', 'afternoon', 'evening', 'night'] if k in week_shifts %}
+          <span class="hue-{{ shift_hue[k] }}"><i></i>{{ k | capitalize }}</span>
+          {% endfor %}
+          <a href="#my-calendar" class="db-link" style="margin-left:.25rem;">Full calendar</a>
+        </div>
       </div>
       <div class="db-week-scroll">
         <div class="db-week">
           {% for d in dash.week %}
-          <div class="db-day {{ d.kind }}{% if d.today %} today{% endif %}">
+          <div class="db-day {{ d.kind }}{% if d.today %} today{% endif %}{% if d.shift %} hued hue-{{ shift_hue[d.shift] }}{% endif %}">
             <div class="db-day-dow">{{ d.dow }}{% if d.today %} · Today{% endif %}</div>
             <div class="db-day-num">{{ d.num }}</div>
             <div class="db-day-lbl">{{ d.label }}</div>
@@ -718,7 +762,10 @@ loadData();                   // default Monthly / current month
           <tbody>
             {% for r in dash.recent_requests %}
             <tr>
-              <td style="font-weight:500;">{{ r.type }}</td>
+              {% set type_hue = {'Overtime': 'blue', 'Change of Schedule': 'amber', 'Rest Day Work': 'teal', 'Failure to Swipe': 'rose'} %}
+              {% set th = namespace(h=type_hue.get(r.type, 'violet')) %}
+              {% for b in balance_cards if b.name == r.type %}{% set th.h = b.hue %}{% endfor %}{# leave rows match their balance card #}
+              <td><span class="db-type hue-{{ th.h }}">{{ r.type }}</span></td>
               <td style="white-space:nowrap;">{{ r.date }}</td>
               <td class="db-muted">{{ r.detail }}</td>
               <td><span class="db-pill {{ r.style }}">{{ r.status }}</span></td>
@@ -744,6 +791,7 @@ loadData();                   // default Monthly / current month
       <div>
         {% for p in dash.recent_punches %}
         <div class="db-punch">
+          <span class="db-pdot{{ ' in' if p.type == 'IN' }}"></span>
           <span>{{ p.day }}</span>
           <span class="db-punch-time">{{ p.time }}</span>
           <span class="db-pill {{ 'ok' if p.type == 'IN' else 'muted' }}">{{ p.type }}</span>
@@ -760,7 +808,7 @@ loadData();                   // default Monthly / current month
     <div class="db-card db-pad" style="display:flex;flex-direction:column;gap:.6rem;">
       <h2 class="db-h2">Quick links</h2>
       {% for link in quick_links %}
-      <a href="{{ link.url }}" target="_blank" rel="noopener" class="db-ql">
+      <a href="{{ link.url }}" target="_blank" rel="noopener" class="db-ql tinted" style="--ql:{{ link.color_from or '#64748b' }};">
         <span class="db-ql-ico" style="background:linear-gradient(135deg,{{ link.color_from }},{{ link.color_to }});"><i data-lucide="{{ link.icon }}"></i></span>
         <span style="font-weight:600;font-size:.9rem;">{{ link.title }}</span>
         <i class="ms-auto db-muted" data-lucide="external-link" style="width:15px;height:15px;"></i>
@@ -910,10 +958,12 @@ loadData();                   // default Monthly / current month
   function getShiftColor(shift) {
     if (!shift) return null;
     // Extract start hour
-    const match = shift.match(/^(\d+)(am|pm)/i);
+    const match = shift.match(/^(\d+)(?::\d+)?\s*(am|pm|nn|mn)/i);   // 7pm, 5:30pm, 12nn, 12mn
     if (!match) return null;
     let hour = parseInt(match[1]);
     const period = match[2].toLowerCase();
+    if (period === 'nn') hour = 12;
+    if (period === 'mn') hour = 0;
     if (period === 'pm' && hour !== 12) hour += 12;
     if (period === 'am' && hour === 12) hour = 0;
 

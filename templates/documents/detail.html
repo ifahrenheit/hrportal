@@ -1,0 +1,135 @@
+{% extends "base.html" %}
+{% block title %}{{ doc.title }}{% endblock %}
+{% block page_title %}{{ doc.title }}{% endblock %}
+{% block page_subtitle %}{{ doc.category }}{% if doc.doc_date %} · {{ doc.doc_date.strftime('%B %d, %Y') }}{% endif %}{% if doc.reference_no %} · No. {{ doc.reference_no }}{% endif %}{% endblock %}
+{% block page_actions %}
+<a href="{{ url_for('documents.library') }}" class="btn btn-outline-secondary btn-sm"><i data-lucide="arrow-left"></i> Library</a>
+<a href="{{ url_for('documents.serve_file', doc_id=doc.id, download=1) }}" class="btn btn-primary btn-sm"><i data-lucide="download"></i> Download</a>
+{% endblock %}
+{% block content %}
+<style>
+  .doc-preview { width:100%; height:78vh; min-height:420px; border:0; border-radius:8px; background:#525659; }
+  .doc-preview-img { max-width:100%; border-radius:8px; display:block; margin:0 auto; }
+  .doc-facts dt { font-size:.75rem; text-transform:uppercase; letter-spacing:.03em; color:var(--text-muted); font-weight:600; }
+  .doc-facts dd { margin-bottom:.7rem; overflow-wrap:anywhere; }
+  .doc-text { max-height:320px; overflow:auto; white-space:pre-wrap; font-size:.82rem; }
+</style>
+
+<div class="row g-3">
+  <div class="col-lg-8">
+    <div class="card shadow-sm">
+      <div class="card-body p-2">
+        {% if doc.mime_type == 'application/pdf' %}
+        <iframe class="doc-preview" src="{{ url_for('documents.serve_file', doc_id=doc.id) }}" title="{{ doc.title }}"></iframe>
+        {% else %}
+        <img class="doc-preview-img" src="{{ url_for('documents.serve_file', doc_id=doc.id) }}" alt="{{ doc.title }}">
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  <div class="col-lg-4">
+    <div class="card shadow-sm mb-3">
+      <div class="card-body">
+        <dl class="doc-facts mb-0">
+          {% if doc.employee_id %}
+          <dt>Employee</dt>
+          <dd>{{ doc.employee_name or '' }} <span class="text-muted">({{ doc.employee_id }})</span>
+            <br><a class="small" href="{{ url_for('documents.library', employee_id=doc.employee_id) }}">All documents for this employee</a></dd>
+          {% endif %}
+          <dt>Visible to</dt>
+          <dd>{% if doc.visibility == 'hr' %}<i data-lucide="lock"></i> {% endif %}{{ visibility_labels[doc.visibility] }}</dd>
+          {% if doc.description %}<dt>Notes</dt><dd>{{ doc.description }}</dd>{% endif %}
+          <dt>File</dt>
+          <dd>{{ doc.original_name }}<br><span class="small text-muted">{{ doc.file_size|filesize }}{% if doc.page_count %} · {{ doc.page_count }} page{{ 's' if doc.page_count != 1 }}{% endif %}</span></dd>
+          <dt>Searchable text</dt>
+          <dd>
+            {% if doc.text_status == 'needs_ocr' %}
+            <span class="text-warning">Not yet.</span> <span class="small text-muted">This is a scanned image, so search only matches its title, number, employee and notes until OCR is run.</span>
+            {% else %}
+            Yes{% if doc.text_status == 'ocr_done' %} (from OCR){% endif %}
+            {% endif %}
+          </dd>
+          <dt>Uploaded</dt>
+          <dd class="mb-0">{{ doc.uploaded_at.strftime('%b %d, %Y %I:%M %p') }}{% if can_manage %} by {{ doc.uploaded_by }}{% endif %}</dd>
+        </dl>
+      </div>
+    </div>
+
+    {% if doc.content_text %}
+    <div class="card shadow-sm mb-3">
+      <div class="card-header py-2 small fw-semibold">Text in this document</div>
+      <div class="card-body doc-text">{{ doc.content_text }}</div>
+    </div>
+    {% endif %}
+
+    {% if can_manage %}
+    <div class="card shadow-sm mb-3">
+      <div class="card-header py-2 small fw-semibold">Edit details</div>
+      <div class="card-body">
+        <form method="post" action="{{ url_for('documents.edit', doc_id=doc.id) }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <div class="mb-2">
+            <label class="form-label small mb-1">Title</label>
+            <input type="text" name="title" class="form-control form-control-sm" maxlength="255" required value="{{ doc.title }}">
+          </div>
+          <div class="row g-2 mb-2">
+            <div class="col-6">
+              <label class="form-label small mb-1">Category</label>
+              <select name="category" class="form-select form-select-sm">
+                {% for c in categories %}<option {% if doc.category == c %}selected{% endif %}>{{ c }}</option>{% endfor %}
+              </select>
+            </div>
+            <div class="col-6">
+              <label class="form-label small mb-1">Document date</label>
+              <input type="date" name="doc_date" class="form-control form-control-sm" value="{{ doc.doc_date or '' }}">
+            </div>
+            <div class="col-6">
+              <label class="form-label small mb-1">Memo / ref no.</label>
+              <input type="text" name="reference_no" class="form-control form-control-sm" maxlength="64" value="{{ doc.reference_no or '' }}">
+            </div>
+            <div class="col-6">
+              <label class="form-label small mb-1">Employee ID</label>
+              <input type="text" name="employee_id" class="form-control form-control-sm" maxlength="50" value="{{ doc.employee_id or '' }}">
+            </div>
+          </div>
+          <div class="mb-2">
+            <label class="form-label small mb-1">Notes / keywords</label>
+            <textarea name="description" class="form-control form-control-sm" rows="2">{{ doc.description or '' }}</textarea>
+          </div>
+          <div class="mb-3">
+            {% for k, label in visibility_labels.items() %}
+            <div class="form-check form-check-inline">
+              <input class="form-check-input" type="radio" name="visibility" id="vis-{{ k }}" value="{{ k }}" {% if doc.visibility == k %}checked{% endif %}>
+              <label class="form-check-label small" for="vis-{{ k }}">{{ label }}</label>
+            </div>
+            {% endfor %}
+          </div>
+          <button type="submit" class="btn btn-primary btn-sm">Save</button>
+        </form>
+        <hr>
+        <form method="post" action="{{ url_for('documents.delete', doc_id=doc.id) }}"
+              onsubmit="return confirm('Remove this document from the library?');">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button type="submit" class="btn btn-outline-danger btn-sm"><i data-lucide="trash-2"></i> Remove document</button>
+        </form>
+      </div>
+    </div>
+
+    {% if history %}
+    <div class="card shadow-sm">
+      <div class="card-header py-2 small fw-semibold">Recent activity</div>
+      <ul class="list-group list-group-flush small">
+        {% for h in history %}
+        <li class="list-group-item d-flex justify-content-between gap-2">
+          <span class="text-truncate">{{ h.user_email }} · {{ h.action }}</span>
+          <span class="text-muted text-nowrap">{{ h.at.strftime('%b %d, %I:%M %p') }}</span>
+        </li>
+        {% endfor %}
+      </ul>
+    </div>
+    {% endif %}
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

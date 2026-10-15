@@ -581,6 +581,8 @@
         {% endif %}
         <a class="tn-item {% if EP == 'survey.survey_list' %}active{% endif %}" href="{{ url_for('survey.survey_list') }}" data-k="surveys feedback">
           <i data-lucide="clipboard-list"></i> Survey</a>
+        <a class="tn-item {% if EP in ['documents.library', 'documents.detail'] %}active{% endif %}" href="{{ url_for('documents.library') }}" data-k="documents library memos policies scanned files hr docs">
+          <i data-lucide="library"></i> Document Library</a>
         <a class="tn-item {% if EP == 'qa_updates.bulletin' %}active{% endif %}" href="{{ url_for('qa_updates.bulletin') }}" data-k="qa bulletin announcements">
           <i data-lucide="megaphone"></i> QA Updates
           <span id="qaUpdatesBadge" style="display:none;margin-left:auto;background:#ef4444;color:#fff;font-size:.65rem;font-weight:700;padding:.15rem .45rem;border-radius:999px;min-width:18px;text-align:center;"></span></a>
@@ -910,7 +912,7 @@
 
 {# ── CONTEXTUAL SUB-NAV ─ every page belongs to exactly one
      cluster; the row always renders. Tabs reuse mega-item gates. #}
-{% if EP in ['dashboard', 'history', 'break_log.break_log', 'survey.survey_list', 'qa_updates.bulletin'] %}
+{% if EP in ['dashboard', 'history', 'break_log.break_log', 'survey.survey_list', 'documents.library', 'documents.detail', 'qa_updates.bulletin'] %}
 <div class="tn-subnav"><div class="tn-subnav-inner">
   <span class="tn-subnav-label">Main</span>
   <a class="tn-subtab {% if EP == 'dashboard' %}active{% endif %}" href="{{ url_for('dashboard') }}">Dashboard</a>
@@ -919,6 +921,7 @@
   <a class="tn-subtab {% if EP == 'break_log.break_log' %}active{% endif %}" href="{{ url_for('break_log.break_log') }}">Break Log</a>
   {% endif %}
   <a class="tn-subtab {% if EP == 'survey.survey_list' %}active{% endif %}" href="{{ url_for('survey.survey_list') }}">Survey</a>
+  <a class="tn-subtab {% if EP in ['documents.library', 'documents.detail'] %}active{% endif %}" href="{{ url_for('documents.library') }}">Documents</a>
   <a class="tn-subtab {% if EP == 'qa_updates.bulletin' %}active{% endif %}" href="{{ url_for('qa_updates.bulletin') }}">QA Updates<span class="tn-subbadge" data-src="qaUpdatesBadge"></span></a>
 </div></div>
 {% elif EP in ['file_requests_hub', 'file_leave', 'request_hub.new', 'file_fts', 'file_ot', 'file_rdw', 'file_cws', 'magic_cws_form', 'file_material', 'facilities_request', 'tickets_index', 'ticket_detail', 'ticket_add_comment', 'coe.request_coe', 'my_records.records', 'coaching.my_sessions', 'coaching.my_session'] %}
