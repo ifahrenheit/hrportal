@@ -9,7 +9,7 @@
 ---
 
 ## 2026-10-16 — Document Library for scanned HR documents; dashboard leave badges shipped
-Commit: `02e6ee8` (pushed) · Branch: `main`
+Commits: `02e6ee8`, `7d6a66d` (pushed) · Branch: `main`
 
 ### What was built / changed
 - **Document Library** at `/documents`: `modules/documents.py`, `templates/documents/library.html` and `detail.html`, registered in `app.py` next to `requirements_bp`. Nav: Main → Document Library, plus a Main sub-nav tab.
@@ -21,6 +21,11 @@ Commit: `02e6ee8` (pushed) · Branch: `main`
 - **Dashboard** (uncommitted since 2026-10-15 21:55, shipped on the user's OK): leave-card short codes and colours (`_leave_badge`), plus week-strip shift buckets (`_shift_bucket`) in `app.py` and `templates/dashboard.html`.
 - Tests: `tests/test_documents.py` hits the real DB with ZZTEST rows, cleaned up afterwards.
 
+- **Follow-up `7d6a66d`: the library is now gated by a new `can_documents` permission** ("Document Library" checkbox, People & HR). Without admin, `DOCUMENTS_EDITORS` or `can_documents`, the menu item is hidden and every `/documents` route returns 404. HR-only docs also need `can_memos`.
+- **Fixed a bug that was already there:** in `admin_sub_admins`, the bulk "by group" INSERT had one fewer `VALUES` placeholder than columns, so every bulk save failed. Both INSERTs now have 39 columns and 39 values, verified by running them with a dummy `emp_number` in a rolled-back transaction.
+- Test PDF "Ticket Hub" (id 3) purged from the DB and from disk at the user's request.
+- Feature doc: `docs/document-library.md`.
+
 ### Why / decisions
 - HR has scanned memos and other documents on a USB (PDF and JPG, mostly no text layer). The server is a DO droplet with 2 GB RAM and no route to `\\cohere-ad`, so OCR should run on an office PC (OCRmyPDF or NAPS2), not here.
 - No new `can_documents` column, to avoid touching the sub-admin SQL in `app.py`. Access rules:
@@ -31,6 +36,8 @@ Commit: `02e6ee8` (pushed) · Branch: `main`
 
 ### Database changes
 ```sql
+-- orangehrm2
+ALTER TABLE leave4day_sub_admins ADD COLUMN can_documents TINYINT(1) NOT NULL DEFAULT 0;
 -- central_db (via modules.documents.ensure_schema(); idempotent)
 CREATE TABLE IF NOT EXISTS hr_documents (... FULLTEXT ft_doc (title, reference_no, description, content_text) ...);
 CREATE TABLE IF NOT EXISTS hr_document_access_log (...);
