@@ -8,6 +8,51 @@
 
 ---
 
+## 2026-10-16 — Document Library for scanned HR documents; dashboard leave badges shipped
+Commit: `02e6ee8` (pushed) · Branch: `main`
+
+### What was built / changed
+- **Document Library** at `/documents`: `modules/documents.py`, `templates/documents/library.html` and `detail.html`, registered in `app.py` next to `requirements_bp`. Nav: Main → Document Library, plus a Main sub-nav tab.
+  - Batch upload: PDF/JPG/PNG, 25 MB per file, 50 files per upload. Checks magic bytes and skips SHA-256 duplicates.
+  - Search: FULLTEXT boolean prefix search over title, ref no., notes and PDF text, with a LIKE fallback for words under 3 characters and for ref no., employee ID and name. Snippets are highlighted in the browser.
+  - Document page: preview, download, edit, soft delete (`deleted_at`), and the access log.
+  - Files are stored in `uploads/hr_documents/<year>/<uuid>.<ext>` (gitignored, outside `static/`) and served only via `/documents/<id>/file` after a visibility check.
+  - Text comes from pypdf. JPGs and image-only PDFs (under 40 characters of text per page) get `text_status='needs_ocr'`.
+- **Dashboard** (uncommitted since 2026-10-15 21:55, shipped on the user's OK): leave-card short codes and colours (`_leave_badge`), plus week-strip shift buckets (`_shift_bucket`) in `app.py` and `templates/dashboard.html`.
+- Tests: `tests/test_documents.py` hits the real DB with ZZTEST rows, cleaned up afterwards.
+
+### Why / decisions
+- HR has scanned memos and other documents on a USB (PDF and JPG, mostly no text layer). The server is a DO droplet with 2 GB RAM and no route to `\\cohere-ad`, so OCR should run on an office PC (OCRmyPDF or NAPS2), not here.
+- No new `can_documents` column, to avoid touching the sub-admin SQL in `app.py`. Access rules:
+  - Manage: admins plus the `DOCUMENTS_EDITORS` env list.
+  - HR-only documents: managers plus `can_memos` holders.
+  - "everyone" documents: any logged-in user.
+  - Uploads default to `hr`.
+
+### Database changes
+```sql
+-- central_db (via modules.documents.ensure_schema(); idempotent)
+CREATE TABLE IF NOT EXISTS hr_documents (... FULLTEXT ft_doc (title, reference_no, description, content_text) ...);
+CREATE TABLE IF NOT EXISTS hr_document_access_log (...);
+```
+
+### Config / environment
+- Optional `.env` key `DOCUMENTS_EDITORS` (emails or employee IDs, comma-separated). Not set yet, so only admins can upload.
+- Restarted `leavesystem` 2026-10-16 00:20; clean start.
+
+### How to verify
+- `/documents` as admin: upload a PDF, search a word from it, open it, edit it.
+- `./venv/bin/python -m unittest tests.test_documents -v`
+
+### Open items / next steps
+- [ ] User doesn't have the USB yet. When they get it: check samples (searchable or not), OCR on an office PC, then a bulk import script (category and date from folder names; reuse the upload logic).
+- [ ] OCR pass for `text_status='needs_ocr'` rows (set `ocr_done`, fill `content_text`).
+- [ ] Decide which HR staff go in `DOCUMENTS_EDITORS`.
+- [ ] Maybe: show an employee's linked documents on the PIM profile.
+- [ ] Carried over: Magic CWS duplicate-submission check, topnav overlap at about 1280px, #19 `tardiness_notify.py` duplicate IRs, Night Differential report.
+
+---
+
 ## 2026-10-15 (2) — CSAT Year view, Break Log fixes, nav/search audit, page permissions enforced
 Commit: `40e9d9a` (pushed) · Branch: `main`
 
@@ -353,37 +398,4 @@ Commit: `8ef4bb4` · Branch: `main`
 
 ---
 
-## 2026-10-01 — Uncommitted live work: PIM approve/reject, tardiness period buttons, requirements
-Commit: `b20e821` (changes below committed later in `c99caee` / `cc608d8` / `1085e16`) · Branch: `main`
-
-### What was built / changed
-- **PIM profile: Leaves + Requests tabs with approver actions.** `app.py` (+273 lines), `templates/pim/profile.html` (+509 lines)
-  - New helpers `_fetch_pim_requests`, `_request_scope_data`, `_leave_scope_data`, `_is_pim_approver_of`.
-  - New route `POST /pim/<employee_id>/request-action` (`pim_request_action`) approves or rejects one OT / RDW / CWS / FTS / Magic CWS request.
-  - Tabs show pending badges, status/type filter pills and summary cards. A confirm modal is `#pimActionModal`.
-  - Leaves go through the existing `/api/leave/action`.
-- **Tardiness page buttons.** `templates/tardiness.html`
-  - "Current period" now shows the period in progress from its start to today. It used to show the last completed period.
-  - "Today" now shows the actual current date. The old 1 PM cutoff logic that jumped back 1–2 days is gone.
-- **requirements.txt** now lists deps that were installed but missing: bcrypt, reportlab, openpyxl, python-keycloak, mysql-connector-python, and chromadb, python-docx and pypdf for `rag/rag_api.py`.
-
-### Why / decisions
-- `pim_request_action` is deliberately narrower than `/api/approvals/action`. The caller must be this employee's approver, the request must belong to the employee, and the `UPDATE ... AND status='Pending'` guard means a double click or a second approver gets a 409.
-- Magic CWS approval creates the balance row if it's missing (`_init_magic_cws_balance`) and then adds `deduction_hours` to `magic_cws_balance.used_hrs`.
-- Tardiness "Today" can show incomplete counts for the day in progress. Only people who have already punched in late appear.
-
-### Config / environment
-- No new .env keys, no DB schema changes.
-- Backup: `app.py.bak.20260928231815`.
-
-### Deploy / run notes
-- `app.py` was last edited 2026-09-30 21:53 and the service was restarted 2026-09-30 22:04. **The changes are live but not committed.**
-
-### How to verify
-- Open `/pim/<employee_id>` as that employee's approver. Check the Leaves and Requests tabs, then approve a pending request and confirm the badge count drops.
-- Open `/tardiness` and click Current period and Today. The date range should end today.
-
-### Open items / next steps
-- [ ] Review and commit the four modified files (`app.py`, `requirements.txt`, `templates/pim/profile.html`, `templates/tardiness.html`).
-- [ ] Check that non-approvers get a 403 on `/pim/<id>/request-action` and that Magic CWS `used_hrs` goes up by exactly one deduction per approval.
-- [ ] From memory: recheck inventory ledger reconciliation at the end of Sept 2026 (due now), and confirm the material release sub-unit (Bond Paper) stock-deduction fix with real-world use.
+Older entries: [docs/handoff-archive.md](docs/handoff-archive.md)
