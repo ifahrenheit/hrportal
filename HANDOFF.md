@@ -8,6 +8,33 @@
 
 ---
 
+## 2026-10-19 (2) — SL Verification permission; IR RWE Queue comments
+Commits: `b730501`, this one · Branch: `main`
+
+### What was built / changed
+- **IR RWE Queue** (`templates/incident_dashboard.html`, `markRweStage`): every stage button now logs its own comment. Before, RWE Served, Explanation Received, Proceed w/ Action and Resolve logged "Status updated.". 155 old "Status updated." comments were left as is; 153 can be matched to a step by timestamp if the user ever wants them rewritten.
+- **SL Verification visibility:**
+  - `templates/nav/_topnav.html`: the My Team menu (trigger and panel) now also shows for `SL_HR_APPROVER`. The top menu never had this; the old sidebar did. The trigger now also includes `can_team_calendar`.
+  - `inject_nav_style` now uses `is_sl_hr_approver()` (the viewed-as user), so Login As no longer shows the link from the admin's own email.
+- **New permission `can_sl_verification`** ("SL Verification (HR)", Leave & Requests group): `is_sl_hr_approver()` = admin or `can_sl_verification` or the `SL_HR_APPROVER` env list. New `get_sl_verifier_emails()` = permission holders plus the env list, de-duplicated, used for the "SL Verification needed" email. Both sub-admin INSERTs are now 40 columns and 40 values.
+
+### Why / decisions
+- User chose to keep the `.env` `SL_HR_APPROVER` (option 1): it keeps the admin (Andrew) on the SL emails. HR verifiers come from the checkbox.
+- Settings/Holidays visible to 7 sub-admins with `can_settings`: they're the owners, so this is intended. Left as is.
+
+### Database changes
+```sql
+-- orangehrm2
+ALTER TABLE leave4day_sub_admins ADD COLUMN can_sl_verification TINYINT(1) NOT NULL DEFAULT 0;
+UPDATE leave4day_sub_admins SET can_sl_verification=1 WHERE emp_number IN (506,575,576); -- Kimberly Cobol, John Nino Pu-od, Kyla Ranola
+```
+
+### Open items / next steps
+- [ ] `/whoami` debug route (app.py, end of file) shows the SL allow list to any logged-in user. Remove it together with audit #28 (`/debug-session`).
+- [ ] Audit #21 (rest), #22, #25, #27–#34.
+
+---
+
 ## 2026-10-19 — Audit #19 + #20: notify crons commit per employee before emailing; tardiness is dry-run by default
 Commit: see `git log` (this entry's commit) · Branch: `main`
 

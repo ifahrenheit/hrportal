@@ -34,7 +34,7 @@ all pick it up automatically without manual placeholder counting.
 
 
 # ---------------------------------------------------------------------------
-# Single source of truth: (db_column, lucide_icon, display_label) -- all 39
+# Single source of truth: (db_column, lucide_icon, display_label) -- all 40
 # columns of leave4day_sub_admins, grouped as on the Sub-Admins page.
 # This list also drives the sub-admin permissions page UI (sub_admins.html
 # should eventually import PERMISSION_DEFINITIONS instead of hardcoding its
@@ -49,6 +49,7 @@ PERMISSION_DEFINITIONS = [
     ('can_file_requests'         , 'file-text'         , 'File Requests'),
     ('can_view_tickets'          , 'ticket'            , 'View OT/RDW Tickets'),
     ('can_team_calendar'         , 'calendar'          , 'Leave Calendar (all leavers)'),
+    ('can_sl_verification'       , 'stethoscope'       , 'SL Verification (HR)'),
     # ── People & HR
     ('can_pim'                   , 'scan-face'         , 'Employee Database (PIM)'),
     ('can_requirements'          , 'clipboard-check'   , 'Requirements'),
