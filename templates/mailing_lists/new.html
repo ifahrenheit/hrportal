@@ -1,0 +1,156 @@
+{% extends "base.html" %}
+{% block title %}New Mailing List{% endblock %}
+{% block page_title %}Mailing Lists{% endblock %}
+
+{% block content %}
+<style>
+  .ml-type { display:grid; grid-template-columns:repeat(auto-fit, minmax(240px, 1fr)); gap:.75rem; }
+  .ml-type label { display:block; border:1px solid var(--border); border-radius:12px; padding:.75rem 1rem; cursor:pointer; height:100%; }
+  .ml-type input:checked + .ml-type-body { color:var(--accent); }
+  .ml-type label:has(input:checked) { border-color:var(--accent); box-shadow:0 0 0 3px rgba(30,95,212,.12); }
+  .ml-type .rt-muted { color:var(--text-muted); }
+  .ml-addr { display:flex; align-items:stretch; gap:0; max-width:560px; }
+  .ml-addr .form-control { border-top-right-radius:0; border-bottom-right-radius:0; }
+  .ml-addr .ml-at { display:flex; align-items:center; padding:0 .6rem; border:1px solid var(--border); border-left:0; border-right:0; background:var(--bg); color:var(--text-muted); }
+  .ml-addr .form-select { border-top-left-radius:0; border-bottom-left-radius:0; max-width:220px; }
+  .ml-section { margin-top:1.25rem; }
+  .ml-section > label, .ml-label { display:block; font-weight:600; font-size:.88rem; margin-bottom:.3rem; }
+</style>
+
+<div class="rt-card" style="max-width:820px">
+  <a class="rt-muted" href="{{ url_for('mailing_lists.index') }}"><i data-lucide="arrow-left" style="width:14px;height:14px"></i> All mailing lists</a>
+  <h5 class="rt-card-title mt-2">New mailing list</h5>
+
+  {% if errors %}
+  <div class="alert alert-danger">
+    {% if errors|length == 1 %}{{ errors[0] }}{% else %}
+    <ul class="mb-0">{% for e in errors %}<li>{{ e }}</li>{% endfor %}</ul>{% endif %}
+  </div>
+  {% endif %}
+
+  <form method="post" id="newForm" autocomplete="off">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+    <div class="ml-section">
+      <span class="ml-label">Type</span>
+      <div class="ml-type">
+        <label>
+          <input class="form-check-input me-1" type="radio" name="list_type" value="forwarder" {{ 'checked' if form.list_type == 'forwarder' }}>
+          <span class="ml-type-body"><strong>Forwarder</strong></span>
+          <div class="rt-muted small mt-1">Mail to the address is copied straight to each member's inbox. Simple, no extra settings.</div>
+        </label>
+        <label>
+          <input class="form-check-input me-1" type="radio" name="list_type" value="mailman" {{ 'checked' if form.list_type == 'mailman' }}>
+          <span class="ml-type-body"><strong>Mailman list</strong></span>
+          <div class="rt-muted small mt-1">A real mailing list with its own password, archives and subscribe rules.</div>
+        </label>
+      </div>
+    </div>
+
+    <div class="ml-section">
+      <label for="local">Address</label>
+      <div class="ml-addr">
+        <input type="text" class="form-control" id="local" name="local" value="{{ form.local }}" required
+               maxlength="64" pattern="[a-z0-9]([a-z0-9._\-]*[a-z0-9])?" placeholder="e.g. team-leads"
+               title="Lowercase letters, numbers, dots, dashes and underscores">
+        <span class="ml-at">@</span>
+        <select class="form-select" name="domain" aria-label="Domain">
+          {% for d in domains %}<option value="{{ d }}" {{ 'selected' if d == form.domain }}>{{ d }}</option>{% endfor %}
+        </select>
+      </div>
+      <div class="rt-muted mt-1">Must not already be an email account, forwarder or Mailman list.</div>
+    </div>
+
+    <div class="ml-section" data-for="mailman">
+      <label for="password">List password</label>
+      <div class="input-group" style="max-width:560px">
+        <input type="password" class="form-control" id="password" name="password" autocomplete="new-password">
+        <button type="button" class="btn btn-outline-secondary" id="pwShow" title="Show / hide"><i data-lucide="eye"></i></button>
+        <button type="button" class="btn btn-outline-secondary" id="pwGen"><i class="me-1" data-lucide="wand-sparkles"></i>Generate</button>
+      </div>
+      <input type="password" class="form-control mt-2" id="password2" name="password2" autocomplete="new-password"
+             placeholder="Password (again)" style="max-width:560px">
+      <div class="rt-muted mt-1">
+        cPanel requires strength {{ min_strength }} or more and refuses a weaker one; Generate always passes.
+        The portal manages members without this password;
+        it's only needed to log into Mailman's own admin page, so keep it somewhere safe.
+      </div>
+    </div>
+
+    <div class="ml-section" data-for="mailman">
+      <span class="ml-label">Access type</span>
+      <div class="ml-type">
+        <label>
+          <input class="form-check-input me-1" type="radio" name="access" value="public" {{ 'checked' if form.access == 'public' }}>
+          <strong>Public</strong>
+          <div class="rt-muted small mt-1">Shown on the server's list of mailing lists, anyone can ask to subscribe, and archives are open.</div>
+        </label>
+        <label>
+          <input class="form-check-input me-1" type="radio" name="access" value="private" {{ 'checked' if form.access == 'private' }}>
+          <strong>Private</strong>
+          <div class="rt-muted small mt-1">Not shown on that list, subscriptions need admin approval, and only members can read archives.</div>
+        </label>
+      </div>
+    </div>
+
+    <div class="ml-section">
+      <label for="members"><span id="membersLabel">Forward to</span></label>
+      <textarea class="form-control" id="members" name="members" rows="4"
+                placeholder="juan.delacruz@cohere.ph, maria.santos@cohere.ph">{{ form.members }}</textarea>
+      <div class="rt-muted mt-1" id="membersHelp">One or more addresses (commas or new lines, up to {{ max_batch }}).</div>
+      <label class="form-check mt-2 mb-0" data-for="mailman">
+        <input class="form-check-input" type="checkbox" name="notify" value="1" {{ 'checked' if form.notify }}>
+        <span class="form-check-label">Send Mailman's welcome email to these members</span>
+      </label>
+    </div>
+
+    <div class="d-flex gap-2 mt-4">
+      <button type="submit" class="btn btn-primary" id="createBtn"><i class="me-1" data-lucide="plus"></i>Create</button>
+      <a class="btn btn-outline-secondary" href="{{ url_for('mailing_lists.index') }}">Cancel</a>
+    </div>
+  </form>
+</div>
+
+{% include "routines/_table_assets.html" %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+  var form = document.getElementById('newForm');
+  var pw = document.getElementById('password'), pw2 = document.getElementById('password2');
+
+  function sync() {
+    var type = form.querySelector('input[name="list_type"]:checked').value;
+    var mm = type === 'mailman';
+    form.querySelectorAll('[data-for="mailman"]').forEach(function (el) { el.style.display = mm ? '' : 'none'; });
+    pw.required = pw2.required = mm;
+    document.getElementById('members').required = !mm;
+    document.getElementById('membersLabel').textContent = mm ? 'First members (optional)' : 'Forward to';
+  }
+  form.querySelectorAll('input[name="list_type"]').forEach(function (r) { r.addEventListener('change', sync); });
+  sync();
+
+  document.getElementById('pwShow').addEventListener('click', function () {
+    var t = pw.type === 'password' ? 'text' : 'password';
+    pw.type = pw2.type = t;
+  });
+  // Same idea as cPanel's Password Generator: 20 random characters from all four classes.
+  document.getElementById('pwGen').addEventListener('click', function () {
+    var sets = ['abcdefghijkmnpqrstuvwxyz', 'ABCDEFGHJKLMNPQRSTUVWXYZ', '23456789', '!@#$%^&*-_=+'];
+    var all = sets.join(''), out = [], rnd = new Uint32Array(40);
+    crypto.getRandomValues(rnd);
+    sets.forEach(function (s, i) { out.push(s[rnd[i] % s.length]); });
+    for (var i = out.length; i < 20; i++) out.push(all[rnd[i] % all.length]);
+    for (var j = out.length - 1; j > 0; j--) { var k = rnd[20 + j] % (j + 1); var t = out[j]; out[j] = out[k]; out[k] = t; }
+    pw.value = pw2.value = out.join('');
+    pw.type = pw2.type = 'text';
+  });
+
+  form.addEventListener('submit', function (e) {
+    if (pw.required && pw.value !== pw2.value) { e.preventDefault(); alert('The two passwords do not match.'); return; }
+    var b = document.getElementById('createBtn'); b.disabled = true; b.textContent = 'Creating…';
+  });
+})();
+</script>
+{% endblock %}

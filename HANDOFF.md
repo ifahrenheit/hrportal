@@ -8,6 +8,34 @@
 
 ---
 
+## 2026-10-20 — Mailing Lists, step 3: create new forwarder groups and Mailman lists
+Commit: this one · Branch: `main`
+
+### What was built / changed
+- `/admin/mailing-lists/new` (`modules/mailing_lists.py` `new()` + `create_group()`; `templates/mailing_lists/new.html`). Same inputs as cPanel's Add Forwarder / Create a Mailing List forms. A **New mailing list** button is on the index page.
+- Checks: name rules, domain from UAPI `list_mail_domains`, refuses an address that already exists (mailbox via `list_pops`, forwarder or list; fetched fresh). Forwarders need at least one target.
+- Mailman: UAPI `add_list` (`list`, `domain`, `password`, `private`), then first members through `change_members`. Forwarder: `add_forwarder` per target. Both are verified by read-back and audited (`create` plus `add` rows).
+- `_uapi()` takes a `module` arg (used for `PasswdStrength::get_required_strength`). Removed the stale "read-only" label on the index page.
+- Tests: `tests/test_mailing_lists.py`, now 25.
+
+### Why / decisions
+- cPanel has **no** UAPI to score a password (`PasswdStrength::get_password_strength` doesn't exist). `add_list` enforces the 65 minimum itself, so the portal shows cPanel's error. The Generate button makes 20 characters with all four character types.
+- First live use (by the user, 2026-10-19 23:34): removed 2 members from Mailman `l2-agents@`, both verified **done**. The Mailman write path is proven; the forwarder write path and `add_list` are not yet used live.
+
+### Database changes
+```sql
+-- central_db
+ALTER TABLE mailing_list_audit MODIFY action ENUM('add','remove','create') NOT NULL;
+```
+
+### Open items / next steps
+- [ ] First live create (forwarder and Mailman), and the first live forwarder add/remove.
+- [ ] Confirm `add_list` really rejects a weak password with a readable error. Not tested, to avoid creating a junk list.
+- [ ] Delete a group address; offboarding cleanup across all groups.
+- [ ] Older items (session cookie size, 3 pre-existing test failures, `.env` quoting): see 2026-10-19 (3).
+
+---
+
 ## 2026-10-19 (4) — Mailing Lists, step 2: add/remove members, audit log; type filter
 Commits: `1b53a4d` (type filter), this one · Branch: `main`
 

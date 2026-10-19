@@ -4,7 +4,22 @@ Group email addresses on the cohere cPanel account, viewed in the portal at
 `/admin/mailing-lists` (Admin menu → Mailing Lists). Code: [modules/mailing_lists.py](../modules/mailing_lists.py),
 templates in [templates/mailing_lists/](../templates/mailing_lists/).
 
-**Status:** step 2. Members can be viewed, added and removed. Creating or deleting group addresses is still done in cPanel.
+**Status:** step 3. Members can be viewed, added and removed, and new group addresses created. Deleting a group address is still done in cPanel.
+
+## Creating a group address
+**New mailing list** on the index page (`/admin/mailing-lists/new`). The inputs match cPanel's own forms:
+
+| | Forwarder ("Add Forwarder") | Mailman list ("Create a Mailing List") |
+|---|---|---|
+| Address | name + domain | list name + domain |
+| Members | forward-to addresses, **at least one** | first members, optional (welcome email optional) |
+| Extra | — | password + again (Generate button), access type Public / Private (UAPI `add_list` `private=0/1`) |
+
+- **Name:** lowercase letters, numbers, `.`, `_`, `-`, starting and ending with a letter or number.
+- **Domain:** one of cPanel's mail domains (UAPI `list_mail_domains`). Defaults to `CPANEL_DOMAIN`.
+- **Refused** if the address already exists as an email account (`list_pops`), forwarder or Mailman list (checked fresh at submit).
+- **Mailman password:** cPanel's minimum strength (65, from `PasswdStrength::get_required_strength`) is enforced by `add_list` itself. cPanel has no API to score a password in advance, so a weak one comes back as cPanel's own error. The portal only refuses passwords under 8 characters or mismatched. The password is never stored, logged or shown again.
+- **Verification:** afterwards the list is read back. A `create` row and per-member `add` rows go to the audit table.
 
 ## Adding and removing members
 - **Add:** paste one or more addresses (commas, spaces or new lines; up to 300) on a group's page.
@@ -44,5 +59,5 @@ Existing `CPANEL_HOST`, `CPANEL_PORT`, `CPANEL_USERNAME`, `CPANEL_API_TOKEN`. Op
 (default `https://cohere.ph/mailman`).
 
 ## Next steps
-1. Create/delete group addresses.
+1. Delete a group address.
 2. Offboarding: remove a separated employee from every group.

@@ -19,7 +19,10 @@
       </select>
     </div>
     <span class="rt-muted pb-2" id="mlCount"></span>
-    <span class="rt-muted pb-2 ms-auto">{{ n_forwarders }} forwarder groups · {{ n_mailman }} Mailman lists · read-only</span>
+    <span class="rt-muted pb-2 ms-auto">{{ n_forwarders }} forwarder groups · {{ n_mailman }} Mailman lists</span>
+    <a class="btn btn-primary" href="{{ url_for('mailing_lists.new') }}">
+      <i class="me-1" data-lucide="plus"></i>New mailing list
+    </a>
     <a class="btn btn-outline-secondary" id="mlRefresh" href="{{ url_for('mailing_lists.index', refresh=1) }}">
       <i class="me-1" data-lucide="refresh-cw"></i>Refresh from cPanel
     </a>

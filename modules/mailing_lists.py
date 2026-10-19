@@ -1,7 +1,8 @@
 """
 Mailing Lists blueprint: group email addresses that live in cPanel, managed
-from the portal instead of cPanel. Members can be viewed, added and removed;
-creating/deleting the group addresses themselves is still done in cPanel.
+from the portal instead of cPanel. Members can be viewed, added and removed,
+and new group addresses created (same inputs as cPanel's own forms);
+deleting a group address is still done in cPanel.
 
 Two kinds of group address exist on the cohere cPanel account:
   forwarder  cPanel Email forwarders (one address -> many inboxes). UAPI
@@ -215,8 +216,8 @@ def _cpanel_headers():
                              f"{os.environ.get('CPANEL_API_TOKEN', '')}"}
 
 
-def _uapi(fn, params=None, write=False):
-    url = f"{_cpanel_base()}/Email/{fn}"
+def _uapi(fn, params=None, write=False, module="Email"):
+    url = f"{_cpanel_base()}/{module}/{fn}"
     if write:
         r = requests.post(url, headers=_cpanel_headers(), data=params or {}, verify=False, timeout=HTTP_TIMEOUT)
     else:
@@ -224,7 +225,7 @@ def _uapi(fn, params=None, write=False):
     r.raise_for_status()
     j = r.json()
     if not j.get("status"):
-        raise RuntimeError(f"cPanel Email::{fn} failed: {'; '.join(j.get('errors') or []) or 'unknown error'}")
+        raise RuntimeError(f"cPanel {module}::{fn} failed: {'; '.join(j.get('errors') or []) or 'unknown error'}")
     return j.get("data")
 
 
@@ -494,6 +495,107 @@ def change_members(list_type, address, action, emails, notify=False):
     return results
 
 
+# ── Creating a group address ────────────────────────────────────────────────
+# Mirrors cPanel's own forms: "Add Forwarder" (address, domain, forward-to
+# address) and "Create a Mailing List" (list name, domain, password, access
+# type Public/Private). The portal additionally takes several first members.
+
+_LOCAL_RE = re.compile(r"^[a-z0-9](?:[a-z0-9._-]{0,62}[a-z0-9])?$")
+
+
+def validate_local_part(local):
+    """None if ok, else a message. Letters, digits, '.', '_' and '-' only,
+    starting and ending with a letter/digit, no '..'."""
+    if not local:
+        return "Enter the address name (the part before @)."
+    if not _LOCAL_RE.match(local) or ".." in local:
+        return ("Use only lowercase letters, numbers, dots, dashes and underscores, "
+                "starting and ending with a letter or number.")
+    return None
+
+
+def find_conflict(address, forwarders, mailman_lists, mailboxes):
+    """What already uses this address, or None."""
+    if address in mailboxes:
+        return "an email account"
+    if address in forwarders:
+        return "a forwarder group"
+    if address in mailman_lists:
+        return "a Mailman list"
+    return None
+
+
+def fetch_mail_domains(refresh=False):
+    return _cached("mail_domains",
+                   lambda: sorted((x.get("domain") or "").lower() for x in _uapi("list_mail_domains") or []
+                                  if x.get("domain")), refresh)
+
+
+def fetch_mailboxes(refresh=False):
+    return _cached("mailboxes",
+                   lambda: {(x.get("email") or "").lower() for x in _uapi("list_pops") or []}, refresh)
+
+
+def required_password_strength():
+    """cPanel's minimum for list passwords. cPanel has no API to score a
+    password; Email::add_list itself rejects one that is too weak."""
+    data, _ = _cached("pw_strength", lambda: _uapi("get_required_strength", {"app": "list"},
+                                                   module="PasswdStrength"))
+    return int((data or {}).get("strength") or 0)
+
+
+def _audit_create(list_type, address, result, detail):
+    _write_audit(list_type, address, "create", [(address, result, detail)])
+
+
+def create_group(list_type, local, domain, members, password=None, private=False, notify=False):
+    """Create a forwarder group or Mailman list, then add the first members.
+    Returns (created: bool, message, member_results)."""
+    address = f"{local}@{domain}"
+    forwarders, _ = fetch_forwarders(refresh=True)
+    mailman, _ = fetch_mailman_lists(refresh=True)
+    mailboxes, _ = fetch_mailboxes(refresh=True)
+    conflict = find_conflict(address, forwarders, mailman, mailboxes)
+    if conflict:
+        return False, f"{address} already exists as {conflict}.", []
+
+    if list_type == "mailman":
+        try:
+            _uapi("add_list", {"list": local, "domain": domain, "password": password,
+                               "private": "1" if private else "0"}, write=True)
+        except Exception as ex:
+            logger.exception("mailing lists: add_list %s failed", address)
+            _audit_create(list_type, address, "failed", str(ex))
+            return False, f"cPanel could not create the list: {ex}", []
+        mailman, _ = fetch_mailman_lists(refresh=True)
+        if address not in mailman:
+            _audit_create(list_type, address, "failed", "List did not show up when read back.")
+            return False, "cPanel did not report an error, but the new list did not show up.", []
+        _audit_create(list_type, address, "done", "Private" if private else "Public")
+        results = change_members(list_type, address, "add", members, notify=notify) if members else []
+        return True, f"Mailman list {address} created.", results
+
+    # Forwarder: the group exists once its first forward-to address is added.
+    errors = {}
+    for e in members:
+        try:
+            forwarder_change(address, "add", e)
+        except Exception as ex:
+            logger.exception("mailing lists: add_forwarder %s -> %s failed", address, e)
+            errors[e] = str(ex)
+    forwarders, _ = fetch_forwarders(refresh=True)
+    after = forwarders.get(address, [])
+    verified = verify_change("add", members, after, errors)
+    results = [(e,) + verified[e] for e in members]
+    created = bool(after)
+    _audit_create(list_type, address, "done" if created else "failed",
+                  None if created else "No forwarder showed up when read back.")
+    _write_audit(list_type, address, "add", results)
+    if not created:
+        return False, "cPanel did not create the forwarder group.", results
+    return True, f"Forwarder group {address} created.", results
+
+
 # ── Routes ──────────────────────────────────────────────────────────────────
 
 @mailing_lists_bp.route("/")
@@ -521,6 +623,81 @@ def index():
     both = sorted(set(forwarders) & set(mailman))
     return render_template("mailing_lists/index.html", rows=rows, error=error, both=both,
                            n_forwarders=len(forwarders), n_mailman=len(mailman))
+
+
+@mailing_lists_bp.route("/new", methods=["GET", "POST"])
+@_access_required
+def new():
+    try:
+        domains, _ = fetch_mail_domains()
+        min_strength = required_password_strength()
+    except Exception as e:
+        logger.exception("mailing lists: reading cPanel domains failed")
+        flash(f"Could not read from cPanel: {e}", "danger")
+        return redirect(url_for("mailing_lists.index"))
+    default_domain = os.environ.get("CPANEL_DOMAIN", "cohere.ph").lower()
+    form = {"list_type": "forwarder", "local": "", "domain": default_domain if default_domain in domains
+            else (domains[0] if domains else ""), "members": "", "access": "public", "notify": False}
+
+    def render(**kw):
+        return render_template("mailing_lists/new.html", form=form, domains=domains,
+                               min_strength=min_strength, max_batch=MAX_BATCH, **kw)
+
+    if request.method == "GET":
+        return render()
+    if not validate_csrf():
+        flash("Your session expired. Please try again.", "danger")
+        return render()
+
+    f = request.form
+    form.update({
+        "list_type": f.get("list_type") if f.get("list_type") in LIST_TYPES else "forwarder",
+        "local": (f.get("local") or "").strip().lower(),
+        "domain": (f.get("domain") or "").strip().lower(),
+        "members": f.get("members") or "",
+        "access": "private" if f.get("access") == "private" else "public",
+        "notify": f.get("notify") == "1",
+    })
+    password, password2 = f.get("password") or "", f.get("password2") or ""
+    members, invalid = parse_email_input(form["members"])
+    address = f"{form['local']}@{form['domain']}"
+    if address in members:
+        members.remove(address)
+
+    errors = []
+    msg = validate_local_part(form["local"])
+    if msg:
+        errors.append(msg)
+    if form["domain"] not in domains:
+        errors.append("Choose one of the domains on the list.")
+    if invalid:
+        errors.append("These are not valid email addresses: " + ", ".join(invalid))
+    if len(members) > MAX_BATCH:
+        errors.append(f"At most {MAX_BATCH} members at a time.")
+    if form["list_type"] == "forwarder" and not members:
+        errors.append("A forwarder needs at least one address to forward to.")
+    if form["list_type"] == "mailman":
+        if not password:
+            errors.append("Enter a password for the list.")
+        elif password != password2:
+            errors.append("The two passwords do not match.")
+        elif len(password) < 8:
+            errors.append("The password is too short. Use at least 8 characters, or Generate.")
+    if errors:
+        return render(errors=errors)
+
+    try:
+        created, message, results = create_group(
+            form["list_type"], form["local"], form["domain"], members,
+            password=password, private=form["access"] == "private", notify=form["notify"])
+    except Exception as e:
+        logger.exception("mailing lists: create %s failed", address)
+        return render(errors=[f"Could not create {address}: {e}"])
+    if not created:
+        return render(errors=[message])
+    flash(message, "success")
+    _flash_results("add", results)
+    return redirect(url_for("mailing_lists.detail", list_type=form["list_type"], address=address))
 
 
 @mailing_lists_bp.route("/<list_type>/<path:address>")

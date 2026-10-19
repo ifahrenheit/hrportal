@@ -214,5 +214,112 @@ class ChangeRouteTests(unittest.TestCase):
 
 
 
+class CreateTests(unittest.TestCase):
+    def test_validate_local_part(self):
+        for ok in ("team", "team-leads", "qa_2", "a.b", "x"):
+            self.assertIsNone(ml.validate_local_part(ok), ok)
+        for bad in ("", "-team", "team-", "a..b", "Team Leads", "a@b", "x" * 65, ".x"):
+            self.assertIsNotNone(ml.validate_local_part(bad), bad)
+
+    def test_find_conflict(self):
+        self.assertEqual(ml.find_conflict("hr@x.ph", {}, {}, {"hr@x.ph"}), "an email account")
+        self.assertEqual(ml.find_conflict("hr@x.ph", {"hr@x.ph": []}, {}, set()), "a forwarder group")
+        self.assertEqual(ml.find_conflict("hr@x.ph", {}, {"hr@x.ph": {}}, set()), "a Mailman list")
+        self.assertIsNone(ml.find_conflict("new@x.ph", {"hr@x.ph": []}, {}, set()))
+
+    def _patch_reads(self, forwarders=None, mailman=None, mailboxes=None):
+        return [mock.patch.object(ml, "fetch_forwarders", side_effect=forwarders or (lambda **k: ({}, 0))),
+                mock.patch.object(ml, "fetch_mailman_lists", side_effect=mailman or (lambda **k: ({}, 0))),
+                mock.patch.object(ml, "fetch_mailboxes", return_value=(mailboxes or set(), 0))]
+
+    def test_create_refuses_existing_address(self):
+        p = self._patch_reads(mailboxes={"hr@x.ph"})
+        with p[0], p[1], p[2], mock.patch.object(ml, "_uapi") as u:
+            created, msg, _ = ml.create_group("forwarder", "hr", "x.ph", ["a@x.ph"])
+        self.assertFalse(created)
+        self.assertIn("email account", msg)
+        u.assert_not_called()
+
+    def test_create_mailman_calls_add_list_then_adds_members(self):
+        reads = iter([({}, 0), ({"new@x.ph": {"listid": "new_x.ph"}}, 0)])
+        p = self._patch_reads(mailman=lambda **k: next(reads))
+        with p[0], p[1], p[2], mock.patch.object(ml, "_uapi") as u, \
+             mock.patch.object(ml, "_write_audit") as audit, \
+             mock.patch.object(ml, "change_members", return_value=[("a@x.ph", "done", None)]) as cm:
+            created, _, results = ml.create_group("mailman", "new", "x.ph", ["a@x.ph"],
+                                                  password="pw", private=True)
+        self.assertTrue(created)
+        u.assert_called_once_with("add_list", {"list": "new", "domain": "x.ph", "password": "pw",
+                                               "private": "1"}, write=True)
+        cm.assert_called_once_with("mailman", "new@x.ph", "add", ["a@x.ph"], notify=False)
+        self.assertEqual(audit.call_args.args[2], "create")
+        # the password never goes to the audit log
+        self.assertNotIn("pw", repr(audit.call_args_list))
+
+    def test_create_forwarder_adds_each_target_and_verifies(self):
+        reads = iter([({}, 0), ({"new@x.ph": ["a@x.ph"]}, 0)])
+        p = self._patch_reads(forwarders=lambda **k: next(reads))
+        with p[0], p[1], p[2], mock.patch.object(ml, "forwarder_change") as fc, \
+             mock.patch.object(ml, "_write_audit") as audit:
+            created, _, results = ml.create_group("forwarder", "new", "x.ph", ["a@x.ph", "b@x.ph"])
+        self.assertTrue(created)
+        self.assertEqual(fc.call_count, 2)
+        self.assertEqual([(e, r) for e, r, _ in results], [("a@x.ph", "done"), ("b@x.ph", "failed")])
+        self.assertEqual([c.args[2] for c in audit.call_args_list], ["create", "add"])
+
+
+class NewRouteTests(unittest.TestCase):
+    def setUp(self):
+        app = Flask(__name__, template_folder=os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "templates"))
+        app.secret_key = "test"
+        app.register_blueprint(ml.mailing_lists_bp)
+        app.jinja_env.globals["csrf_token"] = lambda: "good"
+        self.client = app.test_client()
+        with self.client.session_transaction() as s:
+            s["user"] = {"email": "x@cohere.ph"}
+            s["permissions"] = {"can_mailing_lists": True}
+            s["_csrf_token"] = "good"
+        # base.html needs the whole portal; render the context instead
+        self.patches = [mock.patch.object(ml, "fetch_mail_domains", return_value=(["cohere.ph"], 0)),
+                        mock.patch.object(ml, "required_password_strength", return_value=65),
+                        mock.patch.object(ml, "render_template", side_effect=lambda t, **kw: repr(kw))]
+        for p in self.patches:
+            p.start()
+        self.addCleanup(lambda: [p.stop() for p in self.patches])
+
+    def post(self, **data):
+        base = {"csrf_token": "good", "list_type": "mailman", "local": "newlist", "domain": "cohere.ph",
+                "password": "x", "password2": "x", "members": "", "access": "public"}
+        base.update(data)
+        return self.client.post("/admin/mailing-lists/new", data=base)
+
+    def test_short_or_mismatched_password_is_refused_before_creating(self):
+        with mock.patch.object(ml, "create_group") as cg:
+            short = self.post(password="abc", password2="abc").get_data(as_text=True)
+            mismatch = self.post(password="Abcdefgh1234!", password2="Abcdefgh1234?").get_data(as_text=True)
+        self.assertIn("too short", short)
+        self.assertIn("do not match", mismatch)
+        cg.assert_not_called()
+
+    def test_forwarder_needs_a_target_and_valid_domain(self):
+        with mock.patch.object(ml, "create_group") as cg:
+            r = self.post(list_type="forwarder", domain="evil.com")
+        body = r.get_data(as_text=True)
+        self.assertIn("at least one address", body)
+        self.assertIn("Choose one of the domains", body)
+        cg.assert_not_called()
+
+    def test_good_request_creates_and_redirects(self):
+        with mock.patch.object(ml, "create_group", return_value=(True, "ok", [])) as cg:
+            r = self.post(password="Str0ng!pass", password2="Str0ng!pass", access="private")
+        self.assertEqual(r.status_code, 302)
+        self.assertTrue(r.headers["Location"].endswith("/admin/mailing-lists/mailman/newlist@cohere.ph"))
+        cg.assert_called_once_with("mailman", "newlist", "cohere.ph", [], password="Str0ng!pass",
+                                   private=True, notify=False)
+        # the password is never echoed back into the page
+        self.assertNotIn("Str0ng", r.get_data(as_text=True))
+
+
+
 if __name__ == "__main__":
     unittest.main()
