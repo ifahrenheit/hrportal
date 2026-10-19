@@ -754,19 +754,25 @@ document.addEventListener('DOMContentLoaded', function(){
 });
 
 async function markRweStage(reportNumber, action, btn){
+  // Comment logged with each stage change, so the IR history shows which step was done.
   const labels = {
-    'rwe_for_signature': 'RWE document created — for TL signature.',
-    'rwe_for_service':   'RWE signed — for service to agent.',
-    'rwe_served':        'RWE has been served.'
+    'rwe_for_signature':    'RWE document created — for TL signature.',
+    'rwe_for_service':      'RWE signed by TL — for service to agent.',
+    'awaiting_explanation': 'RWE served to agent — awaiting written explanation.',
+    'forwarded':            'Written explanation received — forwarded to SOM/TL for decision.',
+    'for_memo':             'SOM/TL decided to proceed with disciplinary action — for memo.',
+    'resolved':             'Memo created — IR resolved.',
+    'rwe_served':           'RWE has been served.'
   };
-  if(!confirm('Move ' + reportNumber + ' to next stage?')) return;
+  const stepName = btn.textContent.trim();
+  if(!confirm(reportNumber + ': ' + stepName + '?\n\n' + (labels[action] || ''))) return;
   btn.disabled = true;
   btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span>';
   try {
     const fd = new FormData();
     fd.append('csrf_token', getCsrfToken());
     fd.append('report_number', reportNumber);
-    fd.append('comment', labels[action] || 'Status updated.');
+    fd.append('comment', labels[action] || ('Stage updated: ' + stepName + '.'));
     fd.append('status_action', action);
     const r = await fetch('/incident-reports/add-comment', {method:'POST', body:fd});
     const d = await r.json();
