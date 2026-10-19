@@ -7,12 +7,20 @@
   <div class="rt-toolbar">
     <div style="min-width:260px">
       <label for="mlSearch">Search group addresses</label>
-      <input type="text" id="mlSearch" class="form-control" data-table-search="#mlTable"
+      <input type="text" id="mlSearch" class="form-control"
              placeholder="Address, type, list admin…">
     </div>
-    <span class="rt-muted pb-2" data-table-count="#mlTable"></span>
+    <div>
+      <label for="mlType">Type</label>
+      <select class="form-select" id="mlType">
+        <option value="">All ({{ n_forwarders + n_mailman }})</option>
+        <option value="forwarder">Forwarder ({{ n_forwarders }})</option>
+        <option value="mailman">Mailman ({{ n_mailman }})</option>
+      </select>
+    </div>
+    <span class="rt-muted pb-2" id="mlCount"></span>
     <span class="rt-muted pb-2 ms-auto">{{ n_forwarders }} forwarder groups · {{ n_mailman }} Mailman lists · read-only</span>
-    <a class="btn btn-outline-secondary" href="{{ url_for('mailing_lists.index', refresh=1) }}">
+    <a class="btn btn-outline-secondary" id="mlRefresh" href="{{ url_for('mailing_lists.index', refresh=1) }}">
       <i class="me-1" data-lucide="refresh-cw"></i>Refresh from cPanel
     </a>
   </div>
@@ -45,7 +53,7 @@
       <tbody>
         {% for r in rows %}
         {% set s = r.summary %}
-        <tr {% if not s %}data-summary-url="{{ url_for('mailing_lists.api_summary', list_type=r.type, address=r.address) }}"{% endif %}>
+        <tr data-type="{{ r.type }}" {% if not s %}data-summary-url="{{ url_for('mailing_lists.api_summary', list_type=r.type, address=r.address) }}"{% endif %}>
           <td><a href="{{ url_for('mailing_lists.detail', list_type=r.type, address=r.address) }}">{{ r.address }}</a></td>
           <td>
             {% if r.type == 'mailman' %}<span class="rt-badge pass">Mailman</span>
@@ -72,6 +80,39 @@
 
 {% block scripts %}
 <script>
+// Search + type filter. The type is kept in ?type= so a refresh or bookmark keeps it.
+(function () {
+  var search = document.getElementById('mlSearch');
+  var type = document.getElementById('mlType');
+  var count = document.getElementById('mlCount');
+  var refresh = document.getElementById('mlRefresh');
+  var refreshBase = refresh.getAttribute('href');
+  var rows = Array.prototype.filter.call(document.querySelectorAll('#mlTable tbody tr'),
+                                         function (r) { return !r.classList.contains('empty-row'); });
+  var params = new URLSearchParams(location.search);
+  if (['forwarder', 'mailman'].indexOf(params.get('type')) !== -1) type.value = params.get('type');
+  function apply() {
+    var q = search.value.toLowerCase().trim(), t = type.value, shown = 0;
+    rows.forEach(function (r) {
+      var hit = (!t || r.getAttribute('data-type') === t)
+             && (!q || r.textContent.toLowerCase().indexOf(q) !== -1);
+      r.style.display = hit ? '' : 'none';
+      if (hit) shown++;
+    });
+    count.textContent = shown + ' of ' + rows.length;
+    refresh.setAttribute('href', refreshBase + (t ? '&type=' + t : ''));
+  }
+  search.addEventListener('input', apply);
+  type.addEventListener('change', function () {
+    var p = new URLSearchParams(location.search);
+    p.delete('refresh');
+    if (type.value) p.set('type', type.value); else p.delete('type');
+    history.replaceState(null, '', location.pathname + (p.toString() ? '?' + p : ''));
+    apply();
+  });
+  apply();
+})();
+
 // Mailman member counts need a separate login per list, so load them a few at a time.
 (function () {
   var rows = Array.prototype.slice.call(document.querySelectorAll('tr[data-summary-url]'));
