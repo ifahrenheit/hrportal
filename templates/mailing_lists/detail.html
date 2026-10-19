@@ -3,6 +3,7 @@
 {% block page_title %}Mailing Lists{% endblock %}
 
 {% block content %}
+{% set change_url = url_for('mailing_lists.change', list_type=list_type, address=address) %}
 <div class="rt-card">
   <div class="rt-toolbar">
     <div>
@@ -32,46 +33,216 @@
   {% endif %}
 </div>
 
+{% if not error %}
 <div class="rt-card">
-  <div class="rt-toolbar mb-3">
-    <div style="min-width:260px">
-      <label for="memSearch">Search members</label>
-      <input type="text" id="memSearch" class="form-control" data-table-search="#memTable"
-             placeholder="Email, name, group, status…">
+  <h6 class="rt-card-title"><i class="me-1" data-lucide="user-plus"></i>Add members</h6>
+  <form method="post" action="{{ change_url }}" id="addForm">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <input type="hidden" name="action" value="add">
+    <label for="addEmails" class="rt-muted">Email addresses, one per line or separated by commas (up to {{ max_batch }})</label>
+    <textarea class="form-control mb-2" id="addEmails" name="emails" rows="3" required
+              placeholder="juan.delacruz@cohere.ph, maria.santos@cohere.ph"></textarea>
+    <div class="d-flex flex-wrap align-items-center gap-3">
+      {% if list_type == 'mailman' %}
+      <label class="form-check mb-0">
+        <input class="form-check-input" type="checkbox" name="notify" value="1">
+        <span class="form-check-label">Send Mailman's welcome email</span>
+      </label>
+      {% endif %}
+      <button type="submit" class="btn btn-primary ms-auto" data-busy="Adding…">
+        <i class="me-1" data-lucide="user-plus"></i>Add
+      </button>
     </div>
-    <span class="rt-muted pb-2" data-table-count="#memTable"></span>
-  </div>
+  </form>
+</div>
+{% endif %}
+
+<div class="rt-card">
+  <form method="post" action="{{ change_url }}" id="removeForm">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <input type="hidden" name="action" value="remove">
+    <input type="hidden" name="notify" value="0" id="removeNotify">
+    <div class="rt-toolbar mb-3">
+      <div style="min-width:260px">
+        <label for="memSearch">Search members</label>
+        <input type="text" id="memSearch" class="form-control" data-table-search="#memTable"
+               placeholder="Email, name, group, status…">
+      </div>
+      <span class="rt-muted pb-2" data-table-count="#memTable"></span>
+      {% if members %}
+      <div class="ms-auto d-flex flex-wrap gap-2">
+        {% if summary.separated %}
+        <button type="button" class="btn btn-outline-secondary" id="selSeparated">
+          <i class="me-1" data-lucide="user-x"></i>Select separated ({{ summary.separated }})
+        </button>
+        {% endif %}
+        <button type="button" class="btn btn-outline-secondary" id="selClear">Clear selection</button>
+        <button type="button" class="btn btn-danger" id="removeBtn" disabled>
+          <i class="me-1" data-lucide="user-minus"></i>Remove selected (<span id="selCount">0</span>)
+        </button>
+      </div>
+      {% endif %}
+    </div>
+    <div class="table-responsive">
+      <table class="data-table" id="memTable">
+        <thead>
+          <tr>
+            <th style="width:2rem"><input type="checkbox" class="form-check-input" id="selAll" title="Select all shown"></th>
+            <th data-sort="text">Email</th>
+            <th data-sort="text">Name</th>
+            <th data-sort="text">Employee ID</th>
+            <th data-sort="text">Group</th>
+            <th data-sort="text">Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for m in members %}
+          <tr data-kind="{{ m.kind }}">
+            <td><input type="checkbox" class="form-check-input mem-cb" name="member" value="{{ m.email }}" aria-label="Select {{ m.email }}"></td>
+            <td>{{ m.email }}</td>
+            <td>{{ m.name or '—' }}</td>
+            <td>{{ m.employee_id or '—' }}</td>
+            <td>{{ m.group_name or '—' }}</td>
+            <td data-sort-value="{{ m.kind }}">
+              {% if m.kind == 'separated' %}<span class="rt-badge fail">Separated</span>
+              {% elif m.kind == 'external' %}<span class="rt-badge off">Not in employee list</span>
+              {% else %}<span class="rt-badge on">{{ m.status }}</span>{% endif %}
+            </td>
+          </tr>
+          {% else %}
+          <tr class="empty-row"><td colspan="6">No members.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </form>
+</div>
+
+<div class="rt-card">
+  <h6 class="rt-card-title"><i class="me-1" data-lucide="history"></i>Change history</h6>
   <div class="table-responsive">
-    <table class="data-table" id="memTable">
+    <table class="data-table">
       <thead>
-        <tr>
-          <th data-sort="text">Email</th>
-          <th data-sort="text">Name</th>
-          <th data-sort="text">Employee ID</th>
-          <th data-sort="text">Group</th>
-          <th data-sort="text">Status</th>
-        </tr>
+        <tr><th>When</th><th>By</th><th>Action</th><th>Member</th><th>Result</th></tr>
       </thead>
       <tbody>
-        {% for m in members %}
+        {% for h in history %}
         <tr>
-          <td>{{ m.email }}</td>
-          <td>{{ m.name or '—' }}</td>
-          <td>{{ m.employee_id or '—' }}</td>
-          <td>{{ m.group_name or '—' }}</td>
-          <td data-sort-value="{{ m.kind }}">
-            {% if m.kind == 'separated' %}<span class="rt-badge fail">Separated</span>
-            {% elif m.kind == 'external' %}<span class="rt-badge off">Not in employee list</span>
-            {% else %}<span class="rt-badge on">{{ m.status }}</span>{% endif %}
+          <td class="text-nowrap">{{ h.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
+          <td>{{ h.actor_name or h.actor_email }}{% if h.acting_as %} <span class="rt-muted">(as {{ h.acting_as }})</span>{% endif %}</td>
+          <td>{{ 'Added' if h.action == 'add' else 'Removed' }}</td>
+          <td>{{ h.member_email }}</td>
+          <td>
+            {% if h.result == 'done' %}<span class="rt-badge on">Done</span>
+            {% elif h.result == 'failed' %}<span class="rt-badge fail" title="{{ h.detail or '' }}">Failed</span>
+            {% else %}<span class="rt-badge off" title="{{ h.detail or '' }}">Skipped</span>{% endif %}
+            {% if h.result == 'failed' and h.detail %}<div class="rt-muted">{{ h.detail }}</div>{% endif %}
           </td>
         </tr>
         {% else %}
-        <tr class="empty-row"><td colspan="5">No members.</td></tr>
+        <tr class="empty-row"><td colspan="5">No changes made from the portal yet.</td></tr>
         {% endfor %}
       </tbody>
     </table>
   </div>
 </div>
 
+<div class="modal fade" id="removeModal" tabindex="-1" aria-labelledby="removeModalTitle" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="removeModalTitle">Remove <span id="modalCount"></span> from {{ address }}?</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <p class="rt-muted mb-2">They will stop getting mail sent to {{ address }}. This changes cPanel right away.</p>
+        <ul id="modalList" class="mb-3" style="max-height:40vh;overflow:auto"></ul>
+        {% if list_type == 'mailman' %}
+        <label class="form-check mb-0">
+          <input class="form-check-input" type="checkbox" id="modalNotify">
+          <span class="form-check-label">Send Mailman's goodbye email</span>
+        </label>
+        {% endif %}
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button type="button" class="btn btn-danger" id="modalConfirm" data-busy="Removing…">
+          <i class="me-1" data-lucide="user-minus"></i>Remove
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
 {% include "routines/_table_assets.html" %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+  var boxes = Array.prototype.slice.call(document.querySelectorAll('.mem-cb'));
+  var removeBtn = document.getElementById('removeBtn');
+  var selCount = document.getElementById('selCount');
+  var selAll = document.getElementById('selAll');
+
+  function selected() { return boxes.filter(function (b) { return b.checked; }); }
+  function update() {
+    var n = selected().length;
+    if (selCount) selCount.textContent = n;
+    if (removeBtn) removeBtn.disabled = n === 0;
+  }
+  boxes.forEach(function (b) { b.addEventListener('change', update); });
+  // The search box sits inside the remove form; Enter there must not submit it.
+  document.getElementById('memSearch').addEventListener('keydown', function (e) {
+    if (e.key === 'Enter') e.preventDefault();
+  });
+
+  if (selAll) selAll.addEventListener('change', function () {
+    boxes.forEach(function (b) {
+      if (b.closest('tr').style.display !== 'none') b.checked = selAll.checked;
+    });
+    update();
+  });
+  var selSep = document.getElementById('selSeparated');
+  if (selSep) selSep.addEventListener('click', function () {
+    boxes.forEach(function (b) { if (b.closest('tr').getAttribute('data-kind') === 'separated') b.checked = true; });
+    update();
+  });
+  var selClear = document.getElementById('selClear');
+  if (selClear) selClear.addEventListener('click', function () {
+    boxes.forEach(function (b) { b.checked = false; });
+    if (selAll) selAll.checked = false;
+    update();
+  });
+
+  // Busy state so a slow cPanel/Mailman call isn't submitted twice.
+  function busy(btn) { btn.disabled = true; btn.textContent = btn.getAttribute('data-busy'); }
+  var addForm = document.getElementById('addForm');
+  if (addForm) addForm.addEventListener('submit', function () { busy(addForm.querySelector('[data-busy]')); });
+
+  var modalEl = document.getElementById('removeModal');
+  if (removeBtn && modalEl) {
+    var modal = new bootstrap.Modal(modalEl);
+    removeBtn.addEventListener('click', function () {
+      var list = document.getElementById('modalList');
+      list.innerHTML = '';
+      selected().forEach(function (b) {
+        var li = document.createElement('li');
+        li.textContent = b.value;
+        list.appendChild(li);
+      });
+      var n = selected().length;
+      document.getElementById('modalCount').textContent = n + (n === 1 ? ' member' : ' members');
+      modal.show();
+    });
+    document.getElementById('modalConfirm').addEventListener('click', function () {
+      var notify = document.getElementById('modalNotify');
+      document.getElementById('removeNotify').value = notify && notify.checked ? '1' : '0';
+      busy(this);
+      document.getElementById('removeForm').submit();
+    });
+  }
+  update();
+})();
+</script>
 {% endblock %}

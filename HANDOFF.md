@@ -8,6 +8,40 @@
 
 ---
 
+## 2026-10-19 (4) — Mailing Lists, step 2: add/remove members, audit log; type filter
+Commits: `1b53a4d` (type filter), this one · Branch: `main`
+
+### What was built / changed
+- `templates/mailing_lists/index.html`: Type filter (All / Forwarder / Mailman), kept in `?type=`.
+- `modules/mailing_lists.py`: POST `/admin/mailing-lists/<type>/<address>/members` (`action=add|remove`).
+  - Forwarders: UAPI `add_forwarder` / `delete_forwarder`.
+  - Mailman: mass subscribe/remove forms (fetches Mailman's `csrf_token`). Welcome/goodbye email only if ticked; owner never notified.
+  - Every change is verified by a fresh read-back; results are done / failed / skipped.
+  - Each attempt is audited in `central_db.mailing_list_audit`.
+- `templates/mailing_lists/detail.html`: Add box, checkboxes + Select separated + Remove selected with a confirmation modal, and a change-history table.
+- Tests: `tests/test_mailing_lists.py`, now 17 (all mocked).
+
+### Why / decisions
+- Removal is checkbox-based (one or many) behind a modal that lists exactly who is removed. I chose this since the question was open; the user can change it.
+- Self-reference (adding the group's own address) is ignored; batches are capped at 300.
+
+### Database changes
+```sql
+-- central_db (scripts/mailing_list_audit_schema.sql)
+CREATE TABLE mailing_list_audit (...);   -- see the file for full DDL
+```
+
+### How to verify
+- `./venv/bin/python -m unittest tests.test_mailing_lists -v`
+- No live write to cPanel/Mailman has been made from the portal yet. The first real add/remove is the live test; check the history table on that group's page.
+
+### Open items / next steps
+- [ ] First live add/remove on a forwarder and on a Mailman list (verify UAPI `add_forwarder`/`delete_forwarder` params and the Mailman form post on real data).
+- [ ] Step 3: create/delete group addresses. Step 4: offboarding cleanup across all groups.
+- [ ] Session cookie oversize, 3 pre-existing test failures, `.env` quoting: see the entry below.
+
+---
+
 ## 2026-10-19 (3) — Mailing Lists, step 1: read-only view of cPanel forwarders + Mailman lists
 Commit: this one · Branch: `main`
 

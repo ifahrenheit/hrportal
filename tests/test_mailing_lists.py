@@ -111,5 +111,108 @@ class AccessTests(unittest.TestCase):
         self.assertEqual(self.client.get("/admin/mailing-lists/api/summary/other/hr@cohere.ph").status_code, 404)
 
 
+class ChangeLogicTests(unittest.TestCase):
+    def test_parse_email_input(self):
+        valid, invalid = ml.parse_email_input("A@cohere.ph, b@cohere.ph;\n<c@x.com>  a@cohere.ph nope bad@ ")
+        self.assertEqual(valid, ["a@cohere.ph", "b@cohere.ph", "c@x.com"])
+        self.assertEqual(invalid, ["nope", "bad@"])
+
+    def test_plan_and_verify(self):
+        todo, skipped = ml.plan_change("add", ["a@x.ph", "b@x.ph"], {"B@x.ph"})
+        self.assertEqual((todo, skipped), (["a@x.ph"], ["b@x.ph"]))
+        todo, skipped = ml.plan_change("remove", ["a@x.ph", "b@x.ph"], {"b@x.ph"})
+        self.assertEqual((todo, skipped), (["b@x.ph"], ["a@x.ph"]))
+        v = ml.verify_change("remove", ["b@x.ph", "c@x.ph"], {"c@x.ph"}, {"c@x.ph": "boom"})
+        self.assertEqual(v["b@x.ph"], ("done", None))
+        self.assertEqual(v["c@x.ph"], ("failed", "boom"))
+        v = ml.verify_change("add", ["d@x.ph"], set())
+        self.assertEqual(v["d@x.ph"][0], "failed")
+
+    def test_forwarder_change_members_verifies_and_audits(self):
+        reads = iter([(["old@x.ph"], {}), (["old@x.ph", "new@x.ph"], {})])
+        with mock.patch.object(ml, "_current_emails", side_effect=lambda *a, **k: next(reads)), \
+             mock.patch.object(ml, "forwarder_change") as fc, \
+             mock.patch.object(ml, "_write_audit") as audit:
+            res = ml.change_members("forwarder", "hr@x.ph", "add", ["new@x.ph", "old@x.ph", "ghost@x.ph"])
+        # ghost@ was sent but never showed up on read-back -> failed
+        self.assertEqual([c.args for c in fc.call_args_list],
+                         [("hr@x.ph", "add", "new@x.ph"), ("hr@x.ph", "add", "ghost@x.ph")])
+        self.assertEqual([(e, r) for e, r, _ in res],
+                         [("new@x.ph", "done"), ("old@x.ph", "skipped"), ("ghost@x.ph", "failed")])
+        audit.assert_called_once()
+
+    def test_forwarder_uapi_calls(self):
+        with mock.patch.object(ml, "_uapi") as u:
+            ml.forwarder_change("hr@cohere.ph", "add", "a@cohere.ph")
+            ml.forwarder_change("hr@cohere.ph", "remove", "a@cohere.ph")
+        self.assertEqual(u.call_args_list[0], mock.call("add_forwarder", {
+            "domain": "cohere.ph", "email": "hr@cohere.ph", "fwdopt": "fwd", "fwdemail": "a@cohere.ph"}, write=True))
+        self.assertEqual(u.call_args_list[1], mock.call("delete_forwarder", {
+            "address": "hr@cohere.ph", "forwarder": "a@cohere.ph"}, write=True))
+
+    def test_mailman_remove_posts_form_with_csrf_and_no_notices(self):
+        sess = mock.MagicMock()
+        sess.__enter__.return_value = sess
+        login = mock.Mock(text="<p>ok</p>", raise_for_status=lambda: None)
+        done = mock.Mock(text="<p>done</p>", raise_for_status=lambda: None)
+        sess.post.side_effect = [login, done]
+        form = mock.Mock(text='<input type="hidden" name="csrf_token" value="tok123">', raise_for_status=lambda: None)
+        after = mock.Mock(text='<em>1 members total</em><input name="b%40x.ph_realname">', raise_for_status=lambda: None)
+        sess.get.side_effect = [form, after]
+        with mock.patch.object(ml, "_uapi", return_value="otp"), \
+             mock.patch.object(ml.requests, "Session", return_value=sess):
+            res = ml.mailman_change("l@x.ph", "l_x.ph", "remove", ["a@x.ph"])
+        url, = sess.post.call_args_list[1].args
+        data = sess.post.call_args_list[1].kwargs["data"]
+        self.assertTrue(url.endswith("/admin/l_x.ph/members/remove"))
+        self.assertEqual(data["csrf_token"], "tok123")
+        self.assertEqual(data["unsubscribees"], "a@x.ph")
+        self.assertEqual(data["send_unsub_ack_to_this_batch"], "0")
+        self.assertEqual(data["send_unsub_notifications_to_list_owner"], "0")
+        self.assertEqual(res["members"], {"b@x.ph"})
+
+
+class ChangeRouteTests(unittest.TestCase):
+    def setUp(self):
+        app = Flask(__name__, template_folder=os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "templates"))
+        app.secret_key = "test"
+        app.register_blueprint(ml.mailing_lists_bp)
+        self.client = app.test_client()
+        with self.client.session_transaction() as s:
+            s["user"] = {"email": "x@cohere.ph"}
+            s["permissions"] = {"can_mailing_lists": True}
+            s["_csrf_token"] = "good"
+
+    URL = "/admin/mailing-lists/forwarder/hr@cohere.ph/members"
+
+    def test_bad_csrf_changes_nothing(self):
+        with mock.patch.object(ml, "change_members") as cm:
+            r = self.client.post(self.URL, data={"csrf_token": "bad", "action": "add", "emails": "a@cohere.ph"})
+        self.assertEqual(r.status_code, 302)
+        cm.assert_not_called()
+
+    def test_add_routes_to_change_members_and_drops_self(self):
+        with mock.patch.object(ml, "change_members", return_value=[("a@cohere.ph", "done", None)]) as cm:
+            r = self.client.post(self.URL, data={"csrf_token": "good", "action": "add",
+                                                 "emails": "a@cohere.ph, hr@cohere.ph"})
+        self.assertEqual(r.status_code, 302)
+        cm.assert_called_once_with("forwarder", "hr@cohere.ph", "add", ["a@cohere.ph"], notify=False)
+
+    def test_remove_uses_checked_members(self):
+        with mock.patch.object(ml, "change_members", return_value=[]) as cm:
+            self.client.post(self.URL, data={"csrf_token": "good", "action": "remove",
+                                             "member": ["a@cohere.ph", "b@cohere.ph"]})
+        self.assertEqual(cm.call_args.args[3], ["a@cohere.ph", "b@cohere.ph"])
+
+    def test_no_permission_404(self):
+        with self.client.session_transaction() as s:
+            s["permissions"] = {}
+        with mock.patch.object(ml, "change_members") as cm:
+            r = self.client.post(self.URL, data={"csrf_token": "good", "action": "add", "emails": "a@cohere.ph"})
+        self.assertEqual(r.status_code, 404)
+        cm.assert_not_called()
+
+
+
 if __name__ == "__main__":
     unittest.main()
