@@ -91,9 +91,25 @@ def _access_required(f):
     return wrapped
 
 
+def ml_can_offboard():
+    """Offboarding staff may look up and remove a leaver from every list."""
+    return ml_can_access() or bool((session.get("permissions") or {}).get("can_onboarding"))
+
+
+def _offboard_access_required(f):
+    @wraps(f)
+    def wrapped(*args, **kwargs):
+        if "user" not in session:
+            return redirect("/")
+        if not ml_can_offboard():
+            abort(404)
+        return f(*args, **kwargs)
+    return wrapped
+
+
 @mailing_lists_bp.app_context_processor
 def _inject_access():
-    return {"ml_can_access": ml_can_access}
+    return {"ml_can_access": ml_can_access, "ml_can_offboard": ml_can_offboard}
 
 
 # ── Parsing (pure, unit-tested) ─────────────────────────────────────────────
@@ -1039,6 +1055,154 @@ def spam_blocklist_add(senders):
     return added, already, refused
 
 
+# ── People across all groups ────────────────────────────────────────────────
+
+READ_WORKERS = 4
+
+
+def all_memberships(refresh=False):
+    """{email: [{"type", "address", "delivery_off"}]} over every forwarder
+    group and Mailman list, plus a list of groups that could not be read.
+    Mailman lists are read in parallel (cached per list)."""
+    from concurrent.futures import ThreadPoolExecutor
+    out, errors = {}, []
+    forwarders, _ = fetch_forwarders(refresh)
+    for addr, targets in forwarders.items():
+        for t in targets:
+            out.setdefault(t.lower(), []).append({"type": "forwarder", "address": addr, "delivery_off": None})
+    lists, _ = fetch_mailman_lists(refresh)
+
+    def read(addr):
+        try:
+            return addr, fetch_mailman_members(addr, refresh)[0], None
+        except Exception as e:
+            logger.exception("mailing lists: reading %s failed", addr)
+            return addr, None, str(e)
+
+    with ThreadPoolExecutor(READ_WORKERS) as ex:
+        for addr, data, err in ex.map(read, sorted(lists)):
+            if err:
+                errors.append((addr, err))
+                continue
+            nomail = data.get("nomail") or {}
+            for m in data["members"]:
+                out.setdefault(m, []).append({"type": "mailman", "address": addr, "delivery_off": nomail.get(m)})
+    for groups in out.values():
+        groups.sort(key=lambda g: (g["address"], g["type"]))
+    return out, errors
+
+
+def memberships_of(email, refresh=False):
+    allm, errors = all_memberships(refresh)
+    return allm.get(email.lower(), []), errors
+
+
+def search_employees(q, limit=20):
+    q = (q or "").strip()
+    if len(q) < 2:
+        return []
+    like = f"%{q}%"
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as c:
+            c.execute("""
+                SELECT employee_id, schedule_name, LOWER(TRIM(email)) AS email, status, group_name
+                FROM gsheet_employees
+                WHERE email IS NOT NULL AND email <> ''
+                  AND (schedule_name LIKE %s OR email LIKE %s OR employee_id = %s)
+                ORDER BY (status = 'Separated'), schedule_name
+                LIMIT %s
+            """, (like, like, q, limit))
+            return c.fetchall()
+    finally:
+        conn.close()
+
+
+def remove_everywhere(email, groups):
+    """Remove one address from several groups. groups: [(type, address)].
+    Returns [(type, address, result, detail)]."""
+    out = []
+    for list_type, address in groups:
+        try:
+            res = change_members(list_type, address, "remove", [email.lower()])
+            r = res[0] if res else (email, "skipped", "Not a member.")
+            out.append((list_type, address, r[1], r[2]))
+        except Exception as e:
+            logger.exception("mailing lists: removing %s from %s failed", email, address)
+            out.append((list_type, address, "failed", str(e)))
+    return out
+
+
+def separated_everywhere(refresh=False):
+    """People marked Separated in gsheet_employees who are still on a group:
+    [{"email", "name", "employee_id", "exit_date", "groups"}], biggest first."""
+    allm, errors = all_memberships(refresh)
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as c:
+            c.execute("""
+                SELECT employee_id, schedule_name, LOWER(TRIM(email)) AS email, status, exit_date
+                FROM gsheet_employees
+                WHERE email IS NOT NULL AND email <> ''
+                ORDER BY (status = 'Separated'), last_modified_at
+            """)
+            index = {}
+            for r in c.fetchall():
+                index.setdefault(r["email"], r)
+    finally:
+        conn.close()
+    people = []
+    for email, groups in allm.items():
+        emp = index.get(email)
+        if emp and (emp.get("status") or "").lower() == "separated":
+            people.append({"email": email, "name": emp.get("schedule_name"), "employee_id": emp.get("employee_id"),
+                           "exit_date": emp.get("exit_date"), "groups": groups})
+    people.sort(key=lambda p: (-len(p["groups"]), p["name"] or p["email"]))
+    return people, errors
+
+
+# ── Deleting a group address ────────────────────────────────────────────────
+
+def delete_group(list_type, address):
+    """Delete a forwarder group (all its targets) or a Mailman list. The
+    members at the time are written to the audit log first, so the group can
+    be rebuilt with Sync. Returns (ok, message)."""
+    current, _ = _current_emails(list_type, address, refresh=True)
+    members = sorted(current)
+    _write_audit(list_type, address, "delete",
+                 [(m, "done", "Member when the group was deleted") for m in members])
+    if list_type == "forwarder":
+        errors = []
+        for m in members:
+            try:
+                forwarder_change(address, "remove", m)
+            except Exception as ex:
+                logger.exception("mailing lists: delete forwarder %s -> %s failed", address, m)
+                errors.append(f"{m}: {ex}")
+        groups, _ = fetch_forwarders(refresh=True)
+        ok = address not in groups
+        detail = None if ok else ("Still has: " + ", ".join(groups.get(address, [])) + ("; " + "; ".join(errors) if errors else ""))
+    else:
+        try:
+            _uapi("delete_list", {"list": address}, write=True)
+            detail = None
+        except Exception as ex:
+            logger.exception("mailing lists: delete_list %s failed", address)
+            detail = str(ex)
+        lists, _ = fetch_mailman_lists(refresh=True)
+        ok = address not in lists
+        if not ok and not detail:
+            detail = "cPanel did not report an error, but the list still exists."
+        with _cache_lock:
+            for k in (f"mailman:{address}", f"pending:{address}", f"senders:{address}"):
+                _cache.pop(k, None)
+    _write_audit(list_type, address, "delete", [(address, "done" if ok else "failed",
+                                                 f"Group deleted ({len(members)} members)" if ok else detail)])
+    kind = "Forwarder group" if list_type == "forwarder" else "Mailman list"
+    return ok, (f"{kind} {address} deleted. Its {len(members)} members are recorded in the change history."
+                if ok else f"Could not delete {address}: {detail}")
+
+
 # ── Creating a group address ────────────────────────────────────────────────
 # Mirrors cPanel's own forms: "Add Forwarder" (address, domain, forward-to
 # address) and "Create a Mailing List" (list name, domain, password, access
@@ -1347,6 +1511,171 @@ def change(list_type, address):
         return back
     _flash_results(action, results, invalid)
     return back
+
+
+def _parse_group_values(values):
+    """'forwarder|hr@x.ph' form values -> [(type, address)] (validated shape)."""
+    out = []
+    for v in values:
+        t, _, a = (v or "").partition("|")
+        if t in LIST_TYPES and "@" in a:
+            out.append((t, a.strip().lower()))
+    return list(dict.fromkeys(out))
+
+
+@mailing_lists_bp.route("/person", methods=["GET", "POST"])
+@_access_required
+def person():
+    """One person across every group: see where they are, remove from or add
+    to several groups at once."""
+    if request.method == "POST":
+        email = (request.form.get("email") or "").strip().lower()
+        back = redirect(url_for("mailing_lists.person", email=email))
+        if not validate_csrf():
+            flash("Your session expired. Please try again.", "danger")
+            return back
+        if not _EMAIL_RE.match(email):
+            flash("Not a valid email address.", "warning")
+            return redirect(url_for("mailing_lists.person"))
+        action = request.form.get("action")
+        groups = _parse_group_values(request.form.getlist("group"))
+        if action not in ("add", "remove") or not groups:
+            flash("Tick at least one group first.", "warning")
+            return back
+        known_f, _ = fetch_forwarders()
+        known_m, _ = fetch_mailman_lists()
+        groups = [(t, a) for t, a in groups if a in (known_f if t == "forwarder" else known_m)]
+        done, failed = [], []
+        for t, a in groups:
+            try:
+                res = change_members(t, a, action, [email])
+                r = res[0] if res else (email, "skipped", None)
+                (done if r[1] in ("done", "skipped") else failed).append((a, r[2]))
+            except Exception as e:
+                logger.exception("mailing lists: %s %s on %s failed", action, email, a)
+                failed.append((a, str(e)))
+        if done:
+            flash(f"{'Added to' if action == 'add' else 'Removed from'} {len(done)}: {', '.join(a for a, _ in done)}", "success")
+        if failed:
+            flash("Failed: " + "; ".join(f"{a} ({d})" for a, d in failed), "danger")
+        return back
+
+    q = (request.args.get("q") or "").strip()
+    email = (request.args.get("email") or "").strip().lower()
+    results = search_employees(q) if q and not email else []
+    if q and not email and not results and _EMAIL_RE.match(q.lower()):
+        email = q.lower()
+    groups, errors, emp, others = [], [], None, []
+    if email:
+        groups, errors = memberships_of(email, refresh=request.args.get("refresh") == "1")
+        emp = load_employee_index().get(email)
+        mine = {(g["type"], g["address"]) for g in groups}
+        f, _ = fetch_forwarders()
+        m, _ = fetch_mailman_lists()
+        others = sorted([("mailman", a) for a in m if ("mailman", a) not in mine]
+                        + [("forwarder", a) for a in f if ("forwarder", a) not in mine], key=lambda x: (x[0] != "mailman", x[1]))
+    return render_template("mailing_lists/person.html", q=q, email=email, results=results, groups=groups,
+                           errors=errors, emp=emp, others=others, nomail_reasons=NOMAIL_REASONS)
+
+
+@mailing_lists_bp.route("/cleanup", methods=["GET", "POST"])
+@_access_required
+def cleanup():
+    """Everyone marked Separated who is still on a group, across all groups."""
+    if request.method == "POST":
+        back = redirect(url_for("mailing_lists.cleanup"))
+        if not validate_csrf():
+            flash("Your session expired. Please try again.", "danger")
+            return back
+        picks = {}
+        for v in request.form.getlist("pick"):
+            email, _, rest = (v or "").partition("|")
+            for t, a in _parse_group_values([rest]):
+                if _EMAIL_RE.match(email):
+                    picks.setdefault((t, a), []).append(email)
+        if not picks:
+            flash("Tick at least one person first.", "warning")
+            return back
+        removed, failed = 0, []
+        for (t, a), emails in sorted(picks.items()):
+            try:
+                for e, r, d in change_members(t, a, "remove", sorted(set(emails))):
+                    if r == "done":
+                        removed += 1
+                    elif r == "failed":
+                        failed.append(f"{e} from {a} ({d})")
+            except Exception as ex:
+                logger.exception("mailing lists: cleanup on %s failed", a)
+                failed.append(f"{a}: {ex}")
+        if removed:
+            flash(f"Removed {removed} memberships across {len(picks)} groups.", "success")
+        if failed:
+            flash("Failed: " + "; ".join(failed[:20]) + (f"; and {len(failed) - 20} more" if len(failed) > 20 else ""), "danger")
+        return back
+    people, errors = separated_everywhere(refresh=request.args.get("refresh") == "1")
+    return render_template("mailing_lists/cleanup.html", people=people, errors=errors,
+                           total=sum(len(p["groups"]) for p in people))
+
+
+@mailing_lists_bp.route("/api/memberships")
+@_offboard_access_required
+def api_memberships():
+    """Which groups an address is on (used by the offboarding page)."""
+    email = (request.args.get("email") or "").strip().lower()
+    if not _EMAIL_RE.match(email):
+        return jsonify({"ok": False, "error": "Not a valid email address."}), 400
+    try:
+        groups, errors = memberships_of(email)
+    except Exception as e:
+        logger.exception("mailing lists: memberships of %s failed", email)
+        return jsonify({"ok": False, "error": str(e)}), 502
+    return jsonify({"ok": True, "email": email, "groups": groups,
+                    "unreadable": [a for a, _ in errors]})
+
+
+@mailing_lists_bp.route("/api/remove-everywhere", methods=["POST"])
+@_offboard_access_required
+def api_remove_everywhere():
+    """Remove one address from every group it is on (offboarding page)."""
+    if not validate_csrf():
+        return jsonify({"ok": False, "error": "Security check failed, please try again."}), 403
+    email = ((request.get_json(silent=True) or {}).get("email") or "").strip().lower()
+    if not _EMAIL_RE.match(email):
+        return jsonify({"ok": False, "error": "Not a valid email address."}), 400
+    try:
+        groups, errors = memberships_of(email, refresh=True)
+        results = remove_everywhere(email, [(g["type"], g["address"]) for g in groups])
+    except Exception as e:
+        logger.exception("mailing lists: remove-everywhere %s failed", email)
+        return jsonify({"ok": False, "error": str(e)}), 502
+    return jsonify({"ok": True, "email": email,
+                    "results": [{"type": t, "address": a, "result": r, "detail": d} for t, a, r, d in results],
+                    "unreadable": [a for a, _ in errors]})
+
+
+@mailing_lists_bp.route("/<list_type>/<path:address>/delete", methods=["POST"])
+@_access_required
+def delete(list_type, address):
+    if list_type not in LIST_TYPES:
+        abort(404)
+    address = address.lower()
+    back = redirect(url_for("mailing_lists.detail", list_type=list_type, address=address))
+    if not validate_csrf():
+        flash("Your session expired. Please try again.", "danger")
+        return back
+    if (request.form.get("confirm") or "").strip().lower() != address:
+        flash("Type the full address exactly to confirm. Nothing was deleted.", "warning")
+        return back
+    try:
+        ok, message = delete_group(list_type, address)
+    except KeyError:
+        abort(404)
+    except Exception as e:
+        logger.exception("mailing lists: delete %s %s failed", list_type, address)
+        flash(f"Could not delete {address}: {e}", "danger")
+        return back
+    flash(message, "success" if ok else "danger")
+    return redirect(url_for("mailing_lists.index", type="all" if list_type == "forwarder" else None)) if ok else back
 
 
 @mailing_lists_bp.route("/mailman/<path:address>/delivery", methods=["POST"])

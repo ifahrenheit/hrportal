@@ -687,5 +687,108 @@ class DeliveryAndSenderTests(unittest.TestCase):
 
 
 
+class DeleteTests(unittest.TestCase):
+    def test_forwarder_delete_records_members_then_removes_each(self):
+        reads = iter([({"g@x.ph": ["a@x.ph", "b@x.ph"]}, 0), ({}, 0)])
+        with mock.patch.object(ml, "fetch_forwarders", side_effect=lambda *a, **k: next(reads)), \
+             mock.patch.object(ml, "forwarder_change") as fc, \
+             mock.patch.object(ml, "_write_audit") as audit:
+            ok, _ = ml.delete_group("forwarder", "g@x.ph")
+        self.assertTrue(ok)
+        self.assertEqual([c.args for c in fc.call_args_list], [("g@x.ph", "remove", "a@x.ph"), ("g@x.ph", "remove", "b@x.ph")])
+        first = audit.call_args_list[0].args[3]
+        self.assertEqual([r[0] for r in first], ["a@x.ph", "b@x.ph"])      # members saved before deleting
+
+    def test_mailman_delete_reports_failure_if_list_still_there(self):
+        with mock.patch.object(ml, "_current_emails", return_value=({"a@x.ph"}, {})), \
+             mock.patch.object(ml, "_uapi") as u, \
+             mock.patch.object(ml, "fetch_mailman_lists", return_value=({"l@x.ph": {}}, 0)), \
+             mock.patch.object(ml, "_write_audit"):
+            ok, msg = ml.delete_group("mailman", "l@x.ph")
+        u.assert_called_once_with("delete_list", {"list": "l@x.ph"}, write=True)
+        self.assertFalse(ok)
+
+    def test_route_needs_exact_typed_address(self):
+        app = Flask(__name__)
+        app.secret_key = "t"
+        app.register_blueprint(ml.mailing_lists_bp)
+        c = app.test_client()
+        with c.session_transaction() as s:
+            s["user"] = {"email": "x@cohere.ph"}; s["is_admin"] = True; s["_csrf_token"] = "good"
+        with mock.patch.object(ml, "delete_group", return_value=(True, "ok")) as dg:
+            c.post("/admin/mailing-lists/mailman/l@cohere.ph/delete", data={"csrf_token": "good", "confirm": "l@cohere"})
+            dg.assert_not_called()
+            c.post("/admin/mailing-lists/mailman/l@cohere.ph/delete", data={"csrf_token": "good", "confirm": " L@cohere.ph "})
+            dg.assert_called_once_with("mailman", "l@cohere.ph")
+
+
+
+class PeopleTests(unittest.TestCase):
+    def setUp(self):
+        app = Flask(__name__)
+        app.secret_key = "t"
+        app.register_blueprint(ml.mailing_lists_bp)
+        self.client = app.test_client()
+
+    def login(self, **perms):
+        with self.client.session_transaction() as s:
+            s["user"] = {"email": "x@cohere.ph"}
+            s["permissions"] = perms
+            s["_csrf_token"] = "good"
+
+    def test_all_memberships_merges_forwarders_and_mailman(self):
+        with mock.patch.object(ml, "fetch_forwarders", return_value=({"hr@x.ph": ["a@x.ph"]}, 0)), \
+             mock.patch.object(ml, "fetch_mailman_lists", return_value=({"l@x.ph": {}, "m@x.ph": {}}, 0)), \
+             mock.patch.object(ml, "fetch_mailman_members", side_effect=lambda a, r=False: (
+                 {"members": {"a@x.ph"} if a == "l@x.ph" else {"b@x.ph"}, "nomail": {"a@x.ph": "B"}}, 0)):
+            allm, errors = ml.all_memberships()
+        self.assertEqual(allm["a@x.ph"], [{"type": "forwarder", "address": "hr@x.ph", "delivery_off": None},
+                                          {"type": "mailman", "address": "l@x.ph", "delivery_off": "B"}])
+        self.assertEqual([g["address"] for g in allm["b@x.ph"]], ["m@x.ph"])
+        self.assertEqual(errors, [])
+
+    def test_offboarding_staff_can_use_offboarding_api_only(self):
+        self.login(can_onboarding=True)
+        with mock.patch.object(ml, "memberships_of", return_value=([{"type": "mailman", "address": "l@x.ph"}], [])):
+            r = self.client.get("/admin/mailing-lists/api/memberships?email=a@cohere.ph")
+        self.assertEqual(r.get_json()["groups"][0]["address"], "l@x.ph")
+        self.assertEqual(self.client.get("/admin/mailing-lists/person").status_code, 404)
+        self.assertEqual(self.client.get("/admin/mailing-lists/cleanup").status_code, 404)
+        self.assertEqual(self.client.get("/admin/mailing-lists/").status_code, 404)
+
+    def test_remove_everywhere_needs_csrf_and_removes_each(self):
+        self.login(can_onboarding=True)
+        r = self.client.post("/admin/mailing-lists/api/remove-everywhere", json={"email": "a@cohere.ph"})
+        self.assertEqual(r.status_code, 403)
+        groups = [{"type": "forwarder", "address": "hr@x.ph"}, {"type": "mailman", "address": "l@x.ph"}]
+        with mock.patch.object(ml, "memberships_of", return_value=(groups, [])), \
+             mock.patch.object(ml, "change_members", return_value=[("a@cohere.ph", "done", None)]) as cm:
+            r = self.client.post("/admin/mailing-lists/api/remove-everywhere", json={"email": "A@cohere.ph"},
+                                 headers={"X-CSRF-Token": "good"})
+        self.assertEqual([c.args for c in cm.call_args_list],
+                         [("forwarder", "hr@x.ph", "remove", ["a@cohere.ph"]), ("mailman", "l@x.ph", "remove", ["a@cohere.ph"])])
+        self.assertEqual([x["result"] for x in r.get_json()["results"]], ["done", "done"])
+
+    def test_cleanup_groups_picks_per_list(self):
+        self.login(can_mailing_lists=True)
+        with mock.patch.object(ml, "change_members", return_value=[]) as cm:
+            self.client.post("/admin/mailing-lists/cleanup", data={"csrf_token": "good", "pick": [
+                "a@cohere.ph|mailman|l@x.ph", "b@cohere.ph|mailman|l@x.ph", "a@cohere.ph|forwarder|hr@x.ph",
+                "bad|mailman|l@x.ph", "c@cohere.ph|evil|z@x.ph"]})
+        self.assertEqual(sorted(c.args for c in cm.call_args_list),
+                         [("forwarder", "hr@x.ph", "remove", ["a@cohere.ph"]),
+                          ("mailman", "l@x.ph", "remove", ["a@cohere.ph", "b@cohere.ph"])])
+
+    def test_person_post_ignores_unknown_groups(self):
+        self.login(can_mailing_lists=True)
+        with mock.patch.object(ml, "fetch_forwarders", return_value=({"hr@x.ph": []}, 0)), \
+             mock.patch.object(ml, "fetch_mailman_lists", return_value=({"l@x.ph": {}}, 0)), \
+             mock.patch.object(ml, "change_members", return_value=[("a@cohere.ph", "done", None)]) as cm:
+            self.client.post("/admin/mailing-lists/person", data={"csrf_token": "good", "email": "a@cohere.ph",
+                             "action": "add", "group": ["mailman|l@x.ph", "mailman|nope@x.ph", "forwarder|hr@x.ph"]})
+        self.assertEqual([c.args[:2] for c in cm.call_args_list], [("mailman", "l@x.ph"), ("forwarder", "hr@x.ph")])
+
+
+
 if __name__ == "__main__":
     unittest.main()

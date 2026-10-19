@@ -1,0 +1,134 @@
+{% extends "base.html" %}
+{% block title %}{{ email or 'Find a person' }} · Mailing Lists{% endblock %}
+{% block page_title %}Mailing Lists{% endblock %}
+
+{% block content %}
+<div class="rt-card">
+  <a class="rt-muted" href="{{ url_for('mailing_lists.index') }}"><i data-lucide="arrow-left" style="width:14px;height:14px"></i> All mailing lists</a>
+  <h5 class="rt-card-title mt-2">One person across all lists</h5>
+  <form method="get" class="rt-toolbar">
+    <div style="min-width:320px">
+      <label for="q">Name, email or employee ID</label>
+      <input type="text" class="form-control" id="q" name="q" value="{{ q or email }}" placeholder="e.g. Ana Angon or ana.angon@cohere.ph" required minlength="2">
+    </div>
+    <button type="submit" class="btn btn-primary"><i class="me-1" data-lucide="search"></i>Find</button>
+  </form>
+  {% if results %}
+  <div class="table-responsive mt-3">
+    <table class="data-table">
+      <thead><tr><th>Name</th><th>Email</th><th>Employee ID</th><th>Group</th><th>Status</th></tr></thead>
+      <tbody>
+        {% for r in results %}
+        <tr>
+          <td><a href="{{ url_for('mailing_lists.person', email=r.email) }}">{{ r.schedule_name or '—' }}</a></td>
+          <td>{{ r.email }}</td><td>{{ r.employee_id }}</td><td>{{ r.group_name or '—' }}</td>
+          <td>{% if r.status == 'Separated' %}<span class="rt-badge fail">Separated</span>{% else %}<span class="rt-badge on">{{ r.status }}</span>{% endif %}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% elif q and not email %}
+  <p class="rt-muted mt-3 mb-0">No employee matches "{{ q }}". Enter a full email address to look up someone who isn't in the employee list.</p>
+  {% endif %}
+</div>
+
+{% if email %}
+<div class="rt-card">
+  <div class="rt-toolbar mb-2">
+    <div>
+      <h6 class="rt-card-title mb-1">{{ emp.schedule_name if emp and emp.schedule_name else email }}</h6>
+      <div class="rt-muted">{{ email }}
+        {% if emp %} · {{ emp.employee_id }} · {{ emp.group_name or '—' }} ·
+          {% if emp.status == 'Separated' %}<span class="rt-badge fail">Separated</span>{% else %}<span class="rt-badge on">{{ emp.status }}</span>{% endif %}
+        {% else %} · <span class="rt-badge off">Not in employee list</span>{% endif %}
+      </div>
+    </div>
+    <a class="btn btn-outline-secondary ms-auto" href="{{ url_for('mailing_lists.person', email=email, refresh=1) }}"><i class="me-1" data-lucide="refresh-cw"></i>Refresh</a>
+  </div>
+  {% if errors %}<div class="alert alert-warning">Could not read {{ errors|map(attribute=0)|join(', ') }}, so those lists aren't included.</div>{% endif %}
+
+  <form method="post" class="mt-2" data-confirm="remove">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <input type="hidden" name="email" value="{{ email }}">
+    <input type="hidden" name="action" value="remove">
+    <div class="fw-semibold mb-1">On {{ groups|length }} group{{ '' if groups|length == 1 else 's' }}</div>
+    {% if groups %}
+    <div class="table-responsive">
+      <table class="data-table">
+        <thead><tr><th style="width:2rem"><input type="checkbox" class="form-check-input" data-all aria-label="Select all"></th><th>Group</th><th>Type</th><th></th></tr></thead>
+        <tbody>
+          {% for g in groups %}
+          <tr>
+            <td><input type="checkbox" class="form-check-input" name="group" value="{{ g.type }}|{{ g.address }}" aria-label="Select {{ g.address }}"></td>
+            <td><a href="{{ url_for('mailing_lists.detail', list_type=g.type, address=g.address) }}">{{ g.address }}</a></td>
+            <td>{% if g.type == 'mailman' %}<span class="rt-badge pass">Mailman</span>{% else %}<span class="rt-badge on">Forwarder</span>{% endif %}</td>
+            <td>{% if g.delivery_off %}<span class="rt-badge fail">Delivery off · {{ nomail_reasons.get(g.delivery_off, '?') }}</span>{% endif %}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <button type="submit" class="btn btn-danger mt-2" data-needs disabled><i class="me-1" data-lucide="user-minus"></i>Remove from selected (<span data-n>0</span>)</button>
+    {% else %}
+    <p class="rt-muted mb-0">Not on any mailing list or forwarder group.</p>
+    {% endif %}
+  </form>
+</div>
+
+<div class="rt-card">
+  <form method="post" data-confirm="add">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <input type="hidden" name="email" value="{{ email }}">
+    <input type="hidden" name="action" value="add">
+    <div class="rt-toolbar mb-2">
+      <div class="fw-semibold">Add to more groups</div>
+      <input type="text" class="form-control form-control-sm ms-auto" style="max-width:260px" placeholder="Filter groups…" data-filter aria-label="Filter groups">
+    </div>
+    <div class="row g-1" style="max-height:320px;overflow:auto">
+      {% for t, a in others %}
+      <div class="col-md-4" data-item>
+        <label class="form-check mb-0">
+          <input class="form-check-input" type="checkbox" name="group" value="{{ t }}|{{ a }}">
+          <span class="form-check-label">{{ a }} <span class="rt-muted small">{{ 'Mailman' if t == 'mailman' else 'forwarder' }}</span></span>
+        </label>
+      </div>
+      {% endfor %}
+    </div>
+    <button type="submit" class="btn btn-primary mt-2" data-needs disabled><i class="me-1" data-lucide="user-plus"></i>Add to selected (<span data-n>0</span>)</button>
+  </form>
+</div>
+{% endif %}
+
+{% include "routines/_table_assets.html" %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+  document.querySelectorAll('form[data-confirm]').forEach(function (form) {
+    var boxes = Array.prototype.slice.call(form.querySelectorAll('input[name="group"]'));
+    function update() {
+      var n = boxes.filter(function (b) { return b.checked; }).length;
+      form.querySelectorAll('[data-n]').forEach(function (s) { s.textContent = n; });
+      form.querySelectorAll('[data-needs]').forEach(function (b) { b.disabled = n === 0; });
+    }
+    boxes.forEach(function (b) { b.addEventListener('change', update); });
+    var all = form.querySelector('[data-all]');
+    if (all) all.addEventListener('change', function () { boxes.forEach(function (b) { b.checked = all.checked; }); update(); });
+    var filter = form.querySelector('[data-filter]');
+    if (filter) filter.addEventListener('input', function () {
+      var q = filter.value.toLowerCase();
+      form.querySelectorAll('[data-item]').forEach(function (el) { el.style.display = el.textContent.toLowerCase().indexOf(q) === -1 ? 'none' : ''; });
+    });
+    form.addEventListener('submit', function (e) {
+      var picked = boxes.filter(function (b) { return b.checked; }).map(function (b) { return b.value.split('|')[1]; });
+      var verb = form.getAttribute('data-confirm') === 'remove' ? 'Remove {{ email }} from' : 'Add {{ email }} to';
+      if (!confirm(verb + ' ' + picked.length + ' group(s)?\n\n' + picked.join('\n'))) { e.preventDefault(); return; }
+      var b = form.querySelector('[data-needs]'); b.disabled = true; b.textContent = 'Working…';
+    });
+    update();
+  });
+})();
+</script>
+{% endblock %}

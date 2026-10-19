@@ -1,0 +1,103 @@
+{% extends "base.html" %}
+{% block title %}Separated members · Mailing Lists{% endblock %}
+{% block page_title %}Mailing Lists{% endblock %}
+
+{% block content %}
+<div class="rt-card">
+  <div class="rt-toolbar">
+    <div>
+      <a class="rt-muted" href="{{ url_for('mailing_lists.index') }}"><i data-lucide="arrow-left" style="width:14px;height:14px"></i> All mailing lists</a>
+      <h5 class="rt-card-title mt-2 mb-1">Separated employees still on mailing lists</h5>
+      <div class="rt-muted">{{ people|length }} people · {{ total }} memberships, across every forwarder group and Mailman list</div>
+    </div>
+    <a class="btn btn-outline-secondary ms-auto" href="{{ url_for('mailing_lists.cleanup', refresh=1) }}"><i class="me-1" data-lucide="refresh-cw"></i>Refresh</a>
+  </div>
+  {% if errors %}<div class="alert alert-warning mt-3 mb-0">Could not read {{ errors|map(attribute=0)|join(', ') }}, so those lists aren't included.</div>{% endif %}
+</div>
+
+<div class="rt-card">
+  {% if people %}
+  <form method="post" id="cleanupForm">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <div class="rt-toolbar mb-3">
+      <div style="min-width:260px">
+        <label for="cSearch">Search</label>
+        <input type="text" id="cSearch" class="form-control" data-table-search="#cTable" placeholder="Name, email, group…">
+      </div>
+      <span class="rt-muted pb-2" data-table-count="#cTable"></span>
+      <div class="ms-auto d-flex gap-2">
+        <button type="button" class="btn btn-outline-danger" id="cAll">Select all shown</button>
+        <button type="button" class="btn btn-outline-secondary" id="cNone">Clear</button>
+        <button type="submit" class="btn btn-danger" id="cGo" disabled><i class="me-1" data-lucide="user-minus"></i>Remove selected (<span id="cN">0</span>)</button>
+      </div>
+    </div>
+    <div class="table-responsive">
+      <table class="data-table" id="cTable">
+        <thead><tr><th style="width:2rem"></th><th data-sort="text">Name</th><th data-sort="text">Email</th><th data-sort="text">Exit date</th><th>Still on</th></tr></thead>
+        <tbody>
+          {% for p in people %}
+          <tr>
+            <td><input type="checkbox" class="form-check-input c-person" aria-label="Select all lists for {{ p.email }}"></td>
+            <td><a href="{{ url_for('mailing_lists.person', email=p.email) }}">{{ p.name or '—' }}</a></td>
+            <td>{{ p.email }}</td>
+            <td class="text-nowrap" data-sort-value="{{ p.exit_date or '' }}">{{ p.exit_date or '—' }}</td>
+            <td>
+              {% for g in p.groups %}
+              <label class="form-check form-check-inline mb-0">
+                <input class="form-check-input c-pick" type="checkbox" name="pick" value="{{ p.email }}|{{ g.type }}|{{ g.address }}">
+                <span class="form-check-label small">{{ g.address }}{% if g.type == 'mailman' %} <span class="rt-muted">MM</span>{% endif %}</span>
+              </label>
+              {% endfor %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </form>
+  {% else %}
+  <p class="rt-muted mb-0">Nobody marked Separated is on any mailing list. 🎉</p>
+  {% endif %}
+</div>
+
+{% include "routines/_table_assets.html" %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+  var form = document.getElementById('cleanupForm');
+  if (!form) return;
+  var picks = Array.prototype.slice.call(form.querySelectorAll('.c-pick'));
+  function update() {
+    var n = picks.filter(function (b) { return b.checked; }).length;
+    document.getElementById('cN').textContent = n;
+    document.getElementById('cGo').disabled = n === 0;
+    form.querySelectorAll('tbody tr').forEach(function (tr) {
+      var mine = tr.querySelectorAll('.c-pick'), on = tr.querySelectorAll('.c-pick:checked');
+      tr.querySelector('.c-person').checked = mine.length && on.length === mine.length;
+    });
+  }
+  picks.forEach(function (b) { b.addEventListener('change', update); });
+  form.querySelectorAll('.c-person').forEach(function (p) {
+    p.addEventListener('change', function () {
+      p.closest('tr').querySelectorAll('.c-pick').forEach(function (b) { b.checked = p.checked; });
+      update();
+    });
+  });
+  document.getElementById('cAll').addEventListener('click', function () {
+    form.querySelectorAll('tbody tr').forEach(function (tr) {
+      if (tr.style.display !== 'none') tr.querySelectorAll('.c-pick').forEach(function (b) { b.checked = true; });
+    });
+    update();
+  });
+  document.getElementById('cNone').addEventListener('click', function () { picks.forEach(function (b) { b.checked = false; }); update(); });
+  form.addEventListener('submit', function (e) {
+    var n = picks.filter(function (b) { return b.checked; }).length;
+    if (!confirm('Remove ' + n + ' membership(s) of separated employees?')) { e.preventDefault(); return; }
+    var b = document.getElementById('cGo'); b.disabled = true; b.textContent = 'Removing…';
+  });
+  update();
+})();
+</script>
+{% endblock %}

@@ -20,6 +20,12 @@
     </div>
     <span class="rt-muted pb-2" id="mlCount"></span>
     <span class="rt-muted pb-2 ms-auto">{{ n_forwarders }} forwarder groups · {{ n_mailman }} Mailman lists</span>
+    <a class="btn btn-outline-secondary" href="{{ url_for('mailing_lists.person') }}">
+      <i class="me-1" data-lucide="user-search"></i>Find a person
+    </a>
+    <a class="btn btn-outline-danger" href="{{ url_for('mailing_lists.cleanup') }}">
+      <i class="me-1" data-lucide="user-x"></i>Separated cleanup
+    </a>
     <a class="btn btn-primary" href="{{ url_for('mailing_lists.new') }}">
       <i class="me-1" data-lucide="plus"></i>New mailing list
     </a>

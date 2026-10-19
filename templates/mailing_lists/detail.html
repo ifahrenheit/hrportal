@@ -284,6 +284,26 @@
   </div>
 </div>
 
+{% if not error %}
+<div class="rt-card" style="border-color:rgba(227,73,72,.45)">
+  <h6 class="rt-card-title text-danger"><i class="me-1" data-lucide="triangle-alert"></i>Delete this {{ 'Mailman list' if list_type == 'mailman' else 'forwarder group' }}</h6>
+  <p class="rt-muted mb-2">
+    {% if list_type == 'mailman' %}
+    Permanently deletes the list, its {{ summary.total }} members, its settings and <strong>all its archived emails</strong>. Mail to {{ address }} will bounce.
+    {% else %}
+    Removes all {{ summary.total }} forward targets, so mail to {{ address }} stops being copied to anyone{% if list_type == 'forwarder' %} (an email account with the same address, if any, is kept){% endif %}.
+    {% endif %}
+    The current members are saved in the change history first, so the group can be rebuilt with Sync.
+  </p>
+  <form method="post" action="{{ url_for('mailing_lists.delete', list_type=list_type, address=address) }}" class="d-flex flex-wrap gap-2 align-items-center" id="deleteForm">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <input type="text" class="form-control" name="confirm" id="deleteConfirm" autocomplete="off" style="max-width:340px"
+           placeholder="Type {{ address }} to confirm" aria-label="Type the address to confirm">
+    <button type="submit" class="btn btn-danger" id="deleteBtn" disabled><i class="me-1" data-lucide="trash-2"></i>Delete permanently</button>
+  </form>
+</div>
+{% endif %}
+
 <div class="modal fade" id="removeModal" tabindex="-1" aria-labelledby="removeModalTitle" aria-hidden="true">
   <div class="modal-dialog modal-dialog-scrollable">
     <div class="modal-content">
@@ -358,6 +378,16 @@
     if (selAll) selAll.checked = false;
     update();
   });
+
+  var delInput = document.getElementById('deleteConfirm');
+  if (delInput) {
+    delInput.addEventListener('input', function () {
+      document.getElementById('deleteBtn').disabled = delInput.value.trim().toLowerCase() !== {{ address|tojson }};
+    });
+    document.getElementById('deleteForm').addEventListener('submit', function (e) {
+      if (!confirm('Delete {{ address }} permanently? This cannot be undone.')) e.preventDefault();
+    });
+  }
 
   // Busy state so a slow cPanel/Mailman call isn't submitted twice.
   function busy(btn) { btn.disabled = true; btn.textContent = btn.getAttribute('data-busy'); }
