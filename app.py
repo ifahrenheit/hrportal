@@ -628,6 +628,7 @@ def get_sub_admin_permissions(emp_number):
                 'can_documents': bool(row.get('can_documents', 0)),
                 'can_sl_verification': bool(row.get('can_sl_verification', 0)),
                 'can_mailing_lists': bool(row.get('can_mailing_lists', 0)),
+                'can_mailing_lists_view': bool(row.get('can_mailing_lists_view', 0)),
             }
     finally:
         db.close()
@@ -2600,6 +2601,7 @@ def admin_sub_admins():
                     'can_documents': 1 if request.form.get('can_documents') else 0,
                     'can_sl_verification': 1 if request.form.get('can_sl_verification') else 0,
                     'can_mailing_lists': 1 if request.form.get('can_mailing_lists') else 0,
+                    'can_mailing_lists_view': 1 if request.form.get('can_mailing_lists_view') else 0,
                 }
                 with db.cursor() as c:
                     c.execute("""
@@ -2607,26 +2609,26 @@ def admin_sub_admins():
                             (emp_number, can_all_leaves, can_all_requests, can_approve, can_file_for_emp,
                              can_schedules, can_reports, can_work_mode, can_settings, can_absences, can_tardiness,
                              can_entitlements, can_file_requests, can_material_requests,
-                             can_final_approval, can_view_tickets, can_facilities_review, can_facilities_final, can_view_approved_items, can_onboarding, can_wfm, can_overbreak, can_inventory, can_attrition_report, can_csat, can_surveys, can_floor_map, can_pim, can_qa_updates, can_requirements, can_night_differential, can_holiday_awol, can_coaching, can_coaching_reports, can_memos, assigned_by, can_ot_hours, can_team_calendar, can_documents, can_sl_verification, can_mailing_lists)
-                        VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                             can_final_approval, can_view_tickets, can_facilities_review, can_facilities_final, can_view_approved_items, can_onboarding, can_wfm, can_overbreak, can_inventory, can_attrition_report, can_csat, can_surveys, can_floor_map, can_pim, can_qa_updates, can_requirements, can_night_differential, can_holiday_awol, can_coaching, can_coaching_reports, can_memos, assigned_by, can_ot_hours, can_team_calendar, can_documents, can_sl_verification, can_mailing_lists, can_mailing_lists_view)
+                        VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
                         ON DUPLICATE KEY UPDATE
                             can_all_leaves=%s, can_all_requests=%s, can_approve=%s, can_file_for_emp=%s,
                             can_schedules=%s, can_reports=%s, can_work_mode=%s, can_settings=%s,
                             can_absences=%s, can_tardiness=%s, can_entitlements=%s, can_file_requests=%s,
                             can_material_requests=%s, can_final_approval=%s,
-                            can_view_tickets=%s, can_facilities_review=%s, can_facilities_final=%s, can_view_approved_items=%s, can_onboarding=%s, can_wfm=%s, can_overbreak=%s, can_inventory=%s, can_attrition_report=%s, can_csat=%s, can_surveys=%s, can_floor_map=%s, can_pim=%s, can_qa_updates=%s, can_requirements=%s, can_night_differential=%s, can_holiday_awol=%s, can_coaching=%s, can_coaching_reports=%s, can_memos=%s, assigned_by=%s, can_ot_hours=%s, can_team_calendar=%s, can_documents=%s, can_sl_verification=%s, can_mailing_lists=%s
+                            can_view_tickets=%s, can_facilities_review=%s, can_facilities_final=%s, can_view_approved_items=%s, can_onboarding=%s, can_wfm=%s, can_overbreak=%s, can_inventory=%s, can_attrition_report=%s, can_csat=%s, can_surveys=%s, can_floor_map=%s, can_pim=%s, can_qa_updates=%s, can_requirements=%s, can_night_differential=%s, can_holiday_awol=%s, can_coaching=%s, can_coaching_reports=%s, can_memos=%s, assigned_by=%s, can_ot_hours=%s, can_team_calendar=%s, can_documents=%s, can_sl_verification=%s, can_mailing_lists=%s, can_mailing_lists_view=%s
                     """, (
                         emp_number,
                         perms['can_all_leaves'], perms['can_all_requests'], perms['can_approve'], perms['can_file_for_emp'],
                         perms['can_schedules'], perms['can_reports'], perms['can_work_mode'],
                         perms['can_settings'], perms['can_absences'], perms['can_tardiness'],    perms['can_entitlements'], perms['can_file_requests'],
                         perms['can_material_requests'], perms['can_final_approval'],
-                        perms['can_view_tickets'], perms['can_facilities_review'], perms['can_facilities_final'], perms['can_view_approved_items'], perms['can_onboarding'], perms['can_wfm'], perms['can_overbreak'], perms['can_inventory'], perms['can_attrition_report'], perms['can_csat'], perms['can_surveys'], perms['can_floor_map'], perms['can_pim'], perms['can_qa_updates'], perms['can_requirements'], perms['can_night_differential'], perms['can_holiday_awol'], perms['can_coaching'], perms['can_coaching_reports'], perms['can_memos'], session['user']['emp_number'], perms['can_ot_hours'], perms['can_team_calendar'], perms['can_documents'], perms['can_sl_verification'], perms['can_mailing_lists'],
+                        perms['can_view_tickets'], perms['can_facilities_review'], perms['can_facilities_final'], perms['can_view_approved_items'], perms['can_onboarding'], perms['can_wfm'], perms['can_overbreak'], perms['can_inventory'], perms['can_attrition_report'], perms['can_csat'], perms['can_surveys'], perms['can_floor_map'], perms['can_pim'], perms['can_qa_updates'], perms['can_requirements'], perms['can_night_differential'], perms['can_holiday_awol'], perms['can_coaching'], perms['can_coaching_reports'], perms['can_memos'], session['user']['emp_number'], perms['can_ot_hours'], perms['can_team_calendar'], perms['can_documents'], perms['can_sl_verification'], perms['can_mailing_lists'], perms['can_mailing_lists_view'],
                         perms['can_all_leaves'], perms['can_all_requests'], perms['can_approve'], perms['can_file_for_emp'],
                         perms['can_schedules'], perms['can_reports'], perms['can_work_mode'],
                         perms['can_settings'], perms['can_absences'], perms['can_tardiness'],    perms['can_entitlements'], perms['can_file_requests'],
                         perms['can_material_requests'], perms['can_final_approval'],
-                        perms['can_view_tickets'], perms['can_facilities_review'], perms['can_facilities_final'], perms['can_view_approved_items'], perms['can_onboarding'], perms['can_wfm'], perms['can_overbreak'], perms['can_inventory'], perms['can_attrition_report'], perms['can_csat'], perms['can_surveys'], perms['can_floor_map'], perms['can_pim'], perms['can_qa_updates'], perms['can_requirements'], perms['can_night_differential'], perms['can_holiday_awol'], perms['can_coaching'], perms['can_coaching_reports'], perms['can_memos'], session['user']['emp_number'], perms['can_ot_hours'], perms['can_team_calendar'], perms['can_documents'], perms['can_sl_verification'], perms['can_mailing_lists']
+                        perms['can_view_tickets'], perms['can_facilities_review'], perms['can_facilities_final'], perms['can_view_approved_items'], perms['can_onboarding'], perms['can_wfm'], perms['can_overbreak'], perms['can_inventory'], perms['can_attrition_report'], perms['can_csat'], perms['can_surveys'], perms['can_floor_map'], perms['can_pim'], perms['can_qa_updates'], perms['can_requirements'], perms['can_night_differential'], perms['can_holiday_awol'], perms['can_coaching'], perms['can_coaching_reports'], perms['can_memos'], session['user']['emp_number'], perms['can_ot_hours'], perms['can_team_calendar'], perms['can_documents'], perms['can_sl_verification'], perms['can_mailing_lists'], perms['can_mailing_lists_view']
                     ))
                 db.commit()
                 flash('Sub-admin permissions updated!', 'success')
@@ -2678,6 +2680,7 @@ def admin_sub_admins():
                     'can_documents': 1 if request.form.get('can_documents') else 0,
                     'can_sl_verification': 1 if request.form.get('can_sl_verification') else 0,
                     'can_mailing_lists': 1 if request.form.get('can_mailing_lists') else 0,
+                    'can_mailing_lists_view': 1 if request.form.get('can_mailing_lists_view') else 0,
                 }
                 if not group_name:
                     flash('Please select a group.', 'danger')
@@ -2696,26 +2699,26 @@ def admin_sub_admins():
                                     (emp_number, can_all_leaves, can_all_requests, can_approve, can_file_for_emp,
                                      can_schedules, can_reports, can_work_mode, can_settings,
                                      can_entitlements, can_file_requests, can_material_requests,
-                                     can_final_approval, can_view_tickets, can_facilities_review, can_facilities_final, can_view_approved_items, can_onboarding, can_wfm, can_overbreak, can_inventory, can_attrition_report, can_csat, can_surveys, can_floor_map, can_pim, can_qa_updates, can_requirements, can_absences, can_tardiness, can_night_differential, can_holiday_awol, can_coaching, can_coaching_reports, can_ot_hours, can_memos, assigned_by, can_team_calendar, can_documents, can_sl_verification, can_mailing_lists)
-                                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                                     can_final_approval, can_view_tickets, can_facilities_review, can_facilities_final, can_view_approved_items, can_onboarding, can_wfm, can_overbreak, can_inventory, can_attrition_report, can_csat, can_surveys, can_floor_map, can_pim, can_qa_updates, can_requirements, can_absences, can_tardiness, can_night_differential, can_holiday_awol, can_coaching, can_coaching_reports, can_ot_hours, can_memos, assigned_by, can_team_calendar, can_documents, can_sl_verification, can_mailing_lists, can_mailing_lists_view)
+                                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
                                 ON DUPLICATE KEY UPDATE
                                     can_all_leaves=%s, can_all_requests=%s, can_approve=%s, can_file_for_emp=%s,
                                     can_schedules=%s, can_reports=%s, can_work_mode=%s,
                                     can_settings=%s, can_entitlements=%s, can_file_requests=%s,
                                     can_material_requests=%s, can_final_approval=%s,
-                                    can_view_tickets=%s, can_facilities_review=%s, can_facilities_final=%s, can_view_approved_items=%s, can_onboarding=%s, can_wfm=%s, can_overbreak=%s, can_inventory=%s, can_attrition_report=%s, can_csat=%s, can_surveys=%s, can_floor_map=%s, can_pim=%s, can_qa_updates=%s, can_requirements=%s, can_absences=%s, can_tardiness=%s, can_night_differential=%s, can_holiday_awol=%s, can_coaching=%s, can_coaching_reports=%s, can_ot_hours=%s, can_memos=%s, assigned_by=%s, can_team_calendar=%s, can_documents=%s, can_sl_verification=%s, can_mailing_lists=%s
+                                    can_view_tickets=%s, can_facilities_review=%s, can_facilities_final=%s, can_view_approved_items=%s, can_onboarding=%s, can_wfm=%s, can_overbreak=%s, can_inventory=%s, can_attrition_report=%s, can_csat=%s, can_surveys=%s, can_floor_map=%s, can_pim=%s, can_qa_updates=%s, can_requirements=%s, can_absences=%s, can_tardiness=%s, can_night_differential=%s, can_holiday_awol=%s, can_coaching=%s, can_coaching_reports=%s, can_ot_hours=%s, can_memos=%s, assigned_by=%s, can_team_calendar=%s, can_documents=%s, can_sl_verification=%s, can_mailing_lists=%s, can_mailing_lists_view=%s
                             """, (
                                 en,
                                 perms['can_all_leaves'], perms['can_all_requests'], perms['can_approve'], perms['can_file_for_emp'],
                                 perms['can_schedules'], perms['can_reports'], perms['can_work_mode'],
                                 perms['can_settings'], perms['can_entitlements'], perms['can_file_requests'],
                                 perms['can_material_requests'], perms['can_final_approval'],
-                                perms['can_view_tickets'], perms['can_facilities_review'], perms['can_facilities_final'], perms['can_view_approved_items'], perms['can_onboarding'], perms['can_wfm'], perms['can_overbreak'], perms['can_inventory'], perms['can_attrition_report'], perms['can_csat'], perms['can_surveys'], perms['can_floor_map'], perms['can_pim'], perms['can_qa_updates'], perms['can_requirements'], perms['can_absences'], perms['can_tardiness'], perms['can_night_differential'], perms['can_holiday_awol'], perms['can_coaching'], perms['can_coaching_reports'], perms['can_ot_hours'], perms['can_memos'], session['user']['emp_number'], perms['can_team_calendar'], perms['can_documents'], perms['can_sl_verification'], perms['can_mailing_lists'],
+                                perms['can_view_tickets'], perms['can_facilities_review'], perms['can_facilities_final'], perms['can_view_approved_items'], perms['can_onboarding'], perms['can_wfm'], perms['can_overbreak'], perms['can_inventory'], perms['can_attrition_report'], perms['can_csat'], perms['can_surveys'], perms['can_floor_map'], perms['can_pim'], perms['can_qa_updates'], perms['can_requirements'], perms['can_absences'], perms['can_tardiness'], perms['can_night_differential'], perms['can_holiday_awol'], perms['can_coaching'], perms['can_coaching_reports'], perms['can_ot_hours'], perms['can_memos'], session['user']['emp_number'], perms['can_team_calendar'], perms['can_documents'], perms['can_sl_verification'], perms['can_mailing_lists'], perms['can_mailing_lists_view'],
                                 perms['can_all_leaves'], perms['can_all_requests'], perms['can_approve'], perms['can_file_for_emp'],
                                 perms['can_schedules'], perms['can_reports'], perms['can_work_mode'],
                                 perms['can_settings'], perms['can_entitlements'], perms['can_file_requests'],
                                 perms['can_material_requests'], perms['can_final_approval'],
-                                perms['can_view_tickets'], perms['can_facilities_review'], perms['can_facilities_final'], perms['can_view_approved_items'], perms['can_onboarding'], perms['can_wfm'], perms['can_overbreak'], perms['can_inventory'], perms['can_attrition_report'], perms['can_csat'], perms['can_surveys'], perms['can_floor_map'], perms['can_pim'], perms['can_qa_updates'], perms['can_requirements'], perms['can_absences'], perms['can_tardiness'], perms['can_night_differential'], perms['can_holiday_awol'], perms['can_coaching'], perms['can_coaching_reports'], perms['can_ot_hours'], perms['can_memos'], session['user']['emp_number'], perms['can_team_calendar'], perms['can_documents'], perms['can_sl_verification'], perms['can_mailing_lists']
+                                perms['can_view_tickets'], perms['can_facilities_review'], perms['can_facilities_final'], perms['can_view_approved_items'], perms['can_onboarding'], perms['can_wfm'], perms['can_overbreak'], perms['can_inventory'], perms['can_attrition_report'], perms['can_csat'], perms['can_surveys'], perms['can_floor_map'], perms['can_pim'], perms['can_qa_updates'], perms['can_requirements'], perms['can_absences'], perms['can_tardiness'], perms['can_night_differential'], perms['can_holiday_awol'], perms['can_coaching'], perms['can_coaching_reports'], perms['can_ot_hours'], perms['can_memos'], session['user']['emp_number'], perms['can_team_calendar'], perms['can_documents'], perms['can_sl_verification'], perms['can_mailing_lists'], perms['can_mailing_lists_view']
                             ))
                             count += 1
                     db.commit()
@@ -2731,7 +2734,7 @@ def admin_sub_admins():
                        sa.can_all_leaves, sa.can_all_requests, sa.can_approve, sa.can_file_for_emp,
                        sa.can_schedules, sa.can_reports, sa.can_work_mode,
                        sa.can_settings, sa.can_absences, sa.can_tardiness, sa.can_entitlements, sa.can_file_requests, sa.can_attrition_report,
-                       sa.can_material_requests, sa.can_final_approval, sa.can_view_tickets, sa.can_facilities_review, sa.can_facilities_final, sa.can_view_approved_items, sa.can_onboarding, sa.can_wfm, sa.can_overbreak, sa.can_inventory, sa.can_csat, sa.can_surveys, sa.can_floor_map, sa.can_pim, sa.can_qa_updates, sa.can_requirements, sa.can_night_differential, sa.can_holiday_awol, sa.can_coaching, sa.can_coaching_reports, sa.can_memos, sa.can_ot_hours, sa.can_team_calendar, sa.can_documents, sa.can_sl_verification, sa.can_mailing_lists
+                       sa.can_material_requests, sa.can_final_approval, sa.can_view_tickets, sa.can_facilities_review, sa.can_facilities_final, sa.can_view_approved_items, sa.can_onboarding, sa.can_wfm, sa.can_overbreak, sa.can_inventory, sa.can_csat, sa.can_surveys, sa.can_floor_map, sa.can_pim, sa.can_qa_updates, sa.can_requirements, sa.can_night_differential, sa.can_holiday_awol, sa.can_coaching, sa.can_coaching_reports, sa.can_memos, sa.can_ot_hours, sa.can_team_calendar, sa.can_documents, sa.can_sl_verification, sa.can_mailing_lists, sa.can_mailing_lists_view
                 FROM hs_hr_employee h
                 JOIN ohrm_user u ON u.emp_number = h.emp_number
                 LEFT JOIN leave4day_sub_admins sa ON sa.emp_number = h.emp_number

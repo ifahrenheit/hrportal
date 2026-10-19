@@ -1,0 +1,93 @@
+{% extends "base.html" %}
+{% block title %}History · Mailing Lists{% endblock %}
+{% block page_title %}Mailing Lists{% endblock %}
+
+{% block content %}
+<form method="get" class="rt-card">
+  <a class="rt-muted" href="{{ url_for('mailing_lists.index') }}"><i data-lucide="arrow-left" style="width:14px;height:14px"></i> All mailing lists</a>
+  <h5 class="rt-card-title mt-2">Change history, all lists</h5>
+  <div class="rt-toolbar">
+    <div>
+      <label for="hList">List</label>
+      <select class="form-select" id="hList" name="list">
+        <option value="">All lists</option>
+        {% for l in lists %}<option value="{{ l }}" {{ 'selected' if l == f.list }}>{{ l }}</option>{% endfor %}
+      </select>
+    </div>
+    <div>
+      <label for="hAction">Action</label>
+      <select class="form-select" id="hAction" name="action">
+        <option value="">Any</option>
+        {% for k, v in actions.items() %}<option value="{{ k }}" {{ 'selected' if k == f.action }}>{{ v }}</option>{% endfor %}
+      </select>
+    </div>
+    <div>
+      <label for="hResult">Result</label>
+      <select class="form-select" id="hResult" name="result">
+        <option value="">Any</option>
+        {% for k in ['done', 'failed', 'skipped'] %}<option value="{{ k }}" {{ 'selected' if k == f.result }}>{{ k|title }}</option>{% endfor %}
+      </select>
+    </div>
+    <div>
+      <label for="hActor">By</label>
+      <select class="form-select" id="hActor" name="actor">
+        <option value="">Anyone</option>
+        {% for a in actors %}<option value="{{ a }}" {{ 'selected' if a == f.actor }}>{{ a }}</option>{% endfor %}
+      </select>
+    </div>
+    <div>
+      <label for="hQ">Member / text</label>
+      <input type="text" class="form-control" id="hQ" name="q" value="{{ f.q }}" placeholder="email or subject">
+    </div>
+    <div>
+      <label for="hFrom">From</label>
+      <input type="date" class="form-control" id="hFrom" name="from" value="{{ f['from'] }}">
+    </div>
+    <div>
+      <label for="hTo">To</label>
+      <input type="date" class="form-control" id="hTo" name="to" value="{{ f.to }}">
+    </div>
+    <button type="submit" class="btn btn-primary"><i class="me-1" data-lucide="filter"></i>Apply</button>
+    <a class="btn btn-outline-secondary" href="{{ url_for('mailing_lists.history') }}">Clear</a>
+    <a class="btn btn-outline-secondary ms-auto" href="{{ url_for('mailing_lists.history_csv', **f) }}">
+      <i class="me-1" data-lucide="download"></i>Export CSV
+    </a>
+  </div>
+</form>
+
+<div class="rt-card">
+  <div class="rt-muted mb-2">{{ total }} change{{ '' if total == 1 else 's' }}{% if total > per_page %} · page {{ page }} of {{ ((total - 1) // per_page) + 1 }}{% endif %}</div>
+  <div class="table-responsive">
+    <table class="data-table">
+      <thead><tr><th>When</th><th>By</th><th>List</th><th>Action</th><th>Member / item</th><th>Result</th><th>Detail</th></tr></thead>
+      <tbody>
+        {% for h in rows %}
+        <tr>
+          <td class="text-nowrap">{{ h.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
+          <td>{{ h.actor_name or h.actor_email }}{% if h.acting_as %} <span class="rt-muted">(as {{ h.acting_as }})</span>{% endif %}</td>
+          <td><a href="{{ url_for('mailing_lists.detail', list_type=h.list_type, address=h.list_address) }}">{{ h.list_address }}</a></td>
+          <td>{{ actions.get(h.action, h.action) }}</td>
+          <td>{{ h.member_email }}</td>
+          <td>
+            {% if h.result == 'done' %}<span class="rt-badge on">Done</span>
+            {% elif h.result == 'failed' %}<span class="rt-badge fail">Failed</span>
+            {% else %}<span class="rt-badge off">Skipped</span>{% endif %}
+          </td>
+          <td class="rt-muted small">{{ h.detail or '' }}</td>
+        </tr>
+        {% else %}
+        <tr class="empty-row"><td colspan="7">No changes match these filters.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% if total > per_page %}
+  <div class="d-flex gap-2 mt-3">
+    {% if page > 1 %}<a class="btn btn-outline-secondary btn-sm" href="{{ url_for('mailing_lists.history', page=page - 1, **f) }}">Newer</a>{% endif %}
+    {% if page * per_page < total %}<a class="btn btn-outline-secondary btn-sm" href="{{ url_for('mailing_lists.history', page=page + 1, **f) }}">Older</a>{% endif %}
+  </div>
+  {% endif %}
+</div>
+
+{% include "routines/_table_assets.html" %}
+{% endblock %}

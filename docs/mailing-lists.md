@@ -72,9 +72,19 @@ Each Mailman list has a **Pending requests** page (`/admin/mailing-lists/mailman
 - **Offboarding page:** after offboarding, it shows the leaver's lists with **Remove from all**. Staff with `can_onboarding` can use only these two lookup/removal endpoints.
 - **Delete a group:** type the address to confirm. Members at deletion are written to the change history first (rebuild with Sync). A Mailman delete also deletes its archives.
 
+## Privacy, owners, history
+- **Privacy card** (Mailman lists): shows the four settings and a **Make private / Make public** button.
+  - Private = not advertised, archives for members only, joining needs confirm + approval, member list for admins only.
+  - The first three are set through UAPI `set_list_privacy_options`; member-list visibility goes through Mailman's privacy form.
+  - New lists default to Private and get the full preset after creation.
+- **Owners & moderators card:** add/remove through Mailman's General Options (`owner` / `moderator`). The last owner can't be removed.
+- **History** (`/admin/mailing-lists/history`): every change on every list. Filter by list, action, result, who, text and dates. **Export CSV** uses the same filters; cells that could act as spreadsheet formulas are neutralised.
+
 ## Access
-Admins, and sub-admins with **Mailing Lists** (`can_mailing_lists`, Sub-Admins page → Tools & Access).
-Everyone else gets a 404 and no menu item.
+- **Mailing Lists** (`can_mailing_lists`): view and change everything.
+- **Mailing Lists (view only)** (`can_mailing_lists_view`): every page, no change controls. Every POST and the new-list form return 403 for them.
+- Admins have full access. Offboarding staff (`can_onboarding`) can use only the two offboarding endpoints.
+- Everyone else gets a 404 and no menu item.
 
 ## Two kinds of group address
 | Type | Where members live | How the portal reads them |

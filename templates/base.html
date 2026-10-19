@@ -650,7 +650,7 @@ refreshSLVerifyBadge();
 setInterval(refreshSLVerifyBadge, 60000);
 {% endif %}
 
-{% if ml_can_access is defined and ml_can_access() %}
+{% if ml_can_view is defined and ml_can_view() %}
 function refreshMlPendingBadge() {
   fetch('/admin/mailing-lists/api/pending-total').then(r => r.json()).then(d => {
     const b = document.getElementById('mlPendingBadge');

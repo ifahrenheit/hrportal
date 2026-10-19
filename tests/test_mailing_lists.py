@@ -807,5 +807,67 @@ class PendingAlertTests(unittest.TestCase):
 
 
 
+class ViewOnlyAndSettingsTests(unittest.TestCase):
+    def setUp(self):
+        app = Flask(__name__)
+        app.secret_key = "t"
+        app.register_blueprint(ml.mailing_lists_bp)
+        self.client = app.test_client()
+        with self.client.session_transaction() as s:
+            s["user"] = {"email": "v@cohere.ph"}
+            s["permissions"] = {"can_mailing_lists_view": True}
+            s["_csrf_token"] = "good"
+
+    def test_view_only_can_read_but_not_change(self):
+        with mock.patch.object(ml, "fetch_forwarders", return_value=({"hr@x.ph": ["a@x.ph"]}, 0)), \
+             mock.patch.object(ml, "load_employee_index", return_value={}):
+            r = self.client.get("/admin/mailing-lists/api/summary/forwarder/hr@x.ph")
+        self.assertEqual(r.status_code, 200)
+        with mock.patch.object(ml, "change_members") as cm, mock.patch.object(ml, "moderate") as mod, \
+             mock.patch.object(ml, "delete_group") as dg, mock.patch.object(ml, "set_privacy") as sp:
+            for url, data in [("/admin/mailing-lists/forwarder/hr@x.ph/members", {"action": "add", "emails": "b@x.ph"}),
+                              ("/admin/mailing-lists/mailman/l@x.ph/pending", {"action": "discard", "item": "1"}),
+                              ("/admin/mailing-lists/forwarder/hr@x.ph/delete", {"confirm": "hr@x.ph"}),
+                              ("/admin/mailing-lists/mailman/l@x.ph/privacy", {"preset": "public"}),
+                              ("/admin/mailing-lists/cleanup", {"pick": "a@x.ph|forwarder|hr@x.ph"})]:
+                r = self.client.post(url, data=dict(data, csrf_token="good"))
+                self.assertEqual(r.status_code, 403, url)
+        for m in (cm, mod, dg, sp):
+            m.assert_not_called()
+        self.assertEqual(self.client.get("/admin/mailing-lists/new").status_code, 403)
+
+    def test_privacy_presets_match_what_was_set_live(self):
+        self.assertEqual(ml.PRIVACY_PRESETS["private"],
+                         {"advertised": 0, "archive_private": 1, "subscribe_policy": 3, "private_roster": "2"})
+
+    def test_set_privacy_calls_cpanel_then_mailman_form_and_verifies(self):
+        sess = mock.MagicMock()
+        with mock.patch.object(ml, "fetch_mailman_lists", return_value=({"l@x.ph": {"listid": "l_x.ph"}}, 0)), \
+             mock.patch.object(ml, "_uapi") as u, \
+             mock.patch.object(ml, "_mailman_session") as ms, \
+             mock.patch.object(ml, "mailman_form_update") as fu, \
+             mock.patch.object(ml, "fetch_privacy", return_value={"preset": "private"}), \
+             mock.patch.object(ml, "_write_audit"):
+            ms.return_value.__enter__.return_value = (sess, "https://h/mailman/admin/l_x.ph", "")
+            ml.set_privacy("l@x.ph", "private")
+        u.assert_called_once_with("set_list_privacy_options", {"list": "l@x.ph", "advertised": 0, "archive_private": 1,
+                                                               "subscribe_policy": 3}, write=True)
+        fu.assert_called_once_with(sess, "https://h/mailman/admin/l_x.ph/privacy/subscribing",
+                                   set_fields={"private_roster": "2"})
+
+    def test_cannot_remove_last_owner(self):
+        page = '<form><textarea name="owner">only@cohere.ph</textarea><textarea name="moderator"></textarea></form>'
+        sess = mock.MagicMock()
+        sess.get.return_value = mock.Mock(text=page, raise_for_status=lambda: None)
+        with mock.patch.object(ml, "fetch_mailman_lists", return_value=({"l@x.ph": {"listid": "l_x.ph"}}, 0)), \
+             mock.patch.object(ml, "_mailman_session") as ms, \
+             mock.patch.object(ml, "mailman_form_update") as fu:
+            ms.return_value.__enter__.return_value = (sess, "https://h/mailman/admin/l_x.ph", "")
+            with self.assertRaises(ValueError):
+                ml.update_list_admins("l@x.ph", "owner", remove=["only@cohere.ph"])
+        fu.assert_not_called()
+
+
+
 if __name__ == "__main__":
     unittest.main()

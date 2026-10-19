@@ -58,11 +58,13 @@
       </table>
     </div>
     <div class="rt-muted mb-1"><strong>Messages</strong>{% if total_posts > posts|length %} · showing the newest {{ posts|length }} of {{ total_posts }}; use <em>By sender</em> above to act on the rest{% endif %}</div>
+{% if ml_can_access() %}
     <div class="ml-actions mb-3">
       <button type="button" class="btn btn-outline-secondary btn-sm" data-select="all">Select all</button>
       <button type="button" class="btn btn-outline-danger btn-sm" data-select="suspicious">Select spam / phishing</button>
       <button type="button" class="btn btn-outline-secondary btn-sm" data-select="none">Clear</button>
     </div>
+    {% endif %}
     <div class="table-responsive">
       <table class="data-table">
         <thead><tr><th style="width:2rem"></th><th>From</th><th>Subject</th><th>Reason</th><th>Received</th><th></th></tr></thead>
@@ -98,6 +100,7 @@
         </tbody>
       </table>
     </div>
+{% if ml_can_access() %}
     <div class="ml-actions mt-3">
       <div>
         <button type="submit" name="action" value="discard" class="btn btn-danger" data-needs-selection>
@@ -125,6 +128,8 @@
         <i class="me-1" data-lucide="send"></i>Accept and send to list (<span data-count>0</span>)
       </button>
     </div>
+    {% else %}<p class="rt-muted mt-3 mb-0"><i class="me-1" data-lucide="eye"></i>View-only access: you can't decide on held messages.</p>
+    {% endif %}
   </form>
   {% else %}
   <p class="rt-muted mb-0">No held messages.</p>
@@ -151,12 +156,14 @@
         </tbody>
       </table>
     </div>
+{% if ml_can_access() %}
     <div class="ml-actions mt-3">
       <button type="submit" name="action" value="accept" class="btn btn-primary" data-needs-selection>Approve selected (<span data-count>0</span>)</button>
       <input type="text" class="form-control" name="comment" maxlength="500" placeholder="Reason (Reject only, optional)">
       <button type="submit" name="action" value="reject" class="btn btn-outline-danger" data-needs-selection>Reject</button>
       <button type="submit" name="action" value="discard" class="btn btn-outline-secondary" data-needs-selection>Discard</button>
     </div>
+    {% endif %}
   </form>
   {% else %}
   <p class="rt-muted mb-0">No membership requests.</p>

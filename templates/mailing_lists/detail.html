@@ -95,6 +95,7 @@
 </div>
 {% endif %}
 
+{% if ml_can_access() %}
 <div class="rt-card">
   <h6 class="rt-card-title"><i class="me-1" data-lucide="user-plus"></i>Add or sync members</h6>
   <form method="post" action="{{ change_url }}" id="addForm">
@@ -125,6 +126,9 @@
     </div>
   </form>
 </div>
+{% else %}
+<div class="rt-card"><p class="rt-muted mb-0"><i class="me-1" data-lucide="eye"></i>You have view-only access to mailing lists.</p></div>
+{% endif %}
 {% endif %}
 
 <div class="rt-card">
@@ -139,7 +143,7 @@
                placeholder="Email, name, group, status…">
       </div>
       <span class="rt-muted pb-2" data-table-count="#memTable"></span>
-      {% if members %}
+      {% if members and ml_can_access() %}
       <div class="ms-auto d-flex flex-wrap gap-2">
         {% if summary.separated %}
         <button type="button" class="btn btn-outline-danger" id="selSeparated">
@@ -199,6 +203,79 @@
 </div>
 
 {% if list_type == 'mailman' %}
+<div class="row g-3 mb-0">
+  <div class="col-lg-6">
+    <div class="rt-card h-100" id="privacy">
+      <h6 class="rt-card-title"><i class="me-1" data-lucide="lock"></i>Privacy
+        {% if privacy and privacy.preset == 'private' %}<span class="rt-badge on">Private</span>
+        {% elif privacy and privacy.preset == 'public' %}<span class="rt-badge fail">Public</span>
+        {% elif privacy %}<span class="rt-badge off">Custom</span>{% endif %}</h6>
+      {% if privacy %}
+      <table class="data-table mb-3">
+        <tbody>
+          <tr><td>Listed on the public lists page</td><td>{{ 'Yes' if privacy.advertised else 'No' }}</td></tr>
+          <tr><td>Old emails (archives)</td><td>{{ 'Members only' if privacy.archive_private else 'Anyone with the link' }}</td></tr>
+          <tr><td>Joining from the sign-up page</td><td>{{ privacy.subscribe_label }}</td></tr>
+          <tr><td>Who can see the member list</td><td>{{ privacy.roster_label }}</td></tr>
+        </tbody>
+      </table>
+      <div class="d-flex gap-2">
+        {% if ml_can_access() %}{% for preset, label, cls, note in [('private', 'Make private', 'btn-primary', 'Not listed, archives for members only, joining needs your approval, member list for admins only.'),
+                                            ('public', 'Make public', 'btn-outline-danger', 'Listed publicly, archives readable by anyone with the link, anyone can join after confirming by email, members can see each other.')] %}
+        {% if privacy.preset != preset %}
+        <form method="post" action="{{ url_for('mailing_lists.privacy', address=address) }}" onsubmit="return confirm({{ (label ~ '?\n\n' ~ note)|tojson }});">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <input type="hidden" name="preset" value="{{ preset }}">
+          <button class="btn btn-sm {{ cls }}" title="{{ note }}">{{ label }}</button>
+        </form>
+        {% endif %}
+        {% endfor %}{% endif %}
+      </div>
+      {% else %}
+      <p class="rt-muted mb-0">Could not read the privacy settings.</p>
+      {% endif %}
+    </div>
+  </div>
+  <div class="col-lg-6">
+    <div class="rt-card h-100" id="admins">
+      <h6 class="rt-card-title"><i class="me-1" data-lucide="user-cog"></i>Owners &amp; moderators</h6>
+      <p class="rt-muted small mb-2">Owners run the list in Mailman and get its admin emails. Moderators can only approve or discard held messages.</p>
+      {% if admins %}
+      {% for field, label in admin_fields %}
+      <div class="fw-semibold small mb-1">{{ label }} <span class="rt-muted">({{ admins[field]|length }})</span></div>
+      <ul class="list-unstyled mb-2">
+        {% for e in admins[field] %}
+        <li class="d-flex align-items-center gap-2 py-1" style="border-bottom:1px solid var(--border)">
+          <span>{{ e }}</span>
+          {% if not ml_can_access() %}
+          {% elif not (field == 'owner' and admins[field]|length == 1) %}
+          <form method="post" action="{{ url_for('mailing_lists.list_admins', address=address) }}" class="ms-auto"
+                onsubmit="return confirm('Remove {{ e }} as {{ label[:-1]|lower }}?');">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <input type="hidden" name="field" value="{{ field }}"><input type="hidden" name="op" value="remove">
+            <input type="hidden" name="entry" value="{{ e }}">
+            <button class="btn btn-sm btn-outline-secondary" aria-label="Remove {{ e }}">Remove</button>
+          </form>
+          {% else %}<span class="ms-auto rt-muted small">last owner</span>{% endif %}
+        </li>
+        {% else %}<li class="rt-muted small">None</li>{% endfor %}
+      </ul>
+{% if ml_can_access() %}
+      <form method="post" action="{{ url_for('mailing_lists.list_admins', address=address) }}" class="d-flex gap-2 mb-3">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="field" value="{{ field }}"><input type="hidden" name="op" value="add">
+        <input type="text" class="form-control form-control-sm" name="emails" placeholder="name@cohere.ph" aria-label="Add {{ label|lower }}">
+        <button class="btn btn-sm btn-outline-primary">Add</button>
+      </form>
+      {% endif %}
+      {% endfor %}
+      {% else %}
+      <p class="rt-muted mb-0">Could not read the owners.</p>
+      {% endif %}
+    </div>
+  </div>
+</div>
+
 <div class="rt-card" id="senders">
   <h6 class="rt-card-title"><i class="me-1" data-lucide="shield-check"></i>Allowed &amp; blocked senders</h6>
   <p class="rt-muted mb-3">
@@ -218,7 +295,7 @@
         <li class="d-flex flex-wrap align-items-center gap-2 py-1" style="border-bottom:1px solid var(--border)">
           <code>{{ e.value }}</code>
           {% if e.problem %}<span class="rt-badge fail" title="Mailman will never match this line">{{ e.problem }}</span>{% endif %}
-          <span class="ms-auto d-flex gap-1">
+          <span class="ms-auto d-flex gap-1">{% if ml_can_access() %}
             {% if e.fix %}
             <form method="post" action="{{ url_for('mailing_lists.senders', address=address) }}"
                   onsubmit="return confirm('Change {{ e.value }} to {{ e.fix }} so Mailman matches it? This starts {{ f.label|lower }} mail from everyone it covers.');">
@@ -235,18 +312,20 @@
               <input type="hidden" name="entry" value="{{ e.value }}">
               <button class="btn btn-sm btn-outline-secondary" aria-label="Remove {{ e.value }}">Remove</button>
             </form>
-          </span>
+          {% endif %}</span>
         </li>
         {% else %}
         <li class="rt-muted">None</li>
         {% endfor %}
       </ul>
+{% if ml_can_access() %}
       <form method="post" action="{{ url_for('mailing_lists.senders', address=address) }}" class="d-flex gap-2">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <input type="hidden" name="field" value="{{ f.field }}"><input type="hidden" name="op" value="add">
         <input type="text" class="form-control form-control-sm" name="entries" placeholder="name@example.com" aria-label="Add to {{ f.label }}">
         <button class="btn btn-sm btn-outline-primary">Add</button>
       </form>
+      {% endif %}
     </div>
     {% endfor %}
   </div>
@@ -266,7 +345,7 @@
         <tr>
           <td class="text-nowrap">{{ h.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
           <td>{{ h.actor_name or h.actor_email }}{% if h.acting_as %} <span class="rt-muted">(as {{ h.acting_as }})</span>{% endif %}</td>
-          <td>{{ {'add': 'Added', 'remove': 'Removed', 'create': 'Created', 'moderate': 'Moderation', 'delivery': 'Delivery', 'senders': 'Sender filter', 'delete': 'Deleted'}.get(h.action, h.action) }}
+          <td>{{ {'add': 'Added', 'remove': 'Removed', 'create': 'Created', 'moderate': 'Moderation', 'delivery': 'Delivery', 'senders': 'Sender filter', 'delete': 'Deleted', 'privacy': 'Privacy', 'owners': 'Owners'}.get(h.action, h.action) }}
             {% if h.action not in ('add', 'remove') and h.detail and h.result == 'done' %}<div class="rt-muted small">{{ h.detail }}</div>{% endif %}</td>
           <td>{{ h.member_email }}</td>
           <td>
@@ -284,7 +363,7 @@
   </div>
 </div>
 
-{% if not error %}
+{% if not error and ml_can_access() %}
 <div class="rt-card" style="border-color:rgba(227,73,72,.45)">
   <h6 class="rt-card-title text-danger"><i class="me-1" data-lucide="triangle-alert"></i>Delete this {{ 'Mailman list' if list_type == 'mailman' else 'forwarder group' }}</h6>
   <p class="rt-muted mb-2">

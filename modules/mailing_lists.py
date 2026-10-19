@@ -48,6 +48,7 @@ from urllib.parse import unquote
 
 import requests
 import urllib3
+from werkzeug.exceptions import HTTPException
 from flask import (
     Blueprint, abort, flash, jsonify, redirect, render_template, request,
     session, url_for,
@@ -75,18 +76,28 @@ _cache_lock = threading.Lock()
 # ── Access ──────────────────────────────────────────────────────────────────
 
 def ml_can_access():
+    """Full access: view and change everything."""
     if session.get("is_admin"):
         return True
     return bool((session.get("permissions") or {}).get("can_mailing_lists"))
 
 
+def ml_can_view():
+    """View-only access (can_mailing_lists_view), or full access."""
+    return ml_can_access() or bool((session.get("permissions") or {}).get("can_mailing_lists_view"))
+
+
 def _access_required(f):
+    """Reading (GET) needs view or full access; any change (POST) needs full
+    access. Without either the feature does not exist (404)."""
     @wraps(f)
     def wrapped(*args, **kwargs):
         if "user" not in session:
             return redirect("/")
-        if not ml_can_access():
+        if not ml_can_view():
             abort(404)
+        if request.method not in ("GET", "HEAD") and not ml_can_access():
+            abort(403)
         return f(*args, **kwargs)
     return wrapped
 
@@ -109,7 +120,7 @@ def _offboard_access_required(f):
 
 @mailing_lists_bp.app_context_processor
 def _inject_access():
-    return {"ml_can_access": ml_can_access, "ml_can_offboard": ml_can_offboard}
+    return {"ml_can_access": ml_can_access, "ml_can_view": ml_can_view, "ml_can_offboard": ml_can_offboard}
 
 
 # ── Parsing (pure, unit-tested) ─────────────────────────────────────────────
@@ -295,6 +306,9 @@ def fetch_mailman_lists(refresh=False):
                 "admins": [a.strip() for a in (x.get("listadmin") or "").split(",") if a.strip()],
                 "access": x.get("accesstype"),
                 "disk": x.get("humandiskused"),
+                "advertised": x.get("advertised"),
+                "archive_private": x.get("archive_private"),
+                "subscribe_policy": x.get("subscribe_policy"),
             }
         return lists
     return _cached("mailman_lists", load, refresh)
@@ -806,6 +820,109 @@ def update_sender_filter(address, field, add=(), remove=(), replace=None):
     return current, result
 
 
+# ── Mailman list privacy (Public / Private) ─────────────────────────────────
+# "Private" = what all 18 lists were set to on 2026-10-20: not advertised,
+# archives for members only, joining needs confirm + admin approval, member
+# list visible to admins only. "Public" = cPanel's defaults.
+
+PRIVACY_PRESETS = {
+    "private": {"advertised": 0, "archive_private": 1, "subscribe_policy": 3, "private_roster": "2"},
+    "public": {"advertised": 1, "archive_private": 0, "subscribe_policy": 1, "private_roster": "1"},
+}
+SUBSCRIBE_POLICIES = {0: "Open", 1: "Confirm by email", 2: "Admin approval", 3: "Confirm and approve"}
+ROSTER_VISIBILITY = {"0": "Anyone", "1": "List members", "2": "List admin only"}
+
+
+def fetch_privacy(address, refresh=False):
+    """Current privacy settings of a Mailman list, and which preset (if any)
+    they match."""
+    info = fetch_mailman_lists(refresh)[0].get(address)
+    if not info:
+        raise KeyError(address)
+
+    def load():
+        with _mailman_session(address, info["listid"]) as (s, base, _):
+            page = s.get(f"{base}/privacy/subscribing", timeout=HTTP_TIMEOUT)
+            page.raise_for_status()
+            return dict(form_fields(page.text)).get("private_roster")
+    roster, _ = _cached(f"roster:{address}", load, refresh)
+    current = {"advertised": int(info.get("advertised") or 0), "archive_private": int(info.get("archive_private") or 0),
+               "subscribe_policy": int(info.get("subscribe_policy") or 0), "private_roster": roster}
+    preset = next((name for name, vals in PRIVACY_PRESETS.items() if vals == current), None)
+    return {**current, "preset": preset,
+            "subscribe_label": SUBSCRIBE_POLICIES.get(current["subscribe_policy"], "?"),
+            "roster_label": ROSTER_VISIBILITY.get(roster or "", "?")}
+
+
+def set_privacy(address, preset):
+    """Apply the Private or Public preset: cPanel's privacy call for the
+    first three settings, Mailman's privacy form for member-list visibility.
+    Verified by reading both back; audited."""
+    vals = PRIVACY_PRESETS[preset]
+    info = fetch_mailman_lists()[0][address]
+    _uapi("set_list_privacy_options", {"list": address, "advertised": vals["advertised"],
+                                       "archive_private": vals["archive_private"],
+                                       "subscribe_policy": vals["subscribe_policy"]}, write=True)
+    with _mailman_session(address, info["listid"]) as (s, base, _):
+        mailman_form_update(s, f"{base}/privacy/subscribing", set_fields={"private_roster": vals["private_roster"]})
+    with _cache_lock:
+        _cache.pop(f"roster:{address}", None)
+    after = fetch_privacy(address, refresh=True)
+    ok = after["preset"] == preset
+    _write_audit("mailman", address, "privacy", [(address, "done" if ok else "failed",
+                 f"Set to {preset.title()}" + ("" if ok else f" — read back as {after}"))])
+    if not ok:
+        raise RuntimeError(f"Settings did not all stick: {after}")
+    return after
+
+
+# ── Mailman list owners / moderators ────────────────────────────────────────
+ADMIN_FIELDS = (("owner", "Owners"), ("moderator", "Moderators"))
+_ADMIN_NAMES = dict(ADMIN_FIELDS)
+
+
+def fetch_list_admins(address, refresh=False):
+    info = fetch_mailman_lists()[0].get(address)
+    if not info:
+        raise KeyError(address)
+
+    def load():
+        with _mailman_session(address, info["listid"]) as (s, base, _):
+            page = s.get(f"{base}/general", timeout=HTTP_TIMEOUT)
+            page.raise_for_status()
+            f = dict(form_fields(page.text))
+        return {name: [e.lower() for e in parse_sender_entries(f.get(name))] for name, _ in ADMIN_FIELDS}
+    return _cached(f"admins:{address}", load, refresh)
+
+
+def update_list_admins(address, field, add=(), remove=()):
+    """Add/remove owners or moderators (Mailman General Options page).
+    Refuses to remove the last owner. Verified and audited."""
+    if field not in _ADMIN_NAMES:
+        raise ValueError(field)
+    info = fetch_mailman_lists()[0][address]
+    with _mailman_session(address, info["listid"]) as (s, base, _):
+        url = f"{base}/general"
+        page = s.get(url, timeout=HTTP_TIMEOUT)
+        page.raise_for_status()
+        current = [e.lower() for e in parse_sender_entries(dict(form_fields(page.text)).get(field))]
+        rem = {r.lower() for r in remove}
+        new = [c for c in current if c not in rem] + [a.lower() for a in add if a.lower() not in current]
+        new = list(dict.fromkeys(new))
+        if field == "owner" and not new:
+            raise ValueError("A list needs at least one owner.")
+        if new != current:
+            mailman_form_update(s, url, set_fields={field: "\n".join(new)})
+    with _cache_lock:
+        _cache.pop(f"admins:{address}", None)
+    fetch_mailman_lists(refresh=True)   # cPanel's listadmin column follows the owners
+    label = _ADMIN_NAMES[field][:-1].lower()
+    _write_audit("mailman", address, "owners",
+                 [(a.lower(), "done", f"Added as {label}") for a in add if a.lower() not in current]
+                 + [(r.lower(), "done", f"Removed as {label}") for r in remove if r.lower() in current])
+    return new
+
+
 # ── Mailman moderation queue (admindb) ──────────────────────────────────────
 # Mailman holds posts (e.g. from non-members) and, with "Confirm and approve",
 # subscription requests until an admin decides. The portal reads
@@ -1280,6 +1397,10 @@ def create_group(list_type, local, domain, members, password=None, private=False
             _audit_create(list_type, address, "failed", "List did not show up when read back.")
             return False, "cPanel did not report an error, but the new list did not show up.", []
         _audit_create(list_type, address, "done", "Private" if private else "Public")
+        try:
+            set_privacy(address, "private" if private else "public")
+        except Exception:
+            logger.exception("mailing lists: privacy preset on new list %s failed", address)
         results = change_members(list_type, address, "add", members, notify=notify) if members else []
         return True, f"Mailman list {address} created.", results
 
@@ -1336,6 +1457,8 @@ def index():
 @mailing_lists_bp.route("/new", methods=["GET", "POST"])
 @_access_required
 def new():
+    if not ml_can_access():
+        abort(403)
     try:
         domains, _ = fetch_mail_domains()
         min_strength = required_password_strength()
@@ -1345,7 +1468,7 @@ def new():
         return redirect(url_for("mailing_lists.index"))
     default_domain = os.environ.get("CPANEL_DOMAIN", "cohere.ph").lower()
     form = {"list_type": "forwarder", "local": "", "domain": default_domain if default_domain in domains
-            else (domains[0] if domains else ""), "members": "", "access": "public", "notify": False}
+            else (domains[0] if domains else ""), "members": "", "access": "private", "notify": False}
 
     def render(**kw):
         return render_template("mailing_lists/new.html", form=form, domains=domains,
@@ -1432,6 +1555,16 @@ def _render_detail(list_type, address, refresh=False, sync_preview=None, mode="a
     except Exception:
         logger.exception("mailing lists: history for %s failed", address)
         history = []
+    privacy_info, admins = None, None
+    if list_type == "mailman" and not error:
+        try:
+            privacy_info = fetch_privacy(address, refresh)
+        except Exception:
+            logger.exception("mailing lists: privacy of %s failed", address)
+        try:
+            admins = fetch_list_admins(address, refresh)[0]
+        except Exception:
+            logger.exception("mailing lists: owners of %s failed", address)
     filters, filters_error = None, None
     if list_type == "mailman" and not error:
         try:
@@ -1446,6 +1579,7 @@ def _render_detail(list_type, address, refresh=False, sync_preview=None, mode="a
             filters_error = str(e)
     return render_template("mailing_lists/detail.html", list_type=list_type, address=address,
                            filters=filters, filters_error=filters_error, nomail_reasons=NOMAIL_REASONS,
+                           privacy=privacy_info, admins=admins, admin_fields=ADMIN_FIELDS,
                            members=members, meta=meta, info=info, error=error, history=history,
                            summary=summarize(members), max_batch=MAX_BATCH, max_sync=MAX_SYNC_INPUT,
                            sync_preview=sync_preview, mode=mode, emails_text=emails_text,
@@ -1676,6 +1810,64 @@ def delete(list_type, address):
         return back
     flash(message, "success" if ok else "danger")
     return redirect(url_for("mailing_lists.index", type="all" if list_type == "forwarder" else None)) if ok else back
+
+
+@mailing_lists_bp.route("/mailman/<path:address>/privacy", methods=["POST"])
+@_access_required
+def privacy(address):
+    address = address.lower()
+    back = redirect(url_for("mailing_lists.detail", list_type="mailman", address=address) + "#privacy")
+    if not validate_csrf():
+        flash("Your session expired. Please try again.", "danger")
+        return back
+    preset = request.form.get("preset")
+    if preset not in PRIVACY_PRESETS:
+        abort(400)
+    try:
+        if address not in fetch_mailman_lists()[0]:
+            abort(404)
+        set_privacy(address, preset)
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception("mailing lists: privacy change on %s failed", address)
+        flash(f"Could not change privacy: {e}", "danger")
+        return back
+    flash(f"{address} is now {preset.title()}.", "success")
+    return back
+
+
+@mailing_lists_bp.route("/mailman/<path:address>/admins", methods=["POST"])
+@_access_required
+def list_admins(address):
+    address = address.lower()
+    back = redirect(url_for("mailing_lists.detail", list_type="mailman", address=address) + "#admins")
+    if not validate_csrf():
+        flash("Your session expired. Please try again.", "danger")
+        return back
+    field, op = request.form.get("field"), request.form.get("op")
+    if field not in _ADMIN_NAMES or op not in ("add", "remove"):
+        abort(400)
+    try:
+        if address not in fetch_mailman_lists()[0]:
+            abort(404)
+        if op == "add":
+            emails, invalid = parse_email_input(request.form.get("emails"))
+            if invalid or not emails:
+                flash("Enter valid email addresses" + (f" (not valid: {', '.join(invalid)})" if invalid else "") + ".", "warning")
+                return back
+            update_list_admins(address, field, add=emails)
+            flash(f"Added to {_ADMIN_NAMES[field].lower()}: {', '.join(emails)}", "success")
+        else:
+            entry = (request.form.get("entry") or "").strip().lower()
+            update_list_admins(address, field, remove=[entry])
+            flash(f"Removed from {_ADMIN_NAMES[field].lower()}: {entry}", "success")
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception("mailing lists: %s change on %s failed", field, address)
+        flash(f"Could not change {_ADMIN_NAMES[field].lower()}: {e}", "danger")
+    return back
 
 
 @mailing_lists_bp.route("/mailman/<path:address>/delivery", methods=["POST"])
@@ -1948,6 +2140,96 @@ def api_pending(address):
     return jsonify({"ok": True,
                     "posts": sum(1 for i in items if i["kind"] == "post"),
                     "subs": sum(1 for i in items if i["kind"] != "post")})
+
+
+AUDIT_ACTIONS = {"add": "Added", "remove": "Removed", "create": "Created", "moderate": "Moderation",
+                 "delivery": "Delivery", "senders": "Sender filter", "delete": "Deleted",
+                 "privacy": "Privacy", "owners": "Owners"}
+HISTORY_PAGE = 200
+
+
+def _history_filters(args):
+    """Validated filters + parameterised WHERE clause for the history page."""
+    from datetime import datetime as _dt, timedelta as _td
+    f = {k: (args.get(k) or "").strip() for k in ("list", "action", "actor", "q", "result", "from", "to")}
+    where, params = [], []
+    if f["list"]:
+        where.append("list_address = %s"); params.append(f["list"].lower())
+    if f["action"] in AUDIT_ACTIONS:
+        where.append("action = %s"); params.append(f["action"])
+    else:
+        f["action"] = ""
+    if f["result"] in ("done", "failed", "skipped"):
+        where.append("result = %s"); params.append(f["result"])
+    else:
+        f["result"] = ""
+    if f["actor"]:
+        where.append("(actor_email = %s OR acting_as = %s)"); params += [f["actor"].lower()] * 2
+    if f["q"]:
+        where.append("(member_email LIKE %s OR detail LIKE %s)"); params += [f"%{f['q']}%"] * 2
+    for key, op in (("from", ">="), ("to", "<")):
+        if f[key]:
+            try:
+                d = _dt.strptime(f[key], "%Y-%m-%d")
+                where.append(f"created_at {op} %s")
+                params.append(d if key == "from" else d + _td(days=1))   # "to" includes that whole day
+            except ValueError:
+                f[key] = ""
+    return f, ("WHERE " + " AND ".join(where)) if where else "", params
+
+
+@mailing_lists_bp.route("/history")
+@_access_required
+def history():
+    f, where, params = _history_filters(request.args)
+    page = max(1, int(request.args.get("page") or 1)) if (request.args.get("page") or "1").isdigit() else 1
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as c:
+            c.execute(f"SELECT COUNT(*) AS n FROM mailing_list_audit {where}", params)
+            total = c.fetchone()["n"]
+            c.execute(f"""SELECT id, created_at, actor_email, actor_name, acting_as, list_type, list_address,
+                                 action, member_email, result, detail
+                          FROM mailing_list_audit {where} ORDER BY id DESC LIMIT %s OFFSET %s""",
+                      params + [HISTORY_PAGE, (page - 1) * HISTORY_PAGE])
+            rows = c.fetchall()
+            c.execute("SELECT DISTINCT list_address FROM mailing_list_audit ORDER BY list_address")
+            lists = [r["list_address"] for r in c.fetchall()]
+            c.execute("SELECT DISTINCT actor_email FROM mailing_list_audit ORDER BY actor_email")
+            actors = [r["actor_email"] for r in c.fetchall()]
+    finally:
+        conn.close()
+    return render_template("mailing_lists/history.html", rows=rows, total=total, page=page, per_page=HISTORY_PAGE,
+                           f=f, lists=lists, actors=actors, actions=AUDIT_ACTIONS)
+
+
+@mailing_lists_bp.route("/history.csv")
+@_access_required
+def history_csv():
+    import csv
+    import io
+    from flask import Response
+    f, where, params = _history_filters(request.args)
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as c:
+            c.execute(f"""SELECT created_at, actor_email, actor_name, acting_as, list_type, list_address,
+                                 action, member_email, result, detail
+                          FROM mailing_list_audit {where} ORDER BY id DESC LIMIT 50000""", params)
+            rows = c.fetchall()
+    finally:
+        conn.close()
+    out = io.StringIO()
+    w = csv.writer(out)
+    w.writerow(["When", "By (email)", "By (name)", "Acting as", "Type", "List", "Action", "Member / item", "Result", "Detail"])
+    for r in rows:
+        # neutralise spreadsheet formulas in free-text cells
+        cells = [r["created_at"].strftime("%Y-%m-%d %H:%M:%S"), r["actor_email"], r["actor_name"] or "", r["acting_as"] or "",
+                 r["list_type"], r["list_address"], AUDIT_ACTIONS.get(r["action"], r["action"]), r["member_email"],
+                 r["result"], r["detail"] or ""]
+        w.writerow([("'" + v) if isinstance(v, str) and v[:1] in ("=", "+", "-", "@") else v for v in cells])
+    return Response(out.getvalue(), mimetype="text/csv",
+                    headers={"Content-Disposition": "attachment; filename=mailing_list_history.csv"})
 
 
 @mailing_lists_bp.route("/api/pending-total")

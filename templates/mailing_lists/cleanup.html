@@ -25,11 +25,11 @@
         <input type="text" id="cSearch" class="form-control" data-table-search="#cTable" placeholder="Name, email, group…">
       </div>
       <span class="rt-muted pb-2" data-table-count="#cTable"></span>
-      <div class="ms-auto d-flex gap-2">
+      {% if ml_can_access() %}<div class="ms-auto d-flex gap-2">
         <button type="button" class="btn btn-outline-danger" id="cAll">Select all shown</button>
         <button type="button" class="btn btn-outline-secondary" id="cNone">Clear</button>
         <button type="submit" class="btn btn-danger" id="cGo" disabled><i class="me-1" data-lucide="user-minus"></i>Remove selected (<span id="cN">0</span>)</button>
-      </div>
+      </div>{% endif %}
     </div>
     <div class="table-responsive">
       <table class="data-table" id="cTable">
@@ -67,7 +67,7 @@
 <script>
 (function () {
   var form = document.getElementById('cleanupForm');
-  if (!form) return;
+  if (!form || !document.getElementById('cGo')) return;   // no buttons for view-only users
   var picks = Array.prototype.slice.call(form.querySelectorAll('.c-pick'));
   function update() {
     var n = picks.filter(function (b) { return b.checked; }).length;

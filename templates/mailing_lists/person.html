@@ -69,13 +69,14 @@
         </tbody>
       </table>
     </div>
-    <button type="submit" class="btn btn-danger mt-2" data-needs disabled><i class="me-1" data-lucide="user-minus"></i>Remove from selected (<span data-n>0</span>)</button>
+    {% if ml_can_access() %}<button type="submit" class="btn btn-danger mt-2" data-needs disabled><i class="me-1" data-lucide="user-minus"></i>Remove from selected (<span data-n>0</span>)</button>{% endif %}
     {% else %}
     <p class="rt-muted mb-0">Not on any mailing list or forwarder group.</p>
     {% endif %}
   </form>
 </div>
 
+{% if ml_can_access() %}
 <div class="rt-card">
   <form method="post" data-confirm="add">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -99,6 +100,7 @@
   </form>
 </div>
 {% endif %}
+{% endif %}{# email #}
 
 {% include "routines/_table_assets.html" %}
 {% endblock %}

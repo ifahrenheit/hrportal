@@ -8,6 +8,36 @@
 
 ---
 
+## 2026-10-20 (7) — Mailing Lists 8–12: private by default, privacy switch, owners/moderators, all-lists history, view-only permission
+Commit: this one · Branch: `main`
+
+### What was built / changed
+- `modules/mailing_lists.py`:
+  - `PRIVACY_PRESETS`, `fetch_privacy`, `set_privacy` and `POST /mailman/<addr>/privacy`. New lists default to Private and get the preset after `add_list`.
+  - `fetch_list_admins`, `update_list_admins` and `POST /mailman/<addr>/admins` (the last owner is protected).
+  - `/history` and `/history.csv` with `_history_filters` (parameterised).
+  - `ml_can_view()`; `_access_required` now lets GET through with view or full access, while POST needs full access (403).
+- Templates: privacy and owners cards on `detail.html`, the new `history.html`, and change controls hidden for view-only users on every page.
+- New sub-admin permission `can_mailing_lists_view` ("Mailing Lists (view only)", Tools & Access). Both sub-admin INSERTs are now 42 cols / 42 values. app.py backup: `app.py.bak.20261020034306`.
+
+### Database changes
+```sql
+-- orangehrm2
+ALTER TABLE leave4day_sub_admins ADD COLUMN can_mailing_lists_view TINYINT(1) NOT NULL DEFAULT 0;
+-- central_db
+ALTER TABLE mailing_list_audit MODIFY action ENUM('add','remove','create','moderate','delivery','senders','delete','privacy','owners') NOT NULL;
+```
+
+### Live use by the user today (from the audit log, no failures)
+- Separated cleanup: 72 forwarder removals on 14 groups (first live proof of `delete_forwarder`) and 160 Mailman removals on 11 lists.
+- 43 moderation decisions. The cleanup page now shows 0 separated people.
+
+### Open items
+- [ ] Per-list access (e.g. a team lead manages only their list), possibly via Mailman owners. Not built; ask the user.
+- [ ] Still untested live: forwarder add/create, delete group, delivery toggle, privacy switch, owners edit.
+
+---
+
 ## 2026-10-20 (6) — Mailing Lists: alerts, delivery status, sender filters, person view, cleanup, offboarding, delete
 Commits: `f0075cc`, `45dcc04`, this one · Branch: `main`
 

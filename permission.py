@@ -87,6 +87,7 @@ PERMISSION_DEFINITIONS = [
     ('can_it_tickets'            , 'headset'           , 'IT Ticket Queue'),
     ('can_hr_tickets'            , 'id-card'           , 'HR Ticket Queue'),
     ('can_mailing_lists'         , 'mails'             , 'Mailing Lists'),
+    ('can_mailing_lists_view'    , 'eye'               , 'Mailing Lists (view only)'),
 ]
 
 ALL_PERMISSIONS = [key for key, _, _ in PERMISSION_DEFINITIONS]
