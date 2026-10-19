@@ -8,6 +8,24 @@
 
 ---
 
+## 2026-10-20 (2) — All 18 Mailman lists: archives private, not advertised (cPanel change, no code)
+Commit: this one · Branch: `main`
+
+### What was changed (live cPanel, at the user's request)
+- Found that every Mailman list was Public. The archives at `https://cohere.ph/pipermail/<listid>/` (e.g. `managers_cohere.ph`, `sga_cohere.ph`) could be read by anyone without logging in, and every list showed on `/mailman/listinfo`.
+- The user's own edits on `bo-cohere@` through the cPanel proxy (`:2096/cpsess…/3rdparty/mailman`) didn't save advertised/archive_private (subscribe_policy=3 and private_roster=admin did save).
+- Ran UAPI `Email::set_list_privacy_options` on all 18: `advertised=0`, `archive_private=1`, `subscribe_policy` sent back unchanged.
+- Verified: all 18 public archive URLs return 404, none show on listinfo, subscribe_policy unchanged. Members read archives at `/mailman/private/<listid>/`.
+
+### Previous values (for rollback)
+- All 18: `advertised=1`, `archive_private=0`. `subscribe_policy=1` (Confirm) on all except `bo-cohere@` = 3 (set by the user just before).
+
+### Open items / next steps
+- [ ] Offered, awaiting the user's answer: `subscribe_policy=3` (Confirm and approve) on the other 17, and `private_roster` = List admin only (Mailman privacy/subscribing form; UAPI doesn't cover it). cPanel's "public/private" label follows subscribe_policy only.
+- [ ] Possible portal feature: per-list privacy switch on Mailman list pages, and new lists default to Private.
+
+---
+
 ## 2026-10-20 — Mailing Lists, step 3: create new forwarder groups and Mailman lists
 Commit: this one · Branch: `main`
 
