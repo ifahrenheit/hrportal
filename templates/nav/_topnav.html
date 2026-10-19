@@ -893,7 +893,8 @@
         {% endif %}
         {% if ml_can_access() %}
         <a class="tn-item {% if EP in ['mailing_lists.index', 'mailing_lists.detail'] %}active{% endif %}" href="{{ url_for('mailing_lists.index') }}" data-k="mailing lists email groups forwarders mailman cpanel">
-          <i data-lucide="mails"></i> Mailing Lists</a>
+          <i data-lucide="mails"></i> Mailing Lists
+          <span id="mlPendingBadge" title="Waiting for approval in Mailman" style="display:none;margin-left:auto;background:#ef4444;color:#fff;font-size:.65rem;font-weight:700;padding:.15rem .45rem;border-radius:999px;min-width:18px;text-align:center;"></span></a>
         {% endif %}
         {% if ADMIN %}
         <a class="tn-item {% if EP == 'admin_quick_links' %}active{% endif %}" href="{{ url_for('admin_quick_links') }}" data-k="quick links">

@@ -650,6 +650,19 @@ refreshSLVerifyBadge();
 setInterval(refreshSLVerifyBadge, 60000);
 {% endif %}
 
+{% if ml_can_access is defined and ml_can_access() %}
+function refreshMlPendingBadge() {
+  fetch('/admin/mailing-lists/api/pending-total').then(r => r.json()).then(d => {
+    const b = document.getElementById('mlPendingBadge');
+    if (!b) return;
+    b.textContent = d.count > 999 ? (Math.round(d.count / 100) / 10) + 'k' : d.count;
+    b.style.display = d.count > 0 ? 'inline-block' : 'none';
+  }).catch(() => {});
+}
+refreshMlPendingBadge();
+setInterval(refreshMlPendingBadge, 60000);
+{% endif %}
+
 function refreshQaUpdatesBadge() {
   fetch('/qa-updates/api/unacknowledged-count')
     .then(r => r.json())

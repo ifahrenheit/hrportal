@@ -55,6 +55,23 @@ Each Mailman list has a **Pending requests** page (`/admin/mailing-lists/mailman
   - `SpamAssassin::update_user_preference` replaces the whole list, so the portal reads the list, appends, writes it back and checks it saved.
 - **Verification:** the queue is re-read after posting. An item still there is **failed**; one already gone beforehand is **skipped**. Each decision is a `moderate` row in the audit table.
 
+## Alerts: menu badge + daily email
+- `scripts/mailing_list_pending_check.py` (root cron):
+  - `--store` every 30 min: reads all Mailman queues and stores counts in `central_db.mailing_list_pending`.
+  - `--send` at 08:00 (Asia/Manila): also emails `MAILING_LIST_ALERT_EMAILS`, listing only items new since the last email (Mailman request ids only go up). The first stored run takes the existing backlog as the starting point.
+  - `--test`: sends a sample; `--dry-run` is the default with no flag. Log: `mailing_list_pending_check.log`.
+- **Badge:** Admin → Mailing Lists shows the total waiting (`/admin/mailing-lists/api/pending-total`, refreshed every 60 s like the other badges). It lights the Admin menu dot.
+
+## Members, senders, people
+- **Delivery off:** Mailman switches delivery off after repeated bounces (or an admin/member does). Those members are flagged on the list page, and **Turn delivery on** switches it back through the members-page form.
+- **Allowed & blocked senders** (Mailman lists): view/add/remove `accept_these_nonmembers`, `hold_…`, `reject_…` and `discard_…`.
+  - Mailman 2 matches exact addresses or `^regex` only. `*@domain` lines never match and are flagged, with a **Fix** that converts them to `^.*@domain$`.
+- **Mailman form changes** go through `mailman_form_update()`: the whole form is submitted as a browser would. It refuses if anything other than the intended fields changed, or if the change didn't stick.
+- **Find a person** (`/admin/mailing-lists/person`): every group an employee is on (all forwarders + all Mailman lists, read in parallel). Remove from or add to several at once.
+- **Separated cleanup** (`/admin/mailing-lists/cleanup`): every Separated employee still on any group, removable in bulk.
+- **Offboarding page:** after offboarding, it shows the leaver's lists with **Remove from all**. Staff with `can_onboarding` can use only these two lookup/removal endpoints.
+- **Delete a group:** type the address to confirm. Members at deletion are written to the change history first (rebuild with Sync). A Mailman delete also deletes its archives.
+
 ## Access
 Admins, and sub-admins with **Mailing Lists** (`can_mailing_lists`, Sub-Admins page → Tools & Access).
 Everyone else gets a 404 and no menu item.

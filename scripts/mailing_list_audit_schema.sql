@@ -21,3 +21,18 @@ CREATE TABLE IF NOT EXISTS mailing_list_audit (
     KEY idx_mla_list (list_address, created_at),
     KEY idx_mla_member (member_email)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- mailing_list_pending : per Mailman list, the moderation queue as last seen by
+--                        scripts/mailing_list_pending_check.py (feeds the menu
+--                        badge) and how far the daily alert email has got.
+CREATE TABLE IF NOT EXISTS mailing_list_pending (
+    list_address     VARCHAR(255) NOT NULL,
+    posts            INT UNSIGNED NOT NULL DEFAULT 0,
+    subs             INT UNSIGNED NOT NULL DEFAULT 0,
+    suspicious       INT UNSIGNED NOT NULL DEFAULT 0,
+    max_request_id   INT UNSIGNED NOT NULL DEFAULT 0,
+    notified_max_id  INT UNSIGNED NULL,
+    error            VARCHAR(500) NULL,
+    checked_at       DATETIME     NOT NULL,
+    PRIMARY KEY (list_address)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

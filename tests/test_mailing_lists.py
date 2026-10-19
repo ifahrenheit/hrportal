@@ -790,5 +790,22 @@ class PeopleTests(unittest.TestCase):
 
 
 
+class PendingAlertTests(unittest.TestCase):
+    def test_alert_email_escapes_and_flags(self):
+        sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "scripts"))
+        import mailing_list_pending_check as chk
+        items = [{"id": 5, "kind": "post", "sender": "x@evil.example", "subject": "<script>alert(1)</script>",
+                  "spam": {"flag": True, "score": 9.0, "phish": True}},
+                 {"id": 6, "kind": "subscribe", "sender": "new@cohere.ph", "subject": "", "spam": None}]
+        subject, body = chk.build_email({"l@x.ph": items}, {"l@x.ph": (1, 1)})
+        self.assertIn("2 new items", subject)
+        self.assertNotIn("<script>", body)
+        self.assertIn("&lt;script&gt;", body)
+        self.assertIn("Phishing link", body)
+        self.assertIn("Asks to join", body)
+        self.assertIn("/admin/mailing-lists/mailman/l@x.ph/pending", body)
+
+
+
 if __name__ == "__main__":
     unittest.main()

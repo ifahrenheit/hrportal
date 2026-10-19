@@ -8,6 +8,39 @@
 
 ---
 
+## 2026-10-20 (6) — Mailing Lists: alerts, delivery status, sender filters, person view, cleanup, offboarding, delete
+Commits: `f0075cc`, `45dcc04`, this one · Branch: `main`
+
+### What was built / changed
+- **Item 1 (live Mailman change, the user asked):** `send_email@cohere.ph` added to accept_these_nonmembers on `managers@` and `sga@`, so new portal mail goes through. The user will Discard the old backlog (~1669 + 54) themselves. They were told not to tick "Remember these senders" while doing so.
+- **Delivery off:** `parse_mailman_nomail`, flagged on list pages, and `mailman_set_delivery`. No member currently has delivery off.
+- **Allowed & blocked senders:** `fetch_sender_filters`, `update_sender_filter`, `sender_entry_problem`, `wildcard_to_regex`. `gygccall@` has 4 `*@` entries flagged; not fixed, the user decides.
+- **`mailman_form_update()`:** safe full-form submit with a before/after diff.
+- **Delete group:** `delete_group` and `POST /<type>/<address>/delete`.
+- **Person view:** `/person`. **Separated cleanup:** `/cleanup`, which found 173 people and 236 memberships.
+- **Offboarding:** `templates/admin/offboarding.html` gets a mailing-list step (`/api/memberships`, `/api/remove-everywhere`; `can_onboarding` is allowed for these two only).
+- **Alerts:** `scripts/mailing_list_pending_check.py`, `central_db.mailing_list_pending`, `/api/pending-total`, the `mlPendingBadge` element in `_topnav.html` and its refresh in `base.html`.
+- Tests: `tests/test_mailing_lists.py`, 70+.
+
+### Database changes
+```sql
+-- central_db
+ALTER TABLE mailing_list_audit MODIFY action ENUM('add','remove','create','moderate','delivery','senders','delete') NOT NULL;
+CREATE TABLE mailing_list_pending (...);  -- see scripts/mailing_list_audit_schema.sql
+```
+
+### Config / environment
+- `.env`: new `MAILING_LIST_ALERT_EMAILS` (backup in the session scratchpad).
+- Root crontab: 2 lines added (`--store` every 30 min, `--send` at 08:00). Backup: `/root/crontab.bak.20261020031809`.
+- Test alert email sent to the user on 2026-10-20 03:17.
+
+### Open items
+- [ ] The user discards the `send_email@` backlog on `managers@`/`sga@`. Real employee posts are held on `training-team@`, `new-l2@`, `qns_agents@`, `gygcc5@` (the last two are too big: max_message_size is 40 KB).
+- [ ] `gygccall@` `*@` accept entries: Fix or leave (user decision).
+- [ ] Not yet used live: forwarder add/remove/create, delete, delivery toggle, and the person/cleanup removals.
+
+---
+
 ## 2026-10-20 (5) — SpamAssassin: portal "block sender" on Discard; fixed blocklist/allowlist typos
 Commit: this one · Branch: `main`
 

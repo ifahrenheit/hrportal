@@ -1950,6 +1950,23 @@ def api_pending(address):
                     "subs": sum(1 for i in items if i["kind"] != "post")})
 
 
+@mailing_lists_bp.route("/api/pending-total")
+@_access_required
+def api_pending_total():
+    """Menu badge: everything waiting in Mailman moderation queues, as last
+    stored by scripts/mailing_list_pending_check.py (cheap: one query)."""
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as c:
+            c.execute("""SELECT COALESCE(SUM(posts + subs), 0) AS n, MAX(checked_at) AS at
+                         FROM mailing_list_pending WHERE checked_at >= NOW() - INTERVAL 1 DAY""")
+            row = c.fetchone() or {}
+    finally:
+        conn.close()
+    return jsonify({"count": int(row.get("n") or 0),
+                    "checked_at": row["at"].strftime("%Y-%m-%d %H:%M") if row.get("at") else None})
+
+
 @mailing_lists_bp.route("/api/summary/<list_type>/<path:address>")
 @_access_required
 def api_summary(list_type, address):
