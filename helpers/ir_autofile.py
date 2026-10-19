@@ -126,7 +126,10 @@ def get_agent_full_name(cur, employee_id, fallback=None):
 
 
 def file_incident_report(cur, employee_id, agent_name, incident_date, summary, dry_run=False, log_prefix="[ir_autofile]",
-                         submitted_by_id="SYSTEM", submitted_by_name="System"):
+                         submitted_by_id="SYSTEM", submitted_by_name="System", notify=True):
+    """Inserts the IR (caller commits). notify=False skips the IR email so the
+    caller can send it with send_ir_notification() after committing; with
+    notify=True the email goes out before the caller's commit."""
     employee_name = get_agent_full_name(cur, employee_id, fallback=agent_name)
     report_number = generate_ir_report_number()
 
@@ -143,9 +146,18 @@ def file_incident_report(cur, employee_id, agent_name, incident_date, summary, d
          submitted_by_id, submitted_by_name, summary, "pending"),
     )
     print(f"{log_prefix} Filed IR '{report_number}' for {employee_name} ({employee_id})")
+    if notify:
+        _send_ir_notification(cur, report_number, incident_date, employee_id,
+                              employee_name, summary, log_prefix)
+    return report_number
+
+
+def send_ir_notification(cur, report_number, incident_date, employee_id, summary,
+                         agent_name=None, log_prefix="[ir_autofile]"):
+    """IR email for an IR filed with notify=False, sent after the commit."""
+    employee_name = get_agent_full_name(cur, employee_id, fallback=agent_name)
     _send_ir_notification(cur, report_number, incident_date, employee_id,
                           employee_name, summary, log_prefix)
-    return report_number
 
 
 def ir_notice_html(report_number):

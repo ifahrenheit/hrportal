@@ -3,10 +3,13 @@ tardiness_notify.py
 Standalone daily cron script — NOT a Flask blueprint, run directly via cron,
 separate from the web app process.
 
-Run once a day (after the previous day's attendance data is finalized,
-similar timing to the existing 4am absence-alert cron). Recommended:
+DRY-RUN BY DEFAULT. Nothing is written, filed or emailed without --live.
+Cron (every 2 hours; repeat runs for the same day are skipped):
 
-    30 5 * * * /var/www/html/leavesystem/venv/bin/python /var/www/html/leavesystem/tardiness_notify.py >> /var/www/html/leavesystem/tardiness_notify.log 2>&1
+    15 */2 * * * /var/www/html/leavesystem/venv/bin/python /var/www/html/leavesystem/tardiness_notify.py --live >> /var/www/html/leavesystem/tardiness_notify.log 2>&1
+
+    python3 tardiness_notify.py [2026-09-20]          # dry run (default: yesterday)
+    python3 tardiness_notify.py --live [2026-09-20]   # real run
 
 What it does, once per run:
   1. Determines the CURRENT (in-progress) payroll period.
@@ -25,9 +28,11 @@ What it does, once per run:
      cleanup needed.
 
 This intentionally processes only ONE day per run (yesterday). If the cron
-hasn't run for several days, run it manually multiple times (advancing
-PROCESS_DATE) or extend it to loop — kept simple for now since daily cron
-is the expected operating mode.
+hasn't run for several days, run it manually for each missed day IN DATE
+ORDER: a day on or before an employee's last processed day is skipped.
+
+Each employee is committed on its own before any of their emails go out, so
+a failure part-way through can't undo IRs that were already emailed.
 """
 
 import os
@@ -41,9 +46,9 @@ from email.mime.multipart import MIMEMultipart
 from dotenv import load_dotenv
 
 from db_core import get_db_connection
-from helpers.payroll_period import get_current_payroll_period
+from helpers.payroll_period import get_payroll_period_for_date
 from modules.tardiness import get_tardiness_for_date
-from helpers.ir_autofile import file_incident_report, ir_notice_html, is_ir_excluded
+from helpers.ir_autofile import file_incident_report, ir_notice_html, is_ir_excluded, send_ir_notification
 
 load_dotenv()
 
@@ -352,95 +357,139 @@ def save_state(cur, state):
     )
 
 
-def process_day(process_date: date):
-    period_start, period_end = get_current_payroll_period(process_date)
+def _send_memo(to_address, subject, body, cc_addresses):
+    """A failed memo email is logged, never raised: by the time it's sent the
+    IR and state are already committed."""
+    try:
+        send_email(to_address, subject, body, cc_addresses=cc_addresses)
+    except Exception as e:
+        print(f"[tardiness_notify] Email '{subject}' failed: {e}")
 
-    # If process_date falls before period_start, it belongs to the PREVIOUS
-    # cycle (e.g. cron ran on the 1st of the month for the 31st's data,
-    # which is still within the prior 23rd-7th period). Recompute using
-    # the period containing process_date itself, not "today".
-    if process_date < period_start:
-        period_start, period_end = get_current_payroll_period(process_date)
 
-    conn = get_db_connection()
-    cur = conn.cursor()
+def apply_rules(cur, state, r, process_date, period_start, period_end, live):
+    """
+    Adds one late day to state and files any IR it triggers (at most one per
+    day, shared by both rules). Returns the emails to send, as callables, so
+    the caller sends them only after committing.
+    """
+    companyid = r["companyid"]
+    fname, lname = r["fname"], r["lname"]
+    minutes_late = r["minutes_late"] or 0
+    time_in_str = r["time_in"].strftime("%I:%M %p") if r.get("time_in") else None
+    entry = {"date": process_date, "minutes": minutes_late, "time_in": time_in_str}
+
+    state["count_since_reset"] += 1
+    state["minutes_since_reset"] += minutes_late
+    state["total_count_in_cycle"] += 1
+    state["total_minutes_in_cycle"] += minutes_late
+    state["last_processed_date"] = process_date
+    state["count_breakdown"].append(entry)
+    state["minutes_breakdown"].append(entry)
+
+    to_address, cc_addresses, tl_email = build_recipient_list(cur, companyid)
+    report_number_today = None  # reused if both rules fire same day, so only 1 IR gets filed
+    outbox = []
+
+    def file_ir(summary):
+        number = file_incident_report(
+            cur, companyid, f"{fname} {lname}", process_date, summary,
+            dry_run=not live, log_prefix="[tardiness_notify]", notify=False,
+        )
+        if live:
+            outbox.append(lambda: send_ir_notification(
+                cur, number, process_date, companyid, summary,
+                agent_name=f"{fname} {lname}", log_prefix="[tardiness_notify]"))
+        return number
+
+    def queue_memo(subject, body):
+        if live:
+            outbox.append(lambda: _send_memo(to_address, subject, body, cc_addresses))
+        else:
+            print(f"[tardiness_notify][DRY RUN] Would email '{subject}' to {to_address or cc_addresses}")
+
+    if state["count_since_reset"] >= COUNT_THRESHOLD:
+        report_number_today = file_ir(build_ir_summary_count(fname, lname, state["count_breakdown"]))
+        queue_memo(*build_count_email(
+            fname, lname, companyid, period_start, period_end,
+            state["total_count_in_cycle"], tl_email,
+            breakdown=state["count_breakdown"], report_number=report_number_today,
+        ))
+        state["count_since_reset"] = 0
+        state["count_triggers_sent"] += 1
+        state["count_breakdown"] = []
+
+    if state["minutes_since_reset"] >= MINUTES_THRESHOLD:
+        if report_number_today is None:
+            report_number_today = file_ir(build_ir_summary_minutes(
+                fname, lname, state["total_minutes_in_cycle"], state["minutes_breakdown"]))
+        queue_memo(*build_minutes_email(
+            fname, lname, companyid, period_start, period_end,
+            state["total_minutes_in_cycle"], tl_email,
+            breakdown=state["minutes_breakdown"], report_number=report_number_today,
+        ))
+        state["minutes_since_reset"] = 0
+        state["minutes_triggers_sent"] += 1
+        state["minutes_breakdown"] = []
+
+    return outbox
+
+
+def process_day(process_date: date, live: bool):
+    period_start, period_end = get_payroll_period_for_date(process_date)
+    mode = "LIVE" if live else "DRY RUN"
 
     day_records = get_tardiness_for_date(process_date)
     late_records = [r for r in day_records if r["status"] == "LATE"]
 
-    print(f"[tardiness_notify] Processing {process_date.isoformat()} "
+    print(f"[tardiness_notify][{mode}] Processing {process_date.isoformat()} "
           f"(period {period_start} to {period_end}): {len(late_records)} late record(s)")
 
-    for r in late_records:
-        personid = r["personid"]
-        companyid = r["companyid"]
-        fname, lname = r["fname"], r["lname"]
-        minutes_late = r["minutes_late"] or 0
-        time_in_str = r["time_in"].strftime("%I:%M %p") if r.get("time_in") else None
+    conn = get_db_connection()
+    cur = conn.cursor()
+    try:
+        for r in late_records:
+            personid = r["personid"]
+            companyid = r["companyid"]
+            fname, lname = r["fname"], r["lname"]
 
-        if is_ir_excluded(companyid):
-            print(f"[tardiness_notify] {lname}, {fname} ({companyid}) is in IR_EXCLUDED_EMPLOYEE_IDS, skipping.")
-            continue
+            if is_ir_excluded(companyid):
+                print(f"[tardiness_notify] {lname}, {fname} ({companyid}) is in IR_EXCLUDED_EMPLOYEE_IDS, skipping.")
+                continue
 
-        state = get_or_create_state(cur, personid, period_start)
+            state = get_or_create_state(cur, personid, period_start)
 
-        # Idempotency guard: don't double-process the same day if the cron
-        # somehow runs twice (manual re-run, systemd retry, etc.)
-        if state["last_processed_date"] == process_date:
-            print(f"[tardiness_notify] {lname}, {fname} already processed for {process_date}, skipping.")
-            continue
+            # Idempotency guard: a day on or before the last processed one is
+            # skipped, so a re-run (the cron fires every 2 hours) or a back-fill
+            # of an earlier date can't count the same late twice.
+            if state["last_processed_date"] and process_date <= state["last_processed_date"]:
+                print(f"[tardiness_notify] {lname}, {fname} already processed through "
+                      f"{state['last_processed_date']}, skipping {process_date}.")
+                continue
 
-        entry = {"date": process_date, "minutes": minutes_late, "time_in": time_in_str}
+            if not live:
+                apply_rules(cur, state, r, process_date, period_start, period_end, live)
+                continue
 
-        state["count_since_reset"] += 1
-        state["minutes_since_reset"] += minutes_late
-        state["total_count_in_cycle"] += 1
-        state["total_minutes_in_cycle"] += minutes_late
-        state["last_processed_date"] = process_date
-        state["count_breakdown"].append(entry)
-        state["minutes_breakdown"].append(entry)
+            # Commit per employee, then email: a failure on one employee can't
+            # roll back IRs already filed and emailed for the ones before it,
+            # and no email ever points to an IR that wasn't saved.
+            try:
+                outbox = apply_rules(cur, state, r, process_date, period_start, period_end, live)
+                save_state(cur, state)
+                conn.commit()
+            except Exception as e:
+                conn.rollback()
+                print(f"[tardiness_notify] ERROR processing {lname}, {fname} ({companyid}) "
+                      f"for {process_date}, rolled back: {e}")
+                continue
+            for send in outbox:
+                send()
 
-        to_address, cc_addresses, tl_email = build_recipient_list(cur, companyid)
-        report_number_today = None  # reused if both rules fire same day, so only 1 IR gets filed
-
-        if state["count_since_reset"] >= COUNT_THRESHOLD:
-            summary = build_ir_summary_count(fname, lname, state["count_breakdown"])
-            report_number_today = file_incident_report(
-                cur, companyid, f"{fname} {lname}", process_date, summary,
-                log_prefix="[tardiness_notify]",
-            )
-            subject, body = build_count_email(
-                fname, lname, companyid, period_start, period_end,
-                state["total_count_in_cycle"], tl_email,
-                breakdown=state["count_breakdown"], report_number=report_number_today,
-            )
-            send_email(to_address, subject, body, cc_addresses=cc_addresses)
-            state["count_since_reset"] = 0
-            state["count_triggers_sent"] += 1
-            state["count_breakdown"] = []
-
-        if state["minutes_since_reset"] >= MINUTES_THRESHOLD:
-            if report_number_today is None:
-                summary = build_ir_summary_minutes(fname, lname, state["total_minutes_in_cycle"], state["minutes_breakdown"])
-                report_number_today = file_incident_report(
-                    cur, companyid, f"{fname} {lname}", process_date, summary,
-                    log_prefix="[tardiness_notify]",
-                )
-            subject, body = build_minutes_email(
-                fname, lname, companyid, period_start, period_end,
-                state["total_minutes_in_cycle"], tl_email,
-                breakdown=state["minutes_breakdown"], report_number=report_number_today,
-            )
-            send_email(to_address, subject, body, cc_addresses=cc_addresses)
-            state["minutes_since_reset"] = 0
-            state["minutes_triggers_sent"] += 1
-            state["minutes_breakdown"] = []
-
-        save_state(cur, state)
-
-    conn.commit()
-    cur.close()
-    conn.close()
+        if not live:
+            conn.rollback()
+    finally:
+        cur.close()
+        conn.close()
 
 
 def dry_run_range(date_from: date, date_to: date):
@@ -622,8 +671,8 @@ if __name__ == "__main__":
         date_to = date.fromisoformat(args[2])
         dry_run_range(date_from, date_to)
     else:
-        target = PROCESS_DATE
-        if args:
-            # Allow manual override: python3 tardiness_notify.py 2026-06-23
-            target = date.fromisoformat(args[0])
-        process_day(target)
+        # Dry run unless --live. Manual date: python3 tardiness_notify.py --live 2026-06-23
+        live = "--live" in args
+        rest = [a for a in args if a != "--live"]
+        target = date.fromisoformat(rest[0]) if rest else PROCESS_DATE
+        process_day(target, live=live)

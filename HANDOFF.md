@@ -8,6 +8,36 @@
 
 ---
 
+## 2026-10-19 — Audit #19: notify crons commit per employee before emailing; tardiness is dry-run by default
+Commit: see `git log` (this entry's commit) · Branch: `main`
+
+### What was built / changed
+- **Checked first:** no duplicate tardiness IRs have ever been filed. All 108 IRs in `tardiness_notify.log` exist in `incident_reports`, there are no repeated dates in `tardiness_cycle_state`, and no out-of-order back-fills.
+  - 18 IRs for 6 employees cite the same late day twice. That's by design: one IR from the 3-lates rule and one from the 31+ minutes rule, since the counters start over separately. Most were waived. Left as is; it's a policy question for HR.
+- `tardiness_notify.py`:
+  - `process_day` → `apply_rules`: per-employee `save_state` + `commit`, then emails. A failed employee is rolled back alone; a failed memo email is logged, not raised.
+  - Dry run unless `--live`.
+  - Idempotency guard is now `process_date <= last_processed_date`, so back-fills must run in date order.
+  - Removed the dead period-recompute block (#35); uses `get_payroll_period_for_date(process_date)`.
+- `overbreak_notify.py`: per-row logic moved to `_process_row`, commit per row, then emails (`_memo`). A failed row stays `notify_processed = 0` and is retried. `--dry-run` flag unchanged.
+- `helpers/ir_autofile.py`: `file_incident_report(..., notify=True)` plus `send_ir_notification()`, so callers can email after committing. The default is unchanged (undertime and Break Log behave as before).
+- Tests: `tests/test_notify_commit.py`, 10 mocked tests.
+
+### Config / environment
+- Root crontab: tardiness line now has `--live` (installed by the user). Backup: `/root/crontab.bak.20261019212423`.
+- No service restart needed.
+
+### How to verify
+- `./venv/bin/python -m unittest tests.test_notify_commit -v`
+- `./venv/bin/python tardiness_notify.py` (dry run of yesterday); check `tardiness_notify.log` after 00:15 on 2026-10-20 shows `[LIVE] Processing 2026-10-19`.
+
+### Open items / next steps
+- [ ] #20 remains for `undertime_notify.py` and `break_log/routes.py`, which still send the IR email before the commit (fixed for tardiness and overbreak).
+- [ ] HR policy: may one late day count toward both the 3-lates and the 31+ minutes rules?
+- [ ] Audit #21 (rest), #22, #25, #27–#34. #35 done.
+
+---
+
 ## 2026-10-16 — Document Library for scanned HR documents; dashboard leave badges shipped
 Commits: `02e6ee8`, `7d6a66d` (pushed) · Branch: `main`
 

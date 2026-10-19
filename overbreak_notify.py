@@ -232,7 +232,7 @@ def build_ir_summary(rule_type, agent_name, payroll_month, payroll_cycle, table_
     return f"{opening}\n\n{IR_MIDDLE_TEXT}\n\n{table_text}\n\n\n{IR_CLOSING_TEXT}"
 
 
-def file_incident_report(cur, employee_id, agent_name, incident_date, summary):
+def file_incident_report(cur, employee_id, agent_name, incident_date, summary, outbox):
     """
     Creates a real incident_reports record, mirroring incident_reports.py's
     submit_report() escalate_to_hr branch, but system-filed
@@ -256,13 +256,10 @@ def file_incident_report(cur, employee_id, agent_name, incident_date, summary):
          "SYSTEM", "System", summary, "pending"),
     )
     print(f"[overbreak_notify] Filed IR '{report_number}' for {employee_name} ({employee_id})")
-    # Send IR notification email (same as manual filing)
-    try:
-        from helpers.ir_autofile import _send_ir_notification
-        _send_ir_notification(cur, report_number, incident_date, employee_id,
-                              employee_name, summary, "[overbreak_notify]")
-    except Exception as e:
-        print(f"[overbreak_notify] IR email failed: {e}")
+    # IR notification email (same as manual filing), sent after the commit
+    from helpers.ir_autofile import _send_ir_notification
+    outbox.append(lambda: _send_ir_notification(cur, report_number, incident_date, employee_id,
+                                                employee_name, summary, "[overbreak_notify]"))
     return report_number
 
 
@@ -410,6 +407,85 @@ def save_state(cur, state):
 # Main processing
 # ---------------------------------------------------------------------------
 
+def _memo(to_address, subject, body, cc_addresses):
+    """A deferred memo email. A failure is logged, never raised: by the time
+    it's sent the IR and state are already committed."""
+    def send():
+        try:
+            send_email(to_address, subject, body, cc_addresses=cc_addresses)
+        except Exception as e:
+            print(f"[overbreak_notify] Email '{subject}' failed: {e}")
+    return send
+
+
+def _process_row(cur, r, employee_id, agent_name, payroll_month, payroll_cycle, period_key,
+                 minutes, record_date_str, duration_str, date_display):
+    """Applies the three rules to one overbreak row and files any IRs.
+    Returns the emails to send (callables) once the row is committed."""
+    outbox = []
+    state = get_or_create_state(cur, employee_id, period_key)
+    to_address, cc_addresses, tl_email = build_recipient_list(cur, employee_id)
+
+    # -- Rule 1: 3+ instances, reset & re-arm --
+    entry1 = {"date": record_date_str, "date_display": date_display, "minutes": minutes, "duration_str": duration_str}
+    state["rule1_count_since_reset"] += 1
+    state["rule1_total_in_period"] += 1
+    state["rule1_breakdown"].append(entry1)
+
+    if state["rule1_count_since_reset"] >= RULE1_COUNT_THRESHOLD:
+        summary = build_ir_summary("RULE1", agent_name, payroll_month, payroll_cycle, state["rule1_breakdown"])
+        report_number = file_incident_report(cur, employee_id, agent_name, r["record_date"], summary, outbox)
+
+        subject, body = build_rule1_email(
+            agent_name, employee_id, period_key,
+            state["rule1_total_in_period"], tl_email, state["rule1_breakdown"], report_number,
+        )
+        outbox.append(_memo(to_address, subject, body, cc_addresses))
+        state["rule1_count_since_reset"] = 0
+        state["rule1_triggers_sent"] += 1
+        state["rule1_breakdown"] = []
+
+    # -- Rule 2: pairs, fire if combined > 3.5hrs, reset every 2 regardless --
+    entry2 = {"date": record_date_str, "date_display": date_display, "minutes": minutes, "duration_str": duration_str}
+    state["rule2_pair_since_reset"] += 1
+    state["rule2_breakdown"].append(entry2)
+
+    if state["rule2_pair_since_reset"] >= 2:
+        pair_total = sum(e["minutes"] for e in state["rule2_breakdown"])
+        if pair_total > RULE2_PAIR_TOTAL_THRESHOLD_MIN:
+            summary = build_ir_summary("RULE2", agent_name, payroll_month, payroll_cycle, state["rule2_breakdown"])
+            report_number = file_incident_report(cur, employee_id, agent_name, r["record_date"], summary, outbox)
+
+            subject, body = build_rule2_email(
+                agent_name, employee_id, period_key,
+                pair_total, tl_email, state["rule2_breakdown"], report_number,
+            )
+            outbox.append(_memo(to_address, subject, body, cc_addresses))
+            state["rule2_triggers_sent"] += 1
+        state["rule2_pair_since_reset"] = 0
+        state["rule2_breakdown"] = []
+
+    # -- Rule 3: single instance > 2hrs, evaluated immediately --
+    if minutes > RULE3_SINGLE_THRESHOLD_MIN:
+        single_entry = [{"date": record_date_str, "date_display": date_display, "minutes": minutes, "duration_str": duration_str}]
+        summary = build_ir_summary("RULE3", agent_name, payroll_month, payroll_cycle, single_entry)
+        report_number = file_incident_report(cur, employee_id, agent_name, r["record_date"], summary, outbox)
+
+        subject, body = build_rule3_email(
+            agent_name, employee_id, period_key,
+            minutes, record_date_str, tl_email, report_number,
+        )
+        outbox.append(_memo(to_address, subject, body, cc_addresses))
+        state["rule3_triggers_sent"] += 1
+
+    state["last_processed_row_uid"] = r["row_uid"]
+    save_state(cur, state)
+
+    if not DRY_RUN:
+        cur.execute("UPDATE overbreak_records SET notify_processed = 1 WHERE id = %s", (r["id"],))
+    return outbox
+
+
 def process_pending():
     conn = get_db_connection()
     cur = conn.cursor()
@@ -432,7 +508,9 @@ def process_pending():
         if is_ir_excluded(employee_id):
             # Mark processed so the row isn't picked up again every run.
             print(f"[overbreak_notify] {agent_name} ({employee_id}) is in IR_EXCLUDED_EMPLOYEE_IDS, skipping.")
-            cur.execute("UPDATE overbreak_records SET notify_processed = 1 WHERE id = %s", (r["id"],))
+            if not DRY_RUN:
+                cur.execute("UPDATE overbreak_records SET notify_processed = 1 WHERE id = %s", (r["id"],))
+                conn.commit()
             continue
         payroll_month = r["payroll_month"]
         payroll_cycle = r["payroll_cycle"]
@@ -446,66 +524,27 @@ def process_pending():
         duration_str = str(r["break_duration"]) if r["break_duration"] is not None else "0:00:00"
         date_display = format_date_us(r["record_date"])
 
-        state = get_or_create_state(cur, employee_id, period_key)
-        to_address, cc_addresses, tl_email = build_recipient_list(cur, employee_id)
+        if DRY_RUN:
+            for send in _process_row(cur, r, employee_id, agent_name, payroll_month, payroll_cycle,
+                                     period_key, minutes, record_date_str, duration_str, date_display):
+                send()
+            continue
 
-        # -- Rule 1: 3+ instances, reset & re-arm --
-        entry1 = {"date": record_date_str, "date_display": date_display, "minutes": minutes, "duration_str": duration_str}
-        state["rule1_count_since_reset"] += 1
-        state["rule1_total_in_period"] += 1
-        state["rule1_breakdown"].append(entry1)
-
-        if state["rule1_count_since_reset"] >= RULE1_COUNT_THRESHOLD:
-            summary = build_ir_summary("RULE1", agent_name, payroll_month, payroll_cycle, state["rule1_breakdown"])
-            report_number = file_incident_report(cur, employee_id, agent_name, r["record_date"], summary)
-
-            subject, body = build_rule1_email(
-                agent_name, employee_id, period_key,
-                state["rule1_total_in_period"], tl_email, state["rule1_breakdown"], report_number,
-            )
-            send_email(to_address, subject, body, cc_addresses=cc_addresses)
-            state["rule1_count_since_reset"] = 0
-            state["rule1_triggers_sent"] += 1
-            state["rule1_breakdown"] = []
-
-        # -- Rule 2: pairs, fire if combined > 3.5hrs, reset every 2 regardless --
-        entry2 = {"date": record_date_str, "date_display": date_display, "minutes": minutes, "duration_str": duration_str}
-        state["rule2_pair_since_reset"] += 1
-        state["rule2_breakdown"].append(entry2)
-
-        if state["rule2_pair_since_reset"] >= 2:
-            pair_total = sum(e["minutes"] for e in state["rule2_breakdown"])
-            if pair_total > RULE2_PAIR_TOTAL_THRESHOLD_MIN:
-                summary = build_ir_summary("RULE2", agent_name, payroll_month, payroll_cycle, state["rule2_breakdown"])
-                report_number = file_incident_report(cur, employee_id, agent_name, r["record_date"], summary)
-
-                subject, body = build_rule2_email(
-                    agent_name, employee_id, period_key,
-                    pair_total, tl_email, state["rule2_breakdown"], report_number,
-                )
-                send_email(to_address, subject, body, cc_addresses=cc_addresses)
-                state["rule2_triggers_sent"] += 1
-            state["rule2_pair_since_reset"] = 0
-            state["rule2_breakdown"] = []
-
-        # -- Rule 3: single instance > 2hrs, evaluated immediately --
-        if minutes > RULE3_SINGLE_THRESHOLD_MIN:
-            single_entry = [{"date": record_date_str, "date_display": date_display, "minutes": minutes, "duration_str": duration_str}]
-            summary = build_ir_summary("RULE3", agent_name, payroll_month, payroll_cycle, single_entry)
-            report_number = file_incident_report(cur, employee_id, agent_name, r["record_date"], summary)
-
-            subject, body = build_rule3_email(
-                agent_name, employee_id, period_key,
-                minutes, record_date_str, tl_email, report_number,
-            )
-            send_email(to_address, subject, body, cc_addresses=cc_addresses)
-            state["rule3_triggers_sent"] += 1
-
-        state["last_processed_row_uid"] = r["row_uid"]
-        save_state(cur, state)
-
-        if not DRY_RUN:
-            cur.execute("UPDATE overbreak_records SET notify_processed = 1 WHERE id = %s", (r["id"],))
+        # Commit per row, then email: a failure on one row can't roll back IRs
+        # already filed and emailed for earlier rows (the row stays
+        # notify_processed = 0 and is retried next run), and no email ever
+        # points to an IR that wasn't saved.
+        try:
+            outbox = _process_row(cur, r, employee_id, agent_name, payroll_month, payroll_cycle,
+                                  period_key, minutes, record_date_str, duration_str, date_display)
+            conn.commit()
+        except Exception as e:
+            conn.rollback()
+            print(f"[overbreak_notify] ERROR processing row {r['id']} ({agent_name}, {employee_id}), "
+                  f"rolled back: {e}")
+            continue
+        for send in outbox:
+            send()
 
     if DRY_RUN:
         print("[overbreak_notify][DRY RUN] Rolling back - no state, notify_processed, or IR changes saved.")
