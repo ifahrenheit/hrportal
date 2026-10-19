@@ -1,0 +1,102 @@
+{% extends "base.html" %}
+{% block title %}Mailing Lists{% endblock %}
+{% block page_title %}Mailing Lists{% endblock %}
+
+{% block content %}
+<div class="rt-card">
+  <div class="rt-toolbar">
+    <div style="min-width:260px">
+      <label for="mlSearch">Search group addresses</label>
+      <input type="text" id="mlSearch" class="form-control" data-table-search="#mlTable"
+             placeholder="Address, type, list admin…">
+    </div>
+    <span class="rt-muted pb-2" data-table-count="#mlTable"></span>
+    <span class="rt-muted pb-2 ms-auto">{{ n_forwarders }} forwarder groups · {{ n_mailman }} Mailman lists · read-only</span>
+    <a class="btn btn-outline-secondary" href="{{ url_for('mailing_lists.index', refresh=1) }}">
+      <i class="me-1" data-lucide="refresh-cw"></i>Refresh from cPanel
+    </a>
+  </div>
+  {% if error %}
+  <div class="alert alert-danger mt-3 mb-0">Could not read from cPanel: {{ error }}</div>
+  {% endif %}
+  {% if both %}
+  <div class="rt-muted mt-3">
+    <i data-lucide="info" style="width:14px;height:14px"></i>
+    These addresses are both a forwarder and a Mailman list, so mail to them reaches both member lists:
+    {{ both|join(', ') }}
+  </div>
+  {% endif %}
+</div>
+
+<div class="rt-card">
+  <div class="table-responsive">
+    <table class="data-table" id="mlTable">
+      <thead>
+        <tr>
+          <th data-sort="text">Address</th>
+          <th data-sort="text">Type</th>
+          <th data-sort="num">Members</th>
+          <th data-sort="num">Active</th>
+          <th data-sort="num">Separated</th>
+          <th data-sort="num">Not in employee list</th>
+          <th>List admins</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in rows %}
+        {% set s = r.summary %}
+        <tr {% if not s %}data-summary-url="{{ url_for('mailing_lists.api_summary', list_type=r.type, address=r.address) }}"{% endif %}>
+          <td><a href="{{ url_for('mailing_lists.detail', list_type=r.type, address=r.address) }}">{{ r.address }}</a></td>
+          <td>
+            {% if r.type == 'mailman' %}<span class="rt-badge pass">Mailman</span>
+            {% else %}<span class="rt-badge on">Forwarder</span>{% endif %}
+          </td>
+          <td data-col="total"     data-sort-value="{{ s.total if s else -1 }}">{{ s.total if s else '…' }}</td>
+          <td data-col="active"    data-sort-value="{{ s.active if s else -1 }}">{{ s.active if s else '…' }}</td>
+          <td data-col="separated" data-sort-value="{{ s.separated if s else -1 }}">
+            {% if s %}{% if s.separated %}<span class="rt-badge fail">{{ s.separated }}</span>{% else %}0{% endif %}{% else %}…{% endif %}
+          </td>
+          <td data-col="external"  data-sort-value="{{ s.external if s else -1 }}">{{ s.external if s else '…' }}</td>
+          <td class="rt-muted">{{ (r.admins or [])|join(', ') }}</td>
+        </tr>
+        {% else %}
+        <tr class="empty-row"><td colspan="7">No group addresses found.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+{% include "routines/_table_assets.html" %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+// Mailman member counts need a separate login per list, so load them a few at a time.
+(function () {
+  var rows = Array.prototype.slice.call(document.querySelectorAll('tr[data-summary-url]'));
+  function set(row, col, html, sortVal) {
+    var td = row.querySelector('[data-col="' + col + '"]');
+    td.innerHTML = html;
+    td.setAttribute('data-sort-value', sortVal);
+  }
+  function next() {
+    var row = rows.shift();
+    if (!row) return;
+    fetch(row.getAttribute('data-summary-url'), { credentials: 'same-origin' })
+      .then(function (r) { return r.json(); })
+      .then(function (j) {
+        if (!j.ok) throw new Error(j.error || 'failed');
+        var s = j.summary;
+        set(row, 'total', s.total + (j.complete ? '' : ' <span class="rt-badge fail" title="Mailman reported a different total">incomplete</span>'), s.total);
+        set(row, 'active', s.active, s.active);
+        set(row, 'separated', s.separated ? '<span class="rt-badge fail">' + s.separated + '</span>' : '0', s.separated);
+        set(row, 'external', s.external, s.external);
+      })
+      .catch(function () { set(row, 'total', '<span class="rt-badge fail">error</span>', -1); })
+      .then(next);
+  }
+  for (var i = 0; i < 3; i++) next();
+})();
+</script>
+{% endblock %}

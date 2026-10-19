@@ -8,6 +8,43 @@
 
 ---
 
+## 2026-10-19 (3) — Mailing Lists, step 1: read-only view of cPanel forwarders + Mailman lists
+Commit: this one · Branch: `main`
+
+### What was built / changed
+- New blueprint `modules/mailing_lists.py` at `/admin/mailing-lists` with templates `templates/mailing_lists/index.html` and `detail.html`. It lists all 66 forwarder groups and 18 Mailman lists, and each group's members matched to `gsheet_employees` (Active / Separated / Not in employee list). Read-only. Feature doc: `docs/mailing-lists.md`.
+- Mailman members are read by logging in with a one-time password from UAPI `Email::generate_mailman_otp`, then going through the letter pages at `https://cohere.ph/mailman/admin/<listid>/members`. Completeness is checked against Mailman's "N members total".
+- New permission `can_mailing_lists` ("Mailing Lists", Tools & Access): `permission.py`, `sub_admins.html`, `get_sub_admin_permissions`, both sub-admin INSERTs (now 41 cols / 41 values), the SELECT. Menu: Admin panel in `_topnav.html` (the Admin trigger also shows for this permission) and the admin block of `_sidebar.html`.
+- Tests: `tests/test_mailing_lists.py`, 8 mocked tests.
+
+### Why / decisions
+- The user wants both kinds managed in the portal and can't move the Mailman lists to forwarders. cPanel has no Mailman member API, so the portal reads Mailman's admin HTML. The user explicitly allowed this after the auto-mode classifier first blocked the probe.
+- Access: admin plus the permission only. The user plans to assign it to someone.
+- The cPanel proxy path `:2083/3rdparty/mailman` returns 403, so the portal uses the domain URL (`MAILMAN_BASE_URL`, optional).
+
+### Database changes
+```sql
+-- orangehrm2
+ALTER TABLE leave4day_sub_admins ADD COLUMN can_mailing_lists TINYINT(1) NOT NULL DEFAULT 0;
+```
+
+### Config / environment
+- Optional new key `MAILMAN_BASE_URL` (not set; default is fine). Reuses `CPANEL_*`.
+- Service restarted, clean start.
+
+### How to verify
+- `./venv/bin/python -m unittest tests.test_mailing_lists -v`
+- Admin → Mailing Lists. `gygccall@` (Mailman) should show 226 members with 42 separated; `gygbo1@` (forwarder) should show 44 with 23 separated.
+
+### Open items / next steps
+- [ ] Step 2: add/remove members (forwarder UAPI `add_forwarder`/`delete_forwarder`; Mailman mass subscribe/remove pages) plus an audit log table. The user wants to go step by step.
+- [ ] Step 3: create/delete group addresses. Step 4: offboarding removes the person from every group.
+- [ ] Session cookie is over the browser limit (about 4130–4200 of 4093 bytes; "cookie is too large" warnings all week, before this change). Browsers may drop it. Slim down `session['permissions']` (e.g. store only true flags) or move to server-side sessions.
+- [ ] 3 pre-existing test failures on HEAD: `test_awol_report` (1) and `test_undertime_report` (2), unrelated to this change.
+- [ ] `.env` lines 25, 57, 59, 60, 75, 78, 83, 88 have unquoted values with spaces, so `set -a; . ./.env` (the CLAUDE.md test command) mis-parses them. python-dotenv reads them fine.
+
+---
+
 ## 2026-10-19 (2) — SL Verification permission; IR RWE Queue comments
 Commits: `b730501`, this one · Branch: `main`
 

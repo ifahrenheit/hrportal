@@ -86,6 +86,7 @@ PERMISSION_DEFINITIONS = [
     ('can_floor_map'             , 'map-pin'           , 'Floor Map'),
     ('can_it_tickets'            , 'headset'           , 'IT Ticket Queue'),
     ('can_hr_tickets'            , 'id-card'           , 'HR Ticket Queue'),
+    ('can_mailing_lists'         , 'mails'             , 'Mailing Lists'),
 ]
 
 ALL_PERMISSIONS = [key for key, _, _ in PERMISSION_DEFINITIONS]

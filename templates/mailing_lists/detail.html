@@ -1,0 +1,77 @@
+{% extends "base.html" %}
+{% block title %}{{ address }} · Mailing Lists{% endblock %}
+{% block page_title %}Mailing Lists{% endblock %}
+
+{% block content %}
+<div class="rt-card">
+  <div class="rt-toolbar">
+    <div>
+      <a class="rt-muted" href="{{ url_for('mailing_lists.index') }}"><i data-lucide="arrow-left" style="width:14px;height:14px"></i> All mailing lists</a>
+      <h5 class="rt-card-title mt-2 mb-1">{{ address }}
+        {% if list_type == 'mailman' %}<span class="rt-badge pass">Mailman</span>
+        {% else %}<span class="rt-badge on">Forwarder</span>{% endif %}
+      </h5>
+      <div class="rt-muted">
+        {{ summary.total }} members · {{ summary.active }} active · {{ summary.separated }} separated · {{ summary.external }} not in employee list
+        {% if fetched_at %} · read from cPanel {{ fetched_at }}{% endif %}
+      </div>
+      {% if info %}
+      <div class="rt-muted mt-1">List admins: {{ info.admins|join(', ') or '—' }} · {{ info.access }} · {{ info.disk }} archive</div>
+      {% endif %}
+    </div>
+    <a class="btn btn-outline-secondary ms-auto" href="{{ url_for('mailing_lists.detail', list_type=list_type, address=address, refresh=1) }}">
+      <i class="me-1" data-lucide="refresh-cw"></i>Refresh
+    </a>
+  </div>
+  {% if error %}
+  <div class="alert alert-danger mt-3 mb-0">Could not read the members: {{ error }}</div>
+  {% elif meta and not meta.complete %}
+  <div class="alert alert-warning mt-3 mb-0">
+    Mailman reports {{ meta.total }} members but only {{ summary.total }} could be read. The list below is incomplete.
+  </div>
+  {% endif %}
+</div>
+
+<div class="rt-card">
+  <div class="rt-toolbar mb-3">
+    <div style="min-width:260px">
+      <label for="memSearch">Search members</label>
+      <input type="text" id="memSearch" class="form-control" data-table-search="#memTable"
+             placeholder="Email, name, group, status…">
+    </div>
+    <span class="rt-muted pb-2" data-table-count="#memTable"></span>
+  </div>
+  <div class="table-responsive">
+    <table class="data-table" id="memTable">
+      <thead>
+        <tr>
+          <th data-sort="text">Email</th>
+          <th data-sort="text">Name</th>
+          <th data-sort="text">Employee ID</th>
+          <th data-sort="text">Group</th>
+          <th data-sort="text">Status</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for m in members %}
+        <tr>
+          <td>{{ m.email }}</td>
+          <td>{{ m.name or '—' }}</td>
+          <td>{{ m.employee_id or '—' }}</td>
+          <td>{{ m.group_name or '—' }}</td>
+          <td data-sort-value="{{ m.kind }}">
+            {% if m.kind == 'separated' %}<span class="rt-badge fail">Separated</span>
+            {% elif m.kind == 'external' %}<span class="rt-badge off">Not in employee list</span>
+            {% else %}<span class="rt-badge on">{{ m.status }}</span>{% endif %}
+          </td>
+        </tr>
+        {% else %}
+        <tr class="empty-row"><td colspan="5">No members.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+{% include "routines/_table_assets.html" %}
+{% endblock %}

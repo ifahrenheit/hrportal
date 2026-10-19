@@ -552,6 +552,9 @@
         <a class="nav-link {% if request.endpoint == 'entitlements_audit.can_entitlements_audit' %}active{% endif %}" href="{{ url_for('entitlements_audit.can_entitlements_audit') }}">
           <i data-lucide="search"></i> <span class="nav-label">Entitlements Audit</span>
         </a>
+        <a class="nav-link {% if request.endpoint in ['mailing_lists.index', 'mailing_lists.detail'] %}active{% endif %}" href="{{ url_for('mailing_lists.index') }}">
+          <i data-lucide="mails"></i> <span class="nav-label">Mailing Lists</span>
+        </a>
         <a class="nav-link {% if request.endpoint == 'magic_cws_balance_admin' %}active{% endif %}" href="{{ url_for('magic_cws_balance_admin') }}">
           <i data-lucide="zap" style="color:#a78bfa"></i> <span class="nav-label">Magic CWS Balance</span>
         </a>

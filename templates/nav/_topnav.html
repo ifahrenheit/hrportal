@@ -491,7 +491,7 @@
       </button>
       {% endif %}
 
-      {% if WRAP and (ADMIN or P.get('can_settings') or P.get('can_work_mode') or P.get('can_entitlements')) %}
+      {% if WRAP and (ADMIN or P.get('can_settings') or P.get('can_work_mode') or P.get('can_entitlements') or P.get('can_mailing_lists')) %}
       <button class="tn-trigger" data-panel="admin" aria-expanded="false">
         Admin <i class="tn-caret" data-lucide="chevron-down"></i><span class="tn-dot"></span>
       </button>
@@ -870,7 +870,7 @@
     {% endif %}
 
     {# ── ADMIN ────────────────────────────────────────────── #}
-    {% if WRAP and (ADMIN or P.get('can_settings') or P.get('can_work_mode') or P.get('can_entitlements')) %}
+    {% if WRAP and (ADMIN or P.get('can_settings') or P.get('can_work_mode') or P.get('can_entitlements') or P.get('can_mailing_lists')) %}
     <div class="tn-panel" data-panel="admin">
       <div class="tn-cols">
         {% if ADMIN or P.get('can_settings') %}
@@ -890,6 +890,10 @@
           <i data-lucide="credit-card"></i> Entitlements</a>
         <a class="tn-item {% if EP == 'entitlements_audit.can_entitlements_audit' %}active{% endif %}" href="{{ url_for('entitlements_audit.can_entitlements_audit') }}" data-k="entitlements audit">
           <i data-lucide="search"></i> Entitlements Audit</a>
+        {% endif %}
+        {% if ml_can_access() %}
+        <a class="tn-item {% if EP in ['mailing_lists.index', 'mailing_lists.detail'] %}active{% endif %}" href="{{ url_for('mailing_lists.index') }}" data-k="mailing lists email groups forwarders mailman cpanel">
+          <i data-lucide="mails"></i> Mailing Lists</a>
         {% endif %}
         {% if ADMIN %}
         <a class="tn-item {% if EP == 'admin_quick_links' %}active{% endif %}" href="{{ url_for('admin_quick_links') }}" data-k="quick links">
