@@ -321,5 +321,89 @@ class NewRouteTests(unittest.TestCase):
 
 
 
+class SyncTests(unittest.TestCase):
+    def test_plan_sync(self):
+        to_add, to_remove, unchanged = ml.plan_sync(["b@x.ph", "c@x.ph", "d@x.ph"], {"A@x.ph", "b@x.ph", "c@x.ph"})
+        self.assertEqual(to_add, ["d@x.ph"])
+        self.assertEqual(to_remove, ["a@x.ph"])
+        self.assertEqual(unchanged, ["b@x.ph", "c@x.ph"])
+
+    def test_signature_depends_on_plan_not_order(self):
+        self.assertEqual(ml.sync_signature(["a", "b"], ["c"]), ml.sync_signature(["b", "a"], ["c"]))
+        self.assertNotEqual(ml.sync_signature(["a"], ["c"]), ml.sync_signature(["a"], ["c", "d"]))
+
+    def test_sync_members_adds_before_removing(self):
+        calls = []
+        with mock.patch.object(ml, "_current_emails", return_value=(["a@x.ph", "b@x.ph"], {})), \
+             mock.patch.object(ml, "change_members",
+                               side_effect=lambda t, a, act, em, notify=False: calls.append((act, em)) or
+                               [(e, "done", None) for e in em]):
+            added, removed, unchanged = ml.sync_members("forwarder", "g@x.ph", ["b@x.ph", "c@x.ph"])
+        self.assertEqual(calls, [("add", ["c@x.ph"]), ("remove", ["a@x.ph"])])
+        self.assertEqual(unchanged, ["b@x.ph"])
+
+
+class SyncRouteTests(unittest.TestCase):
+    URL = "/admin/mailing-lists/forwarder/g@cohere.ph/members"
+
+    def setUp(self):
+        app = Flask(__name__)
+        app.secret_key = "test"
+        app.register_blueprint(ml.mailing_lists_bp)
+        self.client = app.test_client()
+        with self.client.session_transaction() as s:
+            s["user"] = {"email": "x@cohere.ph"}
+            s["permissions"] = {"can_mailing_lists": True}
+            s["_csrf_token"] = "good"
+        self.rendered = []
+        patches = [mock.patch.object(ml, "_current_emails", return_value=(["a@cohere.ph", "b@cohere.ph"], {})),
+                   mock.patch.object(ml, "load_employee_index", return_value={}),
+                   mock.patch.object(ml, "_render_detail",
+                                     side_effect=lambda *a, **kw: self.rendered.append(kw) or "page")]
+        for p in patches:
+            p.start()
+            self.addCleanup(p.stop)
+
+    def post(self, **data):
+        return self.client.post(self.URL, data=dict({"csrf_token": "good"}, **data))
+
+    def test_preview_changes_nothing(self):
+        with mock.patch.object(ml, "sync_members") as sm:
+            r = self.post(action="sync_preview", emails="b@cohere.ph c@cohere.ph")
+        self.assertEqual(r.status_code, 200)
+        sm.assert_not_called()
+        plan = self.rendered[0]["sync_preview"]
+        self.assertEqual([m["email"] for m in plan["to_add"]], ["c@cohere.ph"])
+        self.assertEqual([m["email"] for m in plan["to_remove"]], ["a@cohere.ph"])
+        self.assertEqual(plan["unchanged"], 1)
+        self.assertFalse(plan["removes_all"])
+
+    def test_confirm_with_matching_signature_applies(self):
+        sig = ml.sync_signature(["c@cohere.ph"], ["a@cohere.ph"])
+        with mock.patch.object(ml, "sync_members", return_value=([], [], [])) as sm:
+            r = self.post(action="sync", emails="b@cohere.ph c@cohere.ph", signature=sig)
+        self.assertEqual(r.status_code, 302)
+        sm.assert_called_once_with("forwarder", "g@cohere.ph", ["b@cohere.ph", "c@cohere.ph"], notify=False)
+
+    def test_confirm_after_list_changed_shows_new_preview_instead(self):
+        stale = ml.sync_signature(["c@cohere.ph"], [])
+        with mock.patch.object(ml, "sync_members") as sm:
+            r = self.post(action="sync", emails="b@cohere.ph c@cohere.ph", signature=stale)
+        self.assertEqual(r.status_code, 200)
+        sm.assert_not_called()
+        self.assertIn("changed since the preview", self.rendered[0]["sync_preview"]["note"])
+
+    def test_empty_sync_is_refused(self):
+        with mock.patch.object(ml, "sync_members") as sm:
+            r = self.post(action="sync_preview", emails="  ")
+        self.assertEqual(r.status_code, 302)
+        sm.assert_not_called()
+
+    def test_flags_when_every_member_would_be_removed(self):
+        self.post(action="sync_preview", emails="z@cohere.ph")
+        self.assertTrue(self.rendered[0]["sync_preview"]["removes_all"])
+
+
+
 if __name__ == "__main__":
     unittest.main()

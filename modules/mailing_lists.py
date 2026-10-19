@@ -35,6 +35,7 @@ can_mailing_lists.
       MAILMAN_BASE_URL (optional, default https://cohere.ph/mailman)
 """
 
+import hashlib
 import logging
 import os
 import re
@@ -63,6 +64,7 @@ CACHE_TTL = 300
 HTTP_TIMEOUT = 30
 LIST_TYPES = ("forwarder", "mailman")
 MAX_BATCH = 300
+MAX_SYNC_INPUT = 1000
 HISTORY_LIMIT = 50
 
 _cache = {}
@@ -495,6 +497,33 @@ def change_members(list_type, address, action, emails, notify=False):
     return results
 
 
+def plan_sync(emails, current):
+    """Make the list exactly `emails`: (to_add, to_remove, unchanged)."""
+    current = {c.lower() for c in current}
+    wanted = set(emails)
+    return ([e for e in emails if e not in current],
+            sorted(c for c in current if c not in wanted),
+            sorted(current & wanted))
+
+
+def sync_signature(to_add, to_remove):
+    """Stable fingerprint of a sync plan, so a confirm only applies the
+    exact plan that was previewed."""
+    raw = "+" + ",".join(sorted(to_add)) + "|-" + ",".join(sorted(to_remove))
+    return hashlib.sha256(raw.encode()).hexdigest()[:16]
+
+
+def sync_members(list_type, address, emails, notify=False):
+    """Apply a sync: adds first (so a forwarder group never ends up with no
+    targets mid-way), then removes. Returns (add_results, remove_results,
+    unchanged)."""
+    current, _ = _current_emails(list_type, address)
+    to_add, to_remove, unchanged = plan_sync(emails, current)
+    added = change_members(list_type, address, "add", to_add, notify=notify) if to_add else []
+    removed = change_members(list_type, address, "remove", to_remove, notify=notify) if to_remove else []
+    return added, removed, unchanged
+
+
 # ── Creating a group address ────────────────────────────────────────────────
 # Mirrors cPanel's own forms: "Add Forwarder" (address, domain, forward-to
 # address) and "Create a Mailing List" (list name, domain, password, access
@@ -705,8 +734,10 @@ def new():
 def detail(list_type, address):
     if list_type not in LIST_TYPES:
         abort(404)
-    address = address.lower()
-    refresh = request.args.get("refresh") == "1"
+    return _render_detail(list_type, address.lower(), refresh=request.args.get("refresh") == "1")
+
+
+def _render_detail(list_type, address, refresh=False, sync_preview=None, mode="add", emails_text=""):
     error, members, meta, info = None, [], {}, None
     try:
         if list_type == "mailman":
@@ -724,7 +755,8 @@ def detail(list_type, address):
         history = []
     return render_template("mailing_lists/detail.html", list_type=list_type, address=address,
                            members=members, meta=meta, info=info, error=error, history=history,
-                           summary=summarize(members), max_batch=MAX_BATCH,
+                           summary=summarize(members), max_batch=MAX_BATCH, max_sync=MAX_SYNC_INPUT,
+                           sync_preview=sync_preview, mode=mode, emails_text=emails_text,
                            fetched_at=time.strftime("%Y-%m-%d %H:%M", time.localtime(meta["fetched_at"]))
                            if meta.get("fetched_at") else None)
 
@@ -756,8 +788,10 @@ def change(list_type, address):
         flash("Your session expired. Please try again.", "danger")
         return back
     action = request.form.get("action")
-    if action not in ("add", "remove"):
+    if action not in ("add", "remove", "sync_preview", "sync"):
         abort(400)
+    if action in ("sync_preview", "sync"):
+        return _handle_sync(list_type, address, action)
 
     if action == "add":
         emails, invalid = parse_email_input(request.form.get("emails"))
@@ -784,6 +818,68 @@ def change(list_type, address):
         flash(f"Could not {action} members: {e}", "danger")
         return back
     _flash_results(action, results, invalid)
+    return back
+
+
+def _handle_sync(list_type, address, action):
+    """sync_preview: show what a sync would do (fresh read, nothing changed).
+    sync: apply it, but only if the plan still matches what was previewed."""
+    back = redirect(url_for("mailing_lists.detail", list_type=list_type, address=address))
+    text = request.form.get("emails") or ""
+    notify = request.form.get("notify") == "1"
+    emails, invalid = parse_email_input(text)
+    if address in emails:
+        emails.remove(address)
+        invalid.append(address)
+    if not emails:
+        flash("Sync needs the full list of addresses the group should have. Nothing was changed.", "warning")
+        _flash_results("add", [], invalid)
+        return back
+    if len(emails) > MAX_SYNC_INPUT:
+        flash(f"At most {MAX_SYNC_INPUT} addresses for a sync.", "warning")
+        return back
+
+    try:
+        current, _ = _current_emails(list_type, address, refresh=(action == "sync_preview"))
+    except KeyError:
+        abort(404)
+    except Exception as e:
+        logger.exception("mailing lists: sync read of %s %s failed", list_type, address)
+        flash(f"Could not read the list: {e}", "danger")
+        return back
+    to_add, to_remove, unchanged = plan_sync(emails, current)
+    signature = sync_signature(to_add, to_remove)
+
+    def preview(note=None):
+        employees = load_employee_index()
+        plan = {"to_add": classify_members(to_add, employees),
+                "to_remove": classify_members(to_remove, employees),
+                "unchanged": len(unchanged), "invalid": invalid, "signature": signature,
+                "notify": notify, "note": note,
+                "too_big": len(to_add) > MAX_BATCH or len(to_remove) > MAX_BATCH,
+                "removes_all": bool(to_remove) and not unchanged}
+        return _render_detail(list_type, address, sync_preview=plan, mode="sync", emails_text=text)
+
+    if action == "sync_preview":
+        return preview()
+    if request.form.get("signature") != signature:
+        return preview("The list changed since the preview, so nothing was applied. "
+                       "Check the new preview below and confirm again.")
+    if not to_add and not to_remove:
+        flash(f"Already in sync: all {len(unchanged)} members match. Nothing to change.", "info")
+        return back
+    if len(to_add) > MAX_BATCH or len(to_remove) > MAX_BATCH:
+        flash(f"A sync can add or remove at most {MAX_BATCH} members at a time.", "warning")
+        return back
+    try:
+        added, removed, unchanged = sync_members(list_type, address, emails, notify=notify)
+    except Exception as e:
+        logger.exception("mailing lists: sync on %s %s failed", list_type, address)
+        flash(f"Sync failed: {e}", "danger")
+        return back
+    flash(f"Sync done. {len(unchanged)} members were already on the list and were left as is.", "success")
+    _flash_results("add", added)
+    _flash_results("remove", removed, invalid)
     return back
 
 

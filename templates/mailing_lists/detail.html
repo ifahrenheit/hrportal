@@ -34,23 +34,88 @@
 </div>
 
 {% if not error %}
+{% if sync_preview %}
+{% set p = sync_preview %}
+<div class="rt-card" id="syncPreview" style="border-color:var(--accent)">
+  <h6 class="rt-card-title"><i class="me-1" data-lucide="refresh-ccw"></i>Sync preview for {{ address }}</h6>
+  {% if p.note %}<div class="alert alert-warning">{{ p.note }}</div>{% endif %}
+  {% if p.invalid %}<div class="alert alert-warning">Not valid email addresses, ignored: {{ p.invalid|join(', ') }}</div>{% endif %}
+  {% if not p.to_add and not p.to_remove %}
+  <div class="alert alert-info mb-0">Already in sync: all {{ p.unchanged }} members match. Nothing to change.</div>
+  {% else %}
+  <p class="mb-2">
+    <strong>{{ p.to_add|length }}</strong> will be added ·
+    <strong class="text-danger">{{ p.to_remove|length }}</strong> will be removed ·
+    <strong>{{ p.unchanged }}</strong> unchanged.
+    Nothing has been changed yet.
+  </p>
+  {% if p.removes_all %}
+  <div class="alert alert-danger">None of the addresses you pasted are on the list now, so <strong>every current member will be removed</strong>. Check you pasted the right list.</div>
+  {% endif %}
+  {% if p.too_big %}
+  <div class="alert alert-warning">A sync can add or remove at most {{ max_batch }} members at a time. Split it up first.</div>
+  {% endif %}
+  <div class="row g-3">
+    <div class="col-md-6">
+      <div class="rt-muted mb-1">Will be added ({{ p.to_add|length }})</div>
+      <ul class="mb-0" style="max-height:240px;overflow:auto">
+        {% for m in p.to_add %}<li>{{ m.email }}{% if m.name %} <span class="rt-muted">· {{ m.name }}</span>{% endif %}
+          {% if m.kind == 'separated' %}<span class="rt-badge fail">Separated</span>{% elif m.kind == 'external' %}<span class="rt-badge off">Not in employee list</span>{% endif %}</li>
+        {% else %}<li class="rt-muted">None</li>{% endfor %}
+      </ul>
+    </div>
+    <div class="col-md-6">
+      <div class="rt-muted mb-1">Will be removed ({{ p.to_remove|length }})</div>
+      <ul class="mb-0" style="max-height:240px;overflow:auto">
+        {% for m in p.to_remove %}<li>{{ m.email }}{% if m.name %} <span class="rt-muted">· {{ m.name }}</span>{% endif %}
+          {% if m.kind == 'separated' %}<span class="rt-badge fail">Separated</span>{% elif m.kind == 'external' %}<span class="rt-badge off">Not in employee list</span>{% endif %}</li>
+        {% else %}<li class="rt-muted">None</li>{% endfor %}
+      </ul>
+    </div>
+  </div>
+  {% if not p.too_big %}
+  <form method="post" action="{{ change_url }}" class="d-flex flex-wrap gap-2 mt-3" id="syncConfirmForm">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <input type="hidden" name="action" value="sync">
+    <input type="hidden" name="signature" value="{{ p.signature }}">
+    <input type="hidden" name="notify" value="{{ '1' if p.notify else '0' }}">
+    <textarea name="emails" hidden>{{ emails_text }}</textarea>
+    <button type="submit" class="btn btn-danger" data-busy="Syncing…">
+      <i class="me-1" data-lucide="refresh-ccw"></i>Confirm sync
+    </button>
+    <a class="btn btn-outline-secondary" href="{{ url_for('mailing_lists.detail', list_type=list_type, address=address) }}">Cancel</a>
+  </form>
+  {% endif %}
+  {% endif %}
+</div>
+{% endif %}
+
 <div class="rt-card">
-  <h6 class="rt-card-title"><i class="me-1" data-lucide="user-plus"></i>Add members</h6>
+  <h6 class="rt-card-title"><i class="me-1" data-lucide="user-plus"></i>Add or sync members</h6>
   <form method="post" action="{{ change_url }}" id="addForm">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-    <input type="hidden" name="action" value="add">
-    <label for="addEmails" class="rt-muted">Email addresses, one per line or separated by commas (up to {{ max_batch }})</label>
-    <textarea class="form-control mb-2" id="addEmails" name="emails" rows="3" required
-              placeholder="juan.delacruz@cohere.ph, maria.santos@cohere.ph"></textarea>
+    <div class="d-flex flex-wrap gap-3 mb-2">
+      <label class="form-check mb-0">
+        <input class="form-check-input" type="radio" name="action" value="add" {{ 'checked' if mode != 'sync' }}>
+        <span class="form-check-label"><strong>Add only</strong> <span class="rt-muted">· add these; skip anyone already on the list</span></span>
+      </label>
+      <label class="form-check mb-0">
+        <input class="form-check-input" type="radio" name="action" value="sync_preview" {{ 'checked' if mode == 'sync' }}>
+        <span class="form-check-label"><strong>Sync</strong> <span class="rt-muted">· make the list exactly these: add new ones, keep existing, remove anyone not pasted</span></span>
+      </label>
+    </div>
+    <label for="addEmails" class="rt-muted" id="addHelp">Email addresses, one per line or separated by commas (up to {{ max_batch }})</label>
+    <textarea class="form-control mb-2" id="addEmails" name="emails" rows="4" required
+              placeholder="juan.delacruz@cohere.ph, maria.santos@cohere.ph">{{ emails_text }}</textarea>
     <div class="d-flex flex-wrap align-items-center gap-3">
       {% if list_type == 'mailman' %}
       <label class="form-check mb-0">
         <input class="form-check-input" type="checkbox" name="notify" value="1">
-        <span class="form-check-label">Send Mailman's welcome email</span>
+        <span class="form-check-label" id="notifyLabel">Send Mailman's welcome email</span>
       </label>
       {% endif %}
-      <button type="submit" class="btn btn-primary ms-auto" data-busy="Adding…">
-        <i class="me-1" data-lucide="user-plus"></i>Add
+      <button type="submit" class="btn btn-primary ms-auto" id="addBtn" data-busy="Working…">
+        <i class="me-1" data-lucide="user-plus"></i><span>Add</span>
       </button>
     </div>
   </form>
@@ -218,7 +283,25 @@
   // Busy state so a slow cPanel/Mailman call isn't submitted twice.
   function busy(btn) { btn.disabled = true; btn.textContent = btn.getAttribute('data-busy'); }
   var addForm = document.getElementById('addForm');
-  if (addForm) addForm.addEventListener('submit', function () { busy(addForm.querySelector('[data-busy]')); });
+  if (addForm) {
+    var syncMode = function () { return addForm.querySelector('input[name="action"]:checked').value === 'sync_preview'; };
+    var setMode = function () {
+      var sync = syncMode();
+      document.querySelector('#addBtn span').textContent = sync ? 'Preview sync' : 'Add';
+      document.getElementById('addHelp').textContent = sync
+        ? 'The full list of addresses this group should have, one per line or separated by commas (up to {{ max_sync }}). You will see a preview first.'
+        : 'Email addresses, one per line or separated by commas (up to {{ max_batch }})';
+      var nl = document.getElementById('notifyLabel');
+      if (nl) nl.textContent = sync ? "Send Mailman's welcome and goodbye emails" : "Send Mailman's welcome email";
+    };
+    addForm.querySelectorAll('input[name="action"]').forEach(function (r) { r.addEventListener('change', setMode); });
+    setMode();
+    addForm.addEventListener('submit', function () { busy(document.getElementById('addBtn')); });
+  }
+  var syncForm = document.getElementById('syncConfirmForm');
+  if (syncForm) syncForm.addEventListener('submit', function () { busy(syncForm.querySelector('[data-busy]')); });
+  var sp = document.getElementById('syncPreview');
+  if (sp) sp.scrollIntoView({ block: 'start' });
 
   var modalEl = document.getElementById('removeModal');
   if (removeBtn && modalEl) {

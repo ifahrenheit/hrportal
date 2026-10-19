@@ -28,6 +28,11 @@ templates in [templates/mailing_lists/](../templates/mailing_lists/).
 - **Mailman:** the list's mass subscribe / mass remove admin forms (including Mailman's own `csrf_token`). No welcome or goodbye email unless the checkbox is ticked. The list owner is never notified.
 - **Verification:** after every change the list is read back fresh. A member counts as done only if the read-back shows it. Otherwise it is **failed**, even if cPanel said OK.
 - **Skipped:** adding someone who is already a member, or removing someone who isn't.
+- **Sync:** choose **Sync** instead of **Add only** and paste the full list the group should have. Addresses already on it are kept, new ones are added, and members not in the paste are removed.
+  - Sync always shows a preview first (will add / will remove / unchanged, with names) and changes nothing until **Confirm sync**.
+  - The confirm carries a fingerprint of the previewed plan. If the list changed in between, a new preview is shown instead of applying.
+  - The preview warns in red if every current member would be removed.
+  - Adds run before removes. Up to 1000 pasted, at most 300 adds and 300 removes per sync.
 - **Audit:** every attempted change is a row in `central_db.mailing_list_audit` (DDL: [scripts/mailing_list_audit_schema.sql](../scripts/mailing_list_audit_schema.sql)): who, when, list, member, result. During Login As, the real admin is recorded, with `acting_as`. The last 50 changes show at the bottom of each group's page.
 
 ## Access

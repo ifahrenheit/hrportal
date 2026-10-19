@@ -8,6 +8,23 @@
 
 ---
 
+## 2026-10-20 (3) — Mailing Lists: Sync mode (make a list exactly the pasted addresses)
+Commit: this one · Branch: `main`
+
+### What was built / changed
+- `modules/mailing_lists.py`: `plan_sync`, `sync_signature`, `sync_members`, `_handle_sync` (`action=sync_preview|sync` on the `/members` POST). `detail()` now goes through `_render_detail()` so the preview renders on the group page.
+- `templates/mailing_lists/detail.html`: "Add or sync members" card with an Add only / Sync switch, and a Sync preview card with Confirm sync.
+- Tests: 33 in `tests/test_mailing_lists.py`.
+
+### Why / decisions
+- The user asked for "Sync Membership List" behaviour: existing members skipped, new added, missing removed.
+- A preview is mandatory because a partial paste would otherwise remove everyone else. The confirm is bound to the previewed plan by a sha256 fingerprint.
+
+### Not done (blocked)
+- Setting `subscribe_policy=3` and `private_roster=2` on the 17 Mailman lists (the user said ok) was refused by the Claude Code auto-mode classifier ("Modify Shared Resources"). Nothing was changed. All 17 are still `subscribe_policy=1` and roster "List members". Needs the user's explicit go-ahead for that exact action.
+
+---
+
 ## 2026-10-20 (2) — All 18 Mailman lists: archives private, not advertised (cPanel change, no code)
 Commit: this one · Branch: `main`
 
