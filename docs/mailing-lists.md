@@ -49,6 +49,10 @@ Each Mailman list has a **Pending requests** page (`/admin/mailing-lists/mailman
   - Discard
   - Membership requests: Approve / Reject / Discard (codes 4/5, 2, 3).
 - **Remember these senders:** adds them to Mailman's sender filter. With Accept they go on accept_these_nonmembers (code 6); with Discard, on discard_these_nonmembers (code 3).
+- **Block in SpamAssassin** (with Discard): adds the sender to cPanel's SpamAssassin `blacklist_from`.
+  - It blocks `*@domain` for most senders, but only the exact address for free-mail domains (Gmail, Yahoo, Outlook …).
+  - It never blocks our own mail domains or anything matching `whitelist_from`.
+  - `SpamAssassin::update_user_preference` replaces the whole list, so the portal reads the list, appends, writes it back and checks it saved.
 - **Verification:** the queue is re-read after posting. An item still there is **failed**; one already gone beforehand is **skipped**. Each decision is a `moderate` row in the audit table.
 
 ## Access

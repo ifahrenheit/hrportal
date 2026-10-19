@@ -555,5 +555,48 @@ class PendingRouteTests(unittest.TestCase):
 
 
 
+class SpamBlocklistTests(unittest.TestCase):
+    def test_blocklist_entry_rules(self):
+        protected = {"cohere.ph", "cohereph.com"}
+        allow = ["*@okta.com", "*.oktaemail.com", "notification@slack.com"]
+        e = lambda s: ml.blocklist_entry(s, protected, allow)
+        self.assertEqual(e("cpanel@LYLTS.com"), "*@lylts.com")
+        self.assertEqual(e("scammer@gmail.com"), "scammer@gmail.com")      # free mail: address only
+        self.assertIsNone(e("send_email@cohere.ph"))
+        self.assertIsNone(e("x@mail.cohere.ph"))
+        self.assertIsNone(e("a@okta.com"))
+        self.assertIsNone(e("a@eu.oktaemail.com"))
+        self.assertIsNone(e("notification@slack.com"))
+        self.assertIsNone(e("no-at-sign"))
+
+    def test_add_appends_to_full_list_and_verifies(self):
+        state = {"blacklist_from": ["*@old.example"], "whitelist_from": ["*@okta.com"]}
+        def uapi(fn, params=None, write=False, module="Email"):
+            if fn == "get_user_preferences":
+                return {k: list(v) for k, v in state.items()}
+            if fn == "update_user_preference":
+                state["blacklist_from"] = [v for k, v in params if k == "value"]
+                return None
+            raise AssertionError(fn)
+        with mock.patch.object(ml, "_uapi", side_effect=uapi), \
+             mock.patch.object(ml, "fetch_mail_domains", return_value=(["cohere.ph"], 0)):
+            added, already, refused = ml.spam_blocklist_add(["cpanel@lylts.com", "x@old.example", "hr@cohere.ph"])
+        self.assertEqual(added, ["*@lylts.com"])
+        self.assertEqual(already, ["*@old.example"])
+        self.assertEqual(refused, ["hr@cohere.ph"])
+        self.assertEqual(state["blacklist_from"], ["*@old.example", "*@lylts.com"])   # old entries kept
+
+    def test_add_raises_if_cpanel_drops_entries(self):
+        def uapi(fn, params=None, write=False, module="Email"):
+            if fn == "get_user_preferences":
+                return {"blacklist_from": ["*@old.example"], "whitelist_from": []}
+            return None                                    # write silently ignored
+        with mock.patch.object(ml, "_uapi", side_effect=uapi), \
+             mock.patch.object(ml, "fetch_mail_domains", return_value=(["cohere.ph"], 0)):
+            with self.assertRaises(RuntimeError):
+                ml.spam_blocklist_add(["cpanel@lylts.com"])
+
+
+
 if __name__ == "__main__":
     unittest.main()

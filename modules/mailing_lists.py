@@ -221,7 +221,7 @@ def _cpanel_headers():
 def _uapi(fn, params=None, write=False, module="Email"):
     url = f"{_cpanel_base()}/{module}/{fn}"
     if write:
-        r = requests.post(url, headers=_cpanel_headers(), data=params or {}, verify=False, timeout=HTTP_TIMEOUT)
+        r = requests.post(url, headers=_cpanel_headers(), data=params or {}, verify=False, timeout=HTTP_TIMEOUT)  # dict or [(k, v)]
     else:
         r = requests.get(url, headers=_cpanel_headers(), params=params or {}, verify=False, timeout=HTTP_TIMEOUT)
     r.raise_for_status()
@@ -717,6 +717,62 @@ def moderate(address, action, ids, comment="", filter_future=False, senders=()):
     return results
 
 
+# ── cPanel SpamAssassin blocklist ───────────────────────────────────────────
+# SpamAssassin::update_user_preference REPLACES all values of a preference,
+# so we always read the current list, append, write the whole list back and
+# read it again to confirm.
+
+FREEMAIL_DOMAINS = {
+    "gmail.com", "googlemail.com", "yahoo.com", "ymail.com", "outlook.com", "hotmail.com",
+    "live.com", "msn.com", "icloud.com", "me.com", "aol.com", "proton.me", "protonmail.com",
+    "gmx.com", "gmx.net", "mail.com", "yandex.com", "zoho.com",
+}
+
+
+def blocklist_entry(sender, protected_domains, allow_patterns):
+    """The blacklist_from entry to add for a spam sender, or None if it must
+    not be blocked. Whole domain normally; the exact address for free-mail
+    domains; never our own domains or anything on the allowlist."""
+    sender = (sender or "").strip().lower()
+    if "@" not in sender:
+        return None
+    domain = sender.rsplit("@", 1)[1]
+    if any(domain == d or domain.endswith("." + d) for d in protected_domains):
+        return None
+    for pat in allow_patterns:
+        p = pat.lower()
+        if p in (sender, f"*@{domain}", domain) or (p.startswith("*.") and domain.endswith(p[1:])):
+            return None
+    return sender if domain in FREEMAIL_DOMAINS else f"*@{domain}"
+
+
+def spam_blocklist_add(senders):
+    """Add senders to SpamAssassin's blacklist_from. Returns (added, already,
+    refused) lists of entries / senders."""
+    prefs = _uapi("get_user_preferences", module="SpamAssassin") or {}
+    current = list(prefs.get("blacklist_from") or [])
+    allow = list(prefs.get("whitelist_from") or [])
+    protected = set(fetch_mail_domains()[0]) | {os.environ.get("CPANEL_DOMAIN", "cohere.ph").lower()}
+    added, already, refused = [], [], []
+    for s in senders:
+        entry = blocklist_entry(s, protected, allow)
+        if entry is None:
+            refused.append(s)
+        elif entry in current or entry in added:
+            already.append(entry)
+        else:
+            added.append(entry)
+    if added:
+        _uapi("update_user_preference",
+              [("preference", "blacklist_from")] + [("value", v) for v in current + added],
+              write=True, module="SpamAssassin")
+        after = (_uapi("get_user_preferences", module="SpamAssassin") or {}).get("blacklist_from") or []
+        missing = [e for e in current + added if e not in after]
+        if missing:
+            raise RuntimeError("cPanel did not keep these blocklist entries: " + ", ".join(missing))
+    return added, already, refused
+
+
 # ── Creating a group address ────────────────────────────────────────────────
 # Mirrors cPanel's own forms: "Add Forwarder" (address, domain, forward-to
 # address) and "Create a Mailing List" (list name, domain, password, access
@@ -1115,6 +1171,10 @@ def pending(address):
             return redirect(here)
         verb = {"accept": "Accepted", "reject": "Rejected", "discard": "Discarded"}[action]
         done = [it for it, r, _ in results if r == "done"]
+        if action == "discard" and request.form.get("spam_block") == "1":
+            spam_senders = sorted({it["sender"] for it in done if it.get("kind") == "post" and it.get("sender")})
+            if spam_senders:
+                _block_in_spamassassin(address, spam_senders)
         failed = [(it, d) for it, r, d in results if r == "failed"]
         skipped = [it for it, r, _ in results if r == "skipped"]
         if done:
@@ -1157,6 +1217,27 @@ def pending(address):
                            subs=[i for i in items if i["kind"] != "post"],
                            member_count=member_count, history=history,
                            fetched_at=time.strftime("%Y-%m-%d %H:%M", time.localtime(fetched)) if fetched else None)
+
+
+def _block_in_spamassassin(address, senders):
+    try:
+        added, already, refused = spam_blocklist_add(senders)
+    except Exception as e:
+        logger.exception("mailing lists: SpamAssassin blocklist update failed")
+        flash(f"Discarded, but could not update the spam blocklist: {e}", "danger")
+        _write_audit("mailman", address, "moderate",
+                     [(s, "failed", f"SpamAssassin blocklist: {e}") for s in senders])
+        return
+    if added:
+        flash("Added to cPanel's spam blocklist: " + ", ".join(added), "success")
+    if already:
+        flash("Already on the spam blocklist: " + ", ".join(already), "info")
+    if refused:
+        flash("Not blocked (our own domain or on the allowlist): " + ", ".join(refused), "warning")
+    _write_audit("mailman", address, "moderate",
+                 [(e, "done", "Added to SpamAssassin blocklist") for e in added]
+                 + [(e, "skipped", "Already on SpamAssassin blocklist") for e in already]
+                 + [(s, "skipped", "Not blocked: own domain or allowlisted") for s in refused])
 
 
 @mailing_lists_bp.route("/api/pending/<path:address>")

@@ -107,6 +107,11 @@
           <input class="form-check-input" type="checkbox" name="filter_future" value="1">
           <span class="form-check-label">Remember these senders: with Discard, always discard their future mail; with Accept, always let it through</span>
         </label>
+        <label class="form-check mt-1 mb-0">
+          <input class="form-check-input" type="checkbox" name="spam_block" value="1">
+          <span class="form-check-label">With Discard, also block the sender's domain in cPanel's spam filter (SpamAssassin blocklist)
+            <span class="rt-muted">· Gmail/Yahoo etc. block only the address; our own domains and allowlisted senders are never blocked</span></span>
+        </label>
       </div>
       <div class="ms-md-3">
         <label class="rt-muted small d-block" for="rejectReason">Reason sent to the sender (Reject only)</label>

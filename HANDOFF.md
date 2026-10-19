@@ -8,6 +8,20 @@
 
 ---
 
+## 2026-10-20 (5) — SpamAssassin: portal "block sender" on Discard; fixed blocklist/allowlist typos
+Commit: this one · Branch: `main`
+
+### What was built / changed
+- `modules/mailing_lists.py`: `blocklist_entry()` and `spam_blocklist_add()` (read, append, write the full list, verify), plus `_block_in_spamassassin()`. Triggered by the new `spam_block` checkbox with Discard on the Pending page. Audited as `moderate` rows. Tests: 46.
+
+### Live cPanel change (the user said yes)
+- `blacklist_from`: `*@@untility3048.cc` became `*@untility3048.cc`; removed `@rhetth.com` (`*@rhetth.com` already present). 2 exact duplicates were collapsed, so the count went from 34 to 31.
+- `whitelist_from`: `okta.com`, `oktaemail.com`, `assembled.com` and `assembledhq.com` became `*@…`. Before, bare domains matched nobody, so mail from those senders really skips spam checks now.
+- Left `amazonses.com` / `amazonaws.com` as they were (bare, so they match nothing). Making them `*@` would allow any Amazon SES sender, including spammers.
+- Rollback: before-values are in the session scratchpad (`spamassassin_before_20261020005140.json`, ephemeral). The old entries are listed above.
+
+---
+
 ## 2026-10-20 (4) — Mailing Lists: Mailman moderation queue (Pending requests)
 Commit: this one · Branch: `main`
 
