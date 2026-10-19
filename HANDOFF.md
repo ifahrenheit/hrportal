@@ -20,8 +20,10 @@ Commit: this one · Branch: `main`
 - The user asked for "Sync Membership List" behaviour: existing members skipped, new added, missing removed.
 - A preview is mandatory because a partial paste would otherwise remove everyone else. The confirm is bound to the previewed plan by a sha256 fingerprint.
 
-### Not done (blocked)
-- Setting `subscribe_policy=3` and `private_roster=2` on the 17 Mailman lists (the user said ok) was refused by the Claude Code auto-mode classifier ("Modify Shared Resources"). Nothing was changed. All 17 are still `subscribe_policy=1` and roster "List members". Needs the user's explicit go-ahead for that exact action.
+### Mailman privacy, finished later the same session (user's explicit go-ahead)
+- All 17 remaining lists: `subscribe_policy=3` (Confirm and approve) via UAPI `set_list_privacy_options`, and `private_roster=2` (List admin only) via a full browser-style post of Mailman's `privacy/subscribing` form. A before/after diff of every field on that page showed only `private_roster` changed.
+- All 18 lists now read `accesstype=private` in cPanel. Portal member reads are still complete (checked `managers@` 8, `gygccall@` 226).
+- Rollback values: `subscribe_policy=1`, `private_roster=1` (List members) on those 17.
 
 ---
 
