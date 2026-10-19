@@ -1083,10 +1083,10 @@ def moderate(address, action, ids, comment="", filter_future=False, senders=()):
         remember = filter_future and action in _REMEMBER_CODES
         results = []
         if items:
-            filter_senders = sorted({it["sender"] for it in items if it["kind"] == "post" and it["sender"]}) \
-                if remember else []
-            fields = moderation_form(items, action, comment, filter_senders,
-                                     _REMEMBER_CODES.get(action, "3"))
+            # Decisions only. Mailman 2 silently drops the approvals when the
+            # same submission also adds a sender filter (seen live on
+            # managers@ 2026-10-20), so senders are remembered separately below.
+            fields = moderation_form(items, action, comment)
             m = _CSRF_RE.search(summary_html)
             if m:
                 fields["csrf_token"] = m.group(1)
@@ -1105,12 +1105,25 @@ def moderate(address, action, ids, comment="", filter_future=False, senders=()):
         for i in gone:
             results.append(({"id": i, "sender": "", "subject": "", "kind": "post"}, "skipped",
                              "No longer in the queue (someone already handled it)."))
+    remembered = []
+    if remember:
+        senders_done = sorted({it["sender"] for it, r, _ in results
+                               if r == "done" and it["kind"] == "post" and it.get("sender")})
+        field = "accept_these_nonmembers" if action == "accept" else "discard_these_nonmembers"
+        if senders_done:
+            try:
+                update_sender_filter(address, field, add=senders_done)
+                remembered = senders_done
+            except Exception as ex:
+                logger.exception("mailing lists: remembering senders on %s failed", address)
+                results += [({"id": 0, "kind": "sender", "sender": s_, "subject": f"Remember {s_}"}, "failed", str(ex))
+                            for s_ in senders_done]
     verb = {"accept": "Accepted", "reject": "Rejected", "discard": "Discarded"}[action]
     _write_audit("mailman", address, "moderate", [
         (it.get("sender") or f"request #{it['id']}", res,
-         f"{verb} {'post' if it['kind'] == 'post' else it['kind'] + ' request'}"
+         f"{verb} {'post' if it['kind'] == 'post' else ('sender filter' if it['kind'] == 'sender' else it['kind'] + ' request')}"
          f"{': ' + it['subject'] if it.get('subject') else ''}"
-         f"{(' (future mail from sender always ' + ('accepted' if action == 'accept' else 'discarded') + ')') if remember and it['kind'] == 'post' else ''}"
+         f"{(' (future mail from sender always ' + ('accepted' if action == 'accept' else 'discarded') + ')') if it.get('sender') in remembered and it['kind'] == 'post' else ''}"
          f"{' — ' + detail if detail else ''}")
         for it, res, detail in results])
     return results

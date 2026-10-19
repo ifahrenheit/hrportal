@@ -477,14 +477,16 @@ class ModerateTests(unittest.TestCase):
         with mock.patch.object(ml, "fetch_mailman_lists", return_value=({"l@x.ph": {"listid": "l_x.ph"}}, 0)), \
              mock.patch.object(ml, "_uapi", return_value="otp"), \
              mock.patch.object(ml.requests, "Session", return_value=sess), \
-             mock.patch.object(ml, "_write_audit") as audit:
+             mock.patch.object(ml, "_write_audit") as audit, \
+             mock.patch.object(ml, "update_sender_filter") as usf:
             results = ml.moderate("l@x.ph", "discard", [28, 99], filter_future=True)
+        usf.assert_called_once_with("l@x.ph", "discard_these_nonmembers", add=["bad@spam.example"])
         url = sess.post.call_args_list[1].args[0]
         data = sess.post.call_args_list[1].kwargs["data"]
         self.assertTrue(url.endswith("/admindb/l_x.ph"))
         self.assertEqual(data["28"], "3")
         self.assertEqual(data["csrf_token"], "tok9")
-        self.assertEqual(data["senderfilterp-bad%40spam.example"], "1")
+        self.assertFalse(any(k.startswith("sender") for k in data))
         self.assertNotIn("31", data)                   # untouched items are never sent
         self.assertEqual([(it["id"], r) for it, r, _ in results], [(28, "done"), (99, "skipped")])
         self.assertEqual(audit.call_args.args[2], "moderate")
@@ -499,12 +501,15 @@ class ModerateTests(unittest.TestCase):
         with mock.patch.object(ml, "fetch_mailman_lists", return_value=({"l@x.ph": {"listid": "l_x.ph"}}, 0)), \
              mock.patch.object(ml, "_uapi", return_value="otp"), \
              mock.patch.object(ml.requests, "Session", return_value=sess), \
-             mock.patch.object(ml, "_write_audit"):
+             mock.patch.object(ml, "_write_audit"), \
+             mock.patch.object(ml, "update_sender_filter") as usf:
             results = ml.moderate("l@x.ph", "accept", [], filter_future=True, senders=["colleague@cohere.ph"])
         data = sess.post.call_args_list[1].kwargs["data"]
         self.assertEqual(data["31"], "1")
         self.assertNotIn("28", data)
-        self.assertEqual(data["senderfilter-colleague%40cohere.ph"], "6")
+        # never in the same submission as the decisions (Mailman drops the approvals)
+        self.assertFalse(any(k.startswith("sender") for k in data))
+        usf.assert_called_once_with("l@x.ph", "accept_these_nonmembers", add=["colleague@cohere.ph"])
         self.assertEqual([(it["id"], r) for it, r, _ in results], [(31, "done")])
 
 
