@@ -629,6 +629,7 @@ def change_members(list_type, address, action, emails, notify=False):
     todo, skipped = plan_change(action, emails, current)
     errors = {}
     after = None
+    gone_note = None
     if todo:
         if list_type == "forwarder":
             for e in todo:
@@ -637,7 +638,12 @@ def change_members(list_type, address, action, emails, notify=False):
                 except Exception as ex:
                     logger.exception("mailing lists: forwarder %s %s %s failed", action, address, e)
                     errors[e] = str(ex)
-            after, _ = _current_emails(list_type, address, refresh=True)
+            # A forwarder only exists while it has a target: removing the last
+            # one makes cPanel drop the address altogether.
+            groups, _ = fetch_forwarders(refresh=True)
+            after = groups.get(address, [])
+            if action == "remove" and address not in groups:
+                gone_note = f"That was the last target, so cPanel deleted the forwarder {address}."
         else:
             info = fetch_mailman_lists()[0][address]
             try:
@@ -653,6 +659,8 @@ def change_members(list_type, address, action, emails, notify=False):
                 except Exception:
                     after = set(current) if action == "remove" else set()
     verified = verify_change(action, todo, after or [], errors)
+    if list_type == "forwarder" and gone_note:
+        verified = {e: (r, gone_note if r == "done" else d) for e, (r, d) in verified.items()}
     skip_note = "Already a member." if action == "add" else "Not a member."
     results = []
     for e in emails:

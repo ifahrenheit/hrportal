@@ -129,8 +129,8 @@ class ChangeLogicTests(unittest.TestCase):
         self.assertEqual(v["d@x.ph"][0], "failed")
 
     def test_forwarder_change_members_verifies_and_audits(self):
-        reads = iter([(["old@x.ph"], {}), (["old@x.ph", "new@x.ph"], {})])
-        with mock.patch.object(ml, "_current_emails", side_effect=lambda *a, **k: next(reads)), \
+        with mock.patch.object(ml, "_current_emails", return_value=(["old@x.ph"], {})), \
+             mock.patch.object(ml, "fetch_forwarders", return_value=({"hr@x.ph": ["old@x.ph", "new@x.ph"]}, 0)), \
              mock.patch.object(ml, "forwarder_change") as fc, \
              mock.patch.object(ml, "_write_audit") as audit:
             res = ml.change_members("forwarder", "hr@x.ph", "add", ["new@x.ph", "old@x.ph", "ghost@x.ph"])
@@ -871,6 +871,19 @@ class ViewOnlyAndSettingsTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 ml.update_list_admins("l@x.ph", "owner", remove=["only@cohere.ph"])
         fu.assert_not_called()
+
+
+
+class LastTargetTests(unittest.TestCase):
+    def test_removing_last_forwarder_target_is_done_not_error(self):
+        reads = iter([({"solo@x.ph": ["gone@x.ph"]}, 0), ({}, 0)])
+        with mock.patch.object(ml, "fetch_forwarders", side_effect=lambda *a, **k: next(reads)), \
+             mock.patch.object(ml, "forwarder_change"), \
+             mock.patch.object(ml, "_write_audit") as audit:
+            res = ml.change_members("forwarder", "solo@x.ph", "remove", ["gone@x.ph"])
+        self.assertEqual(res[0][:2], ("gone@x.ph", "done"))
+        self.assertIn("deleted the forwarder", res[0][2])
+        audit.assert_called_once()
 
 
 

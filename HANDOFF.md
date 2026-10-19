@@ -8,6 +8,18 @@
 
 ---
 
+## 2026-10-20 (8) — Fixes: Accept + Remember did nothing; last-target forwarder removal reported as error
+Commits: `0fc0638`, this one · Branch: `main`
+
+### What was fixed
+- **Accept + "Remember these senders"**: Mailman 2 silently drops approvals when the same admindb POST also has `senderfilterp-`/`senderfilter-` fields. On managers@, 37 accepts all stayed queued. `moderate()` now posts decisions only, then adds senders through `update_sender_filter()` (verified, skips duplicates). Discard + remember works the same way.
+  - Confirmed live by accepting 1 message alone (IR-20261019-B0088E, id 1651): done. The other 36 are still queued for the user to retry.
+- **Forwarder last target**: removing a forwarder's only target makes cPanel delete the address. `change_members()` re-read it via `_current_emails` and raised KeyError, so the cleanup showed it as failed and it wasn't audited. It now re-reads `fetch_forwarders` and marks the result done, with a "cPanel deleted the forwarder" note.
+  - This happened in the Separated cleanup to `gygl2@`, `jondel.lerio@`, `juniel.cabantingan@` and `montesa.montebon@`, which are now deleted. Audit rows were backfilled; the removed target address wasn't recorded.
+  - **`gygl2@` was a group address**: mail to it now bounces. Recreate it if it's still used.
+
+---
+
 ## 2026-10-20 (7) — Mailing Lists 8–12: private by default, privacy switch, owners/moderators, all-lists history, view-only permission
 Commit: this one · Branch: `main`
 
