@@ -8,7 +8,7 @@
 
 ---
 
-## 2026-10-19 — Audit #19: notify crons commit per employee before emailing; tardiness is dry-run by default
+## 2026-10-19 — Audit #19 + #20: notify crons commit per employee before emailing; tardiness is dry-run by default
 Commit: see `git log` (this entry's commit) · Branch: `main`
 
 ### What was built / changed
@@ -32,7 +32,7 @@ Commit: see `git log` (this entry's commit) · Branch: `main`
 - `./venv/bin/python tardiness_notify.py` (dry run of yesterday); check `tardiness_notify.log` after 00:15 on 2026-10-20 shows `[LIVE] Processing 2026-10-19`.
 
 ### Open items / next steps
-- [ ] #20 remains for `undertime_notify.py` and `break_log/routes.py`, which still send the IR email before the commit (fixed for tardiness and overbreak).
+- [x] **#20 done** (same day, next commit): `undertime_notify.py` `apply_rules(..., outbox=)` queues the IR email and memos, and `process_day` sends them after each employee's commit. Break Log `overbreak_review_action` files with `notify=False` and emails after `db.commit()`, so a second reviewer's rolled-back IR (409 duplicate) is never emailed. Tests added to `tests/test_notify_commit.py` (14 total). `leavesystem` restarted 21:46, clean.
 - [ ] HR policy: may one late day count toward both the 3-lates and the 31+ minutes rules?
 - [ ] Audit #21 (rest), #22, #25, #27–#34. #35 done.
 

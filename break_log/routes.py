@@ -833,7 +833,7 @@ def overbreak_review_action():
     if not validate_csrf():
         return jsonify(success=False, error='Security check failed, please try again.'), 403
     from app import get_central_db
-    from helpers.ir_autofile import file_incident_report
+    from helpers.ir_autofile import file_incident_report, send_ir_notification
 
     data = request.get_json(silent=True) or {}
     employee_id = (data.get('employee_id') or '').strip()
@@ -881,7 +881,8 @@ def overbreak_review_action():
                 ir_number = file_incident_report(
                     c, employee_id, row['employee_name'], shift_date, summary,
                     log_prefix="[overbreak_review]",
-                    submitted_by_id=reviewer_id, submitted_by_name=reviewer_name)
+                    submitted_by_id=reviewer_id, submitted_by_name=reviewer_name,
+                    notify=False)
                 c.execute("SELECT id FROM incident_reports WHERE report_number = %s",
                           (ir_number,))
                 r2 = c.fetchone()
@@ -900,6 +901,15 @@ def overbreak_review_action():
                   ir_id, ir_number, waive_reason or None,
                   reviewer_id, reviewer_name))
         db.commit()
+        # IR email only after the commit: if a second reviewer hits the
+        # duplicate check above, their IR is rolled back and never emailed.
+        if ir_number:
+            try:
+                with db.cursor() as c:
+                    send_ir_notification(c, ir_number, shift_date, employee_id, summary,
+                                         agent_name=row['employee_name'], log_prefix="[overbreak_review]")
+            except Exception:
+                _logger.exception("Overbreak IR email failed for %s", ir_number)
         _logger.info("Overbreak %s: %s %s by %s (IR: %s)",
                      action, employee_id, shift_date, reviewer_name, ir_number)
         return jsonify(success=True,

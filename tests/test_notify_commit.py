@@ -21,6 +21,7 @@ sys.path.insert(0, '/var/www/html/leavesystem')
 
 import tardiness_notify as tn  # noqa: E402
 import overbreak_notify as ob  # noqa: E402
+import undertime_notify as un  # noqa: E402
 
 
 class FakeConn:
@@ -213,6 +214,131 @@ class OverbreakCase(unittest.TestCase):
         self.assertNotIn('commit', k)
         self.assertNotIn('ir_email', k)
         self.assertEqual(k[-1], 'rollback')
+
+
+class UndertimeCase(unittest.TestCase):
+    """#20: undertime_notify sends the IR email and memos only after the commit."""
+
+    def test_emails_after_commit_and_none_for_failed_employee(self):
+        events = []
+        conn = FakeConn(events)
+
+        def rec(eid):
+            return {'companyid': eid, 'fname': 'A', 'lname': 'Test', 'status': 'UNDERTIME',
+                    'minutes_early': 40, 'time_in': datetime(2026, 10, 14, 9),
+                    'time_out': datetime(2026, 10, 14, 17, 20), 'shift_end': datetime(2026, 10, 14, 18),
+                    'out_source': 'punch', 'shift_time_raw': '9am-6pm'}
+
+        def fake_file(cur, companyid, *a, **kw):
+            self.assertFalse(kw['notify'])
+            if companyid == 'E2':
+                raise RuntimeError('db hiccup')
+            events.append(('file', companyid))
+            return f'IR-{companyid}'
+
+        patches = [
+            patch.object(un, 'LIVE_START_DATE', date.min),
+            patch.object(un, 'get_undertime_for_date', MagicMock(return_value=[rec('E1'), rec('E2'), rec('E3')])),
+            patch.object(un, 'get_db_connection', MagicMock(return_value=conn)),
+            patch.object(un, 'get_or_create_state', MagicMock(side_effect=lambda cur, eid, ps: un._new_state(eid, ps))),
+            patch.object(un, 'save_state', MagicMock(side_effect=lambda cur, st: events.append(('save', st['employee_id'])))),
+            patch.object(un, 'build_recipient_list', MagicMock(return_value=(['tl@x.com'], 'tl@x.com'))),
+            patch.object(un, 'is_ir_excluded', MagicMock(return_value=False)),
+            patch.object(un, 'file_incident_report', MagicMock(side_effect=fake_file)),
+            patch.object(un, 'send_ir_notification',
+                         MagicMock(side_effect=lambda cur, n, *a, **k: events.append(('ir_email', n)))),
+            patch.object(un, 'send_email', MagicMock(side_effect=lambda to, subj, body: events.append(('memo', to)))),
+        ]
+        for pt in patches:
+            pt.start()
+            self.addCleanup(pt.stop)
+        un.process_day(D, live=True)
+        kinds = [e[0] for e in events if e[0] in ('file', 'save', 'commit', 'rollback', 'ir_email', 'memo')]
+        self.assertEqual(kinds, ['file', 'save', 'commit', 'ir_email', 'memo',   # E1
+                                 'rollback',                                     # E2: no email
+                                 'file', 'save', 'commit', 'ir_email', 'memo'])  # E3
+
+
+class BreakLogReviewCase(unittest.TestCase):
+    """#20: a Break Log "Create IR" emails the IR only after the review is saved."""
+
+    @classmethod
+    def setUpClass(cls):
+        import app as app_module
+        import break_log.routes as br
+        cls.app_module, cls.br = app_module, br
+        cls.client = app_module.app.test_client()
+
+    def post(self, insert_error=None):
+        events = []
+
+        class Cur:
+            def __init__(self):
+                self.rows = []
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *a):
+                return False
+
+            def execute(self, q, p=None):
+                ql = q.lower()
+                if 'from break_logs' in ql:
+                    self.rows = [{'employee_name': 'Agent', 'account_type': 'Numa', 'total_min': 120}]
+                elif 'from incident_reports' in ql:
+                    self.rows = [{'id': 7}]
+                elif 'insert into overbreak_reviews' in ql:
+                    if insert_error:
+                        raise insert_error
+                    events.append(('review_insert',))
+
+            def fetchone(self):
+                return self.rows.pop(0) if self.rows else None
+
+        class DB:
+            def cursor(self):
+                return Cur()
+
+            def commit(self):
+                events.append(('commit',))
+
+            def rollback(self):
+                events.append(('rollback',))
+
+            def close(self):
+                pass
+
+        import helpers.ir_autofile as ira
+        patches = [
+            patch.object(self.app_module, 'get_central_db', MagicMock(return_value=DB())),
+            patch.object(self.br, '_has_supervisor_access', MagicMock(return_value=True)),
+            patch.object(self.br, '_get_employee_id', MagicMock(return_value={'employee_id': 'SUP1'})),
+            patch.object(ira, 'file_incident_report',
+                         MagicMock(side_effect=lambda *a, **k: events.append(('file', k['notify'])) or 'IR-X')),
+            patch.object(ira, 'send_ir_notification',
+                         MagicMock(side_effect=lambda cur, n, *a, **k: events.append(('ir_email', n)))),
+        ]
+        for pt in patches:
+            pt.start()
+            self.addCleanup(pt.stop)
+        with self.client.session_transaction() as sess:
+            sess['user'] = {'email': 'sup@x.com', 'name': 'Sup'}
+            sess['_csrf_token'] = 'tok'
+        resp = self.client.post('/api/supervisor/overbreaks/review',
+                                json={'employee_id': 'ZZTEST-1', 'shift_date': '2026-10-14', 'action': 'create_ir'},
+                                headers={'X-CSRF-Token': 'tok'})
+        return resp, events
+
+    def test_ir_emailed_after_commit(self):
+        resp, events = self.post()
+        self.assertEqual(resp.status_code, 200, resp.get_data(as_text=True))
+        self.assertEqual(events, [('file', False), ('review_insert',), ('commit',), ('ir_email', 'IR-X')])
+
+    def test_duplicate_review_rolls_back_and_sends_no_email(self):
+        resp, events = self.post(insert_error=Exception("(1062, \"Duplicate entry 'x' for key\")"))
+        self.assertEqual(resp.status_code, 409)
+        self.assertEqual(events, [('file', False), ('rollback',)])
 
 
 if __name__ == '__main__':

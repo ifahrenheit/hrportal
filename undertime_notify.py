@@ -48,7 +48,7 @@ load_dotenv('/var/www/html/leavesystem/.env')
 from db_core import get_db_connection
 from helpers.payroll_period import get_payroll_period_for_date
 from modules.undertime import get_undertime_for_date
-from helpers.ir_autofile import file_incident_report, ir_notice_html, is_ir_excluded
+from helpers.ir_autofile import file_incident_report, ir_notice_html, is_ir_excluded, send_ir_notification
 
 LOG = "[undertime_notify]"
 
@@ -335,12 +335,27 @@ def _entry_for(r, process_date):
     }
 
 
-def apply_rules(cur, s, r, process_date, period_start, period_end, live):
+def apply_rules(cur, s, r, process_date, period_start, period_end, live, outbox=None):
     """
     Adds one undertime day to state s and fires any triggers. Returns a list
     of fired trigger types. Files at most one IR per call (both rules firing
-    the same day share it), exactly like tardiness_notify.process_day().
+    the same day share it), exactly like tardiness_notify.apply_rules().
+
+    With outbox (a list), the IR email and memos are queued there as callables
+    instead of sent, so process_day() sends them only after committing.
     """
+    queue = outbox.append if outbox is not None else (lambda send: send())
+
+    def file_ir(summary):
+        number = file_incident_report(
+            cur, companyid, f"{fname} {lname}", process_date, summary,
+            dry_run=not live, log_prefix=LOG, notify=False,
+        )
+        if live:
+            queue(lambda: send_ir_notification(cur, number, process_date, companyid, summary,
+                                               agent_name=f"{fname} {lname}", log_prefix=LOG))
+        return number
+
     companyid, fname, lname = r["companyid"], r["fname"], r["lname"]
     entry = _entry_for(r, process_date)
 
@@ -357,17 +372,13 @@ def apply_rules(cur, s, r, process_date, period_start, period_end, live):
     recipients, tl_email = build_recipient_list(cur, companyid)
 
     if s["count_since_reset"] >= COUNT_THRESHOLD:
-        summary = build_ir_summary_count(fname, lname, s["count_breakdown"])
-        report_number_today = file_incident_report(
-            cur, companyid, f"{fname} {lname}", process_date, summary,
-            dry_run=not live, log_prefix=LOG,
-        )
+        report_number_today = file_ir(build_ir_summary_count(fname, lname, s["count_breakdown"]))
         subject, body = build_count_email(
             fname, lname, companyid, period_start, period_end,
             s["total_count_in_cycle"], tl_email,
             breakdown=s["count_breakdown"], report_number=report_number_today,
         )
-        send_to_all(recipients, subject, body, live)
+        queue(lambda subject=subject, body=body: send_to_all(recipients, subject, body, live))
         fired.append(("COUNT", list(s["count_breakdown"])))
         s["count_since_reset"] = 0
         s["count_triggers_sent"] += 1
@@ -375,17 +386,14 @@ def apply_rules(cur, s, r, process_date, period_start, period_end, live):
 
     if s["minutes_since_reset"] >= MINUTES_THRESHOLD:
         if report_number_today is None:
-            summary = build_ir_summary_minutes(fname, lname, s["total_minutes_in_cycle"], s["minutes_breakdown"])
-            report_number_today = file_incident_report(
-                cur, companyid, f"{fname} {lname}", process_date, summary,
-                dry_run=not live, log_prefix=LOG,
-            )
+            report_number_today = file_ir(build_ir_summary_minutes(
+                fname, lname, s["total_minutes_in_cycle"], s["minutes_breakdown"]))
         subject, body = build_minutes_email(
             fname, lname, companyid, period_start, period_end,
             s["total_minutes_in_cycle"], tl_email,
             breakdown=s["minutes_breakdown"], report_number=report_number_today,
         )
-        send_to_all(recipients, subject, body, live)
+        queue(lambda subject=subject, body=body: send_to_all(recipients, subject, body, live))
         fired.append(("MINUTES", list(s["minutes_breakdown"])))
         s["minutes_since_reset"] = 0
         s["minutes_triggers_sent"] += 1
@@ -444,16 +452,21 @@ def process_day(process_date: date, live: bool):
                 apply_rules(cur, s, r, process_date, period_start, period_end, live)
                 continue
 
-            # Commit per employee, so a failure on one employee can't roll
-            # back IRs already filed (and emailed) for the ones before it.
+            # Commit per employee, then email: a failure on one employee can't
+            # roll back IRs already filed and emailed for the ones before it,
+            # and no email ever points to an IR that wasn't saved.
+            outbox = []
             try:
-                apply_rules(cur, s, r, process_date, period_start, period_end, live)
+                apply_rules(cur, s, r, process_date, period_start, period_end, live, outbox=outbox)
                 save_state(cur, s)
                 conn.commit()
             except Exception as e:
                 conn.rollback()
                 print(f"{LOG} ERROR processing {lname}, {fname} ({companyid}) for {process_date}, "
                       f"rolled back: {e}")
+                continue
+            for send in outbox:
+                send()
 
         if not live:
             conn.rollback()

@@ -611,6 +611,7 @@ class NotifyCase(unittest.TestCase):
             # Fixtures use Sep 2026 dates before the real go-live; the
             # go-live guard itself is tested in TestGoLiveGuard.
             patch.object(un, 'LIVE_START_DATE', date.min),
+            patch.object(un, 'send_ir_notification', MagicMock()),
         ]
         self.mocks = [pt.start() for pt in patches]
         for pt in patches:
