@@ -13,7 +13,7 @@
     <div>
       <label for="mlType">Type</label>
       <select class="form-select" id="mlType">
-        <option value="">All ({{ n_forwarders + n_mailman }})</option>
+        <option value="all">All ({{ n_forwarders + n_mailman }})</option>
         <option value="forwarder">Forwarder ({{ n_forwarders }})</option>
         <option value="mailman">Mailman ({{ n_mailman }})</option>
       </select>
@@ -83,7 +83,8 @@
 
 {% block scripts %}
 <script>
-// Search + type filter. The type is kept in ?type= so a refresh or bookmark keeps it.
+// Search + type filter. Opens on Mailman lists; another choice is kept in ?type=
+// (all / forwarder) so a refresh or bookmark keeps it.
 (function () {
   var search = document.getElementById('mlSearch');
   var type = document.getElementById('mlType');
@@ -93,23 +94,23 @@
   var rows = Array.prototype.filter.call(document.querySelectorAll('#mlTable tbody tr'),
                                          function (r) { return !r.classList.contains('empty-row'); });
   var params = new URLSearchParams(location.search);
-  if (['forwarder', 'mailman'].indexOf(params.get('type')) !== -1) type.value = params.get('type');
+  type.value = ['all', 'forwarder', 'mailman'].indexOf(params.get('type')) !== -1 ? params.get('type') : 'mailman';
   function apply() {
     var q = search.value.toLowerCase().trim(), t = type.value, shown = 0;
     rows.forEach(function (r) {
-      var hit = (!t || r.getAttribute('data-type') === t)
+      var hit = (t === 'all' || r.getAttribute('data-type') === t)
              && (!q || r.textContent.toLowerCase().indexOf(q) !== -1);
       r.style.display = hit ? '' : 'none';
       if (hit) shown++;
     });
     count.textContent = shown + ' of ' + rows.length;
-    refresh.setAttribute('href', refreshBase + (t ? '&type=' + t : ''));
+    refresh.setAttribute('href', refreshBase + (t !== 'mailman' ? '&type=' + t : ''));
   }
   search.addEventListener('input', apply);
   type.addEventListener('change', function () {
     var p = new URLSearchParams(location.search);
     p.delete('refresh');
-    if (type.value) p.set('type', type.value); else p.delete('type');
+    if (type.value !== 'mailman') p.set('type', type.value); else p.delete('type');
     history.replaceState(null, '', location.pathname + (p.toString() ? '?' + p : ''));
     apply();
   });
