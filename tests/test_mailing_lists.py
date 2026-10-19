@@ -51,7 +51,7 @@ class ParsingTests(unittest.TestCase):
         }
         out = ml.classify_members(["ben@cohere.ph", "ann@cohere.ph", "cy@cohere.ph", "vendor@x.com"], employees)
         self.assertEqual([m["kind"] for m in out], ["active", "separated", "active", "external"])
-        self.assertEqual(ml.summarize(out), {"total": 4, "active": 2, "separated": 1, "external": 1})
+        self.assertEqual(ml.summarize(out), {"total": 4, "active": 2, "separated": 1, "external": 1, "delivery_off": 0})
 
 
 class MailmanReadTests(unittest.TestCase):
@@ -595,6 +595,95 @@ class SpamBlocklistTests(unittest.TestCase):
              mock.patch.object(ml, "fetch_mail_domains", return_value=(["cohere.ph"], 0)):
             with self.assertRaises(RuntimeError):
                 ml.spam_blocklist_add(["cpanel@lylts.com"])
+
+
+
+SENDER_FORM = """<FORM action="../admin/l_x.ph/privacy/sender" method="POST">
+<input type="hidden" name="csrf_token" value="t1">
+<INPUT name="generic_nonmember_action" type="RADIO" value="1" CHECKED ><INPUT name="generic_nonmember_action" type="RADIO" value="3" >
+<TEXTAREA NAME=accept_these_nonmembers ROWS=10>
+*@cohere.ph
+wfm@cohere.ph</TEXTAREA>
+<TEXTAREA NAME=discard_these_nonmembers ROWS=10>spam@x.com</TEXTAREA>
+<INPUT name="forward_auto_discards" type="RADIO" value="1" CHECKED >
+<INPUT name="submit" type="SUBMIT" value="Submit Your Changes" ></FORM>"""
+
+
+def _form_session(pages):
+    """Fake logged-in Mailman session: GET returns pages in order; records POSTs."""
+    sess = mock.MagicMock()
+    it = iter(pages)
+    sess.get.side_effect = lambda *a, **k: mock.Mock(text=next(it), raise_for_status=lambda: None)
+    sess.post.return_value = mock.Mock(text="saved", raise_for_status=lambda: None)
+    return sess
+
+
+class FormUpdateTests(unittest.TestCase):
+    def test_form_fields_like_a_browser(self):
+        f = ml.form_fields(SENDER_FORM)
+        self.assertIn(("accept_these_nonmembers", "*@cohere.ph\nwfm@cohere.ph"), f)
+        self.assertIn(("generic_nonmember_action", "1"), f)
+        self.assertNotIn("submit", dict(f))
+
+    def test_update_posts_everything_and_checks_only_target_changed(self):
+        after = SENDER_FORM.replace("wfm@cohere.ph</TEXTAREA>", "wfm@cohere.ph\nsend_email@cohere.ph</TEXTAREA>")
+        sess = _form_session([SENDER_FORM, after])
+        ml.mailman_form_update(sess, "u", set_fields={"accept_these_nonmembers": "*@cohere.ph\nwfm@cohere.ph\nsend_email@cohere.ph"})
+        posted = dict(sess.post.call_args.kwargs["data"])
+        self.assertEqual(posted["discard_these_nonmembers"], "spam@x.com")    # untouched fields re-sent as-is
+        self.assertEqual(posted["generic_nonmember_action"], "1")
+        self.assertEqual(posted["csrf_token"], "t1")
+
+    def test_update_refuses_when_something_else_changed(self):
+        after = SENDER_FORM.replace("wfm@cohere.ph</TEXTAREA>", "wfm@cohere.ph\nnew@x.ph</TEXTAREA>") \
+                           .replace('value="1" CHECKED ><INPUT name="generic_nonmember_action" type="RADIO" value="3" >',
+                                    'value="1" ><INPUT name="generic_nonmember_action" type="RADIO" value="3" CHECKED >')
+        sess = _form_session([SENDER_FORM, after])
+        with self.assertRaises(RuntimeError) as cm:
+            ml.mailman_form_update(sess, "u", set_fields={"accept_these_nonmembers": "*@cohere.ph\nwfm@cohere.ph\nnew@x.ph"})
+        self.assertIn("generic_nonmember_action", str(cm.exception))
+
+    def test_update_refuses_when_not_applied(self):
+        sess = _form_session([SENDER_FORM, SENDER_FORM])
+        with self.assertRaises(RuntimeError):
+            ml.mailman_form_update(sess, "u", set_fields={"accept_these_nonmembers": "x@y.ph"})
+
+
+class DeliveryAndSenderTests(unittest.TestCase):
+    def test_parse_nomail(self):
+        html = ('<INPUT name="a%40x.ph_nomail" type="CHECKBOX" value="on" CHECKED >[B]'
+                '<INPUT name="b%40x.ph_nomail" type="CHECKBOX" value="off" >'
+                '<INPUT name="c%40x.ph_nomail" type="CHECKBOX" value="on" CHECKED >[A]')
+        self.assertEqual(ml.parse_mailman_nomail(html), {"a@x.ph": "B", "c@x.ph": "A"})
+
+    def test_classify_marks_delivery_off(self):
+        out = ml.classify_members(["a@x.ph", "b@x.ph"], {}, {"a@x.ph": "B"})
+        self.assertEqual([m["delivery_off"] for m in out], ["B", None])
+        self.assertEqual(ml.summarize(out)["delivery_off"], 1)
+
+    def test_sender_entry_rules(self):
+        self.assertIsNone(ml.sender_entry_problem("send_email@cohere.ph"))
+        self.assertIsNone(ml.sender_entry_problem(r"^.*@cohere\.ph$"))
+        self.assertIn("wildcard", ml.sender_entry_problem("*@cohere.ph"))
+        self.assertIsNotNone(ml.sender_entry_problem("^(broken"))
+        self.assertIsNotNone(ml.sender_entry_problem("cohere.ph"))
+        rx = ml.wildcard_to_regex("*@Cohere.ph")
+        self.assertEqual(rx, r"^.*@cohere\.ph$")
+        import re
+        self.assertTrue(re.match(rx, "send_email@cohere.ph"))
+        self.assertFalse(re.match(rx, "x@cohere.phish.example"))
+
+    def test_update_sender_filter_adds_once(self):
+        after = SENDER_FORM.replace("wfm@cohere.ph</TEXTAREA>", "wfm@cohere.ph\nsend_email@cohere.ph</TEXTAREA>")
+        sess = _form_session([SENDER_FORM, SENDER_FORM, after])
+        sess.__enter__.return_value = sess
+        with mock.patch.object(ml, "fetch_mailman_lists", return_value=({"l@x.ph": {"listid": "l_x.ph"}}, 0)), \
+             mock.patch.object(ml, "_mailman_session") as ms, \
+             mock.patch.object(ml, "_write_audit") as audit:
+            ms.return_value.__enter__.return_value = (sess, "https://h/mailman/admin/l_x.ph", "")
+            before, result = ml.update_sender_filter("l@x.ph", "accept_these_nonmembers", add=["send_email@cohere.ph"])
+        self.assertEqual(result, ["*@cohere.ph", "wfm@cohere.ph", "send_email@cohere.ph"])
+        self.assertEqual(audit.call_args.args[2], "senders")
 
 
 

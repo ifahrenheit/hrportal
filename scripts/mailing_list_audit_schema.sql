@@ -13,7 +13,7 @@ CREATE TABLE IF NOT EXISTS mailing_list_audit (
     acting_as     VARCHAR(255) NULL,
     list_type     ENUM('forwarder','mailman') NOT NULL,
     list_address  VARCHAR(255) NOT NULL,
-    action        ENUM('add','remove','create','moderate') NOT NULL,
+    action        ENUM('add','remove','create','moderate','delivery','senders','delete') NOT NULL,
     member_email  VARCHAR(255) NOT NULL,
     result        ENUM('done','failed','skipped') NOT NULL,
     detail        VARCHAR(500) NULL,

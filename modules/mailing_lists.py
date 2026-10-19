@@ -43,6 +43,7 @@ import threading
 import time
 from contextlib import contextmanager
 from functools import wraps
+from html.parser import HTMLParser
 from urllib.parse import unquote
 
 import requests
@@ -123,6 +124,20 @@ def parse_mailman_members(html):
     return {unquote(m).lower() for m in _MEMBER_RE.findall(html or "")}
 
 
+_NOMAIL_RE = re.compile(r'<input[^>]*name="([^"\s]+%40[^"\s]+)_nomail"[^>]*>\s*(\[[A-Z?]\])?', re.I)
+NOMAIL_REASONS = {"B": "bounces", "A": "turned off by an admin", "U": "turned off by the member", "?": "unknown reason"}
+
+
+def parse_mailman_nomail(html):
+    """{email: reason code} for members whose delivery is switched off
+    (Mailman ticks <addr>_nomail and appends [B]ounce/[A]dmin/[U]ser/[?])."""
+    out = {}
+    for m in _NOMAIL_RE.finditer(html or ""):
+        if re.search(r"\bchecked\b", m.group(0), re.I):
+            out[unquote(m.group(1)).lower()] = (m.group(2) or "[?]")[1]
+    return out
+
+
 def parse_mailman_total(html):
     m = _TOTAL_RE.search(html or "")
     return int(m.group(1)) if m else None
@@ -152,9 +167,11 @@ def parse_email_input(text):
     return valid, invalid
 
 
-def classify_members(emails, employees):
+def classify_members(emails, employees, nomail=None):
     """emails: iterable of addresses. employees: {email_lower: row} with
-    schedule_name/status/group_name/employee_id. Returns a list of dicts."""
+    schedule_name/status/group_name/employee_id. nomail: {email: reason
+    code} for Mailman members with delivery off. Returns a list of dicts."""
+    nomail = nomail or {}
     out = []
     for e in sorted(set(emails)):
         emp = employees.get(e.lower()) if "@" in e else None
@@ -171,14 +188,16 @@ def classify_members(emails, employees):
             "status": emp.get("status") if emp else None,
             "group_name": emp.get("group_name") if emp else None,
             "employee_id": emp.get("employee_id") if emp else None,
+            "delivery_off": nomail.get(e.lower()),
         })
     return out
 
 
 def summarize(members):
-    s = {"total": len(members), "active": 0, "separated": 0, "external": 0}
+    s = {"total": len(members), "active": 0, "separated": 0, "external": 0, "delivery_off": 0}
     for m in members:
         s[m["kind"]] += 1
+        s["delivery_off"] += bool(m.get("delivery_off"))
     return s
 
 
@@ -291,6 +310,7 @@ def _mailman_session(address, listid):
 
 def _walk_mailman_members(s, base, first_html):
     members = parse_mailman_members(first_html)
+    nomail = parse_mailman_nomail(first_html)
     total = parse_mailman_total(first_html)
     letters, chunks = parse_mailman_pages(first_html)
 
@@ -303,10 +323,13 @@ def _walk_mailman_members(s, base, first_html):
     for letter in letters:
         html = get({"letter": letter})
         members |= parse_mailman_members(html)
+        nomail.update(parse_mailman_nomail(html))
         pages += [{"letter": letter, "chunk": c} for c in parse_mailman_pages(html)[1]]
     for p in pages:
-        members |= parse_mailman_members(get(p))
-    return {"members": members, "total": total,
+        html = get(p)
+        members |= parse_mailman_members(html)
+        nomail.update(parse_mailman_nomail(html))
+    return {"members": members, "total": total, "nomail": nomail,
             "complete": total is None or total == len(members)}
 
 
@@ -315,6 +338,119 @@ def _read_mailman_members(address, listid):
     Returns {'members': set, 'total': int|None, 'complete': bool}."""
     with _mailman_session(address, listid) as (s, base, first_html):
         return _walk_mailman_members(s, base, first_html)
+
+
+class _FormParser(HTMLParser):
+    """Successful controls of the first <form>, the way a browser submits it
+    (checked radios/checkboxes, text/hidden inputs, textareas, selects)."""
+
+    def __init__(self):
+        super().__init__(convert_charrefs=True)
+        self.fields, self._in, self._done = [], False, False
+        self._ta = self._sel = self._opt = None
+
+    def handle_starttag(self, tag, attrs):
+        a = {k.lower(): (v if v is not None else "") for k, v in attrs}
+        if self._done:
+            return
+        if tag == "form":
+            self._in = True
+            return
+        if not self._in:
+            return
+        if tag == "input":
+            t, n = a.get("type", "text").lower(), a.get("name")
+            if not n or t in ("file", "reset", "button", "image", "submit"):
+                return
+            if t in ("radio", "checkbox"):
+                if "checked" in a:
+                    self.fields.append((n, a.get("value", "on")))
+            else:
+                self.fields.append((n, a.get("value", "")))
+        elif tag == "textarea":
+            self._ta = [a.get("name"), ""]
+        elif tag == "select":
+            self._sel = [a.get("name"), None, None]
+        elif tag == "option" and self._sel is not None:
+            self._opt = [a.get("value"), "", "selected" in a]
+
+    def handle_data(self, data):
+        if self._ta is not None:
+            self._ta[1] += data
+        if self._opt is not None:
+            self._opt[1] += data
+
+    def handle_endtag(self, tag):
+        if tag == "form" and self._in:
+            self._in, self._done = False, True
+        elif tag == "textarea" and self._ta is not None:
+            v = self._ta[1][1:] if self._ta[1].startswith("\n") else self._ta[1]
+            if self._ta[0]:
+                self.fields.append((self._ta[0], v))
+            self._ta = None
+        elif tag == "option" and self._opt is not None:
+            val = self._opt[0] if self._opt[0] is not None else self._opt[1].strip()
+            if self._sel[1] is None:
+                self._sel[1] = val
+            if self._opt[2]:
+                self._sel[2] = val
+            self._opt = None
+        elif tag == "select" and self._sel is not None:
+            v = self._sel[2] if self._sel[2] is not None else self._sel[1]
+            if self._sel[0] and v is not None:
+                self.fields.append((self._sel[0], v))
+            self._sel = None
+
+
+def form_fields(html_text):
+    p = _FormParser()
+    p.feed(html_text or "")
+    return p.fields
+
+
+def _norm(v):
+    return (v or "").replace("\r\n", "\n").strip()
+
+
+def mailman_form_update(s, url, set_fields=None, uncheck=()):
+    """Submit the form at `url` exactly as a browser would, with
+    `set_fields` ({name: value}) changed and the `uncheck` checkboxes cleared.
+    Re-reads the form and checks that exactly those fields changed (and to
+    the intended values). Returns the after-fields dict."""
+    set_fields = dict(set_fields or {})
+    uncheck = set(uncheck)
+    page = s.get(url, timeout=HTTP_TIMEOUT)
+    page.raise_for_status()
+    before = form_fields(page.text)
+    post, seen = [], set()
+    for k, v in before:
+        if k in uncheck:
+            continue
+        if k in set_fields:
+            if k not in seen:
+                post.append((k, set_fields[k]))
+                seen.add(k)
+            continue
+        post.append((k, v))
+    post += [(k, v) for k, v in set_fields.items() if k not in seen]
+    post.append(("submit", "Submit Your Changes"))
+    r = s.post(url, data=post, timeout=HTTP_TIMEOUT)
+    r.raise_for_status()
+    if "request forgery" in r.text.lower() or "form lifetime" in r.text.lower():
+        raise RuntimeError("Mailman refused the change (request forgery check). Try again.")
+    after_page = s.get(url, timeout=HTTP_TIMEOUT)
+    after_page.raise_for_status()
+    b = {k: _norm(v) for k, v in before if k != "csrf_token"}
+    a = {k: _norm(v) for k, v in form_fields(after_page.text) if k != "csrf_token"}
+    changed = {k for k in set(a) | set(b) if a.get(k) != b.get(k)}
+    expected = {k for k in set_fields if _norm(set_fields[k]) != b.get(k)} | {k for k in uncheck if k in b}
+    unexpected = changed - expected
+    if unexpected:
+        raise RuntimeError("Mailman changed more than intended: " + ", ".join(sorted(unexpected)))
+    not_applied = [k for k in set_fields if a.get(k) != _norm(set_fields[k])] + [k for k in uncheck if k in a]
+    if not_applied:
+        raise RuntimeError("Mailman did not apply: " + ", ".join(sorted(not_applied)))
+    return a
 
 
 def _mailman_post_form(s, base, page, fields):
@@ -400,13 +536,14 @@ def _current_emails(list_type, address, refresh=False):
             raise KeyError(address)
         return groups[address], {"complete": True, "total": len(groups[address]), "fetched_at": fetched}
     data, fetched = fetch_mailman_members(address, refresh)
-    return data["members"], {"complete": data["complete"], "total": data["total"], "fetched_at": fetched}
+    return data["members"], {"complete": data["complete"], "total": data["total"], "fetched_at": fetched,
+                             "nomail": data.get("nomail") or {}}
 
 
 def _get_members(list_type, address, refresh=False):
     """(members_classified, meta) for one group address."""
     emails, meta = _current_emails(list_type, address, refresh)
-    return classify_members(emails, load_employee_index()), meta
+    return classify_members(emails, load_employee_index(), meta.get("nomail")), meta
 
 
 # ── Changes + audit ─────────────────────────────────────────────────────────
@@ -522,6 +659,135 @@ def sync_members(list_type, address, emails, notify=False):
     added = change_members(list_type, address, "add", to_add, notify=notify) if to_add else []
     removed = change_members(list_type, address, "remove", to_remove, notify=notify) if to_remove else []
     return added, removed, unchanged
+
+
+# ── Mailman member delivery + sender filters ────────────────────────────────
+
+def mailman_set_delivery(address, emails, enable=True):
+    """Switch mail delivery on (or off) for members, through the members page
+    form of the letter each member is listed under. Returns
+    [(email, result, detail)]. The fresh member read is cached."""
+    from urllib.parse import quote
+    info = fetch_mailman_lists()[0][address]
+    results = []
+    with _mailman_session(address, info["listid"]) as (s, base, first_html):
+        pending = {e.lower() for e in emails}
+        pages = {}
+        for e in sorted(pending):
+            key = quote(e, safe="") + "_nomail"
+            letter = e[0]
+            found = None
+            first = s.get(f"{base}/members", params={"letter": letter}, timeout=HTTP_TIMEOUT).text
+            candidates = [f"{base}/members?letter={letter}"] + [
+                f"{base}/members?letter={letter}&chunk={c}" for c in parse_mailman_pages(first)[1]]
+            for url in candidates:
+                html = first if url == candidates[0] else s.get(url, timeout=HTTP_TIMEOUT).text
+                if f'name="{key}"' in html:
+                    found = url
+                    break
+            if not found:
+                results.append((e, "failed", "Not found on Mailman's member pages."))
+                continue
+            pages.setdefault(found, []).append((e, key))
+        for url, members in pages.items():
+            fields = [k for _, k in members]
+            try:
+                if enable:
+                    mailman_form_update(s, url, uncheck=fields)
+                else:
+                    mailman_form_update(s, url, set_fields={k: "on" for k in fields})
+                results += [(e, "done", None) for e, _ in members]
+            except Exception as ex:
+                logger.exception("mailing lists: delivery change on %s failed", address)
+                results += [(e, "failed", str(ex)) for e, _ in members]
+        first = s.get(f"{base}/members", timeout=HTTP_TIMEOUT)
+        fresh = _walk_mailman_members(s, base, first.text)
+    with _cache_lock:
+        _cache[f"mailman:{address}"] = (time.time(), fresh)
+    _write_audit("mailman", address, "delivery", [
+        (e, r, ("Delivery switched " + ("on" if enable else "off")) + (f" — {d}" if d else "")) for e, r, d in results])
+    return results
+
+
+SENDER_FILTERS = (
+    ("accept_these_nonmembers", "Always accept"),
+    ("hold_these_nonmembers", "Always hold for approval"),
+    ("reject_these_nonmembers", "Always reject"),
+    ("discard_these_nonmembers", "Always discard"),
+)
+_FILTER_NAMES = dict(SENDER_FILTERS)
+
+
+def sender_entry_problem(entry):
+    """Why a sender-filter line won't work in Mailman 2, or None. Mailman
+    matches exact addresses, or a regular expression starting with ^.
+    Shell-style wildcards like *@domain are taken literally and never match."""
+    e = (entry or "").strip()
+    if e.startswith("^"):
+        try:
+            re.compile(e)
+            return None
+        except re.error:
+            return "not a valid pattern"
+    if "*" in e:
+        return "wildcards (*) don't work in Mailman"
+    if not _EMAIL_RE.match(e.lower()):
+        return "not an email address"
+    return None
+
+
+def wildcard_to_regex(entry):
+    """'*@cohere.ph' -> '^.*@cohere\\.ph$' (what the entry was meant to do)."""
+    return "^" + ".*".join(re.escape(part) for part in entry.strip().lower().split("*")) + "$"
+
+
+def parse_sender_entries(text):
+    return [line.strip() for line in (text or "").replace("\r\n", "\n").split("\n") if line.strip()]
+
+
+def fetch_sender_filters(address, refresh=False):
+    info = fetch_mailman_lists()[0].get(address)
+    if not info:
+        raise KeyError(address)
+
+    def load():
+        with _mailman_session(address, info["listid"]) as (s, base, _):
+            page = s.get(f"{base}/privacy/sender", timeout=HTTP_TIMEOUT)
+            page.raise_for_status()
+            f = dict(form_fields(page.text))
+        return {name: parse_sender_entries(f.get(name)) for name, _ in SENDER_FILTERS}
+    return _cached(f"senders:{address}", load, refresh)
+
+
+def update_sender_filter(address, field, add=(), remove=(), replace=None):
+    """Add/remove lines in one of Mailman's sender filters (or replace
+    `replace` = {old: new}). Verified by re-reading the page; audited."""
+    if field not in _FILTER_NAMES:
+        raise ValueError(field)
+    info = fetch_mailman_lists()[0][address]
+    replace = replace or {}
+    with _mailman_session(address, info["listid"]) as (s, base, _):
+        url = f"{base}/privacy/sender"
+        page = s.get(url, timeout=HTTP_TIMEOUT)
+        page.raise_for_status()
+        current = parse_sender_entries(dict(form_fields(page.text)).get(field))
+        remove_l = {r.strip().lower() for r in remove}
+        new = [replace.get(c, c) for c in current if c.strip().lower() not in remove_l]
+        for a in add:
+            if a.strip().lower() not in {n.lower() for n in new}:
+                new.append(a.strip())
+        if new == current:
+            return current, current
+        after = mailman_form_update(s, url, set_fields={field: "\n".join(new)})
+        result = parse_sender_entries(after.get(field))
+    with _cache_lock:
+        _cache.pop(f"senders:{address}", None)
+    label = _FILTER_NAMES[field]
+    rows = [(a, "done", f"Added to '{label}' senders") for a in add if a.strip() not in current]
+    rows += [(r, "done", f"Removed from '{label}' senders") for r in remove if r.strip().lower() in {c.lower() for c in current}]
+    rows += [(o, "done", f"'{label}' entry {o} changed to {n}") for o, n in replace.items() if o in current]
+    _write_audit("mailman", address, "senders", rows)
+    return current, result
 
 
 # ── Mailman moderation queue (admindb) ──────────────────────────────────────
@@ -1002,7 +1268,20 @@ def _render_detail(list_type, address, refresh=False, sync_preview=None, mode="a
     except Exception:
         logger.exception("mailing lists: history for %s failed", address)
         history = []
+    filters, filters_error = None, None
+    if list_type == "mailman" and not error:
+        try:
+            raw, _ = fetch_sender_filters(address, refresh)
+            filters = [{"field": f, "label": label,
+                        "entries": [{"value": e, "problem": sender_entry_problem(e),
+                                     "fix": wildcard_to_regex(e) if "*" in e and not e.startswith("^") else None}
+                                    for e in raw.get(f, [])]}
+                       for f, label in SENDER_FILTERS]
+        except Exception as e:
+            logger.exception("mailing lists: sender filters of %s failed", address)
+            filters_error = str(e)
     return render_template("mailing_lists/detail.html", list_type=list_type, address=address,
+                           filters=filters, filters_error=filters_error, nomail_reasons=NOMAIL_REASONS,
                            members=members, meta=meta, info=info, error=error, history=history,
                            summary=summarize(members), max_batch=MAX_BATCH, max_sync=MAX_SYNC_INPUT,
                            sync_preview=sync_preview, mode=mode, emails_text=emails_text,
@@ -1067,6 +1346,92 @@ def change(list_type, address):
         flash(f"Could not {action} members: {e}", "danger")
         return back
     _flash_results(action, results, invalid)
+    return back
+
+
+@mailing_lists_bp.route("/mailman/<path:address>/delivery", methods=["POST"])
+@_access_required
+def delivery(address):
+    """Switch mail delivery back on (or off) for selected Mailman members."""
+    address = address.lower()
+    back = redirect(url_for("mailing_lists.detail", list_type="mailman", address=address))
+    if not validate_csrf():
+        flash("Your session expired. Please try again.", "danger")
+        return back
+    try:
+        known = address in fetch_mailman_lists()[0]
+    except Exception as e:
+        flash(f"Could not read from cPanel: {e}", "danger")
+        return back
+    if not known:
+        abort(404)
+    emails, _ = parse_email_input(" ".join(request.form.getlist("member")))
+    if not emails:
+        flash("Tick at least one member first.", "warning")
+        return back
+    enable = request.form.get("enable", "1") == "1"
+    try:
+        results = mailman_set_delivery(address, emails[:MAX_BATCH], enable=enable)
+    except Exception as e:
+        logger.exception("mailing lists: delivery change on %s failed", address)
+        flash(f"Could not change delivery: {e}", "danger")
+        return back
+    done = [e for e, r, _ in results if r == "done"]
+    failed = [(e, d) for e, r, d in results if r == "failed"]
+    if done:
+        flash(f"Delivery switched {'on' if enable else 'off'} for {len(done)}: {', '.join(done)}", "success")
+    if failed:
+        flash("Failed: " + "; ".join(f"{e} ({d})" for e, d in failed), "danger")
+    return back
+
+
+@mailing_lists_bp.route("/mailman/<path:address>/senders", methods=["POST"])
+@_access_required
+def senders(address):
+    """Edit one of the list's sender filters (accept/hold/reject/discard)."""
+    address = address.lower()
+    back = redirect(url_for("mailing_lists.detail", list_type="mailman", address=address) + "#senders")
+    if not validate_csrf():
+        flash("Your session expired. Please try again.", "danger")
+        return back
+    try:
+        known = address in fetch_mailman_lists()[0]
+    except Exception as e:
+        flash(f"Could not read from cPanel: {e}", "danger")
+        return back
+    if not known:
+        abort(404)
+    field, op = request.form.get("field"), request.form.get("op")
+    if field not in _FILTER_NAMES or op not in ("add", "remove", "fix"):
+        abort(400)
+    label = _FILTER_NAMES[field]
+    try:
+        if op == "add":
+            entries = [e for e in re.split(r"[\s,;]+", request.form.get("entries") or "") if e]
+            bad = [(e, sender_entry_problem(e)) for e in entries if sender_entry_problem(e)]
+            if bad:
+                flash("Not added: " + "; ".join(f"{e} ({p})" for e, p in bad)
+                      + ". Use exact addresses, or a pattern like ^.*@example\\.com$ for a whole domain.", "warning")
+                return back
+            if not entries:
+                flash("Enter at least one address.", "warning")
+                return back
+            update_sender_filter(address, field, add=entries)
+            flash(f"Added to '{label}': {', '.join(entries)}", "success")
+        elif op == "remove":
+            entry = request.form.get("entry") or ""
+            update_sender_filter(address, field, remove=[entry])
+            flash(f"Removed from '{label}': {entry}", "success")
+        else:
+            entry = request.form.get("entry") or ""
+            if "*" not in entry or entry.startswith("^"):
+                abort(400)
+            fixed = wildcard_to_regex(entry)
+            update_sender_filter(address, field, replace={entry: fixed})
+            flash(f"Changed {entry} to {fixed} in '{label}', so Mailman now matches it.", "success")
+    except Exception as e:
+        logger.exception("mailing lists: sender filter change on %s failed", address)
+        flash(f"Could not change '{label}': {e}", "danger")
     return back
 
 

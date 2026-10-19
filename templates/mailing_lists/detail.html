@@ -146,6 +146,15 @@
           <i class="me-1" data-lucide="user-x"></i>Select separated ({{ summary.separated }})
         </button>
         {% endif %}
+        {% if summary.delivery_off %}
+        <button type="button" class="btn btn-outline-warning" id="selNomail">
+          <i class="me-1" data-lucide="mail-x"></i>Select delivery off ({{ summary.delivery_off }})
+        </button>
+        <button type="submit" class="btn btn-warning" id="deliveryBtn" disabled
+                formaction="{{ url_for('mailing_lists.delivery', address=address) }}" name="enable" value="1">
+          <i class="me-1" data-lucide="mail-check"></i>Turn delivery on
+        </button>
+        {% endif %}
         <button type="button" class="btn btn-outline-secondary" id="selClear">Clear selection</button>
         <button type="button" class="btn btn-danger" id="removeBtn" disabled>
           <i class="me-1" data-lucide="user-minus"></i>Remove selected (<span id="selCount">0</span>)
@@ -167,7 +176,7 @@
         </thead>
         <tbody>
           {% for m in members %}
-          <tr data-kind="{{ m.kind }}">
+          <tr data-kind="{{ m.kind }}" data-nomail="{{ '1' if m.delivery_off else '0' }}">
             <td><input type="checkbox" class="form-check-input mem-cb" name="member" value="{{ m.email }}" aria-label="Select {{ m.email }}"></td>
             <td>{{ m.email }}</td>
             <td>{{ m.name or '—' }}</td>
@@ -177,6 +186,7 @@
               {% if m.kind == 'separated' %}<span class="rt-badge fail">Separated</span>
               {% elif m.kind == 'external' %}<span class="rt-badge off">Not in employee list</span>
               {% else %}<span class="rt-badge on">{{ m.status }}</span>{% endif %}
+              {% if m.delivery_off %}<span class="rt-badge fail" title="Mailman is not sending this member any mail">Delivery off · {{ nomail_reasons.get(m.delivery_off, 'unknown reason') }}</span>{% endif %}
             </td>
           </tr>
           {% else %}
@@ -187,6 +197,62 @@
     </div>
   </form>
 </div>
+
+{% if list_type == 'mailman' %}
+<div class="rt-card" id="senders">
+  <h6 class="rt-card-title"><i class="me-1" data-lucide="shield-check"></i>Allowed &amp; blocked senders</h6>
+  <p class="rt-muted mb-3">
+    For people who are <em>not</em> members of this list. Anyone else who isn't a member is held for approval
+    (see <a href="{{ url_for('mailing_lists.pending', address=address) }}">Pending requests</a>).
+    Use exact addresses, or a pattern starting with <code>^</code> for a whole domain, e.g. <code>^.*@example\.com$</code>.
+  </p>
+  {% if filters_error %}
+  <div class="alert alert-danger mb-0">Could not read the sender settings: {{ filters_error }}</div>
+  {% elif filters %}
+  <div class="row g-3">
+    {% for f in filters %}
+    <div class="col-md-6">
+      <div class="fw-semibold mb-1">{{ f.label }} <span class="rt-muted">({{ f.entries|length }})</span></div>
+      <ul class="list-unstyled mb-2">
+        {% for e in f.entries %}
+        <li class="d-flex flex-wrap align-items-center gap-2 py-1" style="border-bottom:1px solid var(--border)">
+          <code>{{ e.value }}</code>
+          {% if e.problem %}<span class="rt-badge fail" title="Mailman will never match this line">{{ e.problem }}</span>{% endif %}
+          <span class="ms-auto d-flex gap-1">
+            {% if e.fix %}
+            <form method="post" action="{{ url_for('mailing_lists.senders', address=address) }}"
+                  onsubmit="return confirm('Change {{ e.value }} to {{ e.fix }} so Mailman matches it? This starts {{ f.label|lower }} mail from everyone it covers.');">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <input type="hidden" name="field" value="{{ f.field }}"><input type="hidden" name="op" value="fix">
+              <input type="hidden" name="entry" value="{{ e.value }}">
+              <button class="btn btn-sm btn-outline-primary" title="Change to {{ e.fix }}">Fix</button>
+            </form>
+            {% endif %}
+            <form method="post" action="{{ url_for('mailing_lists.senders', address=address) }}"
+                  onsubmit="return confirm('Remove {{ e.value }} from {{ f.label }}?');">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <input type="hidden" name="field" value="{{ f.field }}"><input type="hidden" name="op" value="remove">
+              <input type="hidden" name="entry" value="{{ e.value }}">
+              <button class="btn btn-sm btn-outline-secondary" aria-label="Remove {{ e.value }}">Remove</button>
+            </form>
+          </span>
+        </li>
+        {% else %}
+        <li class="rt-muted">None</li>
+        {% endfor %}
+      </ul>
+      <form method="post" action="{{ url_for('mailing_lists.senders', address=address) }}" class="d-flex gap-2">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="field" value="{{ f.field }}"><input type="hidden" name="op" value="add">
+        <input type="text" class="form-control form-control-sm" name="entries" placeholder="name@example.com" aria-label="Add to {{ f.label }}">
+        <button class="btn btn-sm btn-outline-primary">Add</button>
+      </form>
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+</div>
+{% endif %}
 
 <div class="rt-card">
   <h6 class="rt-card-title"><i class="me-1" data-lucide="history"></i>Change history</h6>
@@ -200,7 +266,8 @@
         <tr>
           <td class="text-nowrap">{{ h.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
           <td>{{ h.actor_name or h.actor_email }}{% if h.acting_as %} <span class="rt-muted">(as {{ h.acting_as }})</span>{% endif %}</td>
-          <td>{{ 'Added' if h.action == 'add' else 'Removed' }}</td>
+          <td>{{ {'add': 'Added', 'remove': 'Removed', 'create': 'Created', 'moderate': 'Moderation', 'delivery': 'Delivery', 'senders': 'Sender filter', 'delete': 'Deleted'}.get(h.action, h.action) }}
+            {% if h.action not in ('add', 'remove') and h.detail and h.result == 'done' %}<div class="rt-muted small">{{ h.detail }}</div>{% endif %}</td>
           <td>{{ h.member_email }}</td>
           <td>
             {% if h.result == 'done' %}<span class="rt-badge on">Done</span>
@@ -260,6 +327,8 @@
     var n = selected().length;
     if (selCount) selCount.textContent = n;
     if (removeBtn) removeBtn.disabled = n === 0;
+    var dBtn = document.getElementById('deliveryBtn');
+    if (dBtn) dBtn.disabled = n === 0;
   }
   boxes.forEach(function (b) { b.addEventListener('change', update); });
   // The search box sits inside the remove form; Enter there must not submit it.
@@ -276,6 +345,11 @@
   var selSep = document.getElementById('selSeparated');
   if (selSep) selSep.addEventListener('click', function () {
     boxes.forEach(function (b) { if (b.closest('tr').getAttribute('data-kind') === 'separated') b.checked = true; });
+    update();
+  });
+  var selNomail = document.getElementById('selNomail');
+  if (selNomail) selNomail.addEventListener('click', function () {
+    boxes.forEach(function (b) { if (b.closest('tr').getAttribute('data-nomail') === '1') b.checked = true; });
     update();
   });
   var selClear = document.getElementById('selClear');
