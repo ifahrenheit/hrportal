@@ -50,6 +50,7 @@
           <th data-sort="num">Active</th>
           <th data-sort="num">Separated</th>
           <th data-sort="num">Not in employee list</th>
+          <th data-sort="num" title="Held messages and membership requests waiting in Mailman">Pending</th>
           <th>List admins</th>
         </tr>
       </thead>
@@ -68,10 +69,17 @@
             {% if s %}{% if s.separated %}<span class="rt-badge fail">{{ s.separated }}</span>{% else %}0{% endif %}{% else %}…{% endif %}
           </td>
           <td data-col="external"  data-sort-value="{{ s.external if s else -1 }}">{{ s.external if s else '…' }}</td>
+          {% if r.type == 'mailman' %}
+          <td data-col="pending" data-sort-value="-1"
+              data-pending-url="{{ url_for('mailing_lists.api_pending', address=r.address) }}"
+              data-pending-link="{{ url_for('mailing_lists.pending', address=r.address) }}">…</td>
+          {% else %}
+          <td class="rt-muted" data-sort-value="-1">—</td>
+          {% endif %}
           <td class="rt-muted">{{ (r.admins or [])|join(', ') }}</td>
         </tr>
         {% else %}
-        <tr class="empty-row"><td colspan="7">No group addresses found.</td></tr>
+        <tr class="empty-row"><td colspan="8">No group addresses found.</td></tr>
         {% endfor %}
       </tbody>
     </table>
@@ -142,6 +150,30 @@
       .then(next);
   }
   for (var i = 0; i < 3; i++) next();
+
+  // Pending moderation counts (Mailman only), a few at a time as well.
+  var cells = Array.prototype.slice.call(document.querySelectorAll('td[data-pending-url]'));
+  function nextPending() {
+    var td = cells.shift();
+    if (!td) return;
+    fetch(td.getAttribute('data-pending-url'), { credentials: 'same-origin' })
+      .then(function (r) { return r.json(); })
+      .then(function (j) {
+        if (!j.ok) throw new Error(j.error || 'failed');
+        var n = j.posts + j.subs;
+        td.setAttribute('data-sort-value', n);
+        if (!n) { td.textContent = '0'; return; }
+        var a = document.createElement('a');
+        a.href = td.getAttribute('data-pending-link');
+        a.className = 'rt-badge fail';
+        a.title = j.posts + ' held message(s), ' + j.subs + ' membership request(s)';
+        a.textContent = n + ' waiting';
+        td.innerHTML = ''; td.appendChild(a);
+      })
+      .catch(function () { td.innerHTML = '<span class="rt-badge fail">error</span>'; })
+      .then(nextPending);
+  }
+  for (var k = 0; k < 2; k++) nextPending();
 })();
 </script>
 {% endblock %}

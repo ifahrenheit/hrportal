@@ -524,6 +524,199 @@ def sync_members(list_type, address, emails, notify=False):
     return added, removed, unchanged
 
 
+# ── Mailman moderation queue (admindb) ──────────────────────────────────────
+# Mailman holds posts (e.g. from non-members) and, with "Confirm and approve",
+# subscription requests until an admin decides. The portal reads
+# admindb?details=all (one block per held post) and the admindb summary (for
+# (un)subscription requests), and posts decisions back to the same form.
+# Mailman's action codes: 0 defer, 1 approve, 2 reject, 3 discard,
+# 4 subscribe, 5 unsubscribe.
+
+_HELD_SPLIT_RE = re.compile(r"<h2>\s*Posting Held for Approval[^<]*</h2>", re.I)
+_URL_RE = re.compile(r"https?://([A-Za-z0-9.-]+)", re.I)
+MOD_ACTIONS = ("accept", "reject", "discard")
+_MSG_CODES = {"accept": "1", "reject": "2", "discard": "3"}
+# Mailman sender filters: 6 accept_these_nonmembers, 3 discard_these_nonmembers
+_REMEMBER_CODES = {"accept": "6", "discard": "3"}
+MOD_TIMEOUT = 300          # Mailman can take a while on a big batch
+MAX_POSTS_SHOWN = 200
+
+
+def _strip_tags(s):
+    import html as _html
+    return _html.unescape(re.sub(r"<[^>]+>", "", s or "")).strip()
+
+
+def _cell(label, seg):
+    m = re.search(rf"<strong>\s*{label}:\s*</strong>\s*</td>\s*<td[^>]*>(.*?)</td>", seg, re.S | re.I)
+    return _strip_tags(m.group(1)) if m else ""
+
+
+def _textarea(seg, name):
+    import html as _html
+    m = re.search(rf'<textarea[^>]*name="?{re.escape(name)}"?[\s>][^>]*>(.*?)</textarea>', seg, re.S | re.I)
+    if not m:
+        m = re.search(rf'<textarea[^>]*name="?{re.escape(name)}"?>(.*?)</textarea>', seg, re.S | re.I)
+    return _html.unescape(m.group(1)) if m else ""
+
+
+def parse_spam(headers):
+    """What the mail server's spam check said, from the held post's headers."""
+    m = re.search(r"^X-Spam-Status:\s*(Yes|No)\s*,\s*score=(-?[\d.]+)", headers or "", re.I | re.M)
+    return {
+        "flag": bool(m and m.group(1).lower() == "yes"),
+        "score": float(m.group(2)) if m else None,
+        "phish": bool(re.search(r"\bURI_PHISH\b|_PH_SURBL\b|\bPHISH", headers or "")),
+    }
+
+
+def body_preview(fulltext, limit=1500):
+    """Plain-text part only (Mailman appends the raw HTML after it)."""
+    text = re.split(r"<!DOCTYPE|<html", fulltext or "", maxsplit=1, flags=re.I)[0].strip()
+    return text[:limit] + ("…" if len(text) > limit else "")
+
+
+def parse_held_messages(details_html):
+    out = []
+    for seg in _HELD_SPLIT_RE.split(details_html or "")[1:]:
+        m = re.search(r'<input[^>]*name="?(\d+)"?[^>]*type="?radio', seg, re.I)
+        if not m:
+            continue
+        rid = int(m.group(1))
+        headers = _textarea(seg, f"headers-{rid}")
+        fulltext = _textarea(seg, f"fulltext-{rid}")
+        out.append({
+            "id": rid, "kind": "post",
+            "sender": _cell("From", seg).lower(),
+            "subject": _cell("Subject", seg),
+            "reason": _cell("Reason", seg),
+            "received": _cell("Received", seg),
+            "spam": parse_spam(headers),
+            "preview": body_preview(fulltext),
+            "link_domains": sorted({d.lower() for d in _URL_RE.findall(fulltext)}),
+            "default_comment": _textarea(seg, f"comment-{rid}").strip(),
+        })
+    return out
+
+
+def parse_pending_subs(summary_html):
+    """(Un)subscription requests from the admindb summary page: a radio group
+    whose values include 4 (subscribe) or 5 (unsubscribe), with the address
+    shown in <em> just before it."""
+    html_ = summary_html or ""
+    groups = {}
+    for m in re.finditer(r'<input[^>]*name="?(\d+)"?[^>]*type="?radio"?[^>]*value="?(\d+)', html_, re.I):
+        groups.setdefault(int(m.group(1)), set()).add(m.group(2))
+    out = []
+    for rid, values in sorted(groups.items()):
+        kind = "subscribe" if "4" in values else "unsubscribe" if "5" in values else None
+        if not kind:
+            continue
+        pos = re.search(rf'name="?{rid}"?', html_).start()
+        addrs = re.findall(r"<em>\s*([^<\s]+@[^<\s]+)\s*</em>", html_[:pos], re.I)
+        out.append({"id": rid, "kind": kind, "sender": _strip_tags(addrs[-1]).lower() if addrs else "",
+                    "subject": "", "reason": "Asked to " + kind, "received": "", "spam": None,
+                    "preview": "", "link_domains": [], "default_comment": ""})
+    return out
+
+
+def _admindb_base(admin_base):
+    return admin_base.replace("/admin/", "/admindb/", 1)
+
+
+def _read_pending(s, admin_base):
+    adb = _admindb_base(admin_base)
+    details = s.get(adb, params={"details": "all"}, timeout=HTTP_TIMEOUT)
+    details.raise_for_status()
+    summary = s.get(adb, timeout=HTTP_TIMEOUT)
+    summary.raise_for_status()
+    return parse_held_messages(details.text) + parse_pending_subs(summary.text), summary.text
+
+
+def fetch_pending(address, refresh=False):
+    lists, _ = fetch_mailman_lists()
+    info = lists.get(address)
+    if not info:
+        raise KeyError(address)
+
+    def load():
+        with _mailman_session(address, info["listid"]) as (s, base, _):
+            return _read_pending(s, base)[0]
+    return _cached(f"pending:{address}", load, refresh)
+
+
+def moderation_form(items, action, comment="", filter_senders=(), filter_code="3"):
+    """Form fields for one decision on several queue items. filter_senders
+    are added to a Mailman sender filter (filter_code 6 accept, 3 discard)."""
+    from urllib.parse import quote_plus
+    data = {}
+    for it in items:
+        if it["kind"] == "post":
+            code = _MSG_CODES[action]
+        else:
+            code = {"accept": "4" if it["kind"] == "subscribe" else "5", "reject": "2", "discard": "3"}[action]
+        data[str(it["id"])] = code
+        if action == "reject":
+            data[f"comment-{it['id']}"] = comment or it.get("default_comment") or ""
+    for sender in filter_senders:
+        key = quote_plus(sender)
+        data[f"senderfilterp-{key}"] = "1"
+        data[f"senderfilter-{key}"] = filter_code
+    return data
+
+
+def moderate(address, action, ids, comment="", filter_future=False, senders=()):
+    """Apply one decision to queue items (by id, and/or every held post from
+    `senders`), then re-read the queue. filter_future also puts the posts'
+    senders on Mailman's always-accept (Accept) or always-discard (Discard)
+    filter. Returns [(item, result, detail)]."""
+    if action not in MOD_ACTIONS:
+        raise ValueError(action)
+    info = fetch_mailman_lists()[0][address]
+    with _mailman_session(address, info["listid"]) as (s, base, _):
+        current, summary_html = _read_pending(s, base)
+        by_id = {it["id"]: it for it in current}
+        wanted_senders = {x.lower() for x in senders}
+        ids = list(dict.fromkeys(list(ids) + [it["id"] for it in current
+                                              if it["kind"] == "post" and it["sender"] in wanted_senders]))
+        items = [by_id[i] for i in ids if i in by_id]
+        gone = [i for i in ids if i not in by_id]
+        remember = filter_future and action in _REMEMBER_CODES
+        results = []
+        if items:
+            filter_senders = sorted({it["sender"] for it in items if it["kind"] == "post" and it["sender"]}) \
+                if remember else []
+            fields = moderation_form(items, action, comment, filter_senders,
+                                     _REMEMBER_CODES.get(action, "3"))
+            m = _CSRF_RE.search(summary_html)
+            if m:
+                fields["csrf_token"] = m.group(1)
+            fields["submit"] = "Submit All Data"
+            r = s.post(_admindb_base(base), data=fields, timeout=MOD_TIMEOUT)
+            r.raise_for_status()
+            after, _ = _read_pending(s, base)
+            left = {it["id"] for it in after}
+            with _cache_lock:
+                _cache[f"pending:{address}"] = (time.time(), after)
+            for it in items:
+                if it["id"] in left:
+                    results.append((it, "failed", "Still in the queue after the decision was sent."))
+                else:
+                    results.append((it, "done", None))
+        for i in gone:
+            results.append(({"id": i, "sender": "", "subject": "", "kind": "post"}, "skipped",
+                             "No longer in the queue (someone already handled it)."))
+    verb = {"accept": "Accepted", "reject": "Rejected", "discard": "Discarded"}[action]
+    _write_audit("mailman", address, "moderate", [
+        (it.get("sender") or f"request #{it['id']}", res,
+         f"{verb} {'post' if it['kind'] == 'post' else it['kind'] + ' request'}"
+         f"{': ' + it['subject'] if it.get('subject') else ''}"
+         f"{(' (future mail from sender always ' + ('accepted' if action == 'accept' else 'discarded') + ')') if remember and it['kind'] == 'post' else ''}"
+         f"{' — ' + detail if detail else ''}")
+        for it, res, detail in results])
+    return results
+
+
 # ── Creating a group address ────────────────────────────────────────────────
 # Mirrors cPanel's own forms: "Add Forwarder" (address, domain, forward-to
 # address) and "Create a Mailing List" (list name, domain, password, access
@@ -881,6 +1074,105 @@ def _handle_sync(list_type, address, action):
     _flash_results("add", added)
     _flash_results("remove", removed, invalid)
     return back
+
+
+@mailing_lists_bp.route("/mailman/<path:address>/pending", methods=["GET", "POST"])
+@_access_required
+def pending(address):
+    """Mailman moderation queue for one list: held posts and (un)subscription
+    requests, with Accept / Reject / Discard."""
+    address = address.lower()
+    try:
+        known = address in fetch_mailman_lists()[0]
+    except Exception as e:
+        logger.exception("mailing lists: cPanel read failed")
+        flash(f"Could not read from cPanel: {e}", "danger")
+        return redirect(url_for("mailing_lists.index"))
+    if not known:
+        abort(404)
+    here = url_for("mailing_lists.pending", address=address)
+
+    if request.method == "POST":
+        if not validate_csrf():
+            flash("Your session expired. Please try again.", "danger")
+            return redirect(here)
+        action = request.form.get("action")
+        if action not in MOD_ACTIONS:
+            abort(400)
+        ids = [int(x) for x in request.form.getlist("item") if x.isdigit()]
+        senders = [x.strip().lower() for x in request.form.getlist("sender") if "@" in x]
+        if not ids and not senders:
+            flash("Tick at least one request or sender first.", "warning")
+            return redirect(here)
+        try:
+            results = moderate(address, action, ids,
+                               comment=(request.form.get("comment") or "").strip()[:500],
+                               filter_future=request.form.get("filter_future") == "1",
+                               senders=senders)
+        except Exception as e:
+            logger.exception("mailing lists: moderation on %s failed", address)
+            flash(f"Could not apply the decision: {e}", "danger")
+            return redirect(here)
+        verb = {"accept": "Accepted", "reject": "Rejected", "discard": "Discarded"}[action]
+        done = [it for it, r, _ in results if r == "done"]
+        failed = [(it, d) for it, r, d in results if r == "failed"]
+        skipped = [it for it, r, _ in results if r == "skipped"]
+        if done:
+            names = [(it.get("subject") or it.get("sender") or f"#{it['id']}") for it in done]
+            flash(f"{verb} {len(done)}: " + "; ".join(names[:10])
+                  + (f"; and {len(names) - 10} more" if len(names) > 10 else ""), "success")
+        if skipped:
+            flash(f"Skipped {len(skipped)}: already handled by someone else.", "info")
+        if failed:
+            flash("Failed " + str(len(failed)) + ": " + "; ".join(
+                f"{it.get('subject') or it.get('sender')} ({d})" for it, d in failed), "danger")
+        return redirect(here)
+
+    error, items, fetched = None, [], None
+    try:
+        items, fetched = fetch_pending(address, refresh=request.args.get("refresh") == "1")
+    except Exception as e:
+        logger.exception("mailing lists: reading queue of %s failed", address)
+        error = str(e)
+    with _cache_lock:
+        cached = _cache.get(f"mailman:{address}")
+    member_count = len(cached[1]["members"]) if cached else None
+    try:
+        history = [h for h in load_history(address) if h["action"] == "moderate"]
+    except Exception:
+        logger.exception("mailing lists: history for %s failed", address)
+        history = []
+    posts = [i for i in items if i["kind"] == "post"]
+    by_sender = {}
+    for p in posts:
+        g = by_sender.setdefault(p["sender"], {"sender": p["sender"], "count": 0, "suspicious": 0,
+                                               "latest": None, "internal": p["sender"].endswith("@cohere.ph")})
+        g["count"] += 1
+        g["suspicious"] += bool(p["spam"] and (p["spam"]["flag"] or p["spam"]["phish"]))
+        g["latest"] = p
+    senders = sorted(by_sender.values(), key=lambda g: -g["count"])
+    return render_template("mailing_lists/pending.html", address=address, error=error,
+                           posts=list(reversed(posts))[:MAX_POSTS_SHOWN], total_posts=len(posts),
+                           senders=senders, max_shown=MAX_POSTS_SHOWN,
+                           subs=[i for i in items if i["kind"] != "post"],
+                           member_count=member_count, history=history,
+                           fetched_at=time.strftime("%Y-%m-%d %H:%M", time.localtime(fetched)) if fetched else None)
+
+
+@mailing_lists_bp.route("/api/pending/<path:address>")
+@_access_required
+def api_pending(address):
+    """Queue counts for one Mailman list; the index page shows them."""
+    try:
+        items, _ = fetch_pending(address.lower())
+    except KeyError:
+        abort(404)
+    except Exception as e:
+        logger.exception("mailing lists: pending count of %s failed", address)
+        return jsonify({"ok": False, "error": str(e)}), 502
+    return jsonify({"ok": True,
+                    "posts": sum(1 for i in items if i["kind"] == "post"),
+                    "subs": sum(1 for i in items if i["kind"] != "post")})
 
 
 @mailing_lists_bp.route("/api/summary/<list_type>/<path:address>")

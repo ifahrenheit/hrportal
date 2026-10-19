@@ -1,0 +1,254 @@
+{% extends "base.html" %}
+{% block title %}Pending · {{ address }}{% endblock %}
+{% block page_title %}Mailing Lists{% endblock %}
+
+{% block content %}
+{% set here = url_for('mailing_lists.pending', address=address) %}
+<style>
+  .ml-preview { white-space: pre-wrap; word-break: break-word; max-height: 260px; overflow: auto; font-size: .82rem;
+                background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: .6rem .75rem; margin: 0; }
+  .ml-actions { display: flex; flex-wrap: wrap; align-items: end; gap: .5rem; }
+  .ml-actions .form-control { max-width: 320px; }
+</style>
+
+<div class="rt-card">
+  <div class="rt-toolbar">
+    <div>
+      <a class="rt-muted" href="{{ url_for('mailing_lists.detail', list_type='mailman', address=address) }}"><i data-lucide="arrow-left" style="width:14px;height:14px"></i> {{ address }}</a>
+      <h5 class="rt-card-title mt-2 mb-1">Pending requests <span class="rt-badge pass">Mailman</span></h5>
+      <div class="rt-muted">
+        {{ total_posts }} held message{{ '' if total_posts == 1 else 's' }} · {{ subs|length }} membership request{{ '' if subs|length == 1 else 's' }}
+        {% if fetched_at %} · read from Mailman {{ fetched_at }}{% endif %}
+      </div>
+    </div>
+    <a class="btn btn-outline-secondary ms-auto" href="{{ url_for('mailing_lists.pending', address=address, refresh=1) }}">
+      <i class="me-1" data-lucide="refresh-cw"></i>Refresh
+    </a>
+  </div>
+  {% if error %}<div class="alert alert-danger mt-3 mb-0">Could not read the queue: {{ error }}</div>{% endif %}
+</div>
+
+{% if not error %}
+<div class="rt-card">
+  <h6 class="rt-card-title"><i class="me-1" data-lucide="mail-warning"></i>Held messages</h6>
+  {% if posts %}
+  <p class="rt-muted mb-3">
+    Mailman is holding these until someone decides. <strong>Accept</strong> sends the message to every member{% if member_count %} ({{ member_count }}){% endif %}.
+    <strong>Discard</strong> deletes it quietly (best for spam). <strong>Reject</strong> deletes it and emails the sender a reason.
+  </p>
+  <form method="post" action="{{ here }}" id="postsForm">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <div class="rt-muted mb-1"><strong>By sender</strong> · tick a sender to act on <em>all</em> of their held messages at once</div>
+    <div class="table-responsive mb-4">
+      <table class="data-table">
+        <thead><tr><th style="width:2rem"></th><th>Sender</th><th>Held</th><th>Latest subject</th><th>Latest</th></tr></thead>
+        <tbody>
+          {% for g in senders %}
+          <tr data-suspicious="{{ '1' if g.suspicious == g.count else '0' }}">
+            <td><input type="checkbox" class="form-check-input sender-cb" name="sender" value="{{ g.sender }}" data-n="{{ g.count }}" aria-label="Select all from {{ g.sender }}"></td>
+            <td>{{ g.sender }}
+              {% if g.internal %}<span class="rt-badge on">internal</span>{% endif %}
+              {% if g.suspicious %}<span class="rt-badge fail">{{ g.suspicious }} spam/phishing</span>{% endif %}</td>
+            <td><strong>{{ g.count }}</strong></td>
+            <td>{{ g.latest.subject or '(no subject)' }}</td>
+            <td class="text-nowrap rt-muted">{{ g.latest.received }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <div class="rt-muted mb-1"><strong>Messages</strong>{% if total_posts > posts|length %} · showing the newest {{ posts|length }} of {{ total_posts }}; use <em>By sender</em> above to act on the rest{% endif %}</div>
+    <div class="ml-actions mb-3">
+      <button type="button" class="btn btn-outline-secondary btn-sm" data-select="all">Select all</button>
+      <button type="button" class="btn btn-outline-danger btn-sm" data-select="suspicious">Select spam / phishing</button>
+      <button type="button" class="btn btn-outline-secondary btn-sm" data-select="none">Clear</button>
+    </div>
+    <div class="table-responsive">
+      <table class="data-table">
+        <thead><tr><th style="width:2rem"></th><th>From</th><th>Subject</th><th>Reason</th><th>Received</th><th></th></tr></thead>
+        <tbody>
+          {% for m in posts %}
+          {% set suspicious = m.spam and (m.spam.flag or m.spam.phish) %}
+          <tr data-suspicious="{{ '1' if suspicious else '0' }}">
+            <td><input type="checkbox" class="form-check-input item-cb" name="item" value="{{ m.id }}" aria-label="Select message {{ m.id }}"></td>
+            <td>{{ m.sender or '—' }}</td>
+            <td>
+              {{ m.subject or '(no subject)' }}
+              <div class="mt-1">
+                {% if m.spam and m.spam.phish %}<span class="rt-badge fail"><i data-lucide="fish"></i>Phishing link</span>{% endif %}
+                {% if m.spam and m.spam.flag %}<span class="rt-badge fail">Spam{% if m.spam.score is not none %} · score {{ m.spam.score }}{% endif %}</span>{% endif %}
+              </div>
+            </td>
+            <td class="rt-muted">{{ m.reason }}</td>
+            <td class="text-nowrap rt-muted">{{ m.received }}</td>
+            <td><button type="button" class="btn btn-sm btn-outline-secondary" data-toggle-preview="pv{{ m.id }}">View</button></td>
+          </tr>
+          <tr id="pv{{ m.id }}" class="empty-row" style="display:none">
+            <td></td>
+            <td colspan="5" style="text-align:left">
+              {% if m.link_domains %}
+              <div class="mb-2"><strong>Links in this message go to:</strong> {{ m.link_domains|join(', ') }}
+                {% if m.spam and m.spam.phish %}<span class="rt-badge fail">on a phishing blocklist</span>{% endif %}</div>
+              {% endif %}
+              <div class="rt-muted mb-1">Text only. Links are not clickable here on purpose.</div>
+              <pre class="ml-preview">{{ m.preview or '(no text part)' }}</pre>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <div class="ml-actions mt-3">
+      <div>
+        <button type="submit" name="action" value="discard" class="btn btn-danger" data-needs-selection>
+          <i class="me-1" data-lucide="trash-2"></i>Discard selected (<span data-count>0</span>)
+        </button>
+        <label class="form-check mt-1 mb-0">
+          <input class="form-check-input" type="checkbox" name="filter_future" value="1">
+          <span class="form-check-label">Remember these senders: with Discard, always discard their future mail; with Accept, always let it through</span>
+        </label>
+      </div>
+      <div class="ms-md-3">
+        <label class="rt-muted small d-block" for="rejectReason">Reason sent to the sender (Reject only)</label>
+        <div class="d-flex gap-2">
+          <input type="text" class="form-control" id="rejectReason" name="comment" maxlength="500"
+                 placeholder="Non-members are not allowed to post messages to this list.">
+          <button type="submit" name="action" value="reject" class="btn btn-outline-danger" data-needs-selection>Reject</button>
+        </div>
+      </div>
+      <button type="submit" name="action" value="accept" class="btn btn-outline-primary ms-auto" data-needs-selection>
+        <i class="me-1" data-lucide="send"></i>Accept and send to list (<span data-count>0</span>)
+      </button>
+    </div>
+  </form>
+  {% else %}
+  <p class="rt-muted mb-0">No held messages.</p>
+  {% endif %}
+</div>
+
+<div class="rt-card">
+  <h6 class="rt-card-title"><i class="me-1" data-lucide="user-check"></i>Membership requests</h6>
+  {% if subs %}
+  <p class="rt-muted mb-3">People who asked to join or leave this list on Mailman's sign-up page. <strong>Approve</strong> adds (or removes) them.</p>
+  <form method="post" action="{{ here }}" id="subsForm">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <div class="table-responsive">
+      <table class="data-table">
+        <thead><tr><th style="width:2rem"></th><th>Address</th><th>Request</th></tr></thead>
+        <tbody>
+          {% for r in subs %}
+          <tr>
+            <td><input type="checkbox" class="form-check-input item-cb" name="item" value="{{ r.id }}" aria-label="Select request {{ r.id }}"></td>
+            <td>{{ r.sender or '—' }}</td>
+            <td>{{ 'Join the list' if r.kind == 'subscribe' else 'Leave the list' }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <div class="ml-actions mt-3">
+      <button type="submit" name="action" value="accept" class="btn btn-primary" data-needs-selection>Approve selected (<span data-count>0</span>)</button>
+      <input type="text" class="form-control" name="comment" maxlength="500" placeholder="Reason (Reject only, optional)">
+      <button type="submit" name="action" value="reject" class="btn btn-outline-danger" data-needs-selection>Reject</button>
+      <button type="submit" name="action" value="discard" class="btn btn-outline-secondary" data-needs-selection>Discard</button>
+    </div>
+  </form>
+  {% else %}
+  <p class="rt-muted mb-0">No membership requests.</p>
+  {% endif %}
+</div>
+{% endif %}
+
+<div class="rt-card">
+  <h6 class="rt-card-title"><i class="me-1" data-lucide="history"></i>Moderation history</h6>
+  <div class="table-responsive">
+    <table class="data-table">
+      <thead><tr><th>When</th><th>By</th><th>Sender</th><th>Decision</th><th>Result</th></tr></thead>
+      <tbody>
+        {% for h in history %}
+        <tr>
+          <td class="text-nowrap">{{ h.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
+          <td>{{ h.actor_name or h.actor_email }}{% if h.acting_as %} <span class="rt-muted">(as {{ h.acting_as }})</span>{% endif %}</td>
+          <td>{{ h.member_email }}</td>
+          <td>{{ h.detail }}</td>
+          <td>
+            {% if h.result == 'done' %}<span class="rt-badge on">Done</span>
+            {% elif h.result == 'failed' %}<span class="rt-badge fail">Failed</span>
+            {% else %}<span class="rt-badge off">Skipped</span>{% endif %}
+          </td>
+        </tr>
+        {% else %}
+        <tr class="empty-row"><td colspan="5">No moderation decisions made from the portal yet.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+{% include "routines/_table_assets.html" %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+  document.querySelectorAll('[data-toggle-preview]').forEach(function (b) {
+    b.addEventListener('click', function () {
+      var row = document.getElementById(b.getAttribute('data-toggle-preview'));
+      var show = row.style.display === 'none';
+      row.style.display = show ? '' : 'none';
+      b.textContent = show ? 'Hide' : 'View';
+    });
+  });
+
+  document.querySelectorAll('#postsForm, #subsForm').forEach(function (form) {
+    var boxes = Array.prototype.slice.call(form.querySelectorAll('.item-cb'));
+    var senderBoxes = Array.prototype.slice.call(form.querySelectorAll('.sender-cb'));
+    // Messages picked: ticked rows plus every message of a ticked sender (rows of a
+    // ticked sender are not double counted, as the server de-duplicates).
+    function total() {
+      var picked = senderBoxes.filter(function (b) { return b.checked; });
+      var n = picked.reduce(function (a, b) { return a + parseInt(b.getAttribute('data-n'), 10); }, 0);
+      return n + boxes.filter(function (b) { return b.checked; }).length;
+    }
+    senderBoxes.forEach(function (b) { b.addEventListener('change', update); });
+    function update() {
+      var n = total();
+      form.querySelectorAll('[data-count]').forEach(function (s) { s.textContent = n; });
+      form.querySelectorAll('[data-needs-selection]').forEach(function (b) { b.disabled = n === 0; });
+    }
+    boxes.forEach(function (b) { b.addEventListener('change', update); });
+    form.querySelectorAll('[data-select]').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        var mode = btn.getAttribute('data-select');
+        boxes.forEach(function (b) {
+          b.checked = mode === 'all' || (mode === 'suspicious' && b.closest('tr').getAttribute('data-suspicious') === '1');
+        });
+        update();
+      });
+    });
+    var clicked = null;
+    form.querySelectorAll('button[type="submit"]').forEach(function (b) {
+      b.addEventListener('click', function () { clicked = b; });
+    });
+    form.addEventListener('submit', function (e) {
+      var action = clicked ? clicked.value : '';
+      var n = total();
+      if (form.id === 'postsForm' && action === 'accept') {
+        var suspicious = boxes.concat(senderBoxes).some(function (b) { return b.checked && b.closest('tr').getAttribute('data-suspicious') === '1'; });
+        var msg = 'Send about ' + n + ' held message' + (n === 1 ? '' : 's') + ' to every member of {{ address }}?';
+        if (n > 20) msg += '\n\nThat is a lot of email: every member gets each one, including old ones.';
+        if (suspicious) msg = 'WARNING: at least one selected message is flagged as spam or phishing.\n\n' + msg;
+        if (!confirm(msg)) { e.preventDefault(); return; }
+      }
+      // Keep the clicked action: a disabled submit button is not sent, so add it as a hidden field.
+      var h = document.createElement('input');
+      h.type = 'hidden'; h.name = 'action'; h.value = action;
+      form.appendChild(h);
+      form.querySelectorAll('button[type="submit"]').forEach(function (b) { b.disabled = true; });
+      if (clicked) clicked.textContent = 'Working…';
+    });
+    update();
+  });
+})();
+</script>
+{% endblock %}

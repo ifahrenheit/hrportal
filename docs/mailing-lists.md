@@ -35,6 +35,22 @@ templates in [templates/mailing_lists/](../templates/mailing_lists/).
   - Adds run before removes. Up to 1000 pasted, at most 300 adds and 300 removes per sync.
 - **Audit:** every attempted change is a row in `central_db.mailing_list_audit` (DDL: [scripts/mailing_list_audit_schema.sql](../scripts/mailing_list_audit_schema.sql)): who, when, list, member, result. During Login As, the real admin is recorded, with `acting_as`. The last 50 changes show at the bottom of each group's page.
 
+## Pending requests (Mailman moderation queue)
+Each Mailman list has a **Pending requests** page (`/admin/mailing-lists/mailman/<address>/pending`). The index shows a **Pending** count per list.
+
+- **Reads:** Mailman's `admindb?details=all` (held posts) and the `admindb` summary (join/leave requests). Cached 5 minutes.
+- **Held posts:** sender, subject, Mailman's reason, date.
+  - Badges from the server's spam headers: **Spam** (`X-Spam-Status: Yes`, with score) and **Phishing link** (`URI_PHISH` or a `*_PH_SURBL` blocklist hit).
+  - **View** shows the plain-text part and the domains its links point to. The HTML is never rendered and links are not clickable.
+- **By sender:** acts on every held post from that sender, needed for big queues. The message table lists the newest 200.
+- **Decisions:**
+  - Accept (sends to every member; confirmation required, stronger above 20 or when flagged)
+  - Reject (reason emailed to sender; defaults to Mailman's own)
+  - Discard
+  - Membership requests: Approve / Reject / Discard (codes 4/5, 2, 3).
+- **Remember these senders:** adds them to Mailman's sender filter. With Accept they go on accept_these_nonmembers (code 6); with Discard, on discard_these_nonmembers (code 3).
+- **Verification:** the queue is re-read after posting. An item still there is **failed**; one already gone beforehand is **skipped**. Each decision is a `moderate` row in the audit table.
+
 ## Access
 Admins, and sub-admins with **Mailing Lists** (`can_mailing_lists`, Sub-Admins page → Tools & Access).
 Everyone else gets a 404 and no menu item.

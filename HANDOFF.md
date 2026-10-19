@@ -8,6 +8,37 @@
 
 ---
 
+## 2026-10-20 (4) — Mailing Lists: Mailman moderation queue (Pending requests)
+Commit: this one · Branch: `main`
+
+### What was built / changed
+- `modules/mailing_lists.py`:
+  - Parsers `parse_held_messages`, `parse_pending_subs` and `parse_spam`.
+  - `fetch_pending`, `moderation_form`, `moderate` (by id and/or by sender, optional "remember sender" filter: 6 accept / 3 discard; 300 s timeout).
+  - Routes `GET/POST /admin/mailing-lists/mailman/<address>/pending` and `/api/pending/<address>`.
+- `templates/mailing_lists/pending.html` (new). Index has a Pending column; the list page has a Pending requests button.
+- Audit enum now also has `moderate`. Tests: 43.
+
+### Found while building (needs the user's decision, nothing changed)
+- **The portal's own mail to lists has been held since May.** `send_email@cohere.ph` (the portal's SMTP_USER) isn't a member, so Mailman holds it as "Post by non-member":
+  - `managers@`: 1667 (IR notices, replies, reminders, since 2026-05-05)
+  - `sga@`: 54 (onboarding, overbreak memos, since 2026-06-16)
+  - Fix going forward: accept_these_nonmembers on those lists (the portal's Accept + "Remember these senders" does it). Old ones: probably Discard, not Accept, to avoid flooding members.
+- `training-team@`: 12 real employees' replies held (Jun–Aug).
+- Phishing held on several lists (`webmail-autho.*` credential-harvest links, `URI_PHISH`). Never Accept.
+
+### Database changes
+```sql
+-- central_db
+ALTER TABLE mailing_list_audit MODIFY action ENUM('add','remove','create','moderate') NOT NULL;
+```
+
+### Open items
+- [ ] User to decide on the held `send_email@` mail (`managers@`, `sga@`) and on the `training-team@` replies.
+- [ ] The join/leave request parser is built from Mailman's source format; there were no live requests to test it against.
+
+---
+
 ## 2026-10-20 (3) — Mailing Lists: Sync mode (make a list exactly the pasted addresses)
 Commit: this one · Branch: `main`
 

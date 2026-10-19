@@ -20,7 +20,12 @@
       <div class="rt-muted mt-1">List admins: {{ info.admins|join(', ') or '—' }} · {{ info.access }} · {{ info.disk }} archive</div>
       {% endif %}
     </div>
-    <a class="btn btn-outline-secondary ms-auto" href="{{ url_for('mailing_lists.detail', list_type=list_type, address=address, refresh=1) }}">
+    {% if list_type == 'mailman' %}
+    <a class="btn btn-outline-primary ms-auto" href="{{ url_for('mailing_lists.pending', address=address) }}">
+      <i class="me-1" data-lucide="inbox"></i>Pending requests
+    </a>
+    {% endif %}
+    <a class="btn btn-outline-secondary {{ '' if list_type == 'mailman' else 'ms-auto' }}" href="{{ url_for('mailing_lists.detail', list_type=list_type, address=address, refresh=1) }}">
       <i class="me-1" data-lucide="refresh-cw"></i>Refresh
     </a>
   </div>

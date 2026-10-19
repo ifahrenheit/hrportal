@@ -405,5 +405,155 @@ class SyncRouteTests(unittest.TestCase):
 
 
 
+HELD_PAGE = """<FORM action="../admindb/l_x.ph" method="POST" >
+<input type="hidden" name="csrf_token" value="tok9">
+<center><h2>Posting Held for Approval (1 of 2)</h2></center>
+<table><tr><td ALIGN="right"><strong>From:</strong></td><td>Bad@Spam.example</td></tr>
+<tr><td ALIGN="right"><strong>Subject:</strong></td><td>***SPAM*** Verify &amp; win</td></tr>
+<tr><td ALIGN="right"><strong>Reason:</strong></td><td>Post by non-member to a members-only list</td></tr>
+<tr><td ALIGN="right"><strong>Received:</strong></td><td>Fri May  1 17:07:46 2026</td></tr></table>
+<INPUT name="28" type="RADIO" value="0" CHECKED ><INPUT name="28" type="RADIO" value="1" >
+<INPUT name="28" type="RADIO" value="2" ><INPUT name="28" type="RADIO" value="3" >
+<TEXTAREA NAME=comment-28 ROWS=4 COLS=76 WRAP=soft>Non-members are not allowed.</TEXTAREA>
+<TEXTAREA NAME=headers-28 ROWS=10 COLS=76 READONLY>From: Bad@Spam.example
+X-Spam-Status: Yes, score=5.8
+  4.0 URI_PHISH              Phishing using web form</TEXTAREA>
+<TEXTAREA NAME=fulltext-28 ROWS=20 COLS=76 READONLY>Click https://evil.example/login now&lt;!DOCTYPE html&gt;<html>junk</TEXTAREA>
+<center><h2>Posting Held for Approval (2 of 2)</h2></center>
+<table><tr><td ALIGN="right"><strong>From:</strong></td><td>colleague@cohere.ph</td></tr>
+<tr><td ALIGN="right"><strong>Subject:</strong></td><td>Shift swap</td></tr>
+<tr><td ALIGN="right"><strong>Reason:</strong></td><td>Message has implicit destination</td></tr>
+<tr><td ALIGN="right"><strong>Received:</strong></td><td>Tue Oct 20 09:00:00 2026</td></tr></table>
+<INPUT name="31" type="RADIO" value="0" CHECKED >
+<TEXTAREA NAME=headers-31 ROWS=10 COLS=76 READONLY>X-Spam-Status: No, score=-1.0</TEXTAREA>
+<TEXTAREA NAME=fulltext-31 ROWS=20 COLS=76 READONLY>Can someone swap Friday?</TEXTAREA>
+"""
+
+SUBS_PAGE = """<input type="hidden" name="csrf_token" value="tok9">
+<h2>Subscription Requests</h2><table><tr><td>Juan Cruz<br><em>Juan.Cruz@cohere.ph</em><br>Tue Oct 20</td>
+<td><INPUT name="40" type="RADIO" value="0" CHECKED ><INPUT name="40" type="RADIO" value="4" >
+<INPUT name="40" type="RADIO" value="2" ><INPUT name="40" type="RADIO" value="3" ></td></tr>
+<tr><td><em>leaver@cohere.ph</em></td><td><INPUT name="41" type="RADIO" value="0" CHECKED >
+<INPUT name="41" type="RADIO" value="5" ><INPUT name="41" type="RADIO" value="2" ></td></tr></table>
+<INPUT name="senderaction-x%40y.z" type="RADIO" value="0" CHECKED >"""
+
+
+class ModerationParsingTests(unittest.TestCase):
+    def test_held_messages(self):
+        a, b = ml.parse_held_messages(HELD_PAGE)
+        self.assertEqual((a["id"], a["sender"], a["subject"]), (28, "bad@spam.example", "***SPAM*** Verify & win"))
+        self.assertEqual(a["spam"], {"flag": True, "score": 5.8, "phish": True})
+        self.assertEqual(a["link_domains"], ["evil.example"])
+        self.assertEqual(a["preview"], "Click https://evil.example/login now")   # raw HTML part cut off
+        self.assertEqual(a["default_comment"], "Non-members are not allowed.")
+        self.assertEqual((b["id"], b["spam"]["flag"], b["spam"]["phish"]), (31, False, False))
+
+    def test_subscription_requests(self):
+        subs = ml.parse_pending_subs(SUBS_PAGE)
+        self.assertEqual([(r["id"], r["kind"], r["sender"]) for r in subs],
+                         [(40, "subscribe", "juan.cruz@cohere.ph"), (41, "unsubscribe", "leaver@cohere.ph")])
+
+    def test_moderation_form_codes(self):
+        post = {"id": 28, "kind": "post", "sender": "bad@spam.example", "default_comment": "Default."}
+        sub = {"id": 40, "kind": "subscribe"}
+        unsub = {"id": 41, "kind": "unsubscribe"}
+        self.assertEqual(ml.moderation_form([post, sub, unsub], "accept"), {"28": "1", "40": "4", "41": "5"})
+        self.assertEqual(ml.moderation_form([post], "reject"), {"28": "2", "comment-28": "Default."})
+        self.assertEqual(ml.moderation_form([post], "reject", "Go away"), {"28": "2", "comment-28": "Go away"})
+        self.assertEqual(ml.moderation_form([post], "discard", filter_senders=["bad@spam.example"]),
+                         {"28": "3", "senderfilterp-bad%40spam.example": "1", "senderfilter-bad%40spam.example": "3"})
+
+
+class ModerateTests(unittest.TestCase):
+    def test_discard_posts_form_verifies_and_audits(self):
+        after_details = HELD_PAGE.split('<center><h2>Posting Held for Approval (2 of 2)')[0].replace("(1 of 2)", "(1 of 1)")
+        pages = iter([HELD_PAGE, SUBS_PAGE,              # before
+                      after_details.replace('name="28"', 'name="31"'), ""])  # after: 28 gone, 31 left
+        sess = mock.MagicMock()
+        sess.__enter__.return_value = sess
+        sess.post.side_effect = [mock.Mock(text="ok", raise_for_status=lambda: None),   # login
+                                 mock.Mock(text="done", raise_for_status=lambda: None)]  # decision
+        sess.get.side_effect = lambda *a, **k: mock.Mock(text=next(pages), raise_for_status=lambda: None)
+        with mock.patch.object(ml, "fetch_mailman_lists", return_value=({"l@x.ph": {"listid": "l_x.ph"}}, 0)), \
+             mock.patch.object(ml, "_uapi", return_value="otp"), \
+             mock.patch.object(ml.requests, "Session", return_value=sess), \
+             mock.patch.object(ml, "_write_audit") as audit:
+            results = ml.moderate("l@x.ph", "discard", [28, 99], filter_future=True)
+        url = sess.post.call_args_list[1].args[0]
+        data = sess.post.call_args_list[1].kwargs["data"]
+        self.assertTrue(url.endswith("/admindb/l_x.ph"))
+        self.assertEqual(data["28"], "3")
+        self.assertEqual(data["csrf_token"], "tok9")
+        self.assertEqual(data["senderfilterp-bad%40spam.example"], "1")
+        self.assertNotIn("31", data)                   # untouched items are never sent
+        self.assertEqual([(it["id"], r) for it, r, _ in results], [(28, "done"), (99, "skipped")])
+        self.assertEqual(audit.call_args.args[2], "moderate")
+
+    def test_accept_by_sender_expands_ids_and_sets_accept_filter(self):
+        pages = iter([HELD_PAGE, SUBS_PAGE, "", ""])     # after: queue empty
+        sess = mock.MagicMock()
+        sess.__enter__.return_value = sess
+        sess.post.side_effect = [mock.Mock(text="ok", raise_for_status=lambda: None),
+                                 mock.Mock(text="done", raise_for_status=lambda: None)]
+        sess.get.side_effect = lambda *a, **k: mock.Mock(text=next(pages), raise_for_status=lambda: None)
+        with mock.patch.object(ml, "fetch_mailman_lists", return_value=({"l@x.ph": {"listid": "l_x.ph"}}, 0)), \
+             mock.patch.object(ml, "_uapi", return_value="otp"), \
+             mock.patch.object(ml.requests, "Session", return_value=sess), \
+             mock.patch.object(ml, "_write_audit"):
+            results = ml.moderate("l@x.ph", "accept", [], filter_future=True, senders=["colleague@cohere.ph"])
+        data = sess.post.call_args_list[1].kwargs["data"]
+        self.assertEqual(data["31"], "1")
+        self.assertNotIn("28", data)
+        self.assertEqual(data["senderfilter-colleague%40cohere.ph"], "6")
+        self.assertEqual([(it["id"], r) for it, r, _ in results], [(31, "done")])
+
+
+class PendingRouteTests(unittest.TestCase):
+    def setUp(self):
+        app = Flask(__name__)
+        app.secret_key = "test"
+        app.register_blueprint(ml.mailing_lists_bp)
+        self.client = app.test_client()
+        with self.client.session_transaction() as s:
+            s["user"] = {"email": "x@cohere.ph"}
+            s["permissions"] = {"can_mailing_lists": True}
+            s["_csrf_token"] = "good"
+        p = mock.patch.object(ml, "fetch_mailman_lists", return_value=({"l@cohere.ph": {"listid": "l_cohere.ph"}}, 0))
+        p.start()
+        self.addCleanup(p.stop)
+
+    def test_unknown_list_404(self):
+        self.assertEqual(self.client.get("/admin/mailing-lists/mailman/nope@cohere.ph/pending").status_code, 404)
+
+    def test_post_requires_csrf_and_valid_action(self):
+        with mock.patch.object(ml, "moderate") as mod:
+            self.client.post("/admin/mailing-lists/mailman/l@cohere.ph/pending",
+                             data={"csrf_token": "bad", "action": "discard", "item": "28"})
+            r = self.client.post("/admin/mailing-lists/mailman/l@cohere.ph/pending",
+                                 data={"csrf_token": "good", "action": "approve-all", "item": "28"})
+        self.assertEqual(r.status_code, 400)
+        mod.assert_not_called()
+
+    def test_post_passes_ids_and_options(self):
+        with mock.patch.object(ml, "moderate", return_value=[]) as mod:
+            r = self.client.post("/admin/mailing-lists/mailman/l@cohere.ph/pending",
+                                 data={"csrf_token": "good", "action": "discard", "item": ["28", "x", "29"],
+                                       "filter_future": "1", "comment": ""})
+        self.assertEqual(r.status_code, 302)
+        mod.assert_called_once_with("l@cohere.ph", "discard", [28, 29], comment="", filter_future=True, senders=[])
+
+    def test_post_by_sender_only(self):
+        with mock.patch.object(ml, "moderate", return_value=[]) as mod:
+            self.client.post("/admin/mailing-lists/mailman/l@cohere.ph/pending",
+                             data={"csrf_token": "good", "action": "accept", "sender": "Send_Email@cohere.ph"})
+        self.assertEqual(mod.call_args.kwargs["senders"], ["send_email@cohere.ph"])
+
+    def test_no_permission_404(self):
+        with self.client.session_transaction() as s:
+            s["permissions"] = {}
+        self.assertEqual(self.client.get("/admin/mailing-lists/api/pending/l@cohere.ph").status_code, 404)
+
+
+
 if __name__ == "__main__":
     unittest.main()
