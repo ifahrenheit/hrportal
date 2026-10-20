@@ -101,6 +101,16 @@
   .db-punch-time { text-align: left; font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
   .db-punch .db-pill { justify-self: stretch; text-align: center; }
   .db-punch:last-child { border-bottom: none; }
+
+  /* coming up (birthdays) */
+  .db-up { display: flex; align-items: center; gap: .75rem; padding: .6rem 0; border-bottom: 1px solid var(--border); }
+  .db-up:last-child { border-bottom: none; }
+  .db-up-ico { width: 34px; height: 34px; border-radius: 9px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; background: var(--h-chip); color: var(--h-ink); }
+  .db-up-ico svg, .db-up-ico i { width: 16px; height: 16px; }
+  .db-up-name { font-weight: 600; font-size: .88rem; line-height: 1.25; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .db-up-sub { font-size: .78rem; }
+  .db-up-when { margin-left: auto; font-size: .8rem; white-space: nowrap; flex-shrink: 0; }
+  .db-up-when.soon { color: var(--h-ink); font-weight: 600; }
   .db-ql { display: flex; align-items: center; gap: .75rem; min-height: 48px; padding: .5rem .75rem; border-radius: 10px; background: var(--bg); color: var(--text); text-decoration: none; }
   .db-ql:hover { color: var(--accent); }
   .db-ql-ico { width: 32px; height: 32px; border-radius: 8px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
@@ -717,6 +727,9 @@ loadData();                   // default Monthly / current month
 
 
 <!-- Two-column body -->
+{% set up_rows = dash.coming_up[:3] %}
+{% set n_requests = 6 + ((up_rows | length) + 1 if up_rows else 0) %}
+{% set n_punches = 4 if up_rows else 6 %}
 <div class="db-cols">
   <div class="db-main">
 
@@ -760,7 +773,7 @@ loadData();                   // default Monthly / current month
         <table class="db-table">
           <thead><tr><th>Type</th><th>Date</th><th>Details</th><th>Status</th></tr></thead>
           <tbody>
-            {% for r in dash.recent_requests %}
+            {% for r in dash.recent_requests[:n_requests] %}
             <tr>
               {% set type_hue = {'Overtime': 'blue', 'Change of Schedule': 'amber', 'Rest Day Work': 'teal', 'Failure to Swipe': 'rose'} %}
               {% set th = namespace(h=type_hue.get(r.type, 'violet')) %}
@@ -789,7 +802,7 @@ loadData();                   // default Monthly / current month
       </div>
       {% if dash.recent_punches %}
       <div>
-        {% for p in dash.recent_punches %}
+        {% for p in dash.recent_punches[:n_punches] %}
         <div class="db-punch">
           <span class="db-pdot{{ ' in' if p.type == 'IN' }}"></span>
           <span>{{ p.day }}</span>
@@ -802,6 +815,28 @@ loadData();                   // default Monthly / current month
       <div class="db-muted" style="font-size:.9rem;">No time records yet.</div>
       {% endif %}
     </div>
+
+    {% if up_rows %}
+    <!-- Coming up: birthdays in the next 7 days (hidden when there are none) -->
+    <div class="db-card db-pad" style="display:flex;flex-direction:column;gap:.5rem;">
+      <div class="db-sec-head">
+        <h2 class="db-h2">Coming up</h2>
+        {% if dash.coming_up | length > 3 %}<span class="db-muted" style="font-size:.8rem;">+{{ dash.coming_up | length - 3 }} more this week</span>{% endif %}
+      </div>
+      <div>
+        {% for u in up_rows %}
+        <div class="db-up hue-amber">
+          <span class="db-up-ico"><i data-lucide="{{ 'party-popper' if u.is_me else 'gift' }}"></i></span>
+          <div style="min-width:0;">
+            <div class="db-up-name">{{ 'Happy birthday, you!' if u.is_me else u.name ~ '’s birthday' }}</div>
+            {% if u.team and not u.is_me %}<div class="db-up-sub db-muted">{{ u.team }}</div>{% endif %}
+          </div>
+          <span class="db-up-when db-muted{{ ' soon' if u.days <= 1 }}">{{ u.when }}</span>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+    {% endif %}
 
     {% if quick_links_visible and quick_links %}
     <!-- Quick links -->

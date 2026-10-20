@@ -1457,6 +1457,7 @@ def _dashboard_extras(emp_number, user):
         'today_shift': None, 'today_rest': False, 'last_punch': None,
         'week': [], 'pending_leave': 0, 'pending_other': 0,
         'next_leave': None, 'recent_requests': [], 'recent_punches': [],
+        'coming_up': [],
     }
     employee_id = (user.get('employee_id') or '').strip()
     email = (user.get('email') or '').lower()
@@ -1496,6 +1497,40 @@ def _dashboard_extras(emp_number, user):
     except Exception as e:
         app.logger.warning(f'dashboard schedule/punches: {e}')
     sched = out.pop('_sched', {})
+
+    # Coming up: active employees' birthdays in the next 7 days (month/day only)
+    try:
+        cdb = get_central_db()
+        with cdb.cursor() as c:
+            c.execute("""SELECT employee_id, schedule_name, group_name, account, birthdate
+                         FROM gsheet_employees
+                         WHERE status = 'Active' AND birthdate IS NOT NULL""")
+            bdays = c.fetchall()
+        cdb.close()
+        for r in bdays:
+            b = r['birthdate']
+            try:
+                nxt = b.replace(year=today.year)
+            except ValueError:              # Feb 29 in a non-leap year
+                nxt = date(today.year, 2, 28)
+            if nxt < today:
+                try:
+                    nxt = b.replace(year=today.year + 1)
+                except ValueError:
+                    nxt = date(today.year + 1, 2, 28)
+            days = (nxt - today).days
+            if days > 7 or not r['schedule_name']:
+                continue
+            out['coming_up'].append({
+                'days': days,
+                'name': r['schedule_name'].strip(),
+                'team': r['group_name'] or r['account'] or '',
+                'is_me': bool(employee_id) and r['employee_id'] == employee_id,
+                'when': 'Today' if days == 0 else ('Tomorrow' if days == 1 else nxt.strftime('%a, %b %-d')),
+            })
+        out['coming_up'].sort(key=lambda x: (x['days'], x['name']))
+    except Exception as e:
+        app.logger.warning(f'dashboard coming up: {e}')
 
     # Leave: this week, pending, next leave, recent (orangehrm2)
     week_leave = {}
@@ -1601,7 +1636,7 @@ def _dashboard_extras(emp_number, user):
             return datetime.combine(f, datetime.min.time())
         return datetime.min
     recent.sort(key=_filed_key, reverse=True)
-    for r in recent[:6]:
+    for r in recent[:10]:   # template shows 6, more when "Coming up" lengthens the side column
         st = (r['status'] or '').strip()
         r['status'] = st.capitalize()
         r['style'] = _REQ_STATUS_STYLE.get(st.lower(), 'muted')
