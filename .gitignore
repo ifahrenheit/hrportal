@@ -22,3 +22,6 @@ rag/vectordb/
 
 # User-uploaded QA images
 uploads/
+
+# Internal reports with employee names (repo is public)
+docs/break_log_dating_error_report.md
