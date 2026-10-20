@@ -4721,7 +4721,12 @@ def supervisor_pending():
                     MIN(r.sl_face_to_face)      AS sl_face_to_face,
                     MIN(r.sl_awol_dates)        AS sl_awol_dates,
                     MIN(r.sl_hardcopy_received) AS sl_hardcopy_received,
-                    MIN(r.sl_hr_verified_by)    AS sl_hr_verified_by
+                    MIN(r.sl_hr_verified_by)    AS sl_hr_verified_by,
+                    MAX(r.sl_no_medcert)        AS sl_no_medcert,
+                    MIN(r.sl_hr_remarks)        AS sl_hr_remarks,
+                    GROUP_CONCAT(CONCAT(r.leave_date, '~', IFNULL(r.sl_valid_absence, ''), '~',
+                                        IFNULL(r.sl_invalid_reason, ''))
+                                 ORDER BY r.leave_date SEPARATOR '|') AS sl_date_verdicts
                 FROM leave4day_requests r
                 JOIN ohrm_leave_type lt ON r.leave_type_id = lt.id
                 JOIN hs_hr_employee e   ON r.emp_number = e.emp_number
@@ -4741,6 +4746,12 @@ def supervisor_pending():
         a = approver_map.get(r['employee_id']) or {}
         r['approver'] = a.get('name', '')
         r['approver_via_tl'] = a.get('via_tl', False)
+        # Per-date HR verdicts: {'2026-10-09': {'valid': False, 'reason': 'Late notice'}, ...}
+        r['sl_verdicts'] = {}
+        for part in (r.get('sl_date_verdicts') or '').split('|'):
+            bits = part.split('~')
+            if len(bits) == 3 and bits[1] != '':
+                r['sl_verdicts'][bits[0]] = {'valid': bits[1] == '1', 'reason': bits[2]}
 
     return render_template('supervisor/pending.html', pending=pending,
                            tl_list=tl_list, emp_search=emp_search,
@@ -5404,6 +5415,16 @@ def _yn(v):
     return 'Yes' if v in (1, '1', True) else 'No'
 
 
+# Reasons HR can give for an invalid SL date (stored in leave4day_requests.sl_invalid_reason).
+SL_INVALID_REASONS = [
+    'Late notice',
+    'Outside consult/fit-to-work range',
+    'Med cert not verified',
+    'No medical certificate',
+    'Other (see remarks)',
+]
+
+
 def send_sl_verification_email(req):
     """Email the HR verification result to TL + fixed CCs. `req` is a dict of fields."""
     tl_email = None
@@ -5428,20 +5449,40 @@ def send_sl_verification_email(req):
     if not req.get('sl_life_health') and req.get('sl_life_health_exempt'):
         life_health_value = 'No (exempted — not yet eligible for coverage)'
 
-    rows = [
-        ('Dates of Absence',              req.get('absence_dates', '') or ''),
-        ('Date of Consultation',          req.get('sl_date_consultation', '') or ''),
-        ('Date Fit to Work',              req.get('sl_date_fit_to_work', '') or ''),
-        ('Name of Doctor',                req.get('sl_doctor_name', '') or ''),
-        ('Specialization of Doctor',      req.get('sl_specialization', '') or ''),
-        ('Life and Health',               life_health_value),
-        ('PRC Verification',              'Verified' if req.get('sl_prc_verified') else 'Non-verified'),
-        ('Specialization',                'Match' if req.get('sl_spec_match') else 'No match'),
-        ('Face to face consult',          yn(req.get('sl_face_to_face'))),
-        ('Valid Absence',                 yn(req.get('sl_valid_absence'))),
-        ('AWOL Dates (RD days exempted)', req.get('sl_awol_dates', '') or 'N/A'),
-        ('Hard Copy Received',            yn(req.get('sl_hardcopy_received'))),
-    ]
+    verdict_lines = []
+    for d, valid, reason in req.get('date_verdicts') or []:
+        if valid:
+            verdict_lines.append(f"{d} &mdash; <span style='color:#047857;font-weight:bold;'>Valid</span>")
+        else:
+            verdict_lines.append(f"{d} &mdash; <span style='color:#c00;font-weight:bold;'>Invalid</span>"
+                                 f" ({markupsafe.escape(reason or '')})")
+    verdict_html = '<br>'.join(verdict_lines) or yn(req.get('sl_valid_absence'))
+    remarks_html = str(markupsafe.escape(req.get('sl_hr_remarks') or '')).replace('\n', '<br>') or '&mdash;'
+
+    if req.get('sl_no_medcert'):
+        rows = [
+            ('Dates of Absence',              req.get('absence_dates', '') or ''),
+            ('Medical Certificate',           "<span style='color:#c00;font-weight:bold;'>Not submitted</span>"),
+            ('Valid Absence (per date)',      verdict_html),
+            ('AWOL Dates (RD days exempted)', req.get('sl_awol_dates', '') or 'N/A'),
+            ('HR Remarks',                    remarks_html),
+        ]
+    else:
+        rows = [
+            ('Dates of Absence',              req.get('absence_dates', '') or ''),
+            ('Date of Consultation',          req.get('sl_date_consultation', '') or ''),
+            ('Date Fit to Work',              req.get('sl_date_fit_to_work', '') or ''),
+            ('Name of Doctor',                req.get('sl_doctor_name', '') or ''),
+            ('Specialization of Doctor',      req.get('sl_specialization', '') or ''),
+            ('Life and Health',               life_health_value),
+            ('PRC Verification',              'Verified' if req.get('sl_prc_verified') else 'Non-verified'),
+            ('Specialization',                'Match' if req.get('sl_spec_match') else 'No match'),
+            ('Face to face consult',          yn(req.get('sl_face_to_face'))),
+            ('Valid Absence (per date)',      verdict_html),
+            ('AWOL Dates (RD days exempted)', req.get('sl_awol_dates', '') or 'N/A'),
+            ('Hard Copy Received',            yn(req.get('sl_hardcopy_received'))),
+            ('HR Remarks',                    remarks_html),
+        ]
 
     def cell(v, red=False):
         style = "border:1px solid #333;padding:7px 12px;font-size:13px;"
@@ -5460,7 +5501,11 @@ def send_sl_verification_email(req):
         )
 
     void_note = ''
-    if not req.get('sl_hardcopy_received'):
+    if req.get('sl_no_medcert'):
+        void_note = ("<p style='margin:14px 0 0;font-size:13px;'>"
+                     "No soft or hard copy of a medical certificate was submitted, so the absence is "
+                     "<b>invalid</b>.</p>")
+    elif not req.get('sl_hardcopy_received'):
         void_note = ("<p style='margin:14px 0 0;font-size:13px;'>"
                      "Kindly forward original and hard-copy of the medical certificate to us. "
                      "Otherwise, the verification is <b>void</b>.</p>")
@@ -5523,7 +5568,8 @@ def sl_verification():
         db.close()
 
     return render_template('supervisor/sl_verification.html',
-                           pending=pending, user=session['user'])
+                           pending=pending, user=session['user'],
+                           sl_invalid_reasons=SL_INVALID_REASONS)
 
 
 @app.route('/leave/sl-verification/submit', methods=['POST'])
@@ -5539,6 +5585,13 @@ def sl_verification_submit():
     if not leave_request_id:
         return jsonify({'success': False, 'message': 'Missing leave_request_id'}), 400
 
+    no_medcert = 1 if data.get('no_medcert') in (1, '1', True) else 0
+    remarks = (data.get('remarks') or '').strip()[:2000] or None
+    # {"2026-10-09": {"valid": 0, "reason": "Late notice"}, ...} -- HR's per-date call
+    verdicts_in = data.get('date_verdicts') or {}
+    if not isinstance(verdicts_in, dict):
+        verdicts_in = {}
+
     consult = (data.get('date_consultation') or '').strip() or None
     fit     = (data.get('date_fit_to_work') or '').strip() or None
     doctor  = (data.get('doctor_name') or '').strip()
@@ -5551,6 +5604,14 @@ def sl_verification_submit():
     spec_match = 1 if data.get('spec_match') in (1, '1', True, 'match', 'Match') else 0
     hardcpy = 1 if data.get('hardcopy_received') in (1, '1', True, 'yes', 'Yes') else 0
 
+    if no_medcert:
+        # Nothing to verify -- every date is invalid and the cert fields stay blank.
+        consult = fit = None
+        doctor = spec = ''
+        life = life_exempt = prc = f2f = spec_match = hardcpy = 0
+    elif not consult or not fit:
+        return jsonify({'success': False, 'message': 'Enter both Date of consultation and Date fit to work.'}), 400
+
     db = get_db()
     try:
         with db.cursor() as c:
@@ -5561,6 +5622,7 @@ def sl_verification_submit():
                          JOIN hs_hr_employee e ON e.emp_number = r.emp_number
                          WHERE r.leave_request_id=%s AND r.leave_type_id=2
                            AND r.status='pending' AND r.sl_hr_stage='pending_hr'
+                         ORDER BY r.leave_date
                       """, (leave_request_id,))
             rows = c.fetchall()
             if not rows:
@@ -5572,37 +5634,62 @@ def sl_verification_submit():
             # so it doesn't invalidate the absence.
             life_ok = life or life_exempt
 
-            # Valid Absence: every absence date within [consult, fit] inclusive,
-            # AND (Life & health = Yes, or exempted) AND PRC = Verified AND
-            # Face-to-face = Yes. Any of those failing (or dates falling
-            # outside range) invalidates the absence.
-            # Allow consult to be 1 day after the absence date too -- an
-            # overnight/night-shift absence is logged against the shift's
-            # start date, but the employee may not see a doctor until after
-            # midnight, i.e. the calendar day following that start date.
-            valid = 0
-            if consult and fit:
+            # Valid Absence is decided per date. A date is valid when it falls
+            # within [consult - 1 day, fit] AND (Life & health = Yes, or exempted)
+            # AND PRC = Verified AND Face-to-face = Yes -- and HR hasn't marked
+            # it invalid for a reason the form can't see (e.g. late notice).
+            # HR can only invalidate an auto-valid date, never validate an
+            # auto-invalid one.
+            # The 1-day allowance on consult covers an overnight/night-shift
+            # absence logged against the shift's start date, where the employee
+            # sees a doctor after midnight, i.e. the following calendar day.
+            cd = fd = None
+            if not no_medcert:
                 try:
-                    from datetime import datetime as _dt, timedelta as _td
-                    cd = _dt.strptime(consult, '%Y-%m-%d').date()
-                    fd = _dt.strptime(fit, '%Y-%m-%d').date()
-                    absns = [r['leave_date'] for r in rows]
-                    dates_ok = all((cd - _td(days=1)) <= d <= fd for d in absns) and cd <= fd
-                    valid = 1 if dates_ok and life_ok and prc and f2f else 0
+                    cd = datetime.strptime(consult, '%Y-%m-%d').date()
+                    fd = datetime.strptime(fit, '%Y-%m-%d').date()
                 except ValueError:
-                    valid = 0
+                    return jsonify({'success': False, 'message': 'Invalid consultation / fit-to-work date.'}), 400
+
+            verdicts = []   # (row, valid, reason)
+            for r in rows:
+                d = r['leave_date']
+                if no_medcert:
+                    valid, reason = 0, 'No medical certificate'
+                elif not (cd <= fd and (cd - timedelta(days=1)) <= d <= fd):
+                    valid, reason = 0, 'Outside consult/fit-to-work range'
+                elif not (life_ok and prc and f2f):
+                    valid, reason = 0, 'Med cert not verified'
+                else:
+                    valid, reason = 1, None
+                hr = verdicts_in.get(str(d)) or {}
+                if hr.get('valid') in (0, '0', False):
+                    hr_reason = hr.get('reason')
+                    if hr_reason not in SL_INVALID_REASONS:
+                        hr_reason = 'Other (see remarks)'
+                    valid, reason = 0, hr_reason
+                verdicts.append((r, valid, reason))
+
+            if any(v[2] == 'Other (see remarks)' for v in verdicts) and not remarks:
+                return jsonify({'success': False,
+                                'message': 'Add a remark explaining the "Other" reason.'}), 400
+
+            all_valid = 1 if all(v[1] for v in verdicts) else 0
 
             c.execute("""
                 UPDATE leave4day_requests
                 SET sl_hr_stage='hr_verified',
                     sl_date_consultation=%s, sl_date_fit_to_work=%s,
-                    sl_valid_absence=%s, sl_doctor_name=%s, sl_life_health=%s, sl_life_health_exempt=%s,
+                    sl_no_medcert=%s, sl_doctor_name=%s, sl_life_health=%s, sl_life_health_exempt=%s,
                     sl_prc_verified=%s, sl_specialization=%s, sl_spec_match=%s, sl_face_to_face=%s,
-                    sl_awol_dates=%s, sl_hardcopy_received=%s,
+                    sl_awol_dates=%s, sl_hardcopy_received=%s, sl_hr_remarks=%s,
                     sl_hr_verified_by=%s, sl_hr_verified_at=NOW()
                 WHERE leave_request_id=%s AND leave_type_id=2 AND status='pending'
-            """, (consult, fit, valid, doctor, life, life_exempt, prc, spec, spec_match, f2f, awol, hardcpy,
-                  session['user']['name'], leave_request_id))
+            """, (consult, fit, no_medcert, doctor, life, life_exempt, prc, spec, spec_match, f2f, awol,
+                  hardcpy, remarks, session['user']['name'], leave_request_id))
+            for r, valid, reason in verdicts:
+                c.execute("UPDATE leave4day_requests SET sl_valid_absence=%s, sl_invalid_reason=%s WHERE id=%s",
+                          (valid, reason, r['id']))
         db.commit()
 
         first = rows[0]
@@ -5612,9 +5699,12 @@ def sl_verification_submit():
             'emp_number': first['emp_number'],
             'employee_name': emp_name,
             'absence_dates': absence_dates,
+            'date_verdicts': [(str(r['leave_date']), v, why) for r, v, why in verdicts],
+            'sl_no_medcert': no_medcert,
+            'sl_hr_remarks': remarks,
             'sl_date_consultation': consult,
             'sl_date_fit_to_work': fit,
-            'sl_valid_absence': valid,
+            'sl_valid_absence': all_valid,
             'sl_doctor_name': doctor,
             'sl_specialization': spec,
             'sl_spec_match': spec_match,
@@ -5632,7 +5722,7 @@ def sl_verification_submit():
         db.close()
 
     return jsonify({'success': True, 'message': 'SL verified and forwarded to SOM.',
-                    'valid_absence': bool(valid)})
+                    'valid_absence': bool(all_valid)})
 
 
 @app.route('/api/sl-verification-count')

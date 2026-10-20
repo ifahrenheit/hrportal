@@ -82,6 +82,31 @@
 .slv-btn:hover { background:#1d4ed8; }
 .slv-btn:disabled { opacity:.55; cursor:not-allowed; }
 
+/* medical certificate submitted? */
+.slv-medcert { display:flex; align-items:center; gap:12px; margin-bottom:14px; flex-wrap:wrap; }
+.slv-medcert .lbl { font-size:.8rem; font-weight:600; }
+.slv-medcert .hint { font-size:.74rem; color:#b91c1c; display:none; }
+.slv-card.no-medcert .slv-grid { display:none; }
+.slv-card.no-medcert .slv-medcert .hint { display:inline; }
+.slv-card.no-medcert .slv-void { display:none !important; }
+
+/* per-date verdicts */
+.slv-section-lbl { font-size:.72rem; text-transform:uppercase; letter-spacing:.04em; color:var(--bs-secondary-color,#9aa1ab); margin:16px 0 8px; }
+.slv-days { border:1px solid var(--bs-border-color,#e5e7eb); border-radius:10px; overflow:hidden; }
+.slv-day { display:flex; align-items:center; gap:12px; padding:8px 12px; flex-wrap:wrap;
+  border-bottom:1px solid var(--bs-border-color,#eef0f3); }
+.slv-day:last-child { border-bottom:0; }
+.slv-day .d { font-size:.86rem; font-weight:600; min-width:96px; }
+.slv-day .slv-seg input.bad:checked + label { background:#dc2626; color:#fff; }
+.slv-day .slv-seg input:disabled + label { cursor:not-allowed; opacity:.45; }
+.slv-day select { font-size:.82rem; height:32px; padding:0 .5rem; border-radius:8px;
+  border:1px solid var(--bs-border-color,#d7dbe0); background:var(--bs-body-bg,#fff); color:var(--bs-body-color,#111827); }
+.slv-day .auto { font-size:.74rem; color:var(--bs-secondary-color,#9aa1ab); }
+
+.slv-remarks textarea { width:100%; font-size:.86rem; padding:.45rem .6rem; min-height:64px;
+  border:1px solid var(--bs-border-color,#d7dbe0); border-radius:8px; background:var(--bs-body-bg,#fff); color:var(--bs-body-color,#111827); }
+.slv-remarks textarea:focus { outline:none; border-color:#3b82f6; box-shadow:0 0 0 3px rgba(59,130,246,.15); }
+
 .slv-empty { text-align:center; padding:48px 20px; color:var(--bs-secondary-color,#6b7280); }
 .slv-empty i { font-size:2rem; color:#10b981; }
 
@@ -128,6 +153,17 @@
     {% if r.notes %}<div class="slv-note"><i class="me-1" data-lucide="message-square-text"></i>{{ r.notes }}</div>{% endif %}
 
     <div class="slv-body">
+      <div class="slv-medcert">
+        <span class="lbl">Medical certificate submitted? <span style="font-weight:400;color:#9aa1ab">(soft or hard copy)</span></span>
+        <div class="slv-seg">
+          <input type="radio" class="btn-check sl-medcert pos" name="mc-{{ r.leave_request_id }}" id="mc-y-{{ r.leave_request_id }}" value="1" checked>
+          <label for="mc-y-{{ r.leave_request_id }}">Yes</label>
+          <input type="radio" class="btn-check sl-medcert neg" name="mc-{{ r.leave_request_id }}" id="mc-n-{{ r.leave_request_id }}" value="0">
+          <label for="mc-n-{{ r.leave_request_id }}">No</label>
+        </div>
+        <span class="hint">All dates will be marked invalid (No medical certificate).</span>
+      </div>
+
       <div class="slv-grid">
         <div class="slv-field">
           <label>Date of consultation</label>
@@ -138,7 +174,7 @@
           <input type="date" class="sl-fit" data-lr="{{ r.leave_request_id }}">
         </div>
         <div class="slv-field">
-          <label>Valid absence <span style="font-weight:400;color:#9aa1ab">(auto)</span></label>
+          <label>Valid absence <span style="font-weight:400;color:#9aa1ab">(per date below)</span></label>
           <div class="slv-auto sl-valid" data-lr="{{ r.leave_request_id }}">Enter dates</div>
         </div>
         <div class="slv-field">
@@ -206,6 +242,30 @@
         </div>
       </div>
 
+      <div class="slv-section-lbl">Valid absence per date</div>
+      <div class="slv-days">
+        {% for d in r.dates.split(',') %}
+        <div class="slv-day" data-date="{{ d }}">
+          <span class="d">{{ d }}</span>
+          <div class="slv-seg">
+            <input type="radio" class="btn-check sl-day pos" name="day-{{ r.leave_request_id }}-{{ loop.index }}" id="day-y-{{ r.leave_request_id }}-{{ loop.index }}" value="1" checked>
+            <label for="day-y-{{ r.leave_request_id }}-{{ loop.index }}">Valid</label>
+            <input type="radio" class="btn-check sl-day bad" name="day-{{ r.leave_request_id }}-{{ loop.index }}" id="day-n-{{ r.leave_request_id }}-{{ loop.index }}" value="0">
+            <label for="day-n-{{ r.leave_request_id }}-{{ loop.index }}">Invalid</label>
+          </div>
+          <select class="sl-day-reason" style="display:none;">
+            {% for reason in sl_invalid_reasons %}<option value="{{ reason }}">{{ reason }}</option>{% endfor %}
+          </select>
+          <span class="auto"></span>
+        </div>
+        {% endfor %}
+      </div>
+
+      <div class="slv-section-lbl">Remarks to approver <span style="text-transform:none;letter-spacing:0">(optional — shown to SOM and in the email)</span></div>
+      <div class="slv-remarks">
+        <textarea class="sl-remarks" maxlength="2000" placeholder="e.g. Oct 9 called in 2 hrs after shift start; Oct 10–11 covered by med cert."></textarea>
+      </div>
+
       <div class="slv-foot">
         <div class="slv-void">
           <i data-lucide="triangle-alert"></i>Hard copy not received — the verification email will include the void notice.
@@ -225,30 +285,64 @@
 <script>
 function parseDates(str){ return (str||'').split(',').map(s=>s.trim()).filter(Boolean); }
 
+// Auto rules per date (mirrors the server): inside [consult - 1 day, fit], and
+// Life & health (or exempt), PRC and Face-to-face all pass. Returns null until
+// both dates are entered, otherwise null reason = valid.
+function autoReason(card, dateStr){
+  const consult = card.querySelector('.sl-consult').value;
+  const fit     = card.querySelector('.sl-fit').value;
+  if(!consult || !fit) return undefined;
+  const cd=new Date(consult), fd=new Date(fit), dd=new Date(dateStr);
+  const cdMinus1 = new Date(cd); cdMinus1.setDate(cdMinus1.getDate()-1);
+  if(cd > fd || dd < cdMinus1 || dd > fd) return 'Outside consult/fit-to-work range';
+  const life = getRadio(card,'sl-life'), prc = getRadio(card,'sl-prc'), f2f = getRadio(card,'sl-f2f');
+  const lifeExempt = card.querySelector('.sl-life-exempt').checked;
+  if((life==='0' && !lifeExempt) || prc==='0' || f2f==='0') return 'Med cert not verified';
+  return null;
+}
+
 function recomputeValid(lr){
   const card = document.getElementById('slcard-'+lr);
   if(!card) return;
-  const consult = card.querySelector('.sl-consult').value;
-  const fit     = card.querySelector('.sl-fit').value;
-  const box     = card.querySelector('.sl-valid');
-  const absence = parseDates(card.querySelector('[data-absence]').getAttribute('data-absence'));
-  const life = getRadio(card,'sl-life'), prc = getRadio(card,'sl-prc'), f2f = getRadio(card,'sl-f2f');
-  const lifeExempt = card.querySelector('.sl-life-exempt').checked;
+  const noMc = getRadio(card,'sl-medcert') === '0';
+  card.classList.toggle('no-medcert', noMc);
+
+  let known = noMc, total = 0, valid = 0;
+  card.querySelectorAll('.slv-day').forEach(row=>{
+    const yes = row.querySelector('.sl-day[value="1"]'), no = row.querySelector('.sl-day[value="0"]');
+    const sel = row.querySelector('.sl-day-reason'), hint = row.querySelector('.auto');
+    const forced = noMc ? 'No medical certificate' : autoReason(card, row.dataset.date);
+    if(forced !== undefined) known = true;
+    if(forced){
+      // Rules (or no med cert) make this date invalid; HR can't mark it valid.
+      if(row.dataset.forced !== '1'){ row.dataset.prev = yes.checked ? '1' : '0'; row.dataset.prevReason = sel.value; }
+      row.dataset.forced = '1';
+      no.checked = true; yes.disabled = true; sel.value = forced;
+      hint.textContent = 'auto';
+    } else {
+      if(row.dataset.forced === '1'){
+        // Rules no longer force it -- restore what HR had picked before.
+        (row.dataset.prev === '0' ? no : yes).checked = true;
+        sel.value = row.dataset.prevReason || sel.options[0].value;
+        row.dataset.forced = '0';
+      }
+      yes.disabled = false; hint.textContent = '';
+    }
+    sel.disabled = noMc;
+    sel.style.display = no.checked ? '' : 'none';
+    total++; if(yes.checked) valid++;
+  });
+
+  const box = card.querySelector('.sl-valid');
   box.classList.remove('ok','bad');
-  if(!consult || !fit || !absence.length){ box.textContent='Enter dates'; return; }
-  const cd=new Date(consult), fd=new Date(fit);
-  const cdMinus1 = new Date(cd); cdMinus1.setDate(cdMinus1.getDate()-1);
-  let ok = cd <= fd;
-  for(const d of absence){ const dd=new Date(d); if(dd<cdMinus1||dd>fd){ ok=false; break; } }
-  // Life & health = No, PRC = Non-verified, or Face-to-face = No, invalidates the absence too.
-  // Unless Life & health = No was marked exempt (employee not yet eligible for coverage).
-  if(ok && ((life==='0' && !lifeExempt) || prc==='0' || f2f==='0')) ok = false;
-  box.textContent = ok ? 'Yes — dates covered' : 'No — outside range or unverified';
-  box.classList.add(ok ? 'ok' : 'bad');
+  if(!known){ box.textContent='Enter dates'; return; }
+  if(valid === total){ box.textContent = total > 1 ? `Yes — all ${total} dates` : 'Yes — dates covered'; box.classList.add('ok'); }
+  else if(valid === 0){ box.textContent = total > 1 ? `No — all ${total} dates invalid` : 'No — invalid'; box.classList.add('bad'); }
+  else { box.textContent = `Partial — ${valid} of ${total} dates valid`; box.classList.add('bad'); }
 }
 
-document.querySelectorAll('.sl-consult, .sl-fit, .sl-life, .sl-prc, .sl-f2f, .sl-life-exempt').forEach(el=>{
-  el.addEventListener('change',()=>recomputeValid(el.getAttribute('data-lr') || el.name.split('-').slice(1).join('-') || el.closest('.slv-card').id.replace('slcard-','')));
+document.querySelectorAll('.slv-card[id^="slcard-"]').forEach(card=>{
+  card.addEventListener('change', ()=>recomputeValid(card.id.replace('slcard-','')));
 });
 
 document.querySelectorAll('.sl-life').forEach(el=>{
@@ -278,23 +372,41 @@ function getRadio(card, cls){ const c=card.querySelector('.'+cls+':checked'); re
 
 function submitSLVerification(lr){
   const card = document.getElementById('slcard-'+lr);
+  const noMc = getRadio(card,'sl-medcert') === '0';
   const consult = card.querySelector('.sl-consult').value;
   const fit     = card.querySelector('.sl-fit').value;
   const life = getRadio(card,'sl-life'), prc = getRadio(card,'sl-prc');
   const f2f  = getRadio(card,'sl-f2f'),  hard = getRadio(card,'sl-hard');
   const smatch = getRadio(card,'sl-specmatch');
   const lifeExempt = card.querySelector('.sl-life-exempt').checked;
+  const remarks = card.querySelector('.sl-remarks').value.trim();
 
-  if(!consult || !fit){ alert('Please enter both Date of consultation and Date fit to work.'); return; }
-  if(life===null||prc===null||f2f===null||hard===null||smatch===null){
-    alert('Please answer Life & health, PRC, Specialization match, Face-to-face, and Hard copy received.'); return;
+  if(!noMc){
+    if(!consult || !fit){ alert('Please enter both Date of consultation and Date fit to work.'); return; }
+    if(life===null||prc===null||f2f===null||hard===null||smatch===null){
+      alert('Please answer Life & health, PRC, Specialization match, Face-to-face, and Hard copy received.'); return;
+    }
   }
+
+  const verdicts = {};
+  let needsRemark = false;
+  card.querySelectorAll('.slv-day').forEach(row=>{
+    const ok = row.querySelector('.sl-day[value="1"]').checked;
+    const reason = row.querySelector('.sl-day-reason').value;
+    verdicts[row.dataset.date] = ok ? {valid: 1} : {valid: 0, reason: reason};
+    if(!ok && reason === 'Other (see remarks)') needsRemark = true;
+  });
+  if(needsRemark && !remarks){ alert('Please add a remark explaining the "Other" reason.'); return; }
+  if(noMc && !confirm('No medical certificate — all dates will be marked invalid and forwarded to SOM. Continue?')) return;
 
   const btn = card.querySelector('.slv-btn');
   btn.disabled = true; btn.innerHTML = '<i data-lucide="hourglass"></i>Saving…';
 
   const payload = {
     leave_request_id: lr,
+    no_medcert: noMc ? 1 : 0,
+    date_verdicts: verdicts,
+    remarks: remarks,
     date_consultation: consult,
     date_fit_to_work: fit,
     doctor_name: card.querySelector('.sl-doctor').value,
