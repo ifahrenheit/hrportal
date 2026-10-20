@@ -173,7 +173,7 @@ flask run
 
 ## Screenshots
 
-> _Coming soon_
+<img width="1894" height="876" alt="image" src="https://github.com/user-attachments/assets/cf2bf909-ff21-469a-930d-3e131f4e73e1" />
 
 ---
 
