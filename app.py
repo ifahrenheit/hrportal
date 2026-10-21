@@ -732,36 +732,14 @@ def get_off_day(emp_number, target_date):
     finally:
         db.close()
 
-# Leave types that require 7 working days' advance notice
+# Leave types that require 7 days' advance notice (calendar days)
 ADVANCE_NOTICE_TYPES = {'Vacation Leave', 'Carry-Over Leave'}
 ADVANCE_NOTICE_DAYS  = 7
 
 def advance_notice_min_date(emp_number=None, today=None):
-    """Earliest date VL / Carry-Over can be filed for: the ADVANCE_NOTICE_DAYS-th
-    *working* day after today (policy 3.3.3, 7 working days). A working day isn't the
-    employee's rest day in employee_schedules and isn't a holiday; dates with no
-    schedule treat Saturday and Sunday as rest days."""
-    today = today or date.today()
-    rest = {}
-    if emp_number:
-        db = get_db()
-        try:
-            with db.cursor() as c:
-                c.execute("""SELECT s.schedule_date, s.is_rest_day
-                             FROM hs_hr_employee h
-                             JOIN central_db.employee_schedules s ON s.employee_id = h.employee_id
-                             WHERE h.emp_number = %s AND s.schedule_date BETWEEN %s AND %s""",
-                          (emp_number, today + timedelta(days=1), today + timedelta(days=60)))
-                rest = {r['schedule_date']: bool(r['is_rest_day']) for r in c.fetchall()}
-        finally:
-            db.close()
-    d, counted = today, 0
-    while counted < ADVANCE_NOTICE_DAYS:
-        d += timedelta(days=1)
-        is_rest = rest[d] if d in rest else d.weekday() >= 5
-        if not is_rest and not is_holiday(d):
-            counted += 1
-    return d
+    """Earliest date VL / Carry-Over can be filed for: ADVANCE_NOTICE_DAYS calendar
+    days after today. (Policy 3.3.3 says working days; HR chose calendar days.)"""
+    return (today or date.today()) + timedelta(days=ADVANCE_NOTICE_DAYS)
 
 def check_advance_notice(leave_type_name, dates, emp_number=None):
     """
@@ -1982,7 +1960,7 @@ def file_leave():
                 if violated:
                     violated_str = ', '.join(d.strftime('%b %d') for d in violated)
                     flash(
-                        f'{balance["leave_type_name"]} requires at least {ADVANCE_NOTICE_DAYS} working days advance notice '
+                        f'{balance["leave_type_name"]} requires at least {ADVANCE_NOTICE_DAYS} days advance notice '
                         f'(earliest date you can file for: {advance_notice_min_date(emp_number):%b %d}). '
                         f'These dates are too soon: {violated_str}',
                         'danger'
