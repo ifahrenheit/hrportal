@@ -12,9 +12,9 @@
           <select class="form-select" name="leave_type_id" id="leaveTypeId" required>
             <option value="">— Select —</option>
             {% for b in balances %}
-            <option value="{{ b.leave_type_id }}" data-hrs="{{ b.remaining_hours }}" data-days="{{ b.remaining_days }}"
+            <option value="{{ b.leave_type_id }}" data-hrs="{{ 24 if b.unlimited else b.remaining_hours }}" data-days="{{ b.remaining_days }}"
                     {% if b.is_awol %}data-awol="1"{% endif %}>
-              {{ b.leave_type_name }}{% if not b.is_awol %} ({{ "%.1f"|format(b.remaining_hours) }} hrs left){% else %} (holidays only){% endif %}
+              {{ b.leave_type_name }}{% if b.unlimited %} (no limit){% elif not b.is_awol %} ({{ "%.1f"|format(b.remaining_hours) }} hrs left){% else %} (holidays only){% endif %}
             </option>
             {% endfor %}
           </select>

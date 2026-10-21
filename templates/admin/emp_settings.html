@@ -79,6 +79,8 @@
               <span class="badge {% if e.individual_mode == '4day' %}bg-primary{% else %}bg-success{% endif %}">
                 {{ '4-Day' if e.individual_mode == '4day' else '5-Day' }} (Individual)
               </span>
+            {% elif is_five_day_group(e.account, e.group_name) %}
+              <span class="badge bg-success" title="Numa, SGA and TL are 5-day unless set individually">5-Day (Group)</span>
             {% else %}
               <span class="badge bg-secondary">{{ '4-Day' if global_mode == '4day' else '5-Day' }} (Global)</span>
             {% endif %}
@@ -88,7 +90,7 @@
               <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
               <input type="hidden" name="employee_id" value="{{ e.employee_id }}">
               <select name="work_mode" class="form-select form-select-sm" style="width:auto;">
-                <option value="global" {% if not e.individual_mode %}selected{% endif %}>Use Global Default</option>
+                <option value="global" {% if not e.individual_mode %}selected{% endif %}>Use Default (group / global)</option>
                 <option value="4day"   {% if e.individual_mode == '4day' %}selected{% endif %}>4-Day (10 hrs)</option>
                 <option value="5day"   {% if e.individual_mode == '5day' %}selected{% endif %}>5-Day (8 hrs)</option>
               </select>

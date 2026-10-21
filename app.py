@@ -482,6 +482,38 @@ def get_leave_balances(emp_number):
     finally:
         db.close()
 
+_LWOP_TYPE_CACHE = {}
+def _get_lwop_type():
+    """{'id','name'} of Leave Without Pay (LWOP), or None. Cached."""
+    if 'row' not in _LWOP_TYPE_CACHE:
+        db = get_db()
+        try:
+            with db.cursor() as c:
+                c.execute("""SELECT id, name FROM ohrm_leave_type
+                             WHERE name LIKE 'Leave Without Pay%%' AND deleted = 0 ORDER BY id LIMIT 1""")
+                _LWOP_TYPE_CACHE['row'] = c.fetchone()
+        finally:
+            db.close()
+    return _LWOP_TYPE_CACHE['row']
+
+def with_unlimited_lwop(balances):
+    """LWOP has no limit: it's always offered when filing, even without an
+    entitlement row, and the balance checks skip it (unlimited=True). Days are
+    still charged to the LWOP row when one exists (or later, see leave_credits)."""
+    lw = _get_lwop_type()
+    if not lw:
+        return balances
+    out, found = [], False
+    for b in balances:
+        if b['leave_type_id'] == lw['id']:
+            b, found = dict(b, unlimited=True), True
+        out.append(b)
+    if not found:
+        out.append({'leave_type_id': lw['id'], 'leave_type_name': lw['name'],
+                    'total_hours': 0.0, 'used_hours': 0.0, 'remaining_hours': 0.0,
+                    'remaining_days': 0.0, 'unlimited': True})
+    return out
+
 # --- AWOL_PATCH --- helper + endpoint
 _AWOL_TYPE_CACHE = {}
 def _get_awol_type():
@@ -628,16 +660,38 @@ def get_entitlement_source():
     finally:
         db.close()
 
+def is_five_day_group(account, group_name):
+    """Numa, SGA and team leads (TL, L2 TL, BO TL) work a 5-day week (8-hour days)."""
+    g = (group_name or '').strip().upper()
+    return (account or '').strip() == 'Numa' or g == 'SGA' or 'TL' in g.split()
+
+
+app.jinja_env.globals['is_five_day_group'] = is_five_day_group
+
+
 def get_work_mode(emp_number=None):
+    """'4day' (10-hour days) or '5day' (8-hour days) for leave deductions.
+
+    1. The employee's own setting (Admin > Work Mode), e.g. 5-day while on
+       parental leave, or support teams like Finest/QA/RTA.
+    2. Otherwise 5-day for Numa, SGA and TL (gsheet_employees account/group),
+       so new hires there are right without anyone setting them.
+    3. Otherwise the global default."""
     db = get_db()
     try:
         with db.cursor() as c:
-            # Check per-employee setting first
             if emp_number:
                 c.execute("SELECT work_mode FROM leave4day_emp_settings WHERE emp_number = %s", (emp_number,))
                 row = c.fetchone()
                 if row:
                     return row['work_mode']
+                c.execute("""SELECT g.account, g.group_name
+                             FROM hs_hr_employee h
+                             JOIN central_db.gsheet_employees g ON g.employee_id = h.employee_id
+                             WHERE h.emp_number = %s LIMIT 1""", (emp_number,))
+                row = c.fetchone()
+                if row and is_five_day_group(row['account'], row['group_name']):
+                    return '5day'
             # Fall back to global setting
             c.execute("SELECT setting_value FROM leave4day_settings WHERE setting_key = 'work_mode'")
             row = c.fetchone()
@@ -1753,6 +1807,7 @@ def dashboard():
 def file_leave():
     emp_number = session['user']['emp_number']
     balances, portal_balances = get_leave_balances(emp_number)
+    balances = with_unlimited_lwop(balances)
     # --- AWOL_PATCH --- inject synthetic AWOL type (name-gated, no entitlement)
     _awol = _get_awol_type()
     if _awol and not any(b['leave_type_id'] == _awol['id'] for b in balances):
@@ -1909,7 +1964,9 @@ def file_leave():
             if not balance:
                 flash('Selected leave type not found.', 'danger')
                 return render_template('file_leave.html', balances=balances, user=session['user'])
-            if use_remaining:
+            if balance.get('unlimited'):
+                pass  # LWOP: no balance limit
+            elif use_remaining:
                 # Use exactly the remaining balance
                 available = balance['remaining_hours']
                 if available <= 0:
@@ -2246,7 +2303,10 @@ def history():
     date_to     = request.args.get('date_to', '')
     status      = request.args.get('status', '')
     leave_type  = request.args.get('leave_type', '')
-    emp_search  = request.args.get('emp_search', '')
+    emp_search  = request.args.get('emp_search', '').strip()
+    per_page    = request.args.get('per_page', 50, type=int)
+    per_page    = per_page if per_page in (25, 50, 100) else 50
+    page        = max(request.args.get('page', 1, type=int), 1)
 
     db = get_db()
     try:
@@ -2272,27 +2332,35 @@ def history():
                 where.append("r.leave_type_id = %s")
                 params.append(leave_type)
             if emp_search and is_admin:
-                where.append("(e.emp_firstname LIKE %s OR e.emp_lastname LIKE %s)")
-                params.extend([f'%{emp_search}%', f'%{emp_search}%'])
+                where.append("""(e.emp_firstname LIKE %s OR e.emp_lastname LIKE %s
+                                 OR CONCAT(e.emp_firstname, ' ', e.emp_lastname) LIKE %s OR e.employee_id LIKE %s)""")
+                params.extend([f'%{emp_search}%'] * 4)
 
-            query = f"""
-                SELECT r.*, lt.name AS leave_type_name,
-                       e.emp_firstname, e.emp_lastname
+            base = f"""
                 FROM leave4day_requests r
                 JOIN ohrm_leave_type lt ON r.leave_type_id = lt.id
                 JOIN hs_hr_employee e   ON r.emp_number = e.emp_number
                 WHERE {' AND '.join(where)}
-                ORDER BY r.leave_date DESC
             """
-            c.execute(query, params)
+            c.execute("SELECT COUNT(*) AS n " + base, params)
+            total = c.fetchone()['n']
+            total_pages = max((total + per_page - 1) // per_page, 1)
+            page = min(page, total_pages)
+            c.execute(f"""SELECT r.*, lt.name AS leave_type_name, e.emp_firstname, e.emp_lastname
+                          {base} ORDER BY r.leave_date DESC, r.id DESC LIMIT %s OFFSET %s""",
+                      params + [per_page, (page - 1) * per_page])
             records = c.fetchall()
     finally:
         db.close()
 
+    # Page links keep every filter
+    page_args = {k: v for k, v in request.args.items() if k != 'page' and v}
     return render_template('history.html', records=records, user=session['user'],
                            leave_types=leave_types, is_admin=is_admin,
                            date_from=date_from, date_to=date_to,
-                           status=status, leave_type=leave_type, emp_search=emp_search)
+                           status=status, leave_type=leave_type, emp_search=emp_search,
+                           page=page, total_pages=total_pages, total=total, per_page=per_page,
+                           page_args=page_args)
 
 @app.route('/api/pending-count')
 @login_required
@@ -4300,7 +4368,7 @@ def admin_emp_settings():
             sql = """
                 SELECT h.emp_number, h.emp_firstname, h.emp_lastname,
                        h.employee_id, es.work_mode AS individual_mode,
-                       g.group_name
+                       g.group_name, g.account
                 FROM hs_hr_employee h
                 JOIN ohrm_user u ON u.emp_number = h.emp_number
                 LEFT JOIN leave4day_emp_settings es ON es.emp_number = h.emp_number
@@ -6174,12 +6242,14 @@ def admin_file_leave():
         target_emp = resolve_emp_number(None, request.args.get('employee_id'))
         if target_emp:
             balances, _portal = get_leave_balances(target_emp)
+            balances = with_unlimited_lwop(balances)
     if request.method == 'POST':
         if not validate_csrf():
             flash('Security check failed, please try again.', 'danger')
             return redirect(url_for('admin_file_leave'))
         target_emp = resolve_emp_number(request.form.get('emp_number'), request.form.get('employee_id'))
         balances, portal_balances = get_leave_balances(target_emp)
+        balances = with_unlimited_lwop(balances)
 
         # Just loading balances after employee selection
         if 'leave_type_id' not in request.form or not request.form.get('start_date'):
@@ -6234,7 +6304,9 @@ def admin_file_leave():
         if not balance:
             flash('Insufficient leave balance.', 'danger')
             return _render(balances, request.form)
-        if use_remaining:
+        if balance.get('unlimited'):
+            pass  # LWOP: no balance limit
+        elif use_remaining:
             # Use exactly the remaining balance, spread across the days
             available = balance['remaining_hours']
             if available <= 0:
@@ -12516,12 +12588,8 @@ def _init_magic_cws_balance(conn, emp_number, employee_id):
 
 
 def _get_work_mode(emp_number):
-    ohrm = get_db()
-    c = ohrm.cursor()
-    c.execute("SELECT work_mode FROM leave4day_emp_settings WHERE emp_number = %s",
-              (emp_number,))
-    r = c.fetchone()
-    return r['work_mode'] if r else "4day"
+    # Same rule as leave filing (per-employee setting, then Numa/SGA/TL, then global)
+    return get_work_mode(emp_number)
 
 
 def _calc_deduction(orig_date_str, orig_start_str, new_date_str, new_start_str, work_mode):

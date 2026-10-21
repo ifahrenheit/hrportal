@@ -97,9 +97,9 @@
             <select name="leave_type_id" id="leaveType" class="form-select" required>
               {% for b in balances %}
               <option value="{{ b.leave_type_id }}" data-remaining="{{ b.remaining_days }}"
-                      data-hrs="{{ b.remaining_hours }}" data-awol="{{ 1 if b.leave_type_name == 'AWOL' else 0 }}"
+                      data-hrs="{{ 24 if b.unlimited else b.remaining_hours }}" data-awol="{{ 1 if b.leave_type_name == 'AWOL' else 0 }}"
                       {% if f.get('leave_type_id')|string == b.leave_type_id|string %}selected{% endif %}>
-                {{ b.leave_type_name }} ({{ '%g'|format(b.remaining_days) }} days left)
+                {{ b.leave_type_name }} ({% if b.unlimited %}no limit{% else %}{{ '%g'|format(b.remaining_days) }} days left{% endif %})
               </option>
               {% endfor %}
             </select>
