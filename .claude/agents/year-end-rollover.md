@@ -31,7 +31,9 @@ next month. Example: anniversary Mar 3 → 10 (Mar–Dec); Mar 24 → 9 (Apr–D
 | Leave Without Pay (LWOP) | everyone active | the usual default row (99); LWOP has no limit when filing, the row only tracks usage |
 | Magic Leave, Parental leave | | **don't create**. They're granted case by case during the year |
 
-- Deployment date = `central_db.gsheet_employees.operational_date`. **Regularization =
+- Deployment date = `central_db.gsheet_employees.operational_date`. For VL, a **move to Numa
+  restarts the anniversary** (`moved_to_numa`, used when later than operational_date); a move to
+  Arctic doesn't. SL (regularization) isn't reset by a move. **Regularization =
   operational date + 6 months** (confirmed by the user; 2026 data matches: deployed Aug 4 → SL
   from Feb; Sep 15 → Mar 15; Oct 27 → from May). List anyone without an `operational_date`.
 - "Unused VL" = this year's VL `no_of_days − days_used`, measured after the user confirms every

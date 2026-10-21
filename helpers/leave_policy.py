@@ -4,6 +4,7 @@ VL / SL entitlement rules from the company leave policy (sections 3.1-3.3), shar
 scripts/year_end_rollover.py (Jan 1) and scripts/prorated_leave_grants.py (during the year).
 
 - VL starts at the 1st anniversary of deployment (gsheet_employees.operational_date + 1 year).
+  A move to Numa restarts that clock (`moved_to_numa`); a move to Arctic doesn't.
 - SL starts at regularization = operational date + REG_MONTHS (6) months (confirmed by the
   user 2026-10-22; `operational_date` in the Google Sheet is the deployment date).
 - In the year it starts, leave is pro-rated at 1 day per month to December. If the start date
@@ -27,6 +28,13 @@ def add_months(d, n):
             return date(y, m, day)
         except ValueError:
             continue
+
+
+def vl_deployment(operational_date, moved_to_numa=None):
+    """The deployment date VL counts from: the Numa move date if later, else operational_date."""
+    if moved_to_numa and (not operational_date or moved_to_numa > operational_date):
+        return moved_to_numa
+    return operational_date
 
 
 def vl_start(deployed):

@@ -29,7 +29,7 @@ sys.path.insert(0, '/var/www/html/leavesystem')
 load_dotenv('/var/www/html/leavesystem/.env')
 
 from helpers.orangehrm_db import get_orangehrm_connection  # noqa: E402
-from helpers.leave_policy import vl_start, sl_start, credit_date, prorated_days  # noqa: E402
+from helpers.leave_policy import vl_start, vl_deployment, sl_start, credit_date, prorated_days  # noqa: E402
 
 AUTOMATION_START = date(2026, 10, 22)
 ADMIN_EMP_NUMBER = 2
@@ -57,7 +57,7 @@ def main():
 
     c.execute("""
         SELECT h.emp_number, h.employee_id, CONCAT(h.emp_firstname, ' ', h.emp_lastname) AS nm,
-               g.operational_date AS deployed, h.joined_date
+               g.operational_date AS deployed, g.moved_to_numa, h.joined_date
         FROM central_db.gsheet_employees g
         JOIN hs_hr_employee h
           ON CONVERT(h.employee_id USING utf8mb4) COLLATE utf8mb4_unicode_ci = g.employee_id COLLATE utf8mb4_unicode_ci
@@ -74,7 +74,7 @@ def main():
         dep = p['deployed'] or p['joined_date']
         if not dep:
             continue
-        for kind, start in (('VL', vl_start(dep)), ('SL', sl_start(dep))):
+        for kind, start in (('VL', vl_start(vl_deployment(dep, p['moved_to_numa']))), ('SL', sl_start(dep))):
             if start.year != year:
                 continue
             cd, days = credit_date(start), prorated_days(start)
@@ -94,7 +94,8 @@ def main():
                 create.append(item)
 
     def line(i):
-        why = 'deployment anniversary' if i['kind'] == 'VL' else 'regularization (operational date + 6 months)'
+        why = ('deployment anniversary' + (' (Numa move)' if i['p']['moved_to_numa'] else '')) if i['kind'] == 'VL' \
+            else 'regularization (operational date + 6 months)'
         return f"{i['credit']}  {i['kind']} {i['days']:>2} days  {i['p']['nm']} ({i['p']['employee_id']}) - {why} {i['start']}"
 
     print(f"[{datetime.now():%Y-%m-%d %H:%M}] {'LIVE' if a.live else 'DRY RUN'}: pro-rated VL/SL grants, as of {today}")

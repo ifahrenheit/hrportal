@@ -34,7 +34,7 @@ load_dotenv('/var/www/html/leavesystem/.env')
 
 from helpers.orangehrm_db import get_orangehrm_connection  # noqa: E402
 from helpers.leave_policy import (FULL_VL, FULL_SL, CO_CAP, LWOP_DAYS,  # noqa: E402
-                                  vl_start, sl_start, prorated_days)
+                                  vl_start, vl_deployment, sl_start, prorated_days)
 
 ADMIN_EMP_NUMBER = 2      # changed_by in leave4day_entitlement_log / ohrm_user for created_by_id
 
@@ -70,7 +70,7 @@ def main():
 
     c.execute("""
         SELECT h.emp_number, h.employee_id, CONCAT(h.emp_firstname, ' ', h.emp_lastname) AS nm,
-               g.status, g.account, g.group_name, g.operational_date AS deployed, h.joined_date
+               g.status, g.account, g.group_name, g.operational_date AS deployed, g.moved_to_numa, h.joined_date
         FROM central_db.gsheet_employees g
         JOIN hs_hr_employee h
           ON CONVERT(h.employee_id USING utf8mb4) COLLATE utf8mb4_unicode_ci = g.employee_id COLLATE utf8mb4_unicode_ci
@@ -96,7 +96,7 @@ def main():
             else:
                 if not p['deployed']:
                     notes.append(f"no deployment date, used joined date {dep}: {p['nm']} ({p['employee_id']})")
-                anniv = vl_start(dep)
+                anniv = vl_start(vl_deployment(dep, p['moved_to_numa']))
                 if anniv < jan1:
                     rows.append((VL, 'Vacation Leave', FULL_VL, f"anniversary {anniv}"))
                 elif anniv.year == year:

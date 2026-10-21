@@ -6,7 +6,7 @@ from datetime import date
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from helpers.leave_policy import add_months, vl_start, sl_start, credit_date, prorated_days  # noqa: E402
+from helpers.leave_policy import add_months, vl_start, vl_deployment, sl_start, credit_date, prorated_days  # noqa: E402
 
 
 class LeavePolicyTests(unittest.TestCase):
@@ -15,6 +15,12 @@ class LeavePolicyTests(unittest.TestCase):
         self.assertEqual(sl_start(date(2025, 9, 15)), date(2026, 3, 15))
         self.assertEqual(sl_start(date(2025, 9, 15), date(2026, 4, 2)), date(2026, 4, 2))
         self.assertEqual(add_months(date(2025, 8, 31), 6), date(2026, 2, 28))
+
+    def test_numa_move_restarts_vl(self):
+        self.assertEqual(vl_deployment(date(2025, 6, 9), date(2025, 7, 8)), date(2025, 7, 8))
+        self.assertEqual(prorated_days(vl_start(vl_deployment(date(2025, 6, 9), date(2025, 7, 8)))), 6)
+        self.assertEqual(vl_deployment(date(2025, 6, 9), None), date(2025, 6, 9))
+        self.assertEqual(vl_deployment(date(2025, 6, 9), date(2025, 1, 1)), date(2025, 6, 9))  # earlier move ignored
 
     def test_cutoff_15th(self):
         self.assertEqual(credit_date(date(2026, 3, 15)), date(2026, 3, 15))
