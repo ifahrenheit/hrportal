@@ -5,9 +5,8 @@ policy 3.1-3.3 (see .claude/agents/year-end-rollover.md).
   VL          12 if the 1st deployment anniversary (gsheet_employees.operational_date + 1 year)
               is before the new year; otherwise nothing on Jan 1 (pro-rated VL is due on the
               anniversary, listed in the report).
-  SL          12 if regularized before the new year; otherwise nothing on Jan 1. There's no
-              regularization column, so it's estimated as deployment + 6 months (helpers/leave_policy.REG_MONTHS)
-              (fits 2026 data) unless --reg-file gives real dates (CSV: employee_id,YYYY-MM-DD).
+  SL          12 if regularized (operational date + 6 months) before the new year; otherwise nothing
+              on Jan 1. --reg-file (CSV: employee_id,YYYY-MM-DD) overrides it for exceptions.
   Carry-Over  min(unused VL of the current year, 6); 0 means no row. Run after Dec 31, or the
               figure is only a preview.
   LWOP        99 for every Active / Training employee (LWOP has no limit; the row tracks usage).
@@ -47,7 +46,7 @@ def main():
     ap.add_argument('--skip-co', action='store_true', help="don't create Carry-Over (e.g. before Dec 31)")
     ap.add_argument('--only-co', action='store_true', help='only create Carry-Over (run after Dec 31)')
     ap.add_argument('--csv', help='write the full plan to this CSV (keep it out of the repo)')
-    ap.add_argument('--reg-file', help='CSV of employee_id,regularization_date to use instead of the estimate')
+    ap.add_argument('--reg-file', help='CSV of employee_id,regularization_date for exceptions to operational date + 6 months')
     a = ap.parse_args()
     year, prev = a.year, a.year - 1
     jan1 = date(year, 1, 1)
@@ -103,7 +102,7 @@ def main():
                 elif anniv.year == year:
                     due.append((anniv, p['nm'], p['employee_id'], 'VL', prorated_days(anniv), 'deployment anniversary'))
                 reg = sl_start(dep, reg_dates.get(p['employee_id']))
-                src = 'given' if p['employee_id'] in reg_dates else 'estimated'
+                src = 'given' if p['employee_id'] in reg_dates else 'operational date + 6 months'
                 if reg < jan1:
                     rows.append((SL, 'Sick Leave', FULL_SL, f"regularized {reg} ({src})"))
                 elif reg.year == year:

@@ -4,8 +4,8 @@ VL / SL entitlement rules from the company leave policy (sections 3.1-3.3), shar
 scripts/year_end_rollover.py (Jan 1) and scripts/prorated_leave_grants.py (during the year).
 
 - VL starts at the 1st anniversary of deployment (gsheet_employees.operational_date + 1 year).
-- SL starts at regularization; there's no regularization column, so it's estimated as
-  deployment + REG_MONTHS months (matches 2026 data) unless real dates are supplied.
+- SL starts at regularization = operational date + REG_MONTHS (6) months (confirmed by the
+  user 2026-10-22; `operational_date` in the Google Sheet is the deployment date).
 - In the year it starts, leave is pro-rated at 1 day per month to December. If the start date
   is on or before the 15th, that month's day is credited in the same month; after the 15th,
   crediting starts the next month.

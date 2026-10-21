@@ -9,7 +9,7 @@ For every Active employee whose VL or SL starts in the current year:
     for the year yet (rows set by hand or by HR are never changed)
   - grants whose credit date is before AUTOMATION_START are listed, not created: they were due
     before this job existed, so HR confirms them first
-SL start uses the deployment + 6 months estimate (no regularization date is recorded).
+SL starts at regularization = operational date + 6 months.
 
 Every grant goes to leave4day_entitlement_log (Admin > Entitlements "Recent changes") and
 leave_balance_sync.log, so they can be checked against HR's emails. Output names employees.
@@ -94,7 +94,7 @@ def main():
                 create.append(item)
 
     def line(i):
-        why = 'deployment anniversary' if i['kind'] == 'VL' else 'regularization (estimated: deployment + 6 months)'
+        why = 'deployment anniversary' if i['kind'] == 'VL' else 'regularization (operational date + 6 months)'
         return f"{i['credit']}  {i['kind']} {i['days']:>2} days  {i['p']['nm']} ({i['p']['employee_id']}) - {why} {i['start']}"
 
     print(f"[{datetime.now():%Y-%m-%d %H:%M}] {'LIVE' if a.live else 'DRY RUN'}: pro-rated VL/SL grants, as of {today}")
