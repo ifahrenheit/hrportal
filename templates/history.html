@@ -11,7 +11,7 @@
       <div class="col-md-3">
         <label class="form-label small fw-semibold">Employee</label>
         <input type="text" name="emp_search" class="form-control form-control-sm"
-               placeholder="Search name..." value="{{ emp_search }}">
+               placeholder="Name or employee ID..." value="{{ emp_search }}">
       </div>
       {% endif %}
       <div class="col-md-2">
@@ -42,6 +42,7 @@
           {% endfor %}
         </select>
       </div>
+      <input type="hidden" name="per_page" value="{{ per_page }}">
       <div class="col-md-1">
         <button type="submit" class="btn btn-primary btn-sm w-100">Filter</button>
       </div>
@@ -111,5 +112,26 @@
       </tbody>
     </table>
   </div>
+  {% if total %}
+  <div class="d-flex flex-wrap align-items-center gap-2 px-3 py-2 border-top small">
+    <span class="text-muted">Showing {{ (page - 1) * per_page + 1 }}–{{ [page * per_page, total]|min }} of {{ total }}</span>
+    <span class="text-muted ms-2">Rows per page:</span>
+    {% for n in (25, 50, 100) %}
+      {% if n == per_page %}<strong>{{ n }}</strong>{% else %}<a href="{{ url_for('history', **dict(page_args, per_page=n)) }}">{{ n }}</a>{% endif %}
+    {% endfor %}
+    {% if total_pages > 1 %}
+    <nav class="ms-auto" aria-label="Leave history pages">
+      <ul class="pagination pagination-sm mb-0">
+        <li class="page-item {{ 'disabled' if page == 1 }}"><a class="page-link" href="{{ url_for('history', **dict(page_args, page=page - 1)) }}">Previous</a></li>
+        {% for p in range(1, total_pages + 1) if p == 1 or p == total_pages or (p - page)|abs <= 2 %}
+          {% if loop.previtem is defined and p - loop.previtem > 1 %}<li class="page-item disabled"><span class="page-link">…</span></li>{% endif %}
+          <li class="page-item {{ 'active' if p == page }}"><a class="page-link" href="{{ url_for('history', **dict(page_args, page=p)) }}">{{ p }}</a></li>
+        {% endfor %}
+        <li class="page-item {{ 'disabled' if page == total_pages }}"><a class="page-link" href="{{ url_for('history', **dict(page_args, page=page + 1)) }}">Next</a></li>
+      </ul>
+    </nav>
+    {% endif %}
+  </div>
+  {% endif %}
 </div>
 {% endblock %}
