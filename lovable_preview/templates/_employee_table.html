@@ -1,0 +1,24 @@
+<div style="overflow-x:auto;">
+  <table class="pv-table">
+    <thead><tr><th>Employee</th><th>Department</th><th>Status</th><th>Check-in</th></tr></thead>
+    <tbody>
+      {% for e in employees %}
+      <tr>
+        <td>
+          <div class="pv-emp-cell">
+            <span class="pv-emp-avatar tone-{{ e.tone }}">{{ e.initials }}</span>
+            <div><strong>{{ e.name }}</strong><span>{{ e.role }}</span></div>
+          </div>
+        </td>
+        <td>{{ e.department }}</td>
+        <td>
+          {% if e.status == 'Present' %}<span class="pv-badge b-present"><i></i>Present</span>
+          {% elif e.status == 'Late' %}<span class="pv-badge b-late"><i></i>Late</span>
+          {% else %}<span class="pv-badge b-leave"><i></i>On leave</span>{% endif %}
+        </td>
+        <td>{{ e.time }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>

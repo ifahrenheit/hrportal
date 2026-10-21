@@ -1,0 +1,422 @@
+<title>HR Portal Top-Nav Preview</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&family=DM+Sans:wght@400;500;600&display=swap">
+<style>
+/* Layout: Lovable "enterprise" top nav (utility bar + module row + breadcrumb strip)
+   wrapped around the portal's real dashboard sections, 2fr / 1fr body. */
+:root {
+  --bg: #f6f8fb;          /* page ground, cool grey biased to navy */
+  --surface: #ffffff;
+  --text: #2b3445;
+  --muted: #667085;
+  --border: #e3e8f0;
+  --primary: #2f5a8f;     /* Lovable's muted navy */
+  --primary-soft: #eaf0f8;
+  --ok: #15803d; --ok-soft: #e7f6ec;
+  --warn: #a15c07; --warn-soft: #fdf3e2;
+  --bad: #be123c;
+  --violet: #6d4fc2; --rose: #c2334d; --teal: #0f766e; --slate: #5b6679;
+  --track: #edf1f6;
+  --display: 'Outfit', 'Segoe UI', system-ui, sans-serif;
+  --body: 'DM Sans', 'Segoe UI', system-ui, sans-serif;
+  --gutter-l: max(16px, env(safe-area-inset-left, 0px));
+  --gutter-r: max(16px, env(safe-area-inset-right, 0px));
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #0f141c; --surface: #161d28; --text: #e4e9f1; --muted: #98a3b5; --border: #263142;
+  --primary: #8fb3e6; --primary-soft: rgba(143,179,230,.12);
+  --ok: #6fd39a; --ok-soft: rgba(111,211,154,.12); --warn: #f2bd6b; --warn-soft: rgba(242,189,107,.12);
+  --bad: #fb8fa5; --violet: #b9a5f4; --rose: #f49aaa; --teal: #6fd8c9; --slate: #aeb8c8; --track: #222c3b;
+  color-scheme: dark; } }
+:root[data-theme="dark"] {
+  --bg: #0f141c; --surface: #161d28; --text: #e4e9f1; --muted: #98a3b5; --border: #263142;
+  --primary: #8fb3e6; --primary-soft: rgba(143,179,230,.12);
+  --ok: #6fd39a; --ok-soft: rgba(111,211,154,.12); --warn: #f2bd6b; --warn-soft: rgba(242,189,107,.12);
+  --bad: #fb8fa5; --violet: #b9a5f4; --rose: #f49aaa; --teal: #6fd8c9; --slate: #aeb8c8; --track: #222c3b;
+  color-scheme: dark; }
+
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--text); font-family: var(--body); font-size: 14px; }
+h1, h2, h3 { font-family: var(--display); margin: 0; text-wrap: balance; }
+a { color: inherit; text-decoration: none; }
+button { font: inherit; color: inherit; background: none; border: 0; cursor: pointer; }
+:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; border-radius: 4px; }
+svg.i { width: 16px; height: 16px; stroke: currentColor; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; flex-shrink: 0; }
+.wrap { padding-left: var(--gutter-l); padding-right: var(--gutter-r); }
+@media (min-width: 700px) { .wrap { padding-left: max(36px, env(safe-area-inset-left, 0px)); padding-right: max(36px, env(safe-area-inset-right, 0px)); } }
+
+/* preview banner */
+.banner { background: var(--primary-soft); color: var(--primary); font-size: .8rem; padding-block: .5rem; display: flex; gap: .5rem; align-items: center; flex-wrap: wrap; }
+.banner strong { font-weight: 600; }
+
+/* header */
+.hdr { background: var(--surface); border-bottom: 1px solid var(--border); position: sticky; top: env(safe-area-inset-top, 0px); z-index: 20; }
+.util { display: flex; align-items: center; gap: 1rem; min-height: 68px; }
+.brand { display: flex; align-items: center; gap: .6rem; font-family: var(--display); font-weight: 700; font-size: 1.15rem; }
+.brand-mark { width: 34px; height: 34px; border-radius: 9px; background: var(--primary); color: var(--surface); display: grid; place-items: center; }
+.brand small { display: block; font-family: var(--body); font-weight: 500; font-size: .62rem; letter-spacing: .08em; color: var(--muted); }
+.util-actions { margin-left: auto; display: flex; align-items: center; gap: .35rem; }
+.jump { display: flex; align-items: center; gap: .5rem; border: 1px solid var(--border); border-radius: 8px; padding: .45rem .7rem; color: var(--muted); font-size: .85rem; min-width: 190px; }
+.jump kbd { margin-left: auto; font: 500 .7rem var(--body); border: 1px solid var(--border); border-radius: 4px; padding: 0 .3rem; }
+.icon-btn { width: 36px; height: 36px; border-radius: 8px; display: grid; place-items: center; color: var(--muted); position: relative; }
+.icon-btn:hover { background: var(--primary-soft); color: var(--primary); }
+.dot { position: absolute; top: 7px; right: 8px; width: 7px; height: 7px; border-radius: 50%; background: var(--bad); }
+.pill-shift { display: flex; align-items: center; gap: .4rem; border: 1px solid var(--border); border-radius: 999px; padding: .3rem .7rem; font-size: .8rem; color: var(--muted); }
+.pill-shift b { color: var(--text); font-weight: 600; font-variant-numeric: tabular-nums; }
+.live { width: 7px; height: 7px; border-radius: 50%; background: var(--ok); }
+.divider { width: 1px; height: 26px; background: var(--border); margin: 0 .35rem; }
+.profile { display: flex; align-items: center; gap: .55rem; padding: .25rem .4rem; border-radius: 8px; }
+.avatar { width: 32px; height: 32px; border-radius: 50%; background: var(--warn-soft); color: var(--warn); display: grid; place-items: center; font-weight: 600; font-size: .75rem; }
+.profile-name { font-size: .82rem; font-weight: 600; line-height: 1.2; text-align: left; }
+.profile-name small { display: block; font-weight: 400; color: var(--muted); font-size: .7rem; }
+.menu-toggle { display: none; }
+
+.navrow { border-top: 1px solid var(--border); display: flex; align-items: center; gap: .25rem; }
+.nav-item { position: relative; }
+.nav-btn { height: 48px; padding: 0 .85rem; display: flex; align-items: center; gap: .35rem; font-size: .85rem; color: var(--muted); font-weight: 500; }
+.nav-btn:hover { color: var(--text); }
+.nav-btn .chev { width: 12px; height: 12px; }
+.nav-item.active .nav-btn { color: var(--primary); background: var(--primary-soft); font-weight: 600; }
+.nav-item.active .nav-btn::after { content: ''; position: absolute; left: .85rem; right: .85rem; bottom: 0; height: 3px; border-radius: 2px 2px 0 0; background: var(--primary); }
+.badge-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--bad); }
+.dd { position: absolute; top: calc(100% + 6px); left: 0; min-width: 230px; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; box-shadow: 0 12px 30px rgba(15, 30, 60, .12); padding: .4rem; z-index: 30; }
+.dd-label { font-size: .7rem; color: var(--muted); padding: .35rem .6rem .45rem; border-bottom: 1px solid var(--border); margin-bottom: .3rem; }
+.dd a { display: flex; align-items: center; justify-content: space-between; padding: .55rem .6rem; border-radius: 6px; font-size: .85rem; }
+.dd a:hover { background: var(--primary-soft); color: var(--primary); }
+.dd .count { font-size: .7rem; background: var(--bad); color: var(--surface); border-radius: 999px; padding: 0 .4rem; font-weight: 600; }
+
+/* breadcrumb + sub-pages */
+.context { display: flex; align-items: center; gap: 1rem; flex-wrap: wrap; padding-block: 1.1rem 0; font-size: .8rem; color: var(--muted); }
+.crumb { display: flex; align-items: center; gap: .45rem; }
+.crumb [aria-current] { color: var(--text); font-weight: 500; }
+.subtabs { display: flex; gap: .25rem; margin-left: auto; flex-wrap: wrap; }
+.subtabs a { padding: .3rem .65rem; border-radius: 6px; display: flex; align-items: center; gap: .35rem; }
+.subtabs a:hover { background: var(--primary-soft); color: var(--primary); }
+.subtabs a.on { background: var(--primary-soft); color: var(--primary); font-weight: 600; }
+.subtabs .n { background: var(--bad); color: var(--surface); font-size: .65rem; border-radius: 999px; padding: 0 .35rem; font-weight: 600; }
+
+/* page */
+main { padding-block: 1.4rem 3rem; display: flex; flex-direction: column; gap: 1.75rem; }
+.heading { display: flex; align-items: flex-end; gap: 1rem; flex-wrap: wrap; }
+.eyebrow { font-size: .7rem; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); font-weight: 600; margin-bottom: .35rem; }
+.heading h1 { font-size: clamp(1.6rem, 3vw, 2.1rem); font-weight: 600; }
+.heading h1 .accent { color: var(--primary); }
+.heading p { margin: .35rem 0 0; color: var(--muted); }
+.actions { margin-left: auto; display: flex; gap: .5rem; flex-wrap: wrap; }
+.btn { display: inline-flex; align-items: center; gap: .45rem; padding: .6rem 1rem; border-radius: 8px; font-weight: 600; font-size: .88rem; border: 1px solid var(--border); background: var(--surface); }
+.btn.primary { background: var(--primary); border-color: var(--primary); color: var(--surface); }
+
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; }
+.grid4 { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 1.25rem; }
+.stat { padding: 1.1rem 1.25rem; display: flex; flex-direction: column; gap: .3rem; }
+.stat-top { display: flex; align-items: center; justify-content: space-between; color: var(--muted); font-size: .82rem; }
+.chip { width: 32px; height: 32px; border-radius: 8px; display: grid; place-items: center; background: var(--primary-soft); color: var(--primary); }
+.chip.ok { background: var(--ok-soft); color: var(--ok); }
+.chip.warn { background: var(--warn-soft); color: var(--warn); }
+.stat-val { font-family: var(--display); font-size: 1.55rem; font-weight: 600; }
+.stat-sub { font-size: .8rem; color: var(--muted); display: flex; align-items: center; gap: .35rem; }
+
+.sec-head { display: flex; align-items: baseline; justify-content: space-between; gap: 1rem; flex-wrap: wrap; }
+.sec-head h2 { font-size: 1.05rem; font-weight: 600; }
+.sec-head p { margin: .2rem 0 0; color: var(--muted); font-size: .82rem; }
+.link { color: var(--primary); font-size: .84rem; font-weight: 500; }
+.stack { display: flex; flex-direction: column; gap: .9rem; }
+
+.bal { padding: 1.1rem 1.25rem; display: flex; flex-direction: column; gap: .55rem; }
+.bal-top { display: flex; justify-content: space-between; align-items: center; font-weight: 600; font-size: .88rem; }
+.tag { font-size: .68rem; font-weight: 600; padding: .1rem .45rem; border-radius: 5px; background: var(--track); color: var(--hue); }
+.bal-val { font-family: var(--display); font-size: 1.9rem; font-weight: 600; color: var(--hue); line-height: 1; }
+.bal-val span { font-family: var(--body); font-size: .85rem; font-weight: 400; color: var(--muted); }
+.bar { height: 6px; border-radius: 999px; background: var(--track); overflow: hidden; }
+.bar i { display: block; height: 100%; background: var(--hue); border-radius: inherit; }
+.bal-foot { font-size: .78rem; color: var(--muted); font-variant-numeric: tabular-nums; }
+
+.body-grid { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); gap: 2rem; align-items: start; }
+.col { display: flex; flex-direction: column; gap: 1.5rem; min-width: 0; }
+.pad { padding: 1.2rem 1.3rem; }
+
+.week { display: grid; grid-template-columns: repeat(7, minmax(84px, 1fr)); gap: .6rem; }
+.week-scroll { overflow-x: auto; }
+.day { border: 1px solid var(--border); border-radius: 8px; padding: .7rem .75rem; display: flex; flex-direction: column; gap: .2rem; }
+.day .dow { font-size: .7rem; font-weight: 600; color: var(--primary); text-transform: uppercase; letter-spacing: .04em; }
+.day .num { font-family: var(--display); font-size: 1.25rem; font-weight: 600; }
+.day .lbl { font-size: .76rem; color: var(--muted); }
+.day.today { border-color: var(--primary); box-shadow: inset 0 0 0 1px var(--primary); }
+.day.off { background: var(--bg); }
+.day.off .dow { color: var(--muted); }
+
+.tbl-wrap { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; font-size: .86rem; }
+th { text-align: left; font-size: .7rem; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); font-weight: 600; padding: .6rem .75rem; border-bottom: 1px solid var(--border); white-space: nowrap; }
+td { padding: .7rem .75rem; border-bottom: 1px solid var(--border); white-space: nowrap; }
+tr:last-child td { border-bottom: 0; }
+.type { font-size: .78rem; font-weight: 600; color: var(--hue); }
+.type::before { content: ''; display: inline-block; width: 7px; height: 7px; border-radius: 2px; background: var(--hue); margin-right: .45rem; vertical-align: 1px; }
+.status { font-size: .74rem; font-weight: 600; padding: .15rem .55rem; border-radius: 999px; background: var(--ok-soft); color: var(--ok); }
+.status.pending { background: var(--warn-soft); color: var(--warn); }
+.muted { color: var(--muted); }
+
+.row { display: flex; align-items: center; gap: .75rem; padding: .65rem 0; border-bottom: 1px solid var(--border); }
+.row:last-child { border-bottom: 0; }
+.up-ico { width: 34px; height: 34px; border-radius: 9px; background: var(--warn-soft); color: var(--warn); display: grid; place-items: center; flex-shrink: 0; }
+.row-main { min-width: 0; }
+.row-title { font-weight: 600; font-size: .87rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.row-sub { font-size: .77rem; color: var(--muted); }
+.row-end { margin-left: auto; font-size: .8rem; color: var(--muted); white-space: nowrap; }
+.row-end.soon { color: var(--warn); font-weight: 600; }
+.punch { display: grid; grid-template-columns: 8px minmax(0, 1fr) auto 3.2rem; gap: .7rem; align-items: center; padding: .6rem 0; border-bottom: 1px solid var(--border); font-size: .86rem; }
+.punch:last-child { border-bottom: 0; }
+.pdot { width: 8px; height: 8px; border-radius: 50%; background: var(--slate); opacity: .5; }
+.pdot.in { background: var(--ok); opacity: 1; }
+.ptime { font-weight: 600; font-variant-numeric: tabular-nums; }
+.pt { font-size: .7rem; font-weight: 600; text-align: center; border-radius: 999px; padding: .1rem 0; background: var(--track); color: var(--muted); }
+.pt.in { background: var(--ok-soft); color: var(--ok); }
+.ql { display: flex; align-items: center; gap: .7rem; padding: .55rem .7rem; border-radius: 8px; background: var(--bg); font-weight: 600; font-size: .87rem; }
+.ql-ico { width: 30px; height: 30px; border-radius: 8px; display: grid; place-items: center; color: var(--surface); background: var(--hue); }
+.ql .ext { margin-left: auto; color: var(--muted); }
+
+.below { border-top: 1px dashed var(--border); padding-top: 1.25rem; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1.5rem; }
+.ghost { border: 1px dashed var(--border); border-radius: 10px; padding: 1.1rem 1.25rem; color: var(--muted); font-size: .84rem; display: flex; flex-direction: column; gap: .3rem; }
+.ghost strong { color: var(--text); font-family: var(--display); font-weight: 600; font-size: .95rem; }
+
+.notes { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1rem; }
+.note { padding: 1rem 1.15rem; font-size: .84rem; display: flex; flex-direction: column; gap: .35rem; }
+.note b { font-family: var(--display); font-weight: 600; font-size: .92rem; }
+.note p { margin: 0; color: var(--muted); line-height: 1.5; }
+
+@media (max-width: 1250px) { .nav-btn { padding: 0 .6rem; font-size: .8rem; } .jump { min-width: 0; } .jump span { display: none; } }
+@media (max-width: 1100px) { .grid4 { grid-template-columns: repeat(2, minmax(0, 1fr)); } .body-grid { grid-template-columns: minmax(0, 1fr); } .notes { grid-template-columns: minmax(0, 1fr); } }
+@media (max-width: 1000px) {
+  .menu-toggle { display: grid; }
+  .navrow { display: none; flex-direction: column; align-items: stretch; padding-block: .5rem; }
+  .navrow.open { display: flex; }
+  .nav-btn { width: 100%; height: 42px; border-radius: 6px; }
+  .nav-item.active .nav-btn::after { display: none; }
+  .dd { position: static; box-shadow: none; margin: .2rem 0 .5rem; }
+  .profile-name, .pill-shift span.txt, .divider { display: none; }
+}
+@media (max-width: 600px) {
+  .grid4 { gap: .7rem; }
+  .stat, .bal { padding: .9rem; }
+  .stat-val { font-size: 1.15rem; }
+  .bal-val { font-size: 1.5rem; }
+  .jump, .pill-shift { display: none; }
+  .subtabs { margin-left: 0; }
+  .actions { margin-left: 0; width: 100%; }
+  .actions .btn { flex: 1; justify-content: center; }
+  .below { grid-template-columns: minmax(0, 1fr); }
+}
+@media (prefers-reduced-motion: no-preference) { .dd { animation: drop .14s ease-out; } @keyframes drop { from { transform: translateY(-4px); opacity: .6; } } }
+</style>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-cal" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></symbol>
+  <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></symbol>
+  <symbol id="i-inbox" viewBox="0 0 24 24"><path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></symbol>
+  <symbol id="i-plane" viewBox="0 0 24 24"><path d="M17.8 19.2 16 11l3.5-3.5C21 6 21.5 4 21 3c-1-.5-3 0-4.5 1.5L13 8 4.8 6.2c-.5-.1-.9.1-1.1.5l-.3.5c-.2.5-.1 1 .3 1.3L9 12l-2 3H4l-1 1 3 2 2 3 1-1v-3l3-2 3.5 5.3c.3.4.8.5 1.3.3l.5-.2c.4-.3.6-.7.5-1.2z"/></symbol>
+  <symbol id="i-gift" viewBox="0 0 24 24"><rect x="3" y="8" width="18" height="4" rx="1"/><path d="M12 8v13M19 12v7a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2v-7"/><path d="M7.5 8a2.5 2.5 0 0 1 0-5C11 3 12 8 12 8s1-5 4.5-5a2.5 2.5 0 0 1 0 5"/></symbol>
+  <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></symbol>
+  <symbol id="i-bell" viewBox="0 0 24 24"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></symbol>
+  <symbol id="i-moon" viewBox="0 0 24 24"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></symbol>
+  <symbol id="i-users" viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></symbol>
+  <symbol id="i-chev" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></symbol>
+  <symbol id="i-right" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></symbol>
+  <symbol id="i-menu" viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h16"/></symbol>
+  <symbol id="i-file" viewBox="0 0 24 24"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><path d="M14 2v6h6M12 18v-6M9 15h6"/></symbol>
+  <symbol id="i-ext" viewBox="0 0 24 24"><path d="M15 3h6v6M10 14 21 3M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></symbol>
+  <symbol id="i-link" viewBox="0 0 24 24"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></symbol>
+  <symbol id="i-mail" viewBox="0 0 24 24"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 7-10 6L2 7"/></symbol>
+  <symbol id="i-head" viewBox="0 0 24 24"><path d="M3 14h3a2 2 0 0 1 2 2v3a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-7a9 9 0 0 1 18 0v7a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3"/></symbol>
+  <symbol id="i-logout" viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/></symbol>
+</svg>
+
+<div class="banner wrap"><strong>Design preview</strong> Lovable's top-nav style applied to the real /dashboard sections. Sample data only, nothing here is connected to the portal.</div>
+
+<header class="hdr">
+  <div class="util wrap">
+    <a class="brand" href="#"><span class="brand-mark"><svg class="i"><use href="#i-cal"/></svg></span><span>HR Portal<small>COHERE OUTSOURCING</small></span></a>
+    <div class="util-actions">
+      <button class="jump" type="button"><svg class="i"><use href="#i-search"/></svg><span>Jump to…</span><kbd>Ctrl K</kbd></button>
+      <a class="pill-shift" href="#" title="People currently on shift"><i class="live"></i><b>50</b><span class="txt">on shift</span></a>
+      <button class="icon-btn" type="button" id="themeBtn" aria-label="Toggle dark mode"><svg class="i"><use href="#i-moon"/></svg></button>
+      <button class="icon-btn" type="button" aria-label="Notifications"><svg class="i"><use href="#i-bell"/></svg><span class="dot"></span></button>
+      <span class="divider"></span>
+      <button class="profile" type="button"><span class="avatar">AV</span><span class="profile-name">Andrew Vincent<small>Employee · Admin</small></span></button>
+      <button class="icon-btn" type="button" aria-label="Sign out"><svg class="i"><use href="#i-logout"/></svg></button>
+      <button class="icon-btn menu-toggle" type="button" id="menuBtn" aria-label="Open navigation" aria-expanded="false" aria-controls="navrow"><svg class="i"><use href="#i-menu"/></svg></button>
+    </div>
+  </div>
+  <nav class="navrow wrap" id="navrow" aria-label="Main navigation"></nav>
+</header>
+
+<div class="context wrap">
+  <nav class="crumb" aria-label="Breadcrumb"><a href="#">Main</a><svg class="i" style="width:12px;height:12px"><use href="#i-right"/></svg><span aria-current="page">Dashboard</span></nav>
+  <div class="subtabs">
+    <a class="on" href="#">Dashboard</a><a href="#">My History</a><a href="#">Survey</a><a href="#">Documents</a><a href="#">QA Updates <span class="n">20</span></a>
+  </div>
+</div>
+
+<main class="wrap">
+  <section class="heading">
+    <div>
+      <div class="eyebrow">Tuesday, October 20, 2026</div>
+      <h1>Good evening, Andrew<span class="accent">.</span></h1>
+      <p>Here's your shift, leave and requests at a glance.</p>
+    </div>
+    <div class="actions">
+      <a class="btn primary" href="#"><svg class="i"><use href="#i-cal"/></svg>File Leave</a>
+      <a class="btn" href="#"><svg class="i"><use href="#i-file"/></svg>File a Request</a>
+    </div>
+  </section>
+
+  <section class="grid4" aria-label="Today">
+    <article class="card stat"><div class="stat-top">Today's shift<span class="chip"><svg class="i"><use href="#i-clock"/></svg></span></div><div class="stat-val">7pm – 6am</div><div class="stat-sub"><i class="live"></i>Timed in at 6:22 PM</div></article>
+    <article class="card stat"><div class="stat-top">Rest days this week<span class="chip"><svg class="i"><use href="#i-cal"/></svg></span></div><div class="stat-val">Fri, Sat, Sun</div><div class="stat-sub">Leave on a rest day doesn't use credits</div></article>
+    <article class="card stat"><div class="stat-top">Awaiting approval<span class="chip warn"><svg class="i"><use href="#i-inbox"/></svg></span></div><div class="stat-val">Nothing pending</div><div class="stat-sub">All your requests are decided</div></article>
+    <article class="card stat"><div class="stat-top">Next leave<span class="chip ok"><svg class="i"><use href="#i-plane"/></svg></span></div><div class="stat-val">None planned</div><div class="stat-sub">No upcoming leave on file</div></article>
+  </section>
+
+  <section class="stack">
+    <div class="sec-head"><h2>Leave balances</h2><a class="link" href="#">View leave history</a></div>
+    <div class="grid4">
+      <article class="card bal" style="--hue:var(--violet)"><div class="bal-top">Carry-Over Leave<span class="tag">CO</span></div><div class="bal-val">1.75 <span>days left</span></div><div class="bar"><i style="width:29%"></i></div><div class="bal-foot">1.75 of 6 days · 14 hrs</div></article>
+      <article class="card bal" style="--hue:var(--rose)"><div class="bal-top">Sick Leave<span class="tag">SL</span></div><div class="bal-val">12 <span>days left</span></div><div class="bar"><i style="width:100%"></i></div><div class="bal-foot">12 of 12 days · 96 hrs</div></article>
+      <article class="card bal" style="--hue:var(--teal)"><div class="bal-top">Vacation Leave<span class="tag">VL</span></div><div class="bal-val">12 <span>days left</span></div><div class="bar"><i style="width:100%"></i></div><div class="bal-foot">12 of 12 days · 96 hrs</div></article>
+      <article class="card bal" style="--hue:var(--slate)"><div class="bal-top">Leave Without Pay<span class="tag">LWOP</span></div><div class="bal-val">198 <span>days left</span></div><div class="bar"><i style="width:100%"></i></div><div class="bal-foot">198 of 198 days · 1584 hrs</div></article>
+    </div>
+  </section>
+
+  <section class="body-grid">
+    <div class="col">
+      <div class="card pad stack">
+        <div class="sec-head"><div><h2>This week</h2><p>Oct 19 – 25 · evening shift</p></div><a class="link" href="#">Full calendar</a></div>
+        <div class="week-scroll"><div class="week">
+          <div class="day"><span class="dow">Mon</span><span class="num">19</span><span class="lbl">7pm – 6am</span></div>
+          <div class="day today"><span class="dow">Tue · Today</span><span class="num">20</span><span class="lbl">7pm – 6am</span></div>
+          <div class="day"><span class="dow">Wed</span><span class="num">21</span><span class="lbl">7pm – 6am</span></div>
+          <div class="day"><span class="dow">Thu</span><span class="num">22</span><span class="lbl">7pm – 6am</span></div>
+          <div class="day off"><span class="dow">Fri</span><span class="num">23</span><span class="lbl">Rest day</span></div>
+          <div class="day off"><span class="dow">Sat</span><span class="num">24</span><span class="lbl">Rest day</span></div>
+          <div class="day off"><span class="dow">Sun</span><span class="num">25</span><span class="lbl">Rest day</span></div>
+        </div></div>
+      </div>
+
+      <div class="card pad stack">
+        <div class="sec-head"><h2>My recent requests</h2><span style="display:flex;gap:1rem"><a class="link" href="#">Leave history</a><a class="link" href="#">All requests</a></span></div>
+        <div class="tbl-wrap"><table>
+          <thead><tr><th>Type</th><th>Date</th><th>Details</th><th>Status</th></tr></thead>
+          <tbody id="reqBody"></tbody>
+        </table></div>
+      </div>
+    </div>
+
+    <aside class="col">
+      <div class="card pad">
+        <div class="sec-head" style="margin-bottom:.35rem"><h2>Coming up</h2><span class="muted" style="font-size:.78rem">+2 more this week</span></div>
+        <div class="row"><span class="up-ico"><svg class="i"><use href="#i-gift"/></svg></span><div class="row-main"><div class="row-title">Marco Dela Paz's birthday</div><div class="row-sub">RTA</div></div><span class="row-end soon">Tomorrow</span></div>
+        <div class="row"><span class="up-ico"><svg class="i"><use href="#i-gift"/></svg></span><div class="row-main"><div class="row-title">Lea Santos's birthday</div><div class="row-sub">Numa CS</div></div><span class="row-end soon">Tomorrow</span></div>
+        <div class="row"><span class="up-ico"><svg class="i"><use href="#i-gift"/></svg></span><div class="row-main"><div class="row-title">Joy Ramirez's birthday</div><div class="row-sub">L2</div></div><span class="row-end">Fri, Oct 23</span></div>
+      </div>
+
+      <div class="card pad">
+        <div class="sec-head" style="margin-bottom:.35rem"><h2>Recent time records</h2><a class="link" href="#">All records</a></div>
+        <div class="punch"><i class="pdot in"></i><span>Tue, Oct 20</span><span class="ptime">6:22 PM</span><span class="pt in">IN</span></div>
+        <div class="punch"><i class="pdot"></i><span>Tue, Oct 20</span><span class="ptime">6:04 AM</span><span class="pt">OUT</span></div>
+        <div class="punch"><i class="pdot in"></i><span>Mon, Oct 19</span><span class="ptime">6:17 PM</span><span class="pt in">IN</span></div>
+        <div class="punch"><i class="pdot"></i><span>Fri, Oct 16</span><span class="ptime">6:01 AM</span><span class="pt">OUT</span></div>
+      </div>
+
+      <div class="card pad stack" style="gap:.55rem">
+        <h2 style="font-size:1.05rem;font-weight:600">Quick links</h2>
+        <a class="ql" href="#" style="--hue:#7c3a5e"><span class="ql-ico"><svg class="i"><use href="#i-link"/></svg></span>Cohere AI<svg class="i ext"><use href="#i-ext"/></svg></a>
+        <a class="ql" href="#" style="--hue:#2563eb"><span class="ql-ico"><svg class="i"><use href="#i-mail"/></svg></span>Webmail<svg class="i ext"><use href="#i-ext"/></svg></a>
+        <a class="ql" href="#" style="--hue:#d97706"><span class="ql-ico"><svg class="i"><use href="#i-head"/></svg></span>Cohere Support App<svg class="i ext"><use href="#i-ext"/></svg></a>
+      </div>
+    </aside>
+  </section>
+
+  <section class="below" aria-label="Unchanged sections">
+    <div class="ghost"><strong>My Schedule</strong>Month calendar stays as it is today, picking up the new colors and borders automatically.</div>
+    <div class="ghost"><strong>Time Records · last 1 year</strong>Date filter and paginated table stay as they are today.</div>
+  </section>
+
+  <section class="stack">
+    <div class="sec-head"><h2>What implementing this would change</h2></div>
+    <div class="notes">
+      <div class="card note"><b>Header and nav</b><p>Restyle <code>nav/_topnav.html</code> into two rows: brand and tools on top, module menus below with an underline on the active one. Same menus, same permissions, same links.</p></div>
+      <div class="card note"><b>Breadcrumb strip</b><p>The current sub-page row (Dashboard, My History…) moves into one strip with a breadcrumb on the left. Pages that have no sub-pages show only the breadcrumb.</p></div>
+      <div class="card note"><b>Colors and cards</b><p>Tinted tiles become white cards with a colored icon chip, and the leave colors only appear in the number and bar. This mostly means changing CSS tokens in <code>base.html</code> and <code>dashboard.html</code>.</p></div>
+    </div>
+  </section>
+</main>
+
+<script>
+(function () {
+  var NAV = [
+    { label: 'Main', active: true, items: ['Dashboard', 'My History', 'Survey', 'Documents', ['QA Updates', 20]] },
+    { label: 'My Requests', dot: true, items: ['File Leave', 'File a Request', 'Material Request', 'Facilities Request'] },
+    { label: 'My Team', dot: true, items: ['Approvals', 'Team Calendar', 'View My Team (Read-Only)', 'Coaching'] },
+    { label: 'People & HR', items: ['Employee Directory', 'PIM', 'Onboarding & CoE', 'Memos', 'SL Verification'] },
+    { label: 'Operations', dot: true, items: ['Floor & Reporting', 'Break Log', 'Incident Reports', 'Inventory'] },
+    { label: 'Analytics', items: ['CSAT', 'Attendance Reports', 'Tardiness & Overbreak'] },
+    { label: 'Admin', items: ['Users & Permissions', 'Mailing Lists', 'Quick Links', 'Settings'] }
+  ];
+  var nav = document.getElementById('navrow');
+  NAV.forEach(function (g, gi) {
+    var wrap = document.createElement('div');
+    wrap.className = 'nav-item' + (g.active ? ' active' : '');
+    var btn = document.createElement('button');
+    btn.type = 'button'; btn.className = 'nav-btn'; btn.id = 'nav-' + gi;
+    btn.setAttribute('aria-expanded', 'false');
+    btn.innerHTML = g.label + (g.dot ? ' <span class="badge-dot" aria-label="has updates"></span>' : '') + '<svg class="i chev"><use href="#i-chev"/></svg>';
+    var dd = document.createElement('div');
+    dd.className = 'dd'; dd.hidden = true;
+    dd.innerHTML = '<div class="dd-label">' + g.label + '</div>' + g.items.map(function (it) {
+      return Array.isArray(it) ? '<a href="#">' + it[0] + '<span class="count">' + it[1] + '</span></a>' : '<a href="#">' + it + '</a>';
+    }).join('');
+    btn.addEventListener('click', function (e) {
+      e.stopPropagation();
+      var open = dd.hidden;
+      closeAll();
+      dd.hidden = !open; btn.setAttribute('aria-expanded', String(open));
+    });
+    wrap.appendChild(btn); wrap.appendChild(dd); nav.appendChild(wrap);
+  });
+  function closeAll() {
+    nav.querySelectorAll('.dd').forEach(function (d) { d.hidden = true; });
+    nav.querySelectorAll('.nav-btn').forEach(function (b) { b.setAttribute('aria-expanded', 'false'); });
+  }
+  document.addEventListener('click', closeAll);
+  document.addEventListener('keydown', function (e) { if (e.key === 'Escape') closeAll(); });
+
+  var menuBtn = document.getElementById('menuBtn');
+  menuBtn.addEventListener('click', function () {
+    var open = nav.classList.toggle('open');
+    menuBtn.setAttribute('aria-expanded', String(open));
+  });
+
+  var hue = { 'Carry-Over Leave': 'var(--violet)', 'Overtime': 'var(--primary)', 'Change of Schedule': 'var(--warn)', 'Failure to Swipe': 'var(--rose)' };
+  var REQ = [
+    ['Carry-Over Leave', 'Apr 23', '1.25 days', 'Approved'],
+    ['Carry-Over Leave', 'Apr 20 – 22', '3 days', 'Approved'],
+    ['Overtime', 'Feb 12', '2:00 PM – 7:00 PM', 'Approved'],
+    ['Overtime', 'Feb 11', '2:30 PM – 7:00 PM', 'Approved'],
+    ['Change of Schedule', 'Feb 10', 'Rest day swap', 'Pending'],
+    ['Overtime', 'Feb 10', '11:00 PM – 3:00 AM', 'Approved'],
+    ['Failure to Swipe', 'Feb 9', 'Time in · 6:58 PM', 'Approved'],
+    ['Overtime', 'Feb 6', '3:00 AM – 4:30 AM', 'Approved'],
+    ['Overtime', 'Feb 5', '2:00 PM – 6:00 PM', 'Approved'],
+    ['Carry-Over Leave', 'Jan 30', '1 day', 'Approved']
+  ];
+  document.getElementById('reqBody').innerHTML = REQ.map(function (r) {
+    return '<tr><td><span class="type" style="--hue:' + hue[r[0]] + '">' + r[0] + '</span></td><td>' + r[1] + '</td><td class="muted">' + r[2] + '</td><td><span class="status' + (r[3] === 'Pending' ? ' pending' : '') + '">' + r[3] + '</span></td></tr>';
+  }).join('');
+
+  document.getElementById('themeBtn').addEventListener('click', function () {
+    var root = document.documentElement;
+    var dark = root.getAttribute('data-theme') === 'dark' ||
+      (!root.getAttribute('data-theme') && window.matchMedia('(prefers-color-scheme: dark)').matches);
+    root.setAttribute('data-theme', dark ? 'light' : 'dark');
+  });
+})();
+</script>
