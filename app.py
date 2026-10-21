@@ -1457,8 +1457,9 @@ def _dashboard_balance_cards(balances, portal_balances):
             'pct': max(0, min(pct, 100)),
             'low': (not unpaid) and total > 0 and pct <= 15,
         })
-    # paid leave first, LWOP last
-    cards.sort(key=lambda c: (c['unpaid'], c['name']))
+    # LWOP has no limit (it can always be filed), so it gets no balance card
+    cards = [c for c in cards if not c['unpaid']]
+    cards.sort(key=lambda c: c['name'])
     spare = iter(['blue', 'orange', 'amber', 'green'] * 3)
     for c in cards:
         c['code'], c['hue'] = _leave_badge(c['name'], c['unpaid'], spare)

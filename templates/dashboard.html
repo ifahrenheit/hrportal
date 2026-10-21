@@ -375,7 +375,7 @@
     {% endfor %}
   </div>
   {% else %}
-  <div class="db-card db-pad db-muted">No leave entitlements found.</div>
+  <div class="db-card db-pad db-muted">No paid leave balance yet. You can file LWOP.</div>
   {% endif %}
 </div>
 
@@ -776,7 +776,7 @@ loadData();                   // default Monthly / current month
             {% for r in dash.recent_requests[:n_requests] %}
             <tr>
               {% set type_hue = {'Overtime': 'blue', 'Change of Schedule': 'amber', 'Rest Day Work': 'teal', 'Failure to Swipe': 'rose'} %}
-              {% set th = namespace(h=type_hue.get(r.type, 'violet')) %}
+              {% set th = namespace(h='slate' if 'without pay' in r.type|lower else type_hue.get(r.type, 'violet')) %}
               {% for b in balance_cards if b.name == r.type %}{% set th.h = b.hue %}{% endfor %}{# leave rows match their balance card #}
               <td><span class="db-type hue-{{ th.h }}">{{ r.type }}</span></td>
               <td style="white-space:nowrap;">{{ r.date }}</td>
