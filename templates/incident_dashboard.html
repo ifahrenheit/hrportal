@@ -147,7 +147,7 @@
 <div class="ir-filter-card">
   <form method="GET" class="row g-2 align-items-end">
     <input type="hidden" name="tab" id="activeTab" value="{{ request.args.get('tab', 'cards-view') }}">
-    <div class="col-6 col-md-2">
+    <div class="col-6 col-md">
       <label>Status</label>
       <select name="status" class="form-select form-select-sm">
         {% for v,l in [
@@ -160,7 +160,23 @@
         {% endfor %}
       </select>
     </div>
-    <div class="col-6 col-md-2">
+    <div class="col-6 col-md">
+      <label>Group</label>
+      <select name="group" class="form-select form-select-sm">
+        <option value="">All Groups</option>
+        <optgroup label="Account">
+          {% for a in group_options.accounts %}
+          <option value="account:{{ a }}" {{ 'selected' if group_filter == 'account:' ~ a }}>All {{ a }}</option>
+          {% endfor %}
+        </optgroup>
+        <optgroup label="Group">
+          {% for g in group_options.groups %}
+          <option value="group:{{ g }}" {{ 'selected' if group_filter == 'group:' ~ g }}>{{ g }}</option>
+          {% endfor %}
+        </optgroup>
+      </select>
+    </div>
+    <div class="col-6 col-md">
       <label>Sort By</label>
       <select name="sort" class="form-select form-select-sm">
         <option value="updated"  {{ 'selected' if sort_by=='updated'  }}>Last Updated</option>
@@ -168,16 +184,16 @@
         <option value="created"  {{ 'selected' if sort_by=='created'  }}>Date Created</option>
       </select>
     </div>
-    <div class="col-12 col-md-3">
+    <div class="col-6 col-md">
       <label>Search</label>
       <input type="text" name="search" class="form-control form-control-sm"
              placeholder="Report #, agent…" value="{{ search }}">
     </div>
-    <div class="col-6 col-md-2">
+    <div class="col-6 col-md">
       <label>From</label>
       <input type="date" name="start_date" class="form-control form-control-sm" value="{{ start_date }}">
     </div>
-    <div class="col-6 col-md-2">
+    <div class="col-6 col-md">
       <label>To</label>
       <input type="date" name="end_date" class="form-control form-control-sm" value="{{ end_date }}">
     </div>

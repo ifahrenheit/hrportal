@@ -522,6 +522,7 @@ def dashboard():
         start_date    = request.args.get('start_date', '')
         end_date      = request.args.get('end_date', '')
         sort_by       = request.args.get('sort', 'updated')
+        group_filter  = request.args.get('group', '')   # 'account:Numa' or 'group:Numa CS'
 
         conds, params = ["1=1"], []
         # Check if TL supervisor via supervisor_mapping
@@ -567,6 +568,17 @@ def dashboard():
         if search:
             conds.append("(ir.report_number LIKE %s OR ir.employee_name LIKE %s OR ir.summary LIKE %s)")
             params += [f'%{search}%', f'%{search}%', f'%{search}%']
+        # Group/account filter, matched through the employee master
+        group_sql, group_params = '', []
+        g_kind, _, g_value = group_filter.partition(':')
+        if g_value and g_kind in ('account', 'group'):
+            g_col = 'account' if g_kind == 'account' else 'group_name'
+            group_sql = f"""ir.employee_id COLLATE utf8mb4_unicode_ci IN (
+                SELECT employee_id FROM gsheet_employees WHERE {g_col} = %s)"""
+            group_params = [g_value]
+            conds.append(group_sql); params += group_params
+        else:
+            group_filter = ''
         if start_date:
             conds.append("DATE(ir.rwe_requested_at) >= %s"); params.append(start_date)
         if end_date:
@@ -580,6 +592,16 @@ def dashboard():
         with conn.cursor() as cur:
             cur.execute(f"SELECT ir.* FROM incident_reports ir WHERE {where} ORDER BY {order}", params)
             reports = cur.fetchall()
+            # Dropdown options: accounts and groups that have at least one IR
+            cur.execute("""SELECT DISTINCT g.account, g.group_name FROM incident_reports ir
+                           JOIN gsheet_employees g
+                             ON g.employee_id COLLATE utf8mb4_unicode_ci = ir.employee_id COLLATE utf8mb4_unicode_ci
+                           WHERE g.account IS NOT NULL AND g.account NOT IN ('', 'Test')""")
+            _g = cur.fetchall()
+            group_options = {
+                'accounts': sorted({r['account'] for r in _g}),
+                'groups':   sorted({r['group_name'] for r in _g if r['group_name']}),
+            }
 
         # Stats (admin sees all, supervisor filtered)
         s_conds, s_params = ["1=1"], []
@@ -799,6 +821,9 @@ def dashboard():
             if end_date:
                 tl_conds.append("ir.incident_date <= %s")
                 tl_params.append(end_date)
+            if group_sql:
+                tl_conds.append(group_sql)
+                tl_params += group_params
             tl_where = ' AND '.join(tl_conds)
             with conn.cursor() as cur:
                 cur.execute(f"""
@@ -842,7 +867,8 @@ def dashboard():
             rwe_reports=rwe_reports, rwe_report_data=rwe_report_data,
             ir_timeline_data=ir_timeline_data,
             status_filter=status_filter, search=search,
-            start_date=start_date, end_date=end_date, sort_by=sort_by)
+            start_date=start_date, end_date=end_date, sort_by=sort_by,
+            group_filter=group_filter, group_options=group_options)
     finally:
         try:
             conn.close()

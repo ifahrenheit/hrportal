@@ -227,6 +227,7 @@ def memos_list():
     date_from = request.args.get('date_from', '').strip()
     date_to = request.args.get('date_to', '').strip()
     q = request.args.get('q', '').strip()
+    group = request.args.get('group', '').strip()   # 'account:Numa' or 'group:Numa CS'
     page = max(int(request.args.get('page', 1) or 1), 1)
 
     where = []
@@ -244,6 +245,18 @@ def memos_list():
     if date_to:
         where.append("memo_date <= %s")
         params.append(date_to)
+    g_kind, _, g_value = group.partition(':')
+    if g_value and g_kind in ('account', 'group'):
+        # Match the employee master by employee_id, or by email when the memo has no ID
+        g_col = 'account' if g_kind == 'account' else 'group_name'
+        where.append(f"""EXISTS (SELECT 1 FROM gsheet_employees g
+            WHERE g.{g_col} = %s
+              AND (g.employee_id COLLATE utf8mb4_unicode_ci = employee_memos.employee_id COLLATE utf8mb4_unicode_ci
+                   OR ((employee_memos.employee_id IS NULL OR employee_memos.employee_id = '')
+                       AND LOWER(g.email) COLLATE utf8mb4_unicode_ci = LOWER(employee_memos.email) COLLATE utf8mb4_unicode_ci)))""")
+        params.append(g_value)
+    else:
+        group = ''
     if q:
         where.append("""
             (last_name LIKE %s OR first_name LIKE %s OR email LIKE %s
@@ -285,6 +298,15 @@ def memos_list():
         cursor.execute("SELECT DISTINCT supervisor FROM employee_memos WHERE supervisor IS NOT NULL AND supervisor != '' ORDER BY supervisor")
         supervisors = [r['supervisor'] for r in cursor.fetchall()]
 
+        cursor.execute("""SELECT DISTINCT g.account, g.group_name FROM employee_memos m
+                          JOIN gsheet_employees g
+                            ON g.employee_id COLLATE utf8mb4_unicode_ci = m.employee_id COLLATE utf8mb4_unicode_ci""")
+        _g = cursor.fetchall()
+        group_options = {
+            'accounts': sorted({r['account'] for r in _g if r['account'] and r['account'] != 'Test'}),
+            'groups':   sorted({r['group_name'] for r in _g if r['group_name']}),
+        }
+
         conn.close()
 
         return render_template(
@@ -292,6 +314,7 @@ def memos_list():
             memos=memos,
             categories=categories,
             supervisors=supervisors,
+            group_options=group_options,
             total=total,
             page=page,
             total_pages=total_pages,
@@ -301,6 +324,7 @@ def memos_list():
                 'date_from': date_from,
                 'date_to': date_to,
                 'q': q,
+                'group': group,
             }
         )
 
