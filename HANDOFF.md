@@ -8,6 +8,54 @@
 
 ---
 
+## 2026-10-22 — Leave balances: one table, 2026 reconciled, work-mode/LWOP rules, new agents
+Commit: `6c3af9b` · Branch: `main` (commits `bea2379`..`6c3af9b`)
+
+### What was built / changed
+- **Dashboard:** "Coming up" birthdays card in the side column (`_dashboard_extras`, `templates/dashboard.html`); recent-request dates show the year (`_fmt_range(year=True)`); LWOP balance card removed, LWOP-only staff see "No paid leave balance yet. You can file LWOP."
+- **Incident Reports / Memos:** Group filter (whole account e.g. "All Numa", or single group) — `modules/incident_reports.py`, `memos.py` (memos match by employee_id, else email).
+- **Leave History** (`/history`): one line per row, notes expand on click; paging 25/50/100 with filters kept; employee search also matches full name / employee ID.
+- **One entitlement table:** Admin › Entitlements reads/writes `ohrm_leave_entitlement` directly (current-total hint, confirm before replace, Edit buttons, delete only if unused, change log). `leave4day_entitlements` ("Portal DB") retired — its type IDs (`leave4day_leave_types`) didn't match `ohrm_leave_type`. Entitlement Source toggle and File Leave "[Portal]" options removed.
+- **Future-year leave:** filing into a year with no balance marks days `credit_pending`; `helpers/leave_credits.py` + `scripts/apply_pending_leave_credits.py` charge them once the row exists (also on saving a balance). Reject/cancel skip refunds for never-charged days.
+- **Work mode** (`get_work_mode()`): individual setting > Numa/SGA/TL are 5-day (`is_five_day_group`) > global default. Magic CWS uses the same rule.
+- **LWOP unlimited:** always offered on File Leave / File for Employee ("no limit"), no balance check (`with_unlimited_lwop`).
+- **VL/COL notice:** 7 calendar days; error names the earliest date (`advance_notice_min_date`).
+- **Agents:** `.claude/agents/leave-auditor.md`, `year-end-rollover.md`, `employee-sync-auditor.md`.
+- `lovable_preview/` saved (on-hold top-nav redesign, mock data, README).
+
+### Why / decisions
+- Leave day = hours ÷ 8; balances in 8-hour days. Some agents moved to 4×10 h around 2026-03-23; Numa, SGA, TL stay 5-day; parental leave reverts to 5-day. "Use remaining balance" caps at 0 (an 8 h day on a 10 h shift can be correct).
+- Policy 3.1–3.3 (VL from 1st deployment anniversary, SL from regularization, pro-rated with a 15th-of-month cutoff; Carry-Over = unused VL up to 6). HR chose **calendar** days for the 7-day notice and leaves the ">3 consecutive days" rule to approvers.
+- Repo is public: no employee names/IDs in committed files. 2025 reconciliation report and two name-listing fix scripts are gitignored (report is still in git history from `e072dfe`).
+
+### Database changes
+```sql
+-- orangehrm2 (run by the user)
+ALTER TABLE leave4day_requests
+  ADD COLUMN credit_pending TINYINT(1) NOT NULL DEFAULT 0,
+  ADD INDEX idx_credit_pending (credit_pending);
+CREATE TABLE leave4day_entitlement_log (id, entitlement_id, emp_number, leave_type_id, year,
+  action, old_days, new_days, changed_by, changed_at) -- see app.py _log_entitlement_change
+```
+- Data (2026 only): migrated portal entitlement rows into OrangeHRM (`scripts/manual_fixes/retire_portal_entitlements.py`); reconciled `days_used` to filed leave for all 2026 balances; 1.25→1.0 day fixes for 5-day staff; test-account leave rejected; future-year leave flagged `credit_pending`. Every change is in `leave_balance_sync.log` (gitignored). Only one 2026 balance differs from filings, kept on purpose by the user.
+
+### Config / environment
+- `.env`: `IR_SGA`, `IR_OVERHEAD` (SGA added) edited by the user — IR filing access for SGA.
+- root cron: `30 1 * * * … scripts/apply_pending_leave_credits.py --live >> apply_pending_leave_credits.log`.
+- Work mode: all active Numa/SGA/TL set to 5day in `leave4day_emp_settings`.
+
+### How to verify
+- `/admin/entitlements` (one table, hint, Recent changes) · `/admin/emp-settings` · `/file-leave` (LWOP "no limit") · `/history` (paging) · `/incident-reports/` and `/memos` (Group filter) · `/dashboard`.
+- `venv/bin/python -m unittest tests.test_leave_credits tests.test_work_mode_lwop tests.test_advance_notice -v`
+
+### Open items / next steps
+- [ ] December: load 2027 balances (208 active employees have none) — use the `year-end-rollover` agent; ask HR for regularization dates (no column exists; 2026 data fits deployment + ~6 months). 11.5 days of 2027 leave are waiting in `credit_pending`.
+- [ ] New 2027 filings are still balance-checked against the current year's balance.
+- [ ] 2025 balances not reviewed/corrected (user: leave 2025 for now). Optional: purge the 2025 report from git history.
+- [ ] Dashboard redesign (`lovable_preview/`) on hold.
+
+---
+
 ## 2026-10-20 (9) — SL Verification: per-date validity, HR remarks, "No medical certificate"
 Commit: this one · Branch: `main`
 
