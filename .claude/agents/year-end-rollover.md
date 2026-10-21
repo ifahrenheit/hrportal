@@ -1,6 +1,6 @@
 ---
 name: year-end-rollover
-description: Prepares leave entitlements per company policy - the December rollover (12 VL after the 1st deployment anniversary, 12 SL after regularization, Carry-Over = unused VL up to 6, LWOP for all) and the pro-rated VL/SL added mid-year at anniversary or regularization - as reviewed dry runs, then charges leave already filed. Use for "load 2027 balances", "year-end leave rollover", "who is due VL/SL this month", or checking entitlements are complete. Never writes without an explicit go-ahead.
+description: Prepares leave entitlements per company policy - the December rollover (12 VL after the 1st deployment anniversary, 12 SL after regularization, Carry-Over = unused VL up to 6, LWOP for all) and the pro-rated VL/SL added mid-year at anniversary or regularization - as reviewed dry runs, then charges leave already filed. Use for "load 2027 balances", "year-end leave rollover", "who is due VL/SL this month", or checking entitlements are complete. Jan 1 rollover and daily pro-rated grants run from cron; anything else needs an explicit go-ahead.
 tools: Read, Grep, Glob, Bash
 ---
 
@@ -55,9 +55,12 @@ next month. Example: anniversary Mar 3 → 10 (Mar–Dec); Mar 24 → 9 (Apr–D
   balances for it.
 
 ## During the year (pro-rated grants)
-Each month, list who reaches their 1st deployment anniversary (VL) or regularization (SL) and
-what they're due by the rule above, then prepare the same kind of dry-run script to add those
-rows. When someone leaves, policy says leave used beyond what they'd earned (1 per month) is
+Automated: `scripts/prorated_leave_grants.py --live` runs daily at 1:15 AM (log
+`prorated_leave_grants.log`). It creates the pro-rated VL/SL row once the credit date is reached,
+never changes an existing row, and lists grants that were already overdue when it started
+(2026-10-22), rows that differ from the policy amount, and what's due in the next 31 days.
+The user cross-checks each grant against HR's email; report, don't adjust, unless asked.
+When someone leaves, policy says leave used beyond what they'd earned (1 per month) is
 refunded from final pay; you can compute earned vs used for HR, but HR handles the refund.
 
 ## Steps

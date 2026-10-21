@@ -6,7 +6,7 @@ policy 3.1-3.3 (see .claude/agents/year-end-rollover.md).
               is before the new year; otherwise nothing on Jan 1 (pro-rated VL is due on the
               anniversary, listed in the report).
   SL          12 if regularized before the new year; otherwise nothing on Jan 1. There's no
-              regularization column, so it's estimated as deployment + REG_MONTHS months
+              regularization column, so it's estimated as deployment + 6 months (helpers/leave_policy.REG_MONTHS)
               (fits 2026 data) unless --reg-file gives real dates (CSV: employee_id,YYYY-MM-DD).
   Carry-Over  min(unused VL of the current year, 6); 0 means no row. Run after Dec 31, or the
               figure is only a preview.
@@ -34,28 +34,10 @@ sys.path.insert(0, '/var/www/html/leavesystem')
 load_dotenv('/var/www/html/leavesystem/.env')
 
 from helpers.orangehrm_db import get_orangehrm_connection  # noqa: E402
+from helpers.leave_policy import (FULL_VL, FULL_SL, CO_CAP, LWOP_DAYS,  # noqa: E402
+                                  vl_start, sl_start, prorated_days)
 
-REG_MONTHS = 6
-FULL_VL = FULL_SL = 12
-CO_CAP = 6
-LWOP_DAYS = 99
 ADMIN_EMP_NUMBER = 2      # changed_by in leave4day_entitlement_log / ohrm_user for created_by_id
-
-
-def add_months(d, n):
-    y, m = divmod(d.month - 1 + n, 12)
-    y, m = d.year + y, m + 1
-    for day in (d.day, 30, 29, 28):
-        try:
-            return date(y, m, day)
-        except ValueError:
-            continue
-
-
-def prorated(start, year):
-    """1 day per month from start's month (or the next month if after the 15th) to December."""
-    first = start.month if start.day <= 15 else start.month + 1
-    return max(0, 12 - first + 1) if start.year == year else 0
 
 
 def main():
@@ -115,17 +97,17 @@ def main():
             else:
                 if not p['deployed']:
                     notes.append(f"no deployment date, used joined date {dep}: {p['nm']} ({p['employee_id']})")
-                anniv = add_months(dep, 12)
+                anniv = vl_start(dep)
                 if anniv < jan1:
                     rows.append((VL, 'Vacation Leave', FULL_VL, f"anniversary {anniv}"))
                 elif anniv.year == year:
-                    due.append((anniv, p['nm'], p['employee_id'], 'VL', prorated(anniv, year), 'deployment anniversary'))
-                reg = reg_dates.get(p['employee_id']) or add_months(dep, REG_MONTHS)
+                    due.append((anniv, p['nm'], p['employee_id'], 'VL', prorated_days(anniv), 'deployment anniversary'))
+                reg = sl_start(dep, reg_dates.get(p['employee_id']))
                 src = 'given' if p['employee_id'] in reg_dates else 'estimated'
                 if reg < jan1:
                     rows.append((SL, 'Sick Leave', FULL_SL, f"regularized {reg} ({src})"))
                 elif reg.year == year:
-                    due.append((reg, p['nm'], p['employee_id'], 'SL', prorated(reg, year), f'regularization ({src})'))
+                    due.append((reg, p['nm'], p['employee_id'], 'SL', prorated_days(reg), f'regularization ({src})'))
             if not a.skip_co and e in vl_prev:
                 n, used = vl_prev[e]
                 unused = max(0.0, n - used)
