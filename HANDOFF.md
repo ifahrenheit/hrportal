@@ -8,6 +8,39 @@
 
 ---
 
+## 2026-10-22 (2) — 2027 balances loaded; leave cycle automated per policy
+Commit: `10d6dd6` · Branch: `main` (commits `f92d855`..`10d6dd6`)
+
+### What was built / changed
+- `helpers/leave_policy.py`: policy 3.1–3.3 rules (VL from 1st anniversary of `operational_date`, SL from operational date + 6 months, pro-rated 1/month with a 15th-of-month cutoff, Carry-Over = min(unused VL, 6)).
+- `scripts/year_end_rollover.py <year>`: VL/SL/LWOP + Carry-Over for a year; `--skip-co`, `--only-co`, `--reg-file`, `--csv`; dry run by default; skips existing rows.
+- `scripts/prorated_leave_grants.py`: daily pro-rated VL/SL grants; never changes existing rows; lists overdue (pre-2026-10-22) grants, rows that differ from policy, next 31 days.
+- Ran 2027 rollover with `--skip-co --live`: 544 rows (VL/SL/LWOP); then charged the pending 2027 VL.
+- Dashboard: LWOP card removed. VL/COL notice is 7 **calendar** days (HR's choice; working-day version reverted).
+- Agents: `year-end-rollover.md` follows the policy; leave-auditor / employee-sync-auditor added earlier.
+
+### Config / environment (root crontab)
+- `15 1 * * *` prorated_leave_grants.py --live >> prorated_leave_grants.log
+- `30 1 * * *` apply_pending_leave_credits.py --live (existing)
+- `30 0 1 1 *` year_end_rollover.py $(date +%Y) --live >> year_end_rollover.log (full rollover every Jan 1; on Jan 1, 2027 only Carry-Over is left: 136 rows in the dry run)
+
+### Why / decisions
+- Entitlement corrections wait for HR's email; automated grants are cross-checked against those emails.
+- `promotion_date` in the sheet is promotions, not regularization.
+
+### How to verify
+- `venv/bin/python scripts/prorated_leave_grants.py` (dry run) · `/admin/entitlements?year=2027`
+- `venv/bin/python -m unittest tests.test_leave_policy tests.test_advance_notice tests.test_work_mode_lwop tests.test_leave_credits`
+
+### Open items / next steps
+- [ ] Check the first nightly logs: `prorated_leave_grants.log`, `apply_pending_leave_credits.log`.
+- [ ] HR cross-check list (names in chat/logs, not here): 3 SL grants overdue before automation, 4 allowances below policy, first automatic SL grants on Nov 1 and Nov 4.
+- [ ] New next-year filings are still balance-checked against the current year's balance.
+- [ ] 2025 balances not reviewed; 2025 report still in git history (`e072dfe`).
+- [ ] Dashboard redesign on hold (`lovable_preview/`).
+
+---
+
 ## 2026-10-22 — Leave balances: one table, 2026 reconciled, work-mode/LWOP rules, new agents
 Commit: `6c3af9b` · Branch: `main` (commits `bea2379`..`6c3af9b`)
 
