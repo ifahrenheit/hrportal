@@ -20,6 +20,7 @@ leave4day_entitlement_log and leave_balance_sync.log. Output names employees: do
     venv/bin/python scripts/year_end_rollover.py 2027
     venv/bin/python scripts/year_end_rollover.py 2027 --csv /path/plan.csv
     venv/bin/python scripts/year_end_rollover.py 2027 --skip-co --live
+    venv/bin/python scripts/year_end_rollover.py 2027 --only-co --live    # after Dec 31
 """
 import argparse
 import csv
@@ -62,6 +63,7 @@ def main():
     ap.add_argument('year', type=int)
     ap.add_argument('--live', action='store_true')
     ap.add_argument('--skip-co', action='store_true', help="don't create Carry-Over (e.g. before Dec 31)")
+    ap.add_argument('--only-co', action='store_true', help='only create Carry-Over (run after Dec 31)')
     ap.add_argument('--csv', help='write the full plan to this CSV (keep it out of the repo)')
     ap.add_argument('--reg-file', help='CSV of employee_id,regularization_date to use instead of the estimate')
     a = ap.parse_args()
@@ -136,6 +138,8 @@ def main():
                          'group': p['group_name'], 'type_id': t, 'type': tname, 'days': days, 'why': why,
                          'skip': (e, t) in existing})
 
+    if a.only_co:
+        plan = [r for r in plan if r['type_id'] == CO]
     todo = [r for r in plan if not r['skip']]
     print(f"== {year} rollover {'(LIVE)' if a.live else '(dry run)'}: {len(people)} Active/Training employees")
     summary = Counter((r['type'], r['days']) for r in todo)
