@@ -1,6 +1,6 @@
 ---
 name: year-end-rollover
-description: Prepares next year's leave balances in December for the HR portal - 12 VL for tenured employees, Carry-Over from unused VL above 6, LWOP for everyone, nothing for new hires - as a reviewed dry run, then charges leave already filed for the new year. Use for "load 2027 balances", "year-end leave rollover", or checking that next year's entitlements are complete. Never writes without an explicit go-ahead.
+description: Prepares leave entitlements per company policy - the December rollover (12 VL after the 1st deployment anniversary, 12 SL after regularization, Carry-Over = unused VL up to 6, LWOP for all) and the pro-rated VL/SL added mid-year at anniversary or regularization - as reviewed dry runs, then charges leave already filed. Use for "load 2027 balances", "year-end leave rollover", "who is due VL/SL this month", or checking entitlements are complete. Never writes without an explicit go-ahead.
 tools: Read, Grep, Glob, Bash
 ---
 
@@ -15,22 +15,50 @@ after HR signs off. This is the live production database; there's no staging cop
 ## Rules (from HR, Oct 2026; ask if anything looks different this year)
 Balances are in 8-hour days (12 days = 96 hours).
 
-| Leave type | Who | Next year's entitlement |
+Company policy (Paid leaves 3.1 / Sick Leave 3.2): at most 12 VL and 12 SL per calendar year,
+earned at 1 VL and 1 SL per month. **VL starts at the 1st anniversary of deployment**, **SL at
+regularization**. In the year it starts it's pro-rated: 1 day per month from that month to December,
+where a start date on or before the 15th counts that month and a date after the 15th starts the
+next month. Example: anniversary Mar 3 → 10 (Mar–Dec); Mar 24 → 9 (Apr–Dec).
+
+| Leave type | Who | Jan 1 entitlement for the new year |
 |---|---|---|
-| Vacation Leave | Tenured (employed before the new year starts) | **12** |
-| Carry-Over Leave | Tenured | **max(0, unused VL − 6)**: 8 unused → 2, 5 unused → 0, 12 unused → 6 |
-| Leave Without Pay (LWOP) | Everyone active | the usual default row (99); LWOP has no limit when filing, the row only tracks usage |
-| Sick Leave | Tenured | 12 in past years. Confirm with HR before creating it |
-| VL / SL | Newly hired (not yet tenured) | **none**. They may only file LWOP. In 2026, 2025 hires got prorated VL (6–11 days) added mid-year, apparently at regularization. That's a separate, later step, so ask HR rather than guessing |
+| Vacation Leave | 1st deployment anniversary is **before** the new year | **12** |
+| Vacation Leave | anniversary falls **in** the new year | **none on Jan 1**; pro-rated VL is added on the anniversary (see "During the year") |
+| Sick Leave | regularized **before** the new year | **12** |
+| Sick Leave | regularizes **in** the new year | **none on Jan 1**; pro-rated SL is added at regularization |
+| Carry-Over Leave | everyone with VL this year | **min(unused VL, 6)**: 8 unused → 6 (the other 2 go to cash conversion), 4 unused → 4, 0 unused → 0 |
+| Leave Without Pay (LWOP) | everyone active | the usual default row (99); LWOP has no limit when filing, the row only tracks usage |
 | Magic Leave, Parental leave | | **don't create**. They're granted case by case during the year |
 
+- Deployment date = `central_db.gsheet_employees.operational_date` (2026 VL amounts match it).
+  There's no regularization column; in 2026 data it was about **6 months after deployment**
+  (deployed Aug 4 → SL from Feb; Sep 15 → Mar 15; Oct 27 → from May). Ask HR for actual
+  regularization dates before using that estimate, and list anyone without an `operational_date`.
 - "Unused VL" = this year's VL `no_of_days − days_used`, measured after the user confirms every
   current-year filing is final (pending leave still counts as used, as it does everywhere else).
 - Carry-Over from the *previous* year doesn't roll again; only unused VL feeds next year's CO.
-- **Ask before running** who counts as tenured if it isn't simply "hired before Jan 1 of the new
-  year" (`hs_hr_employee.joined_date`, cross-checked with `gsheet_employees.training_date`/`operational_date`).
-  Some rows have no `joined_date`; list them for HR instead of deciding.
+- 2026 balances follow this rule (103 of 137 employees: CO = min(unused 2025 VL, 6)).
 - Only employees with `central_db.gsheet_employees.status = 'Active'` (or Training, if HR says so).
+- In 2026 a few pro-rated VL amounts were one day off the rule (likely set by hand). Report
+  differences you find instead of "correcting" past years.
+
+## Cash conversion and Carry-Over expiry (policy 3.3.1 / 3.3.2)
+- Carry-Over Leave can't roll past the succeeding year: next year's CO comes only from this
+  year's unused VL, never from this year's unused CO.
+- **By June 15:** unused VL above 6 from the previous year is convertible to cash.
+  **On September 15:** unused Carry-Over from the prior year is eligible for conversion.
+- Both require: no AWOL during the year (AWOL leave type in `leave4day_requests`), actively
+  employed at conversion (`gsheet_employees.status = 'Active'`), and not resigning or serving a
+  notice period (ask HR; it isn't recorded in the portal). Before each date, list who qualifies,
+  how many days, and who's excluded and why. HR/payroll does the conversion; you don't change
+  balances for it.
+
+## During the year (pro-rated grants)
+Each month, list who reaches their 1st deployment anniversary (VL) or regularization (SL) and
+what they're due by the rule above, then prepare the same kind of dry-run script to add those
+rows. When someone leaves, policy says leave used beyond what they'd earned (1 per month) is
+refunded from final pay; you can compute earned vs used for HR, but HR handles the refund.
 
 ## Steps
 1. **Health check of the current year first.** Unused VL is only right if `days_used` is right.
