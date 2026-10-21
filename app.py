@@ -433,7 +433,9 @@ def get_employee_by_email(email):
         db.close()
 
 def get_leave_balances(emp_number):
-    """Returns (ohrm_balances, portal_balances) — always both sources."""
+    """Returns (balances, []). Balances come from ohrm_leave_entitlement, which
+    Admin > Entitlements now writes directly. The second value is kept for the
+    existing callers; the separate portal table (leave4day_entitlements) is retired."""
     db = get_db()
     try:
         with db.cursor() as c:
@@ -459,19 +461,6 @@ def get_leave_balances(emp_number):
             """, (emp_number,))
             ohrm_rows = c.fetchall()
 
-            # Portal DB balances
-            c.execute("""
-                SELECT lt.id AS leave_type_id, lt.name AS leave_type_name,
-                       e.no_of_days * 8 AS total_hours,
-                       e.days_used * 8 AS used_hours
-                FROM leave4day_entitlements e
-                JOIN leave4day_leave_types lt ON lt.id = e.leave_type_id
-                WHERE e.emp_number = %s
-                  AND YEAR(e.from_date) = YEAR(CURDATE())
-                  AND lt.is_active = 1
-                ORDER BY lt.name
-            """, (emp_number,))
-            portal_rows = c.fetchall()
 
         def build(rows):
             out = []
@@ -489,7 +478,7 @@ def get_leave_balances(emp_number):
                 })
             return out
 
-        return build(ohrm_rows), build(portal_rows)
+        return build(ohrm_rows), []
     finally:
         db.close()
 
@@ -509,41 +498,37 @@ def _get_awol_type():
     _AWOL_TYPE_CACHE['row'] = ({'id': r['id'], 'name': r['name']} if r else None)
     return _AWOL_TYPE_CACHE['row']
 
+from helpers.leave_credits import (find_entitlement, mark_credit_pending,
+                                   charged_items, apply_pending_credits)
+
 def adjust_leave_entitlement(c, emp_number, leave_type_id, items, refund=False):
     """Deduct (or refund) leave credits on the one entitlement row per leave year.
 
     items: iterable of (leave_date, days). Days are grouped by the leave date's
-    year; each group goes to that year's leave4day_entitlements row if one
-    exists, else that year's active ohrm_leave_entitlement row. Filing and the
-    reject/cancel refunds both go through here so they hit the same row.
-    AWOL is never charged against entitlements."""
+    year; each group goes to that year's active ohrm_leave_entitlement row
+    (helpers/leave_credits.find_entitlement). Filing and the reject/cancel
+    refunds both go through here so they hit the same row.
+    AWOL is never charged against entitlements.
+
+    Returns the years that had no entitlement row, so filing can mark those days
+    credit_pending (see helpers/leave_credits.py). Refunds should be passed
+    charged_items(rows) so never-charged days aren't refunded."""
     awol = _get_awol_type()
     if awol and int(leave_type_id) == awol['id']:
-        return
+        return []
     by_year = {}
     for leave_date, days in items:
         if days:
             by_year[leave_date.year] = by_year.get(leave_date.year, 0) + days
     op = 'GREATEST(0, days_used - %s)' if refund else 'days_used + %s'
+    missing = []
     for year, days in by_year.items():
-        c.execute("""
-            SELECT id FROM leave4day_entitlements
-            WHERE emp_number = %s AND leave_type_id = %s AND YEAR(from_date) = %s
-            ORDER BY id LIMIT 1
-        """, (emp_number, leave_type_id, year))
-        row = c.fetchone()
-        table = 'leave4day_entitlements'
-        if not row:
-            c.execute("""
-                SELECT id FROM ohrm_leave_entitlement
-                WHERE emp_number = %s AND leave_type_id = %s AND deleted = 0
-                  AND YEAR(from_date) = %s
-                ORDER BY id LIMIT 1
-            """, (emp_number, leave_type_id, year))
-            row = c.fetchone()
-            table = 'ohrm_leave_entitlement'
+        table, row = find_entitlement(c, emp_number, leave_type_id, year)
         if row:
             c.execute(f"UPDATE {table} SET days_used = {op} WHERE id = %s", (days, row['id']))
+        else:
+            missing.append(year)
+    return missing
 
 @app.route('/api/is-holiday')
 @login_required
@@ -1375,14 +1360,19 @@ def _fmt_days(x):
     x = round(float(x or 0), 2)
     return ('%g' % x)
 
-def _fmt_range(d1, d2):
+def _fmt_range(d1, d2, year=False):
+    """'Apr 23', 'Apr 20 – 22', 'Apr 30 – May 2'; with year=True the year is
+    appended once ('Apr 20 – 22, 2026'), or on both ends if the range crosses years."""
     if not d1:
         return ''
+    y = f", {d1.year}" if year else ''
     if not d2 or d1 == d2:
-        return d1.strftime('%b %-d')
+        return d1.strftime('%b %-d') + y
+    if year and d1.year != d2.year:
+        return f"{d1.strftime('%b %-d, %Y')} – {d2.strftime('%b %-d, %Y')}"
     if d1.month == d2.month:
-        return f"{d1.strftime('%b %-d')} – {d2.day}"
-    return f"{d1.strftime('%b %-d')} – {d2.strftime('%b %-d')}"
+        return f"{d1.strftime('%b %-d')} – {d2.day}{y}"
+    return f"{d1.strftime('%b %-d')} – {d2.strftime('%b %-d')}{y}"
 
 def _fmt_clock(v):
     """time/timedelta/datetime -> '12:54 PM'."""
@@ -1581,7 +1571,7 @@ def _dashboard_extras(emp_number, user):
                          GROUP BY grp ORDER BY filed DESC LIMIT 6""", (emp_number,))
             for r in c.fetchall():
                 days = float(r['days'] or 0)
-                recent.append({'type': r['name'], 'date': _fmt_range(r['d1'], r['d2']),
+                recent.append({'type': r['name'], 'date': _fmt_range(r['d1'], r['d2'], year=True),
                                'detail': (_fmt_days(days) + (' day' if days == 1 else ' days')) if days else '',
                                'status': r['status'], 'filed': r['filed']})
         db.close()
@@ -1603,25 +1593,25 @@ def _dashboard_extras(emp_number, user):
                 c.execute("""SELECT ot_date d, start_time s, end_time e, status, `timestamp` filed FROM ot_requests
                              WHERE employee_id=%s AND deleted_at IS NULL ORDER BY id DESC LIMIT 6""", (employee_id,))
                 for r in c.fetchall():
-                    recent.append({'type': 'Overtime', 'date': _fmt_range(r['d'], None),
+                    recent.append({'type': 'Overtime', 'date': _fmt_range(r['d'], None, year=True),
                                    'detail': f"{_fmt_clock(r['s'])} – {_fmt_clock(r['e'])}" if r['s'] else '',
                                    'status': r['status'], 'filed': r['filed']})
                 c.execute("""SELECT original_date d, new_date nd, new_time nt, status, created_at filed FROM cws_requests
                              WHERE employee_id=%s AND deleted_at IS NULL ORDER BY id DESC LIMIT 6""", (employee_id,))
                 for r in c.fetchall():
-                    recent.append({'type': 'Change of Schedule', 'date': _fmt_range(r['d'], None),
+                    recent.append({'type': 'Change of Schedule', 'date': _fmt_range(r['d'], None, year=True),
                                    'detail': ('Moved to ' + _fmt_range(r['nd'], None) + (' · ' + _fmt_shift(str(r['nt'])) if r['nt'] else '')) if r['nd'] else '',
                                    'status': r['status'], 'filed': r['filed']})
                 c.execute("""SELECT rd_date d, start_time s, end_time e, status, created_at filed FROM rd_requests
                              WHERE employee_id=%s AND deleted_at IS NULL ORDER BY id DESC LIMIT 6""", (employee_id,))
                 for r in c.fetchall():
-                    recent.append({'type': 'Rest Day Work', 'date': _fmt_range(r['d'], None),
+                    recent.append({'type': 'Rest Day Work', 'date': _fmt_range(r['d'], None, year=True),
                                    'detail': f"{_fmt_clock(r['s'])} – {_fmt_clock(r['e'])}" if r['s'] else '',
                                    'status': r['status'], 'filed': r['filed']})
                 c.execute("""SELECT fts_date d, fts_time t, fts_type ft, status, created_at filed FROM fts_requests
                              WHERE employeeID=%s AND deleted_at IS NULL ORDER BY id DESC LIMIT 6""", (employee_id,))
                 for r in c.fetchall():
-                    recent.append({'type': 'Failure to Swipe', 'date': _fmt_range(r['d'], None),
+                    recent.append({'type': 'Failure to Swipe', 'date': _fmt_range(r['d'], None, year=True),
                                    'detail': ' · '.join(x for x in [str(r['ft'] or ''), _fmt_clock(r['t']) if r['t'] else ''] if x),
                                    'status': r['status'], 'filed': r['filed']})
             cdb.close()
@@ -1977,12 +1967,17 @@ def file_leave():
                     """, (d['date'], d['hours'], d['days'], leave_request_id, leave_type_id, emp_number))
 
                 # 4. Deduct from correct entitlement source
+                credit_years = []
                 if total_days > 0 and not is_awol:
-                    adjust_leave_entitlement(c, emp_number, leave_type_id,
-                                             [(d['date'], d['days']) for d in deductions])
+                    credit_years = adjust_leave_entitlement(c, emp_number, leave_type_id,
+                                                            [(d['date'], d['days']) for d in deductions])
+                    mark_credit_pending(c, leave_request_id, credit_years)
 
             db.commit()
             flash(f'Leave filed! {total_hours:.1f} hrs ({total_days:.2f} days) deducted. Awaiting supervisor approval.', 'success')
+            if credit_years:
+                flash(f"{', '.join(map(str, sorted(credit_years)))} leave balances aren't loaded yet. "
+                      "These days will be deducted automatically once they are.", 'info')
 
             # Email agent
             agent_email = session['user']['email']
@@ -4052,32 +4047,62 @@ def admin_entitlements():
                 leave_type_id = int(request.form['leave_type_id'])
                 no_of_days    = float(request.form['no_of_days'])
                 year          = int(request.form['year'])
-                from_date     = f'{year}-01-01'
-                to_date       = f'{year}-12-31'
                 with db.cursor() as c:
-                    c.execute("""
-                        INSERT INTO leave4day_entitlements
-                            (emp_number, leave_type_id, no_of_days, from_date, to_date, created_by)
-                        VALUES (%s, %s, %s, %s, %s, %s)
-                        ON DUPLICATE KEY UPDATE
-                            no_of_days = %s, updated_at = NOW()
-                    """, (emp_number, leave_type_id, no_of_days, from_date, to_date,
-                          session['user']['emp_number'], no_of_days))
+                    # Writes OrangeHRM's own row, so the balance shows in OrangeHRM too
+                    old = _ohrm_entitlement_row(c, emp_number, leave_type_id, year, lock=True)
+                    if old:
+                        c.execute("UPDATE ohrm_leave_entitlement SET no_of_days = %s WHERE id = %s",
+                                  (no_of_days, old['id']))
+                        ent_id = old['id']
+                    else:
+                        c.execute("SELECT id FROM ohrm_user WHERE emp_number = %s AND deleted = 0 LIMIT 1",
+                                  (session['user']['emp_number'],))
+                        u = c.fetchone()
+                        c.execute("""
+                            INSERT INTO ohrm_leave_entitlement
+                                (emp_number, no_of_days, days_used, leave_type_id, from_date, to_date,
+                                 credited_date, note, entitlement_type, deleted, created_by_id)
+                            VALUES (%s, %s, 0, %s, %s, %s, NOW(), 'Assigned via HR portal', 1, 0, %s)
+                        """, (emp_number, no_of_days, leave_type_id, f'{year}-01-01', f'{year}-12-31',
+                              u['id'] if u else None))
+                        ent_id = c.lastrowid
+                    _log_entitlement_change(c, ent_id, emp_number, leave_type_id, year,
+                                            'update' if old else 'add',
+                                            float(old['no_of_days']) if old else None, no_of_days)
+                    applied = [g for g in apply_pending_credits(c, emp_number) if g['applied']]
                 db.commit()
-                flash('Entitlement saved!', 'success')
+                if old:
+                    flash(f"Entitlement updated: {float(old['no_of_days']):g} → {no_of_days:g} days.", 'success')
+                else:
+                    flash(f'Entitlement added: {no_of_days:g} days.', 'success')
+                if applied:
+                    flash(f"Also deducted {sum(g['days'] for g in applied):g} day(s) of leave this employee "
+                          "filed before the balance existed.", 'info')
             elif action == 'delete':
                 ent_id = int(request.form['ent_id'])
                 with db.cursor() as c:
-                    c.execute("DELETE FROM leave4day_entitlements WHERE id = %s", (ent_id,))
+                    c.execute("""SELECT id, emp_number, leave_type_id, no_of_days, days_used, YEAR(from_date) AS y
+                                 FROM ohrm_leave_entitlement WHERE id = %s AND deleted = 0 FOR UPDATE""", (ent_id,))
+                    ent = c.fetchone()
+                    if not ent:
+                        flash('Entitlement not found.', 'danger')
+                    elif float(ent['days_used'] or 0) > 0:
+                        flash('This entitlement already has leave charged to it. Set its days instead of deleting it.',
+                              'danger')
+                    else:
+                        c.execute("UPDATE ohrm_leave_entitlement SET deleted = 1 WHERE id = %s", (ent_id,))
+                        _log_entitlement_change(c, ent_id, ent['emp_number'], ent['leave_type_id'], ent['y'],
+                                                'delete', float(ent['no_of_days']), None)
+                        flash('Entitlement deleted.', 'success')
                 db.commit()
-                flash('Entitlement deleted!', 'success')
             return redirect(url_for('admin_entitlements'))
 
         year_filter = int(request.args.get('year', date.today().year))
         search      = request.args.get('search', '').strip()
 
         with db.cursor() as c:
-            c.execute("SELECT * FROM leave4day_leave_types WHERE is_active = 1 ORDER BY name")
+            c.execute("""SELECT id, name FROM ohrm_leave_type
+                         WHERE deleted = 0 AND name <> 'AWOL' ORDER BY name""")
             leave_types = c.fetchall()
             c.execute("""
                 SELECT h.emp_number, h.emp_firstname, h.emp_lastname, h.employee_id
@@ -4088,26 +4113,7 @@ def admin_entitlements():
             """)
             employees = c.fetchall()
             sql = """
-                SELECT e.id, e.emp_number, e.leave_type_id, e.no_of_days,
-                       e.days_used, e.from_date, e.to_date,
-                       CONCAT(h.emp_firstname, ' ', h.emp_lastname) AS emp_name,
-                       h.employee_id, lt.name AS leave_type_name
-                FROM leave4day_entitlements e
-                JOIN hs_hr_employee h ON h.emp_number = e.emp_number
-                JOIN leave4day_leave_types lt ON lt.id = e.leave_type_id
-                WHERE YEAR(e.from_date) = %s
-            """
-            params = [year_filter]
-            if search:
-                sql += " AND (h.emp_firstname LIKE %s OR h.emp_lastname LIKE %s OR h.employee_id LIKE %s)"
-                params += [f'%{search}%', f'%{search}%', f'%{search}%']
-            sql += " ORDER BY h.emp_lastname, lt.name"
-            c.execute(sql, params)
-            entitlements = c.fetchall()
-
-            # Also fetch OrangeHRM entitlements for reference
-            ohrm_sql = """
-                SELECT e.id, e.emp_number, e.no_of_days, e.days_used,
+                SELECT e.id, e.emp_number, e.leave_type_id, e.no_of_days, e.days_used,
                        e.from_date, e.to_date,
                        CONCAT(h.emp_firstname, ' ', h.emp_lastname) AS emp_name,
                        h.employee_id, lt.name AS leave_type_name
@@ -4116,13 +4122,27 @@ def admin_entitlements():
                 JOIN ohrm_leave_type lt ON lt.id = e.leave_type_id
                 WHERE e.deleted = 0 AND YEAR(e.from_date) = %s
             """
-            ohrm_params = [year_filter]
+            params = [year_filter]
             if search:
-                ohrm_sql += " AND (h.emp_firstname LIKE %s OR h.emp_lastname LIKE %s OR h.employee_id LIKE %s)"
-                ohrm_params += [f'%{search}%', f'%{search}%', f'%{search}%']
-            ohrm_sql += " ORDER BY h.emp_lastname, lt.name"
-            c.execute(ohrm_sql, ohrm_params)
-            ohrm_entitlements = c.fetchall()
+                sql += " AND (h.emp_firstname LIKE %s OR h.emp_lastname LIKE %s OR h.employee_id LIKE %s)"
+                params += [f'%{search}%', f'%{search}%', f'%{search}%']
+            sql += " ORDER BY h.emp_lastname, lt.name"
+            c.execute(sql, params)
+            entitlements = c.fetchall()
+            try:
+                c.execute("""
+                    SELECT l.*, CONCAT(h.emp_firstname, ' ', h.emp_lastname) AS emp_name,
+                           lt.name AS leave_type_name,
+                           CONCAT(a.emp_firstname, ' ', a.emp_lastname) AS changed_by_name
+                    FROM leave4day_entitlement_log l
+                    JOIN hs_hr_employee h ON h.emp_number = l.emp_number
+                    LEFT JOIN ohrm_leave_type lt ON lt.id = l.leave_type_id
+                    LEFT JOIN hs_hr_employee a ON a.emp_number = l.changed_by
+                    ORDER BY l.id DESC LIMIT 15
+                """)
+                recent_changes = c.fetchall()
+            except Exception:
+                recent_changes = []
     finally:
         db.close()
 
@@ -4130,7 +4150,49 @@ def admin_entitlements():
                            entitlements=entitlements, leave_types=leave_types,
                            employees=employees, year_filter=year_filter,
                            search=search, user=session['user'],
-                           ohrm_entitlements=ohrm_entitlements)
+                           recent_changes=recent_changes)
+
+
+def _ohrm_entitlement_row(c, emp_number, leave_type_id, year, lock=False):
+    c.execute("""SELECT id, no_of_days, days_used FROM ohrm_leave_entitlement
+                 WHERE emp_number = %s AND leave_type_id = %s AND deleted = 0 AND YEAR(from_date) = %s
+                 ORDER BY id LIMIT 1""" + (" FOR UPDATE" if lock else ""),
+              (emp_number, leave_type_id, year))
+    return c.fetchone()
+
+
+def _log_entitlement_change(c, ent_id, emp_number, leave_type_id, year, action, old_days, new_days):
+    """Best effort: a missing log table must not block saving the balance."""
+    try:
+        c.execute("""INSERT INTO leave4day_entitlement_log
+                         (entitlement_id, emp_number, leave_type_id, year, action, old_days, new_days, changed_by)
+                     VALUES (%s, %s, %s, %s, %s, %s, %s, %s)""",
+                  (ent_id, emp_number, leave_type_id, year, action, old_days, new_days,
+                   session['user']['emp_number']))
+    except Exception as e:
+        app.logger.warning(f'entitlement log: {e}')
+
+
+@app.route('/admin/entitlements/current')
+@permission_required('can_entitlements')
+def admin_entitlement_current():
+    """Current total for the Assign form, so the admin sees what Save will replace."""
+    try:
+        leave_type_id, year = int(request.args['leave_type_id']), int(request.args['year'])
+    except (KeyError, ValueError):
+        return jsonify({'exists': False})
+    db = get_db()
+    try:
+        with db.cursor() as c:
+            c.execute("SELECT emp_number FROM hs_hr_employee WHERE employee_id = %s",
+                      (request.args.get('employee_id', ''),))
+            emp = c.fetchone()
+            row = emp and _ohrm_entitlement_row(c, emp['emp_number'], leave_type_id, year)
+    finally:
+        db.close()
+    if not row:
+        return jsonify({'exists': False})
+    return jsonify({'exists': True, 'days': float(row['no_of_days']), 'used': float(row['days_used'])})
 
 
 # ── Entitlement Source Toggle ────────────────────────────────────────
@@ -5004,7 +5066,7 @@ def supervisor_bulk_action():
                 # ✅ Reverse credits ONLY if rejected
                 if action == 'reject' and total_days > 0:
                     adjust_leave_entitlement(c, target_emp, leave_type_id,
-                                             [(r['leave_date'], r['days_deducted']) for r in records],
+                                             charged_items(records),
                                              refund=True)
 
             db.commit()
@@ -5237,7 +5299,7 @@ def supervisor_action():
             # ✅ Reverse credits ONCE (not per row)
             if action == 'reject' and total_days > 0:
                 adjust_leave_entitlement(c, target_emp, leave_type_id,
-                                         [(r['leave_date'], r['days_deducted']) for r in records],
+                                         charged_items(records),
                                          refund=True)
 
         db.commit()
@@ -5377,7 +5439,7 @@ def api_leave_action():
 
             if action == 'reject' and total_days > 0:
                 adjust_leave_entitlement(c, target_emp, leave_type_id,
-                                         [(r['leave_date'], r['days_deducted']) for r in records],
+                                         charged_items(records),
                                          refund=True)
 
         db.commit()
@@ -5860,7 +5922,7 @@ def api_leave_bulk_action():
 
                 if action == 'reject' and total_days > 0:
                     adjust_leave_entitlement(c, target_emp, leave_type_id,
-                                             [(r['leave_date'], r['days_deducted']) for r in records],
+                                             charged_items(records),
                                              refund=True)
 
             db.commit()
@@ -5948,7 +6010,7 @@ def cancel_leave(leave_id):
 
             # Reverse credits on the entitlement row they were deducted from
             adjust_leave_entitlement(c, leave['emp_number'], leave['leave_type_id'],
-                                     [(leave['leave_date'], leave['days_deducted'])], refund=True)
+                                     charged_items([leave]), refund=True)
 
             # Mark as cancelled in leave4day_requests
             c.execute("""
@@ -6020,7 +6082,7 @@ def api_leave_cancel(leave_id):
                 if row['cnt'] == 0:
                     c.execute("DELETE FROM ohrm_leave_request WHERE id=%s", (leave['leave_request_id'],))
             adjust_leave_entitlement(c, leave['emp_number'], leave['leave_type_id'],
-                                     [(leave['leave_date'], leave['days_deducted'])], refund=True)
+                                     charged_items([leave]), refund=True)
             c.execute("UPDATE leave4day_requests SET status='cancelled' WHERE id=%s", (leave_id,))
         db.commit()
         db_mail = get_db()
@@ -6229,11 +6291,15 @@ def admin_file_leave():
                           d['days'], d['is_off_day'], leave4day_status, notes, leave_request_id,
                           shift_value))
 
-                adjust_leave_entitlement(c, target_emp, leave_type_id,
-                                         [(d['date'], d['days']) for d in deductions])
+                credit_years = adjust_leave_entitlement(c, target_emp, leave_type_id,
+                                                        [(d['date'], d['days']) for d in deductions])
+                mark_credit_pending(c, leave_request_id, credit_years)
 
             db2.commit()
             flash(f'Leave filed successfully for employee.', 'success')
+            if credit_years:
+                flash(f"{', '.join(map(str, sorted(credit_years)))} leave balances aren't loaded yet for this employee. "
+                      "These days will be deducted automatically once they are.", 'info')
             return redirect(url_for('admin_all_leaves'))
         except Exception as e:
             db2.rollback()

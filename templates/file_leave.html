@@ -17,11 +17,6 @@
               {{ b.leave_type_name }}{% if not b.is_awol %} ({{ "%.1f"|format(b.remaining_hours) }} hrs left){% else %} (holidays only){% endif %}
             </option>
             {% endfor %}
-            {% for b in portal_balances %}
-            <option value="{{ b.leave_type_id }}" data-hrs="{{ b.remaining_hours }}" data-days="{{ b.remaining_days }}">
-              {{ b.leave_type_name }} ({{ "%.1f"|format(b.remaining_hours) }} hrs left) [Portal]
-            </option>
-            {% endfor %}
           </select>
         </div>
         <div class="mb-3">

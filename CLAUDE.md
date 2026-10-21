@@ -70,6 +70,7 @@ These run as root's crontab using `venv/bin/python`. Each is a standalone proces
   - They count violations per payroll period in `*_cycle_state` tables, file IRs through `helpers/ir_autofile.py`, and email memos.
   - Each writes a `*.log` in the repo root.
   - `undertime_notify.py` does a dry run unless you pass `--live`.
+- `scripts/apply_pending_leave_credits.py --live` (daily 1:30 AM) charges leave that was filed before its year had an entitlement row (`leave4day_requests.credit_pending`, see `helpers/leave_credits.py`).
 - `scripts/sync_supervisor_from_gsheet.py --live`, `scripts/update_status.py`, `scripts/sync_ohrm_emails.py`, `scripts/coaching_reminders.py --send`, `coe_auto_release.py` and `auto_convert_scheduled_leaves.py`.
 - Run cron-style scripts **without** `--live`/`--send` first. Live runs file real IRs and send real email.
 

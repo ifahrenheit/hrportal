@@ -47,43 +47,9 @@
       </div>
     </div>
 
-    <h6 class="fw-semibold mt-4 mb-1">Entitlement Source</h6>
-    <p class="text-muted small mb-3">Switch where leave balances and entitlements are read from.</p>
-    <form method="POST" action="{{ url_for('toggle_entitlement_source') }}">
-      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-      <div class="d-flex gap-3">
-        <div class="card p-3 flex-fill" style="cursor:pointer;border:2px solid {% if entitlement_source == 'orangehrm' %}var(--accent){% else %}var(--border){% endif %};"
-             onclick="document.getElementById('srcOhrm').checked=true;this.closest('form').submit();">
-          <input type="radio" name="source" id="srcOhrm" value="orangehrm" {% if entitlement_source == 'orangehrm' %}checked{% endif %} style="display:none;">
-          <div class="d-flex align-items-center gap-2 mb-2">
-            <div style="width:14px;height:14px;border-radius:50%;background:{% if entitlement_source == 'orangehrm' %}var(--accent){% else %}var(--border){% endif %};"></div>
-            <span class="fw-semibold">OrangeHRM</span>
-          </div>
-          <div class="small text-muted">Reads entitlements from OrangeHRM tables. Managed in OrangeHRM admin.</div>
-          {% if entitlement_source == 'orangehrm' %}
-          <span class="badge bg-success mt-2" style="width:fit-content;">Currently Active</span>
-          {% endif %}
-        </div>
-
-        <div class="card p-3 flex-fill" style="cursor:pointer;border:2px solid {% if entitlement_source == 'own' %}var(--accent){% else %}var(--border){% endif %};"
-             onclick="document.getElementById('srcOwn').checked=true;this.closest('form').submit();">
-          <input type="radio" name="source" id="srcOwn" value="own" {% if entitlement_source == 'own' %}checked{% endif %} style="display:none;">
-          <div class="d-flex align-items-center gap-2 mb-2">
-            <div style="width:14px;height:14px;border-radius:50%;background:{% if entitlement_source == 'own' %}var(--accent){% else %}var(--border){% endif %};"></div>
-            <span class="fw-semibold">Leave4Day (Own DB)</span>
-          </div>
-          <div class="small text-muted">Reads from Leave4Day entitlements. Fully managed here. OrangeHRM independent.</div>
-          {% if entitlement_source == 'own' %}
-          <span class="badge bg-success mt-2" style="width:fit-content;">Currently Active</span>
-          {% endif %}
-        </div>
-      </div>
-    </form>
-
-    <div class="alert alert-danger mt-3 mb-0">
-      <i class="me-2" data-lucide="triangle-alert"></i>
-      <strong>Warning:</strong> Only switch to Own DB when Leave4Day entitlements are fully set up. Switching with empty entitlements will show zero balances for all employees.
-    </div>
+    <h6 class="fw-semibold mt-4 mb-1">Leave Entitlements</h6>
+    <p class="text-muted small mb-0">Balances are set in <a href="{{ url_for('admin_entitlements') }}">Admin › Entitlements</a>,
+      which saves them straight to OrangeHRM. Both always show the same numbers.</p>
   </div>
   </div>
     <div class="card p-4 mt-4">

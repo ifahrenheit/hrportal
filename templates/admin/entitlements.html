@@ -5,13 +5,14 @@
 <div class="row g-4">
   <div class="col-md-4">
     <div class="card p-4">
-      <h6 class="fw-semibold mb-3">Assign Entitlement <span class="badge bg-primary ms-1" style="font-size:.7rem;">Portal DB</span></h6>
-      <form method="POST">
+      <h6 class="fw-semibold mb-1">Set Entitlement</h6>
+      <p class="text-muted small mb-3">Saved straight to OrangeHRM, so it shows there too.</p>
+      <form method="POST" id="entForm">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <input type="hidden" name="action" value="assign">
         <div class="mb-3">
-          <label class="form-label small fw-semibold">Employee</label>
-          <select name="employee_id" class="form-select" required>
+          <label class="form-label small fw-semibold" for="entEmp">Employee</label>
+          <select name="employee_id" id="entEmp" class="form-select" required>
             <option value="">Select employee...</option>
             {% for e in employees %}
             <option value="{{ e.employee_id }}">{{ e.emp_lastname }}, {{ e.emp_firstname }} ({{ e.employee_id }})</option>
@@ -19,8 +20,8 @@
           </select>
         </div>
         <div class="mb-3">
-          <label class="form-label small fw-semibold">Leave Type</label>
-          <select name="leave_type_id" class="form-select" required>
+          <label class="form-label small fw-semibold" for="entType">Leave Type</label>
+          <select name="leave_type_id" id="entType" class="form-select" required>
             <option value="">Select type...</option>
             {% for lt in leave_types %}
             <option value="{{ lt.id }}">{{ lt.name }}</option>
@@ -28,22 +29,42 @@
           </select>
         </div>
         <div class="mb-3">
-          <label class="form-label small fw-semibold">Days</label>
-          <input type="number" name="no_of_days" class="form-control" step="0.5" min="0" value="12" required>
+          <label class="form-label small fw-semibold" for="entYear">Year</label>
+          <input type="number" name="year" id="entYear" class="form-control" value="{{ year_filter }}" required>
         </div>
         <div class="mb-3">
-          <label class="form-label small fw-semibold">Year</label>
-          <input type="number" name="year" class="form-control" value="{{ year_filter }}" required>
+          <label class="form-label small fw-semibold" for="entDays">Total days for the year</label>
+          <input type="number" name="no_of_days" id="entDays" class="form-control" step="0.25" min="0" value="12" required>
+          <div id="entCurrent" class="form-text"></div>
         </div>
-        <button type="submit" class="btn btn-primary w-100">Save Entitlement</button>
+        <button type="submit" id="entSave" class="btn btn-primary w-100">Save Entitlement</button>
       </form>
       <hr>
       <div class="text-muted small">
         <i class="me-1" data-lucide="info"></i>
-        Use <strong>Portal DB</strong> for 2027 onwards.<br>
-        OrangeHRM entitlements are <strong>read-only</strong> for reference.
+        This sets the <strong>total</strong> for the year; it doesn't add to it.
+        To give 1 more day to someone with 12, enter 13.
       </div>
     </div>
+
+    {% if recent_changes %}
+    <div class="card p-4 mt-4">
+      <h6 class="fw-semibold mb-3">Recent changes</h6>
+      <ul class="list-unstyled mb-0 small">
+        {% for l in recent_changes %}
+        <li class="py-2 {% if not loop.last %}border-bottom{% endif %}">
+          <div class="fw-semibold">{{ l.emp_name }} · {{ l.leave_type_name }} {{ l.year }}</div>
+          <div class="text-muted">
+            {% if l.action == 'add' %}Added {{ '%g'|format(l.new_days) }} days
+            {% elif l.action == 'delete' %}Deleted ({{ '%g'|format(l.old_days) }} days)
+            {% else %}{{ '%g'|format(l.old_days) }} → {{ '%g'|format(l.new_days) }} days{% endif %}
+            · {{ l.changed_by_name or 'Unknown' }} · {{ l.changed_at.strftime('%b %d, %Y %H:%M') }}
+          </div>
+        </li>
+        {% endfor %}
+      </ul>
+    </div>
+    {% endif %}
   </div>
 
   <div class="col-md-8">
@@ -58,97 +79,89 @@
           </select>
           <button class="btn btn-sm btn-primary">Filter</button>
         </form>
+        <span class="ms-auto text-muted small">{{ entitlements|length }} entitlement{{ 's' if entitlements|length != 1 }}</span>
       </div>
-
-      <!-- Tabs -->
-      <ul class="nav nav-tabs px-3 pt-2" id="entitlementTabs">
-        <li class="nav-item">
-          <a class="nav-link active" data-bs-toggle="tab" href="#tab-ohrm">
-            OrangeHRM <span class="badge bg-secondary ms-1">{{ ohrm_entitlements|length }}</span>
-          </a>
-        </li>
-        <li class="nav-item">
-          <a class="nav-link" data-bs-toggle="tab" href="#tab-portal">
-            Portal DB <span class="badge bg-primary ms-1">{{ entitlements|length }}</span>
-          </a>
-        </li>
-      </ul>
-
-      <div class="tab-content">
-        <!-- OrangeHRM Tab -->
-        <div class="tab-pane fade show active" id="tab-ohrm">
-          <div class="px-3 py-2 bg-light border-bottom text-muted small">
-            <i class="me-1" data-lucide="lock"></i> Read-only — managed in OrangeHRM
-          </div>
-          <div class="table-responsive">
-            <table class="table mb-0">
-              <thead class="table-light">
-                <tr><th>Employee</th><th>Leave Type</th><th>Days</th><th>Used</th><th>Remaining</th></tr>
-              </thead>
-              <tbody>
-                {% for e in ohrm_entitlements %}
-                <tr>
-                  <td>
-                    <div class="fw-semibold small">{{ e.emp_name }}</div>
-                    <div class="text-muted" style="font-size:.75rem;">{{ e.employee_id }}</div>
-                  </td>
-                  <td class="small">{{ e.leave_type_name }}</td>
-                  <td class="small">{{ "%.2f"|format(e.no_of_days) }}</td>
-                  <td class="small">{{ "%.2f"|format(e.days_used) }}</td>
-                  <td class="small fw-semibold" style="color:{% if (e.no_of_days - e.days_used) <= 2 %}#ef4444{% else %}var(--text){% endif %};">
-                    {{ "%.2f"|format(e.no_of_days - e.days_used) }}
-                  </td>
-                </tr>
-                {% else %}
-                <tr><td colspan="5" class="text-center text-muted py-4">No OrangeHRM entitlements found.</td></tr>
-                {% endfor %}
-              </tbody>
-            </table>
-          </div>
-        </div>
-
-        <!-- Portal DB Tab -->
-        <div class="tab-pane fade" id="tab-portal">
-          <div class="px-3 py-2 bg-light border-bottom text-muted small">
-            <i class="me-1" data-lucide="database"></i> Managed here — use for 2027 onwards
-          </div>
-          <div class="table-responsive">
-            <table class="table mb-0">
-              <thead class="table-light">
-                <tr><th>Employee</th><th>Leave Type</th><th>Days</th><th>Used</th><th>Remaining</th><th></th></tr>
-              </thead>
-              <tbody>
-                {% for e in entitlements %}
-                <tr>
-                  <td>
-                    <div class="fw-semibold small">{{ e.emp_name }}</div>
-                    <div class="text-muted" style="font-size:.75rem;">{{ e.employee_id }}</div>
-                  </td>
-                  <td class="small">{{ e.leave_type_name }}</td>
-                  <td class="small">{{ e.no_of_days }}</td>
-                  <td class="small">{{ e.days_used }}</td>
-                  <td class="small fw-semibold" style="color:{% if (e.no_of_days - e.days_used) <= 2 %}#ef4444{% else %}var(--text){% endif %};">
-                    {{ "%.2f"|format(e.no_of_days - e.days_used) }}
-                  </td>
-                  <td>
-                    <form method="POST" onsubmit="return confirm('Delete this entitlement?');">
-                      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                      <input type="hidden" name="action" value="delete">
-                      <input type="hidden" name="ent_id" value="{{ e.id }}">
-                      <button class="btn btn-sm btn-outline-danger">Delete</button>
-                    </form>
-                  </td>
-                </tr>
-                {% else %}
-                <tr><td colspan="6" class="text-center text-muted py-4">No portal entitlements found.</td></tr>
-                {% endfor %}
-              </tbody>
-            </table>
-          </div>
-        </div>
+      <div class="table-responsive">
+        <table class="table mb-0">
+          <thead class="table-light">
+            <tr><th>Employee</th><th>Leave Type</th><th>Days</th><th>Used</th><th>Remaining</th><th></th></tr>
+          </thead>
+          <tbody>
+            {% for e in entitlements %}
+            {% set remaining = e.no_of_days - e.days_used %}
+            <tr>
+              <td>
+                <div class="fw-semibold small">{{ e.emp_name }}</div>
+                <div class="text-muted" style="font-size:.75rem;">{{ e.employee_id }}</div>
+              </td>
+              <td class="small">{{ e.leave_type_name }}</td>
+              <td class="small">{{ "%.2f"|format(e.no_of_days) }}</td>
+              <td class="small">{{ "%.2f"|format(e.days_used) }}</td>
+              <td class="small fw-semibold" style="color:{% if remaining <= 2 %}#ef4444{% else %}var(--text){% endif %};">
+                {{ "%.2f"|format(remaining) }}
+              </td>
+              <td class="text-end" style="white-space:nowrap;">
+                <button type="button" class="btn btn-sm btn-outline-primary ent-edit"
+                        data-emp="{{ e.employee_id }}" data-type="{{ e.leave_type_id }}"
+                        data-year="{{ e.from_date.year }}" data-days="{{ '%g'|format(e.no_of_days) }}">Edit</button>
+                {% if e.days_used == 0 %}
+                <form method="POST" class="d-inline" onsubmit="return confirm('Delete this entitlement?');">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                  <input type="hidden" name="action" value="delete">
+                  <input type="hidden" name="ent_id" value="{{ e.id }}">
+                  <button class="btn btn-sm btn-outline-danger">Delete</button>
+                </form>
+                {% endif %}
+              </td>
+            </tr>
+            {% else %}
+            <tr><td colspan="6" class="text-center text-muted py-4">No entitlements found for {{ year_filter }}.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
       </div>
-
     </div>
   </div>
 </div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+  const emp = document.getElementById('entEmp'), type = document.getElementById('entType'),
+        year = document.getElementById('entYear'), days = document.getElementById('entDays'),
+        hint = document.getElementById('entCurrent'), save = document.getElementById('entSave');
+  let current = null;
+
+  async function lookup() {
+    current = null; hint.textContent = ''; save.textContent = 'Save Entitlement';
+    if (!emp.value || !type.value || !year.value) return;
+    const q = new URLSearchParams({employee_id: emp.value, leave_type_id: type.value, year: year.value});
+    try {
+      const r = await fetch('{{ url_for("admin_entitlement_current") }}?' + q);
+      const d = await r.json();
+      if (d.exists) {
+        current = d;
+        hint.textContent = `Currently ${d.days} days (${d.used} used). Saving replaces this total.`;
+        save.textContent = 'Update Entitlement';
+      } else {
+        hint.textContent = `No ${year.value} entitlement yet. Saving adds one.`;
+      }
+    } catch (e) { /* hint is optional */ }
+  }
+  [emp, type, year].forEach(el => el.addEventListener('change', lookup));
+
+  document.getElementById('entForm').addEventListener('submit', function (ev) {
+    if (current && parseFloat(days.value) !== current.days &&
+        !confirm(`Replace ${current.days} days with ${days.value} days?`)) ev.preventDefault();
+  });
+
+  document.querySelectorAll('.ent-edit').forEach(btn => btn.addEventListener('click', function () {
+    emp.value = this.dataset.emp; type.value = this.dataset.type;
+    year.value = this.dataset.year; days.value = this.dataset.days;
+    lookup(); days.focus(); days.select();
+    window.scrollTo({top: 0, behavior: 'smooth'});
+  }));
+})();
+</script>
 {% endblock %}
