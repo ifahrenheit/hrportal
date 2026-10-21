@@ -52,10 +52,17 @@
   </form>
 </div>
 
+<style>
+  /* One line per leave row; long notes are cut off and expand on click */
+  .hist-table th, .hist-table td { white-space: nowrap; vertical-align: middle; }
+  .hist-notes span { display: block; max-width: clamp(12rem, 32vw, 36rem); overflow: hidden; text-overflow: ellipsis; cursor: pointer; }
+  .hist-notes span.open { white-space: normal; }
+</style>
+
 <!-- Results -->
 <div class="card">
   <div class="table-responsive">
-    <table class="table table-hover mb-0">
+    <table class="table table-hover mb-0 hist-table">
       <thead class="table-light">
         <tr>
           {% if is_admin %}<th>Employee</th>{% endif %}
@@ -86,7 +93,7 @@
             {% endif %}
           </td>
           <td>{{ "%.2f"|format(r.days_deducted) }}</td>
-          <td class="text-muted small">{{ r.notes or '—' }}</td>
+          <td class="text-muted small hist-notes">{% if r.notes %}<span title="{{ r.notes }}" onclick="this.classList.toggle('open')">{{ r.notes }}</span>{% else %}—{% endif %}</td>
           <td class="text-muted small">{{ r.filed_at.strftime('%b %d, %Y %H:%M') }}</td>
           <td>
             {% if r.status in ('pending', 'scheduled') and r.emp_number == user.emp_number %}
