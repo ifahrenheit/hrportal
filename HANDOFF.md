@@ -9,7 +9,7 @@
 ---
 
 ## 2026-10-22 (2) — 2027 balances loaded; leave cycle automated per policy
-Commit: `10d6dd6` · Branch: `main` (commits `f92d855`..`10d6dd6`)
+Commit: `ae19f18` · Branch: `main` (commits `f92d855`..`ae19f18`)
 
 ### What was built / changed
 - `helpers/leave_policy.py`: policy 3.1–3.3 rules (VL from 1st anniversary of `operational_date`, SL from operational date + 6 months, pro-rated 1/month with a 15th-of-month cutoff, Carry-Over = min(unused VL, 6)).
@@ -18,6 +18,8 @@ Commit: `10d6dd6` · Branch: `main` (commits `f92d855`..`10d6dd6`)
 - Ran 2027 rollover with `--skip-co --live`: 544 rows (VL/SL/LWOP); then charged the pending 2027 VL.
 - Dashboard: LWOP card removed. VL/COL notice is 7 **calendar** days (HR's choice; working-day version reverted).
 - Agents: `year-end-rollover.md` follows the policy; leave-auditor / employee-sync-auditor added earlier.
+- `ae19f18`: a move to Numa restarts the VL anniversary (`gsheet_employees.moved_to_numa`, `vl_deployment()`); Arctic moves don't; SL unchanged. Column is empty — only two Numa staff were moved (HR counts from 2025-07-08), everyone else was hired directly.
+- First HR email cross-check: the two Numa staff's 6 VL was already credited (2026-07-28); nothing to do.
 
 ### Config / environment (root crontab)
 - `15 1 * * *` prorated_leave_grants.py --live >> prorated_leave_grants.log
