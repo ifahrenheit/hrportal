@@ -41,9 +41,8 @@ ALTER TABLE leave4day_sub_admins ADD COLUMN can_timestamp_records TINYINT(1) NOT
 - `venv/bin/python -m unittest tests.test_timestamp_records -v`
 
 ### Open items / next steps
-- [ ] **Rotate the service-account key** (it was pasted into chat): create a new JSON key, swap the file in `/etc/leavesystem/`, update `GOOGLE_DRIVE_SA_KEY_FILE`, delete key id `fd194495…`, restart.
+- [x] Service-account key rotated 2026-10-22: new key `898730ea…` in `/etc/leavesystem/`, `.env` points at it, service restarted 23:53; old key `fd194495…` deleted in Google (sign-in now rejected) and its file removed. Old `GOOGLE_DRIVE_API_KEY` deleted in Google and removed from `.env`.
 - [ ] Turn off "anyone with the link" on Cohere Raw Logs; share 2025 (and future year folders) with the service account; add new year ids to `YEAR_FOLDERS`.
-- [ ] Delete or restrict the old `GOOGLE_DRIVE_API_KEY` in Google Cloud.
 - [ ] Tick "Timestamp Records" on the Sub-Admins page for whoever needs it.
 - [ ] Confirm payroll period start (portal says 23rd; user mentioned "Sept 22").
 - [ ] Pre-existing failing tests (fail on HEAD too): test_awol_report / test_undertime_report empty-state + leave-covered cases.

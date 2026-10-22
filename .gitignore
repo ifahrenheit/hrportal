@@ -31,3 +31,7 @@ docs/leave_entitlement_2025_reconciliation.md
 # One-time fix scripts that name employees (already run; results in leave_balance_sync.log)
 scripts/manual_fixes/fix_5day_workweek.py
 scripts/manual_fixes/undo_magic_leave_10h.py
+
+# Google service-account key files: keep in /etc/leavesystem/, never in the repo
+wpforms-smtp-*.json
+*-service-account*.json
