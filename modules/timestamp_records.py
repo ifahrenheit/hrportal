@@ -39,7 +39,7 @@ log = logging.getLogger(__name__)
 timestamp_records_bp = Blueprint("timestamp_records", __name__)
 
 VIEW_PERMISSIONS = ("can_timestamp_records",)
-FIRST_DATE = date(2025, 1, 1)   # oldest data in "Cohere Raw Logs"
+FIRST_DATE = date(2026, 1, 1)   # 2026 onward only; 2025's folder can't be shared
 MAX_RANGE_DAYS = 62             # bounds Drive downloads per request (~2 months)
 PERIOD_CHOICES = 12             # payroll periods offered in the dropdown
 
@@ -79,6 +79,8 @@ def _period_choices(today=None):
     start, end = get_current_payroll_period(today)
     out = []
     for i in range(PERIOD_CHOICES):
+        if start < FIRST_DATE:
+            break
         out.append({"start": start.isoformat(), "end": end.isoformat(),
                     "label": f"{start.strftime('%b')} {start.day}, {start.year} – "
                              f"{end.strftime('%b')} {end.day}, {end.year}"

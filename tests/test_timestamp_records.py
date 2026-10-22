@@ -330,6 +330,14 @@ class RangeTests(unittest.TestCase):
         self.assertEqual(names[-1], "20261007-.csv")
         self.assertEqual(len(names), 15)
 
+    def test_no_2025_folder_or_dates(self):
+        self.assertNotIn(2025, dt.YEAR_FOLDERS)
+        self.assertEqual(tr._parse_range({"from": "2025-12-23", "to": "2026-01-07"})[0], None)
+        self.assertIsNotNone(tr._parse_range({"from": "2026-01-01", "to": "2026-01-07"})[0])
+        ch = tr._period_choices(date(2026, 2, 1))
+        self.assertEqual(ch[-1]["start"], "2026-01-08")   # Dec 23 - Jan 7 starts in 2025
+        self.assertTrue(all(c["start"] >= "2026-01-01" for c in ch))
+
     def test_year_boundary_and_missing_folder(self):
         with mock.patch.object(dt, "month_files",
                                side_effect=lambda y, m, refresh=False: ([_csv("d", "20251231-.csv")], True) if y == 2025 else ([], False)), \

@@ -42,7 +42,8 @@ ALTER TABLE leave4day_sub_admins ADD COLUMN can_timestamp_records TINYINT(1) NOT
 
 ### Open items / next steps
 - [x] Service-account key rotated 2026-10-22: new key `898730ea…` in `/etc/leavesystem/`, `.env` points at it, service restarted 23:53; old key `fd194495…` deleted in Google (sign-in now rejected) and its file removed. Old `GOOGLE_DRIVE_API_KEY` deleted in Google and removed from `.env`.
-- [ ] Turn off "anyone with the link" on Cohere Raw Logs; share 2025 (and future year folders) with the service account; add new year ids to `YEAR_FOLDERS`.
+- [x] 2025 dropped (owner has left, can't be shared): page covers 2026-01-01 onward (`FIRST_DATE`), 2025 removed from `YEAR_FOLDERS`.
+- [ ] Continuity risk: root "Cohere Raw Logs" is owned by the departed gmail.com account and is reached only via anyone-with-link; 2026 folder is owned by a getyourguide.com account. Before 2027: create a company-owned home (ideally a Shared Drive), share it with the service account, add the 2027 folder id to `YEAR_FOLDERS` in `helpers/drive_timestamps.py`.
 - [ ] Tick "Timestamp Records" on the Sub-Admins page for whoever needs it.
 - [ ] Confirm payroll period start (portal says 23rd; user mentioned "Sept 22").
 - [ ] Pre-existing failing tests (fail on HEAD too): test_awol_report / test_undertime_report empty-state + leave-covered cases.

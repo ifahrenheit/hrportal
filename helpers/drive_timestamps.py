@@ -47,10 +47,11 @@ log = logging.getLogger(__name__)
 
 ROOT_FOLDER_ID = "14ZDdB-v5GzFnl27A8hsx8tfjAALClRqj"
 # Known year folders, so a service account shared only on a year folder can
-# still reach it. Years missing here are looked up under the root.
+# still reach it. Years missing here are looked up under the root. 2025 is
+# deliberately absent: its owner has left and it can't be shared with the
+# service account, so the portal covers 2026 onward only.
 YEAR_FOLDERS = {
     2026: "1ubtSF822Y8pA5XEY3t_ipJfnv-MuFOiv",
-    2025: "11YeeJJ9GbDPFNst7q9voYXWbn6sjRQ3D",
 }
 SA_SCOPE = "https://www.googleapis.com/auth/drive.readonly"
 API = "https://www.googleapis.com/drive/v3/files"
