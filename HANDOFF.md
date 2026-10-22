@@ -8,6 +8,48 @@
 
 ---
 
+## 2026-10-22 (3) — Timestamp Records page (raw punches from Google Drive)
+Commit: `c5141e3` · Branch: `main`
+
+### What was built / changed
+- Read-only page `/admin/timestamp-records` + JSON `/admin/timestamp-records/data?from=YYYY-MM-DD&to=YYYY-MM-DD[&refresh=1]` — `modules/timestamp_records.py`, `templates/timestamp_records/index.html`.
+- Drive reader `helpers/drive_timestamps.py`: Cohere Raw Logs / YYYY / YYYYMM / YYYYMMDD-.csv; paginated listing; range loading across month/year folders; duplicate file names → newest upload only (yellow notice); bad rows/files reported, never dropped silently; memory + disk cache (`instance/drive_timestamps/`, gitignored) keyed on file id + modifiedTime/md5/size.
+- UI: payroll-period dropdown (portal cut-offs 8–22 / 23–7, defaults to last completed) + custom From/To (max 62 days), search, IN/OUT filter, pagination, Copy table (TSV of all matching rows), loading/empty/error states.
+- New sub-admin permission `can_timestamp_records` (Analytics & Reports): `permission.py`, `templates/admin/sub_admins.html`, app.py session dict + both sub-admin saves + SELECT; nav links in `nav/_attendance_tabs.html`, `_sidebar.html`, `_topnav.html`.
+- Tests: `tests/test_timestamp_records.py` (51, incl. one live Drive read).
+
+### Why / decisions
+- CSV header is `companyid,Day,Time,Type` — no names; First/Last Name come from OrangeHRM `hs_hr_employee` by employee_id (active row wins; unmatched → blank + notice).
+- Each daily file = one shift date; overnight clock-outs carry the next Day. Ranges select by **file (shift) date**, so the last shift's overnight out is included.
+- Auth switched from API key to a service account: Google throttled API-key downloads of link-shared files (403 "Sorry…" HTML page) after ~150 test downloads. Auth mode is chosen by config only, never auto-fallback.
+- Year folders reached via hardcoded `YEAR_FOLDERS` (2026, 2025) because the service account is shared on the 2026 folder, not the root. Folder access is checked first (files.list on an unshared folder returns empty, not an error).
+- Dedicated permission (user's choice) instead of reusing can_absences/can_tardiness/can_reports.
+
+### Database changes
+```sql
+-- orangehrm2 (36 rows, all 0 after)
+ALTER TABLE leave4day_sub_admins ADD COLUMN can_timestamp_records TINYINT(1) NOT NULL DEFAULT 0;
+```
+
+### Config / environment
+- `.env`: `GOOGLE_DRIVE_SA_KEY_FILE` (path to service-account JSON in `/etc/leavesystem/`, root-only 600), `GOOGLE_DRIVE_API_KEY` (fallback only, unused while SA is set).
+- Service account `timestamp-drive-reader@wpforms-smtp-501221.iam.gserviceaccount.com`, scope drive.readonly; Drive API enabled in that project.
+- app.py backup: `app.py.bak.20261022231254`. Service restarted by the user at 23:28.
+
+### How to verify
+- `https://hrportal.cohere.ph/admin/timestamp-records` (admin, or sub-admin with the new checkbox) → Sep 23 – Oct 7 2026 = 15 files, 3,913 punches.
+- `venv/bin/python -m unittest tests.test_timestamp_records -v`
+
+### Open items / next steps
+- [ ] **Rotate the service-account key** (it was pasted into chat): create a new JSON key, swap the file in `/etc/leavesystem/`, update `GOOGLE_DRIVE_SA_KEY_FILE`, delete key id `fd194495…`, restart.
+- [ ] Turn off "anyone with the link" on Cohere Raw Logs; share 2025 (and future year folders) with the service account; add new year ids to `YEAR_FOLDERS`.
+- [ ] Delete or restrict the old `GOOGLE_DRIVE_API_KEY` in Google Cloud.
+- [ ] Tick "Timestamp Records" on the Sub-Admins page for whoever needs it.
+- [ ] Confirm payroll period start (portal says 23rd; user mentioned "Sept 22").
+- [ ] Pre-existing failing tests (fail on HEAD too): test_awol_report / test_undertime_report empty-state + leave-covered cases.
+
+---
+
 ## 2026-10-22 (2) — 2027 balances loaded; leave cycle automated per policy
 Commit: `ae19f18` · Branch: `main` (commits `f92d855`..`ae19f18`)
 
