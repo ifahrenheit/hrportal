@@ -1,0 +1,312 @@
+{% extends "base.html" %}
+
+{% block title %}Timestamp Records{% endblock %}
+{% block page_title %}Timestamp Records{% endblock %}
+
+{% block content %}
+<style>
+  .ts-intro { color: var(--text-muted); font-size: .88rem; margin-bottom: 1rem; }
+  .filter-bar {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 14px;
+    box-shadow: var(--card-shadow); padding: .85rem 1.1rem; margin-bottom: 1rem;
+    display: flex; align-items: flex-end; gap: .65rem; flex-wrap: wrap;
+  }
+  .filter-bar .fg { display: flex; flex-direction: column; gap: .2rem; }
+  .filter-bar label { font-size: .74rem; color: var(--text-muted); font-weight: 600; text-transform: uppercase; letter-spacing: .04em; }
+  .search-wrap { position: relative; flex: 1; min-width: 200px; }
+  .search-wrap svg { position: absolute; left: .6rem; bottom: .5rem; width: 15px; height: 15px; color: var(--text-muted); }
+  .search-wrap input { padding-left: 1.9rem; }
+  .ts-meta { display: flex; align-items: center; justify-content: space-between; gap: .75rem; flex-wrap: wrap; margin-bottom: .5rem; font-size: .84rem; color: var(--text-muted); }
+  .ts-meta strong { color: var(--text); }
+  .ts-card { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; box-shadow: var(--card-shadow); overflow: hidden; }
+  .ts-card .table-responsive { max-height: 66vh; overflow-y: auto; }
+  .ts-card table { margin: 0; font-size: .86rem; }
+  .ts-card thead th { position: sticky; top: 0; z-index: 5; background: var(--surface); box-shadow: 0 1px 0 var(--border); font-size: .74rem; text-transform: uppercase; letter-spacing: .04em; color: var(--text-muted); white-space: nowrap; }
+  .ts-card td { padding: .4rem .75rem; vertical-align: middle; }
+  .ts-card td.mono { font-variant-numeric: tabular-nums; }
+  .type-pill { display: inline-block; min-width: 36px; text-align: center; padding: .1rem .5rem; border-radius: 999px; font-size: .74rem; font-weight: 600; }
+  .type-pill.in  { background: #d1fae5; color: #065f46; }
+  .type-pill.out { background: #e0e7ff; color: #3730a3; }
+  [data-theme="dark"] .type-pill.in  { background: #022c22; color: #6ee7b7; }
+  [data-theme="dark"] .type-pill.out { background: #1e1b4b; color: #a5b4fc; }
+  .no-name { color: var(--text-muted); font-style: italic; }
+  .ts-state { padding: 2.5rem 1rem; text-align: center; color: var(--text-muted); }
+  .ts-state svg { width: 28px; height: 28px; margin-bottom: .5rem; }
+  .ts-footer { display: flex; align-items: center; justify-content: space-between; gap: .75rem; flex-wrap: wrap; padding: .6rem .9rem; border-top: 1px solid var(--border); font-size: .82rem; color: var(--text-muted); }
+  .spin { animation: ts-spin 1s linear infinite; }
+  @keyframes ts-spin { to { transform: rotate(360deg); } }
+</style>
+
+{% set active_tab = 'timestamps' %}
+{% include "nav/_attendance_tabs.html" %}
+
+<p class="ts-intro">Review employee clock-in and clock-out records for payroll verification.
+  <span class="d-block small">Dates are shift dates: each day's file is included whole, so the last shift's overnight clock-out (dated the next day) is part of the range.</span></p>
+
+<form class="filter-bar" id="tsFilters" onsubmit="return false">
+  <div class="fg">
+    <label for="tsPeriod">Payroll period</label>
+    <select id="tsPeriod" class="form-select form-select-sm">
+      {% for p in periods %}
+      <option value="{{ p.start }}|{{ p.end }}" {% if p.start == sel_from and p.end == sel_to %}selected{% endif %}>{{ p.label }}</option>
+      {% endfor %}
+      <option value="custom">Custom range</option>
+    </select>
+  </div>
+  <div class="fg">
+    <label for="tsFrom">From</label>
+    <input id="tsFrom" type="date" class="form-control form-control-sm" value="{{ sel_from }}" min="{{ min_date }}" required>
+  </div>
+  <div class="fg">
+    <label for="tsTo">To</label>
+    <input id="tsTo" type="date" class="form-control form-control-sm" value="{{ sel_to }}" min="{{ min_date }}" required>
+  </div>
+  <div class="fg search-wrap">
+    <label for="tsSearch">Search</label>
+    <i data-lucide="search"></i>
+    <input id="tsSearch" type="search" class="form-control form-control-sm" placeholder="Employee ID or name" maxlength="80" autocomplete="off">
+  </div>
+  <div class="fg">
+    <label for="tsType">Type</label>
+    <select id="tsType" class="form-select form-select-sm">
+      <option value="">All</option><option value="in">IN</option><option value="out">OUT</option>
+    </select>
+  </div>
+  <div class="fg">
+    <button type="button" id="tsRefresh" class="btn btn-sm btn-primary">
+      <i data-lucide="refresh-cw"></i> Refresh Records
+    </button>
+  </div>
+</form>
+
+<div class="ts-meta">
+  <div id="tsCount">&nbsp;</div>
+  <div class="d-flex align-items-center gap-2">
+    <span id="tsSource"></span>
+    <button type="button" id="tsCopy" class="btn btn-sm btn-outline-secondary" disabled
+            title="Copies every matching row (all pages) as tab-separated text for Excel or Google Sheets">
+      <i data-lucide="copy"></i> <span id="tsCopyLbl">Copy table</span>
+    </button>
+  </div>
+</div>
+<div id="tsNotice"></div>
+
+<div class="ts-card">
+  <div class="table-responsive">
+    <table class="table table-hover table-sm">
+      <thead>
+        <tr><th>Employee ID</th><th>First Name</th><th>Last Name</th><th>Day</th><th>Time</th><th>Type</th></tr>
+      </thead>
+      <tbody id="tsBody"></tbody>
+    </table>
+    <div id="tsState" class="ts-state"></div>
+  </div>
+  <div class="ts-footer">
+    <div class="d-flex align-items-center gap-2">
+      <span>Rows per page</span>
+      <select id="tsPerPage" class="form-select form-select-sm" style="width:auto">
+        <option>25</option><option selected>50</option><option>100</option><option>250</option>
+      </select>
+    </div>
+    <div id="tsPageInfo"></div>
+    <nav><ul class="pagination pagination-sm mb-0" id="tsPager"></ul></nav>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+  const DATA_URL = "{{ url_for('timestamp_records.timestamp_records_data') }}";
+  const MAX_DAYS = {{ max_days|int }};
+  const $ = id => document.getElementById(id);
+  let all = [], filtered = [], page = 1, reqSeq = 0;
+
+  const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  const icons = () => { if (window.lucide) lucide.createIcons(); };
+
+  function state(icon, html, cls) {
+    $('tsBody').innerHTML = '';
+    if (!filtered.length) $('tsCopy').disabled = true;
+    $('tsState').innerHTML = `<div class="${cls || ''}"><i data-lucide="${icon}" class="${icon === 'loader-circle' ? 'spin' : ''}"></i><div>${html}</div></div>`;
+    $('tsState').style.display = '';
+    $('tsPager').innerHTML = ''; $('tsPageInfo').textContent = '';
+    icons();
+  }
+
+  const fmtDate = iso => { const [y, m, d] = iso.split('-').map(Number); return `${m}/${d}/${y}`; };
+  const fmtStamp = iso => iso ? new Date(iso).toLocaleString() : 'unknown time';
+
+  function rangeError(from, to) {
+    if (!from || !to) return 'Choose a From and To date.';
+    if (from > to) return 'From must be on or before To.';
+    const days = (Date.parse(to) - Date.parse(from)) / 86400000 + 1;
+    if (days > MAX_DAYS) return `Choose a range of ${MAX_DAYS} days or fewer.`;
+    return null;
+  }
+
+  async function load(refresh) {
+    const seq = ++reqSeq;
+    const from = $('tsFrom').value, to = $('tsTo').value;
+    const bad = rangeError(from, to);
+    if (bad) {
+      all = []; filtered = [];
+      $('tsNotice').innerHTML = ''; $('tsSource').textContent = ''; $('tsCount').innerHTML = '&nbsp;';
+      state('calendar-x', esc(bad), 'text-danger');
+      return;
+    }
+    $('tsRefresh').disabled = true;
+    $('tsNotice').innerHTML = ''; $('tsSource').textContent = ''; $('tsCount').innerHTML = '&nbsp;';
+    state('loader-circle', 'Loading records from Google Drive…');
+    try {
+      const q = new URLSearchParams({from, to});
+      if (refresh) q.set('refresh', '1');
+      const res = await fetch(`${DATA_URL}?${q}`, {headers: {'Accept': 'application/json'}, credentials: 'same-origin'});
+      let data = null;
+      try { data = await res.json(); } catch (e) { /* non-JSON, e.g. login redirect */ }
+      if (seq !== reqSeq) return;
+      if (!res.ok || !data || !data.ok) {
+        all = []; filtered = [];
+        const msg = (data && data.error) || `The server returned an unexpected response (HTTP ${res.status}).`;
+        state('triangle-alert', `<strong>Couldn't load records.</strong><br>${esc(msg)}`, 'text-danger');
+        return;
+      }
+      all = data.rows;
+      $('tsSource').textContent = `${data.files.length} daily file${data.files.length === 1 ? '' : 's'} for ${fmtDate(data.start)} – ${fmtDate(data.end)}`;
+      let notes = [];
+      if (data.duplicates.length) {
+        const list = data.duplicates.map(d => `<li>${esc(d.name)}: ${esc(d.copies)} copies in Drive. Using the newest (uploaded ${esc(fmtStamp(d.kept_modified))}); ignoring ${d.copies - 1 === 1 ? 'the older copy' : 'the ' + esc(d.copies - 1) + ' older copies'}.</li>`).join('');
+        notes.push(`<div class="alert alert-warning py-2 small mb-2"><strong>Duplicate file names found in Google Drive.</strong> Ask HR Admin to delete the older copy so it can't be mixed up later.<ul class="mb-0">${list}</ul></div>`);
+      }
+      if (data.file_errors.length) {
+        const list = data.file_errors.map(p => `<li>${esc(p.file)}: ${esc(p.error)}</li>`).join('');
+        notes.push(`<div class="alert alert-danger py-2 small mb-2"><strong>${data.file_errors.length} file(s) could not be read, so their records are missing below.</strong><ul class="mb-0">${list}</ul></div>`);
+      }
+      if (data.problem_count) {
+        const list = data.problems.slice(0, 20).map(p => `<li>${esc(p.file)} line ${esc(p.line)}: ${esc(p.error)}${p.raw ? ` — <code>${esc(p.raw)}</code>` : ''}</li>`).join('');
+        notes.push(`<div class="alert alert-warning py-2 small mb-2"><strong>${data.problem_count} row(s) could not be read and are not shown.</strong><ul class="mb-0">${list}</ul>${data.problem_count > 20 ? '<div>…and more.</div>' : ''}</div>`);
+      }
+      if (data.unmatched_ids.length) {
+        notes.push(`<div class="alert alert-info py-2 small mb-2">${data.unmatched_ids.length} employee ID(s) not found in OrangeHRM; their names are left blank: ${data.unmatched_ids.slice(0, 15).map(esc).join(', ')}${data.unmatched_ids.length > 15 ? '…' : ''}</div>`);
+      }
+      if (data.missing_months.length) {
+        notes.push(`<div class="alert alert-info py-2 small mb-2">No Google Drive folder yet for ${data.missing_months.map(esc).join(', ')}.</div>`);
+      }
+      $('tsNotice').innerHTML = notes.join('');
+      if (!data.files.length) {
+        filtered = [];
+        state('folder-x', 'No timestamp files have been uploaded to Google Drive for these dates yet.');
+        $('tsCount').innerHTML = '<strong>0</strong> records';
+        return;
+      }
+      page = 1;
+      apply();
+    } catch (e) {
+      if (seq !== reqSeq) return;
+      state('wifi-off', "<strong>Couldn't reach the portal.</strong><br>Check your connection and try Refresh Records.", 'text-danger');
+    } finally {
+      if (seq === reqSeq) $('tsRefresh').disabled = false;
+    }
+  }
+
+  function apply() {
+    const q = $('tsSearch').value.trim().toLowerCase();
+    const t = $('tsType').value;
+    filtered = all.filter(r => {
+      if (t && r.type !== t) return false;
+      if (q) {
+        const hay = `${r.employee_id} ${r.first_name} ${r.last_name}`.toLowerCase();
+        if (!q.split(/\s+/).every(w => hay.includes(w))) return false;
+      }
+      return true;
+    });
+    const total = all.length;
+    $('tsCopy').disabled = !filtered.length;
+    $('tsCount').innerHTML = filtered.length === total
+      ? `<strong>${total.toLocaleString()}</strong> records`
+      : `<strong>${filtered.length.toLocaleString()}</strong> matching of ${total.toLocaleString()} records`;
+    render();
+  }
+
+  function render() {
+    const per = parseInt($('tsPerPage').value, 10);
+    const pages = Math.max(1, Math.ceil(filtered.length / per));
+    page = Math.min(Math.max(1, page), pages);
+    if (!filtered.length) {
+      state('search-x', all.length ? 'No records match these filters.' : 'No timestamp records for this month.');
+      return;
+    }
+    $('tsState').style.display = 'none';
+    const start = (page - 1) * per;
+    $('tsBody').innerHTML = filtered.slice(start, start + per).map(r => `
+      <tr>
+        <td class="mono">${esc(r.employee_id)}</td>
+        <td>${r.first_name ? esc(r.first_name) : '<span class="no-name">—</span>'}</td>
+        <td>${r.last_name ? esc(r.last_name) : '<span class="no-name">—</span>'}</td>
+        <td class="mono">${esc(r.day)}</td>
+        <td class="mono">${esc(r.time)}</td>
+        <td><span class="type-pill ${r.type}">${esc(r.type)}</span></td>
+      </tr>`).join('');
+    $('tsPageInfo').textContent = `${(start + 1).toLocaleString()}–${Math.min(start + per, filtered.length).toLocaleString()} of ${filtered.length.toLocaleString()}`;
+    pager(pages);
+  }
+
+  function pager(pages) {
+    const btn = (p, label, dis, act) => `<li class="page-item ${dis ? 'disabled' : ''} ${act ? 'active' : ''}"><a class="page-link" href="#" data-p="${p}">${label}</a></li>`;
+    let h = btn(page - 1, '‹', page === 1);
+    const set = new Set([1, pages, page - 1, page, page + 1].filter(p => p >= 1 && p <= pages));
+    let prev = 0;
+    [...set].sort((a, b) => a - b).forEach(p => {
+      if (p - prev > 1) h += '<li class="page-item disabled"><span class="page-link">…</span></li>';
+      h += btn(p, p, false, p === page); prev = p;
+    });
+    h += btn(page + 1, '›', page === pages);
+    $('tsPager').innerHTML = h;
+  }
+
+  $('tsPager').addEventListener('click', e => {
+    const a = e.target.closest('a[data-p]'); if (!a) return;
+    e.preventDefault();
+    if (a.parentElement.classList.contains('disabled')) return;
+    page = parseInt(a.dataset.p, 10); render();
+  });
+  let deb;
+  $('tsSearch').addEventListener('input', () => { clearTimeout(deb); deb = setTimeout(() => { page = 1; apply(); }, 200); });
+  $('tsType').addEventListener('change', () => { page = 1; apply(); });
+  $('tsPerPage').addEventListener('change', () => { page = 1; render(); });
+  $('tsPeriod').addEventListener('change', () => {
+    const v = $('tsPeriod').value;
+    if (v === 'custom') { $('tsFrom').focus(); return; }
+    [$('tsFrom').value, $('tsTo').value] = v.split('|');
+    load(false);
+  });
+  ['tsFrom', 'tsTo'].forEach(id => $(id).addEventListener('change', () => {
+    const match = [...$('tsPeriod').options].find(o => o.value === `${$('tsFrom').value}|${$('tsTo').value}`);
+    $('tsPeriod').value = match ? match.value : 'custom';
+    load(false);
+  }));
+  $('tsRefresh').addEventListener('click', () => load(true));
+
+  // Copy every matching row (not just this page) as TSV, header included,
+  // in the same column order and display formats as the table.
+  $('tsCopy').addEventListener('click', async () => {
+    const clean = v => String(v ?? '').replace(/[\t\r\n]+/g, ' ');
+    const lines = [['Employee ID', 'First Name', 'Last Name', 'Day', 'Time', 'Type'].join('\t')]
+      .concat(filtered.map(r => [r.employee_id, r.first_name, r.last_name, r.day, r.time, r.type].map(clean).join('\t')));
+    const text = lines.join('\n');
+    let ok = false;
+    try { await navigator.clipboard.writeText(text); ok = true; } catch (e) {
+      const ta = Object.assign(document.createElement('textarea'), {value: text});
+      ta.style.position = 'fixed'; ta.style.opacity = '0';
+      document.body.appendChild(ta); ta.select();
+      try { ok = document.execCommand('copy'); } catch (e2) { ok = false; }
+      ta.remove();
+    }
+    $('tsCopyLbl').textContent = ok ? `Copied ${filtered.length.toLocaleString()} rows` : 'Copy failed';
+    setTimeout(() => { $('tsCopyLbl').textContent = 'Copy table'; }, 2500);
+  });
+
+  load(false);
+})();
+</script>
+{% endblock %}

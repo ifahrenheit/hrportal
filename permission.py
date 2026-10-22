@@ -72,6 +72,7 @@ PERMISSION_DEFINITIONS = [
     ('can_overbreak'             , 'cup-soda'          , 'Overbreak Report'),
     ('can_qa_updates'            , 'megaphone'         , 'QA Updates'),
     ('can_ot_hours'              , 'timer'             , 'OT Hours Report'),
+    ('can_timestamp_records'     , 'fingerprint'       , 'Timestamp Records'),
     # ── Finance & Operations
     ('can_entitlements'          , 'credit-card'       , 'Entitlements'),
     ('can_material_requests'     , 'package'           , 'Material Requests'),

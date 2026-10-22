@@ -398,7 +398,7 @@
       {% endif %}
 
       {# Analytics #}
-      {% if session.get('is_admin') or session.get('permissions', {}).get('can_reports') or session.get('permissions', {}).get('can_schedules') or session.get('permissions', {}).get('can_view_tickets') or session.get('permissions', {}).get('can_absences') or session.get('permissions', {}).get('can_attrition_report') or session.get('permissions', {}).get('can_surveys') or session.get('permissions', {}).get('can_ot_hours') or session.get('permissions', {}).get('can_night_differential') or session.get('permissions', {}).get('can_holiday_awol') or session.get('permissions', {}).get('can_overbreak') or session.get('permissions', {}).get('can_tardiness') %}
+      {% if session.get('is_admin') or session.get('permissions', {}).get('can_reports') or session.get('permissions', {}).get('can_schedules') or session.get('permissions', {}).get('can_view_tickets') or session.get('permissions', {}).get('can_absences') or session.get('permissions', {}).get('can_attrition_report') or session.get('permissions', {}).get('can_surveys') or session.get('permissions', {}).get('can_ot_hours') or session.get('permissions', {}).get('can_night_differential') or session.get('permissions', {}).get('can_holiday_awol') or session.get('permissions', {}).get('can_overbreak') or session.get('permissions', {}).get('can_tardiness') or session.get('permissions', {}).get('can_timestamp_records') %}
       <div class="nav-section-toggle nav-label" onclick="toggleSection('analytics')" id="analytics-header">
         <span>Analytics</span>
         <i class="section-arrow" data-lucide="chevron-down" id="analytics-arrow"></i>
@@ -443,6 +443,11 @@
         {% if session.get('is_admin') or session.get('permissions', {}).get('can_ot_hours') %}
         <a class="nav-link {% if request.endpoint == 'admin_ot_hours' %}active{% endif %}" href="{{ url_for('admin_ot_hours') }}">
           <i data-lucide="timer"></i> <span class="nav-label">OT Hours</span>
+        </a>
+        {% endif %}
+        {% if session.get('is_admin') or session.get('permissions', {}).get('can_timestamp_records') %}
+        <a class="nav-link {% if request.endpoint == 'timestamp_records.timestamp_records_page' %}active{% endif %}" href="{{ url_for('timestamp_records.timestamp_records_page') }}">
+          <i data-lucide="fingerprint"></i> <span class="nav-label">Timestamp Records</span>
         </a>
         {% endif %}
         {% if session.get('is_admin') or session.get('permissions', {}).get('can_absences') %}

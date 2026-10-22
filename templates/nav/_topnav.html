@@ -484,7 +484,7 @@
       {% if (WRAP and (ADMIN or P.get('can_reports') or P.get('can_schedules')
             or P.get('can_view_tickets') or P.get('can_absences') or P.get('can_attrition_report')
             or P.get('can_surveys') or P.get('can_ot_hours') or P.get('can_night_differential') or P.get('can_holiday_awol')
-            or P.get('can_overbreak') or P.get('can_tardiness')))
+            or P.get('can_overbreak') or P.get('can_tardiness') or P.get('can_timestamp_records')))
             or ADMIN or SUPER or P.get('can_csat') or session.get('is_csat_tl') %}
       <button class="tn-trigger" data-panel="analytics" aria-expanded="false">
         Analytics <i class="tn-caret" data-lucide="chevron-down"></i><span class="tn-dot"></span>
@@ -806,7 +806,7 @@
     {% if (WRAP and (ADMIN or P.get('can_reports') or P.get('can_schedules')
           or P.get('can_view_tickets') or P.get('can_absences') or P.get('can_attrition_report')
           or P.get('can_surveys') or P.get('can_ot_hours') or P.get('can_night_differential') or P.get('can_holiday_awol')
-          or P.get('can_overbreak') or P.get('can_tardiness')))
+          or P.get('can_overbreak') or P.get('can_tardiness') or P.get('can_timestamp_records')))
           or ADMIN or SUPER or P.get('can_csat') or session.get('is_csat_tl') %}
     <div class="tn-panel" data-panel="analytics">
       <div class="tn-cols">
@@ -845,6 +845,10 @@
         {% if WRAP and (ADMIN or P.get('can_ot_hours')) %}
         <a class="tn-item {% if EP == 'admin_ot_hours' %}active{% endif %}" href="{{ url_for('admin_ot_hours') }}" data-k="ot hours overtime">
           <i data-lucide="timer"></i> OT Hours</a>
+        {% endif %}
+        {% if WRAP and (ADMIN or P.get('can_timestamp_records')) %}
+        <a class="tn-item {% if EP == 'timestamp_records.timestamp_records_page' %}active{% endif %}" href="{{ url_for('timestamp_records.timestamp_records_page') }}" data-k="timestamp records biometric clock in out punches raw logs payroll">
+          <i data-lucide="fingerprint"></i> Timestamp Records</a>
         {% endif %}
         {% if WRAP and (ADMIN or P.get('can_attrition_report')) %}
         <a class="tn-item {% if EP == 'admin_attrition' %}active{% endif %}" href="{{ url_for('admin_attrition') }}" data-k="attrition separation exit interview">
@@ -992,7 +996,7 @@
   <a class="tn-subtab {% if EP == 'memos.memos_list' %}active{% endif %}" href="{{ url_for('memos.memos_list') }}">Memos</a>
   {% endif %}
 </div></div>
-{% elif EP in ['admin_absences', 'admin_attendance_grid', 'admin_awol_report', 'admin_undertime_report', 'admin_attendance_stack_rank', 'tardiness.tardiness_page', 'admin_holiday_awol', 'admin_overbreak', 'admin_ot_hours', 'on_shift', 'fts_review.review_page'] %}
+{% elif EP in ['admin_absences', 'admin_attendance_grid', 'admin_awol_report', 'admin_undertime_report', 'admin_attendance_stack_rank', 'tardiness.tardiness_page', 'admin_holiday_awol', 'admin_overbreak', 'admin_ot_hours', 'on_shift', 'fts_review.review_page', 'timestamp_records.timestamp_records_page'] %}
 <div class="tn-subnav"><div class="tn-subnav-inner">
   <span class="tn-subnav-label">Attendance</span>
   {% if WRAP and (ADMIN or P.get('can_absences')) %}
@@ -1019,6 +1023,9 @@
   {% endif %}
   {% if ADMIN or P.get('can_file_requests') %}
   <a class="tn-subtab {% if EP == 'fts_review.review_page' %}active{% endif %}" href="{{ url_for('fts_review.review_page') }}">FTS Review</a>
+  {% endif %}
+  {% if WRAP and (ADMIN or P.get('can_timestamp_records')) %}
+  <a class="tn-subtab {% if EP == 'timestamp_records.timestamp_records_page' %}active{% endif %}" href="{{ url_for('timestamp_records.timestamp_records_page') }}">Timestamp Records</a>
   {% endif %}
 </div></div>
 {% elif EP in ['admin_analytics', 'admin_reports', 'admin_schedules', 'admin_attrition', 'survey.survey_admin_list', 'survey.survey_results', 'admin_ot_tickets'] %}
