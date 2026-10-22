@@ -22,6 +22,15 @@
   .ts-card .table-responsive { max-height: 66vh; overflow-y: auto; }
   .ts-card table { margin: 0; font-size: .86rem; }
   .ts-card thead th { position: sticky; top: 0; z-index: 5; background: var(--surface); box-shadow: 0 1px 0 var(--border); font-size: .74rem; text-transform: uppercase; letter-spacing: .04em; color: var(--text-muted); white-space: nowrap; }
+  .ts-card thead th[aria-sort] { padding: 0; }
+  .sort-btn { all: unset; box-sizing: border-box; display: flex; align-items: center; gap: .35rem; width: 100%; padding: .5rem .75rem; cursor: pointer; }
+  .sort-btn:hover, .sort-btn:focus-visible { color: var(--accent); }
+  .sort-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+  .sort-arrows { display: inline-flex; flex-direction: column; line-height: .55; font-size: .6rem; opacity: .35; }
+  th[aria-sort="ascending"] .sort-btn, th[aria-sort="descending"] .sort-btn { color: var(--accent); }
+  th[aria-sort="ascending"] .sort-arrows .up, th[aria-sort="descending"] .sort-arrows .down { opacity: 1; color: var(--accent); }
+  th[aria-sort="ascending"] .sort-arrows, th[aria-sort="descending"] .sort-arrows { opacity: 1; }
+  th[aria-sort="ascending"] .sort-arrows .down, th[aria-sort="descending"] .sort-arrows .up { opacity: .25; }
   .ts-card td { padding: .4rem .75rem; vertical-align: middle; }
   .ts-card td.mono { font-variant-numeric: tabular-nums; }
   .type-pill { display: inline-block; min-width: 36px; text-align: center; padding: .1rem .5rem; border-radius: 999px; font-size: .74rem; font-weight: 600; }
@@ -95,7 +104,13 @@
   <div class="table-responsive">
     <table class="table table-hover table-sm">
       <thead>
-        <tr><th>Employee ID</th><th>First Name</th><th>Last Name</th><th>Day</th><th>Time</th><th>Type</th></tr>
+        <tr>
+          {% for key, label in [('employee_id','Employee ID'), ('first_name','First Name'), ('last_name','Last Name'), ('day','Day'), ('time','Time'), ('type','Type')] %}
+          <th aria-sort="{{ 'descending' if key == 'day' else 'none' }}" data-sort="{{ key }}">
+            <button type="button" class="sort-btn" title="Sort by {{ label }}">{{ label }}<span class="sort-arrows" aria-hidden="true"><span class="up">▲</span><span class="down">▼</span></span></button>
+          </th>
+          {% endfor %}
+        </tr>
       </thead>
       <tbody id="tsBody"></tbody>
     </table>
@@ -121,6 +136,25 @@
   const MAX_DAYS = {{ max_days|int }};
   const $ = id => document.getElementById(id);
   let all = [], filtered = [], page = 1, reqSeq = 0;
+  // Default matches the server: newest first. Day sorts by the full
+  // timestamp; Time by time of day; every sort falls back to newest first.
+  let sortKey = 'day', sortDir = 'desc';
+  const text = (a, b) => a.localeCompare(b, undefined, {numeric: true, sensitivity: 'base'});
+  const SORTS = {
+    employee_id: (a, b) => text(a.employee_id, b.employee_id),
+    first_name: (a, b) => text(a.first_name, b.first_name),
+    last_name: (a, b) => text(a.last_name, b.last_name),
+    day: (a, b) => (a.iso < b.iso ? -1 : a.iso > b.iso ? 1 : 0),
+    time: (a, b) => text(a.iso.slice(11).padStart(5, '0'), b.iso.slice(11).padStart(5, '0')),
+    type: (a, b) => text(a.type, b.type),
+  };
+  function sortRows() {
+    const cmp = SORTS[sortKey], sign = sortDir === 'asc' ? 1 : -1;
+    filtered.sort((a, b) => sign * cmp(a, b) || (a.iso < b.iso ? 1 : a.iso > b.iso ? -1 : 0));
+    document.querySelectorAll('th[data-sort]').forEach(th => {
+      th.setAttribute('aria-sort', th.dataset.sort === sortKey ? (sortDir === 'asc' ? 'ascending' : 'descending') : 'none');
+    });
+  }
 
   const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const icons = () => { if (window.lucide) lucide.createIcons(); };
@@ -220,6 +254,7 @@
       }
       return true;
     });
+    sortRows();
     const total = all.length;
     $('tsCopy').disabled = !filtered.length;
     $('tsCount').innerHTML = filtered.length === total
@@ -273,6 +308,12 @@
   let deb;
   $('tsSearch').addEventListener('input', () => { clearTimeout(deb); deb = setTimeout(() => { page = 1; apply(); }, 200); });
   $('tsType').addEventListener('change', () => { page = 1; apply(); });
+  document.querySelectorAll('th[data-sort] .sort-btn').forEach(btn => btn.addEventListener('click', () => {
+    const key = btn.closest('th').dataset.sort;
+    if (key === sortKey) sortDir = sortDir === 'asc' ? 'desc' : 'asc';
+    else { sortKey = key; sortDir = 'asc'; }
+    page = 1; sortRows(); render();
+  }));
   $('tsPerPage').addEventListener('change', () => { page = 1; render(); });
   $('tsPeriod').addEventListener('change', () => {
     const v = $('tsPeriod').value;

@@ -454,6 +454,9 @@ class EndpointTests(unittest.TestCase):
         html = r.get_data(as_text=True)
         self.assertIn("Review employee clock-in and clock-out records for payroll verification.", html)
         self.assertIn("Payroll period", html)
+        for key in ("employee_id", "first_name", "last_name", "day", "time", "type"):
+            self.assertIn(f'data-sort="{key}"', html)
+        self.assertIn('aria-sort="descending" data-sort="day"', html)
         from helpers.payroll_period import get_default_payroll_period
         start, end = get_default_payroll_period()
         self.assertIn(f'value="{start.isoformat()}|{end.isoformat()}" selected', html)
