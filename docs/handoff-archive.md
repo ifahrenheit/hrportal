@@ -2,6 +2,105 @@
 
 Entries moved out of HANDOFF.md, newest first.
 
+## 2026-10-20 (3) — Mailing Lists: Sync mode (make a list exactly the pasted addresses)
+Commit: this one · Branch: `main`
+
+### What was built / changed
+- `modules/mailing_lists.py`: `plan_sync`, `sync_signature`, `sync_members`, `_handle_sync` (`action=sync_preview|sync` on the `/members` POST). `detail()` now goes through `_render_detail()` so the preview renders on the group page.
+- `templates/mailing_lists/detail.html`: "Add or sync members" card with an Add only / Sync switch, and a Sync preview card with Confirm sync.
+- Tests: 33 in `tests/test_mailing_lists.py`.
+
+### Why / decisions
+- The user asked for "Sync Membership List" behaviour: existing members skipped, new added, missing removed.
+- A preview is mandatory because a partial paste would otherwise remove everyone else. The confirm is bound to the previewed plan by a sha256 fingerprint.
+
+### Mailman privacy, finished later the same session (user's explicit go-ahead)
+- All 17 remaining lists: `subscribe_policy=3` (Confirm and approve) via UAPI `set_list_privacy_options`, and `private_roster=2` (List admin only) via a full browser-style post of Mailman's `privacy/subscribing` form. A before/after diff of every field on that page showed only `private_roster` changed.
+- All 18 lists now read `accesstype=private` in cPanel. Portal member reads are still complete (checked `managers@` 8, `gygccall@` 226).
+- Rollback values: `subscribe_policy=1`, `private_roster=1` (List members) on those 17.
+
+---
+
+## 2026-10-20 (2) — All 18 Mailman lists: archives private, not advertised (cPanel change, no code)
+Commit: this one · Branch: `main`
+
+### What was changed (live cPanel, at the user's request)
+- Found that every Mailman list was Public. The archives at `https://cohere.ph/pipermail/<listid>/` (e.g. `managers_cohere.ph`, `sga_cohere.ph`) could be read by anyone without logging in, and every list showed on `/mailman/listinfo`.
+- The user's own edits on `bo-cohere@` through the cPanel proxy (`:2096/cpsess…/3rdparty/mailman`) didn't save advertised/archive_private (subscribe_policy=3 and private_roster=admin did save).
+- Ran UAPI `Email::set_list_privacy_options` on all 18: `advertised=0`, `archive_private=1`, `subscribe_policy` sent back unchanged.
+- Verified: all 18 public archive URLs return 404, none show on listinfo, subscribe_policy unchanged. Members read archives at `/mailman/private/<listid>/`.
+
+### Previous values (for rollback)
+- All 18: `advertised=1`, `archive_private=0`. `subscribe_policy=1` (Confirm) on all except `bo-cohere@` = 3 (set by the user just before).
+
+### Open items / next steps
+- [ ] Offered, awaiting the user's answer: `subscribe_policy=3` (Confirm and approve) on the other 17, and `private_roster` = List admin only (Mailman privacy/subscribing form; UAPI doesn't cover it). cPanel's "public/private" label follows subscribe_policy only.
+- [ ] Possible portal feature: per-list privacy switch on Mailman list pages, and new lists default to Private.
+
+---
+
+## 2026-10-20 — Mailing Lists, step 3: create new forwarder groups and Mailman lists
+Commit: this one · Branch: `main`
+
+### What was built / changed
+- `/admin/mailing-lists/new` (`modules/mailing_lists.py` `new()` + `create_group()`; `templates/mailing_lists/new.html`). Same inputs as cPanel's Add Forwarder / Create a Mailing List forms. A **New mailing list** button is on the index page.
+- Checks: name rules, domain from UAPI `list_mail_domains`, refuses an address that already exists (mailbox via `list_pops`, forwarder or list; fetched fresh). Forwarders need at least one target.
+- Mailman: UAPI `add_list` (`list`, `domain`, `password`, `private`), then first members through `change_members`. Forwarder: `add_forwarder` per target. Both are verified by read-back and audited (`create` plus `add` rows).
+- `_uapi()` takes a `module` arg (used for `PasswdStrength::get_required_strength`). Removed the stale "read-only" label on the index page.
+- Tests: `tests/test_mailing_lists.py`, now 25.
+
+### Why / decisions
+- cPanel has **no** UAPI to score a password (`PasswdStrength::get_password_strength` doesn't exist). `add_list` enforces the 65 minimum itself, so the portal shows cPanel's error. The Generate button makes 20 characters with all four character types.
+- First live use (by the user, 2026-10-19 23:34): removed 2 members from Mailman `l2-agents@`, both verified **done**. The Mailman write path is proven; the forwarder write path and `add_list` are not yet used live.
+
+### Database changes
+```sql
+-- central_db
+ALTER TABLE mailing_list_audit MODIFY action ENUM('add','remove','create') NOT NULL;
+```
+
+### Open items / next steps
+- [ ] First live create (forwarder and Mailman), and the first live forwarder add/remove.
+- [ ] Confirm `add_list` really rejects a weak password with a readable error. Not tested, to avoid creating a junk list.
+- [ ] Delete a group address; offboarding cleanup across all groups.
+- [ ] Older items (session cookie size, 3 pre-existing test failures, `.env` quoting): see 2026-10-19 (3).
+
+---
+
+## 2026-10-19 (4) — Mailing Lists, step 2: add/remove members, audit log; type filter
+Commits: `1b53a4d` (type filter), this one · Branch: `main`
+
+### What was built / changed
+- `templates/mailing_lists/index.html`: Type filter (All / Forwarder / Mailman), kept in `?type=`.
+- `modules/mailing_lists.py`: POST `/admin/mailing-lists/<type>/<address>/members` (`action=add|remove`).
+  - Forwarders: UAPI `add_forwarder` / `delete_forwarder`.
+  - Mailman: mass subscribe/remove forms (fetches Mailman's `csrf_token`). Welcome/goodbye email only if ticked; owner never notified.
+  - Every change is verified by a fresh read-back; results are done / failed / skipped.
+  - Each attempt is audited in `central_db.mailing_list_audit`.
+- `templates/mailing_lists/detail.html`: Add box, checkboxes + Select separated + Remove selected with a confirmation modal, and a change-history table.
+- Tests: `tests/test_mailing_lists.py`, now 17 (all mocked).
+
+### Why / decisions
+- Removal is checkbox-based (one or many) behind a modal that lists exactly who is removed. I chose this since the question was open; the user can change it.
+- Self-reference (adding the group's own address) is ignored; batches are capped at 300.
+
+### Database changes
+```sql
+-- central_db (scripts/mailing_list_audit_schema.sql)
+CREATE TABLE mailing_list_audit (...);   -- see the file for full DDL
+```
+
+### How to verify
+- `./venv/bin/python -m unittest tests.test_mailing_lists -v`
+- No live write to cPanel/Mailman has been made from the portal yet. The first real add/remove is the live test; check the history table on that group's page.
+
+### Open items / next steps
+- [ ] First live add/remove on a forwarder and on a Mailman list (verify UAPI `add_forwarder`/`delete_forwarder` params and the Mailman form post on real data).
+- [ ] Step 3: create/delete group addresses. Step 4: offboarding cleanup across all groups.
+- [ ] Session cookie oversize, 3 pre-existing test failures, `.env` quoting: see the entry below.
+
+---
+
 ## 2026-10-19 (3) — Mailing Lists, step 1: read-only view of cPanel forwarders + Mailman lists
 Commit: this one · Branch: `main`
 
