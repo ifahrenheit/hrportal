@@ -8864,7 +8864,9 @@ def file_fts():
                    WHERE employeeID = %s COLLATE utf8mb4_unicode_ci
                    AND fts_date = %s
                    AND fts_time = %s
-                   AND fts_type = %s""",
+                   AND fts_type = %s
+                   AND status NOT IN ('Rejected','Deleted')
+                   AND deleted_at IS NULL""",
                 (employee_id, fts_date, fts_time, fts_type)
             )
             if cursor.fetchone():
@@ -9225,6 +9227,7 @@ def file_cws():
                    AND original_time = %s
                    AND new_date = %s
                    AND new_time = %s
+                   AND status NOT IN ('Rejected','Deleted','Cancelled')
                    AND deleted_at IS NULL""",
                 (employee_id, original_date, original_time, new_date, new_time)
             )
@@ -9329,6 +9332,7 @@ def file_rdw_legacy():
                    AND rd_date = %s
                    AND start_time = %s
                    AND end_time = %s
+                   AND status NOT IN ('Rejected','Deleted','Cancelled')
                    AND deleted_at IS NULL""",
                 (employee_id, rd_date, start_time, end_time)
             )

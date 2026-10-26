@@ -131,7 +131,8 @@ def _file_fts(c, emp, form, approved):
     if errors:
         return errors, None, None, 'FTS', None
     c.execute("""SELECT id FROM fts_requests
-                 WHERE employeeID = %s AND fts_date = %s AND fts_time = %s AND fts_type = %s""",
+                 WHERE employeeID = %s AND fts_date = %s AND fts_time = %s AND fts_type = %s
+                   AND status NOT IN ('Rejected','Deleted') AND deleted_at IS NULL""",
               (emp['employee_id'], fts_date, fts_time, fts_type))
     dup = c.fetchone()
     if dup:
@@ -158,7 +159,8 @@ def _file_cws(c, emp, form, approved):
         return ['All CWS fields are required.'], None, None, 'CWS', None
     c.execute("""SELECT id FROM cws_requests
                  WHERE employee_id = %s AND original_date = %s AND original_time = %s
-                   AND new_date = %s AND new_time = %s AND deleted_at IS NULL""",
+                   AND new_date = %s AND new_time = %s
+                   AND status NOT IN ('Rejected','Deleted','Cancelled') AND deleted_at IS NULL""",
               (emp['employee_id'], original_date, original_time, new_date, new_time))
     dup = c.fetchone()
     if dup:
