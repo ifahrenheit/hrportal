@@ -8,6 +8,31 @@
 
 ---
 
+## 2026-10-27 — Absences page now skips SUS days; absence sheet syncs every 2h
+Commit: `fd68361` (app.py change uncommitted) · Branch: `main`
+
+### What was built / changed
+- `get_absence_records()` in `app.py` now loads SUS dates from `central_db.absence_records` (code `'SUS'`, within the date range) and skips those scheduled days. Same rule as `admin_attendance_grid()` and `admin_awol_report()`. Fixes `/admin/absences` listing suspended agents as Absent (e.g. Jayne Cuajao 220404-14, Oct 24–25).
+- Apps Script (user's Google account, outside repo): "Untitled project" → `syncAbsenceRecords`, bound to the user's sheet that IMPORTRANGEs Jovin's "Absence Data" `AbsenceRecord` tab. `createTrigger()` was rewritten to delete the old 6 AM/6 PM triggers and create one every-2-hours trigger. Added an `onOpen` "Portal Sync → Sync absences now" menu.
+
+### Why / decisions
+- SUS is usually entered late (schedule balancing). The page is computed live, so a fresh sync is enough. Every 2h instead of hourly keeps runtime (~63 s/run, ~17k rows) inside the consumer trigger quota.
+- `absence_notify.py` already skipped SUS itself, so its emails are unchanged. Its `skipped_sus` count will now read 0.
+
+### Deploy / run notes
+- Backup `app.py.bak.20261027*`, ast gate passed, `leavesystem` restarted and active.
+
+### How to verify
+- `/admin/absences?date_from=2026-10-24&date_to=2026-10-25`: Cuajao not listed.
+- script.google.com/home/executions: `syncAbsenceRecords` runs about every 2h.
+
+### Open items / next steps
+- [ ] Commit the `app.py` SUS change (left uncommitted; unrelated documents-module edits are also pending).
+- [ ] The sync never deletes rows and keys on `sheet_row`, so deleted or shifted sheet rows can leave stale SUS in `absence_records`.
+- [ ] Late SUS can't retract a 1:05 PM absence email that was already sent.
+
+---
+
 ## 2026-10-27 — Absence alerts: false "RD" absences fixed; absence_notify.py now live
 Commit: `f7378ec` · Branch: `main`
 
