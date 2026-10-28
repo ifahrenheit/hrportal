@@ -62,6 +62,17 @@ Each Mailman list has a **Pending requests** page (`/admin/mailing-lists/mailman
   - `--test`: sends a sample; `--dry-run` is the default with no flag. Log: `mailing_list_pending_check.log`.
 - **Badge:** Admin → Mailing Lists shows the total waiting (`/admin/mailing-lists/api/pending-total`, refreshed every 60 s like the other badges). It lights the Admin menu dot.
 
+## Sync from the employee sheet
+The MasterList tab's **Mailing List** column (e.g. `gygcc3@cohere.ph, gygccall@cohere.ph`) drives membership. The Apps Script push copies it into `gsheet_employees.mailing_list`, and [scripts/mailing_list_sheet_sync.py](../scripts/mailing_list_sheet_sync.py) (root cron, every 30 min) applies it after each new push.
+- **Add:** Active/Training employees the sheet puts on a group they're not on yet.
+- **Remove:** employees in the sheet who are Separated, or whose filled-in cell no longer names that group.
+- **Never touched:** blank or `#N/A` cells, and addresses not in the employee sheet (managers, outside addresses).
+- **Renames/ignored** are in the script: `gygL2@` → `l2-agents@`, `gygbo1@` → `bo-cohere@` (the old gygbo1 forwarder was deleted 2026-10-28; the mailbox remains). `soms@` and `hr@` (HR's mailbox forwarder) are not managed.
+- **Add-only:** Finest-group employees (managers) are never removed because their cell names other groups, only when Separated.
+- **gygccall@** is both a Mailman list and a forwarder. The Mailman member list is synced; the forwarder (targets are other groups) is left alone.
+- **Guard:** a group losing more than 20 members or 25% in one run is skipped and logged (protects against a bad push).
+- Changes show in History as **Sheet sync**. Default is a dry run; `--live` applies; `--force` runs without a new push. Log: `mailing_list_sheet_sync.log`.
+
 ## Members, senders, people
 - **Delivery off:** Mailman switches delivery off after repeated bounces (or an admin/member does). Those members are flagged on the list page, and **Turn delivery on** switches it back through the members-page form.
 - **Allowed & blocked senders** (Mailman lists): view/add/remove `accept_these_nonmembers`, `hold_…`, `reject_…` and `discard_…`.

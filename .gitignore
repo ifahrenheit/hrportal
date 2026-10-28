@@ -35,3 +35,6 @@ scripts/manual_fixes/undo_magic_leave_10h.py
 # Google service-account key files: keep in /etc/leavesystem/, never in the repo
 wpforms-smtp-*.json
 *-service-account*.json
+
+# Mailing list sheet sync: last applied push timestamp
+mailing_list_sheet_sync.state

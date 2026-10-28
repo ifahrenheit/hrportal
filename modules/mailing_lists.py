@@ -50,8 +50,8 @@ import requests
 import urllib3
 from werkzeug.exceptions import HTTPException
 from flask import (
-    Blueprint, abort, flash, jsonify, redirect, render_template, request,
-    session, url_for,
+    Blueprint, abort, flash, has_request_context, jsonify, redirect,
+    render_template, request, session, url_for,
 )
 
 from csrf import validate_csrf
@@ -578,7 +578,13 @@ def _get_members(list_type, address, refresh=False):
 
 # ── Changes + audit ─────────────────────────────────────────────────────────
 
+SYSTEM_ACTOR = ("system:sheet-sync", "Sheet sync")
+
+
 def _actor():
+    # Cron scripts (scripts/mailing_list_sheet_sync.py) have no session.
+    if not has_request_context():
+        return SYSTEM_ACTOR[0], SYSTEM_ACTOR[1], None
     user = session.get("user") or {}
     real = session.get("original_admin")
     if real:
