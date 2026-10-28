@@ -755,13 +755,13 @@
         <div class="d-flex flex-wrap align-items-stretch gap-2 mb-2">
           <div class="kpi-tile {{ csat_level(csat.weighted) }}" title="Target: 88%. Green at or above target, amber 85–88%, red below 85%.">
             <div class="kpi-lbl">Volume Weighted CSAT</div>
-            <div class="kpi-num">{{ '%.1f'|format(csat.weighted) ~ '%' if csat.weighted is not none else '—' }}</div>
+            <div class="kpi-num">{{ '%.2f'|format(csat.weighted) ~ '%' if csat.weighted is not none else '—' }}</div>
             <div class="kpi-sub">Target 88%</div>
           </div>
           <div class="kpi-tile {{ '' if csr_pct is none else ('csr-lo' if csr_pct < 15 else ('csr-mid' if csr_pct <= 20 else 'csr-hi')) }}"
                title="CSR % = DSATs with root cause CSR and no rep responsible, divided by all DSATs. Under 15% good, 15–20% watch, over 20% high.">
             <div class="kpi-lbl">CSR % of DSATs</div>
-            <div class="kpi-num">{{ '%.1f'|format(csr_pct) ~ '%' if csr_pct is not none else '—' }}</div>
+            <div class="kpi-num">{{ '%.2f'|format(csr_pct) ~ '%' if csr_pct is not none else '—' }}</div>
             <div class="kpi-sub">{{ csat.csr.csr }} of {{ csat.csr.dsats }} DSATs</div>
           </div>
           <div class="kpi-tile">
@@ -781,7 +781,7 @@
           {% set c = csat.by_channel[ch] %}
           <span class="badge rounded-pill px-3 py-2 kpi-pill{% if c.pct is none %} is-zero{% endif %}">
             <i class="me-1" data-lucide="{{ icon }}"></i>{{ ch }}:
-            <strong class="kpi-val {{ csat_level(c.pct) }}">{{ '%.1f'|format(c.pct) ~ '%' if c.pct is not none else '—' }}</strong>
+            <strong class="kpi-val {{ csat_level(c.pct) }}">{{ '%.2f'|format(c.pct) ~ '%' if c.pct is not none else '—' }}</strong>
             <span class="text-muted">({{ '{:,}'.format(c.resolved) }} resolved)</span>
           </span>
           {% endfor %}
@@ -907,7 +907,7 @@
                     var v = pts[i].weighted;
                     if (v == null) return;
                     c.fillStyle = ptColor(v);
-                    c.fillText(v.toFixed(1) + '%' + (pts[i].partial ? ' so far' : ''), pt.x, pt.y - 7);
+                    c.fillText(v.toFixed(2) + '%' + (pts[i].partial ? ' so far' : ''), pt.x, pt.y - 7);
                   });
                   c.restore();
                 }
@@ -921,7 +921,7 @@
                   tooltip: { callbacks: {
                     label: function(ctx){
                       var p = pts[ctx.dataIndex];
-                      return (p.weighted == null ? 'No data' : p.weighted.toFixed(1) + '%') + '  (' + p.responses + ' responses)' + (p.partial ? ' · in progress' : '');
+                      return (p.weighted == null ? 'No data' : p.weighted.toFixed(2) + '%') + '  (' + p.responses + ' responses)' + (p.partial ? ' · in progress' : '');
                     }
                   }}
                 },
