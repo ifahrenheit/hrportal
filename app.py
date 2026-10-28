@@ -11650,7 +11650,7 @@ def get_absence_records(date_from, date_to):
     """
     Scheduled, active employees with no 'Present' shift between date_from
     and date_to (inclusive): status 'Absent', 'FTS IN' or 'FTS OUT'. Shifts
-    explained by an approved OT request are left out.
+    explained by an approved OT request or a suspension (SUS) are left out.
 
     Returns (records, leave_map, cws_map); the maps are keyed
     'employee_id|YYYY-MM-DD'. Shared by /admin/absences and the
@@ -11744,11 +11744,38 @@ def get_absence_records(date_from, date_to):
             finally:
                 cdb_ot.close()
 
+        # ── Step 3c: Suspension (SUS) dates from central_db.absence_records,
+        # same definition as admin_attendance_grid() and the AWOL report. A
+        # suspension fully explains the absence, so those days are left out. ──
+        sus_lookup = {}
+        try:
+            cdb_sus = get_central_db()
+            try:
+                with cdb_sus.cursor() as c:
+                    c.execute("""
+                        SELECT employee_id, DATE_FORMAT(absence_date, '%%Y-%%m-%%d') AS d
+                        FROM absence_records
+                        WHERE code = 'SUS'
+                          AND employee_id IS NOT NULL
+                          AND absence_date IS NOT NULL
+                          AND absence_date BETWEEN %s AND %s
+                    """, (date_from, date_to))
+                    for row in c.fetchall():
+                        sus_lookup.setdefault(row['employee_id'], set()).add(row['d'])
+            finally:
+                cdb_sus.close()
+        except Exception as e:
+            app.logger.warning(f"absence-records: SUS lookup failed, continuing without it: {e}")
+            sus_lookup = {}
+
         # ── Step 4: Match scheduled rows to attendance_map ──
         for row in scheduled:
             pid        = int(row['personid']) if row['personid'] else None
             sched_date = row['absent_date']
             key        = (pid, sched_date)
+
+            if str(sched_date) in sus_lookup.get(row['employee_id'], ()):
+                continue  # suspended that day; exclude from report
 
             att = attendance_map.get(key)
 
