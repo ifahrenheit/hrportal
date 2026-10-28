@@ -1067,11 +1067,18 @@ def index():
         return redirect(url_for('dashboard'))
     return render_template('login.html')
 
+def _env_admin_emails():
+    """Full portal admins listed in .env PORTAL_ADMIN_EMAILS (comma-separated).
+    Granted in addition to central_db.Employees.role = 'Admin'."""
+    raw = os.environ.get('PORTAL_ADMIN_EMAILS', '')
+    return {e.strip().lower() for e in raw.split(',') if e.strip()}
+
 def _is_separated_non_admin(employee_id, email):
     """True when the employee's gsheet row (matched by employee_id) is
-    Separated. Portal admins (central_db.Employees.role = 'Admin') are never
-    blocked, so a sheet mistake can't lock out an administrator."""
-    if not employee_id:
+    Separated. Portal admins (central_db.Employees.role = 'Admin', or listed
+    in PORTAL_ADMIN_EMAILS) are never blocked, so a sheet mistake can't lock
+    out an administrator."""
+    if not employee_id or email in _env_admin_emails():
         return False
     cdb = get_central_db()
     try:
@@ -1194,7 +1201,7 @@ def auth_callback():
             central_role = row['role'].strip() if row and row['role'] else 'Employee'
     finally:
         db_tmp.close()
-    session['is_admin'] = (central_role == 'Admin')
+    session['is_admin'] = (central_role == 'Admin') or email in _env_admin_emails()
     session['is_supervisor'] = is_supervisor(employee['emp_number'])
     # CSAT TL flag (for sidebar visibility) — set if email is in csat_tl_map
     session['is_csat_tl'] = False
