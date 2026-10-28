@@ -8,6 +8,57 @@
 
 ---
 
+## 2026-10-29 — Mailing lists follow the employee sheet; admins via .env
+Commit: `239367b` (changes below uncommitted) · Branch: `main`
+
+### What was built / changed
+- **`PORTAL_ADMIN_EMAILS`:** a comma-separated list in `.env` that grants full admin at login, on top of `central_db.Employees.role = 'Admin'`. Listed emails are also exempt from the Separated-status login block. Code: `_env_admin_emails()` and `_is_separated_non_admin()`, plus the `session['is_admin']` line in `auth_callback` in `app.py`.
+- **Mailing list sheet sync:** `scripts/mailing_list_sheet_sync.py` makes the cPanel/Mailman groups match `gsheet_employees.mailing_list`. Tests are in `tests/test_mailing_list_sheet_sync.py`, docs in the "Sync from the employee sheet" section of `docs/mailing-lists.md`.
+- **`modules/mailing_lists.py`:** `_actor()` returns `system:sheet-sync` / "Sheet sync" outside a request, so cron changes are audited.
+- **Webhook (outside this repo):** `/var/www/html/UMMS-Core/webapp/app.py`, run by systemd `employee-sync` (gunicorn :5000, behind `webhook.cohere.ph`). Its `batch_sync` now saves `'Mailing List'` into `mailing_list`, and it logs a warning when that field is missing from a batch. Backup: `app.py.bak.20261028225000`; the folder is not under git. `/var/www/html/automation/webhook_server.py` is an old copy that is not running.
+- **cPanel:** deleted the `gygbo1@` forwarder (21 targets, recorded in mailing list History). The `gygbo1@` mailbox remains. First live sync run: 17 added, 31 removed, all verified.
+
+### Why / decisions
+- The user is leaving and handing the portal to a new full admin. Sub-admins can't manage sub-admins, supervisors or login-as, so the successor needs full admin.
+- Sheet data chain: Cohere Employee List → "Employee Master List" (IMPORTRANGE `A:AF`, widened from `A:AD`) → "CSAT and MasterList sheet", which holds the Apps Script `scheduledSync` that sends every header to the webhook. Pushes happen about every 6h (00/06/12/18), or on demand with "Sync Employees Now".
+- Sync rules agreed with the user:
+  - Add Active employees the sheet assigns to a list.
+  - Remove sheet employees who are Separated, or whose filled cell no longer names the list.
+  - Leave blank and `#N/A` cells alone.
+  - Never touch addresses that aren't in the sheet.
+- Aliases and exclusions:
+  - `gygL2@` is treated as `l2-agents@`, and `gygbo1@` as `bo-cohere@`.
+  - `soms@` is not managed (it isn't a cPanel group).
+  - `hr@` is not managed: it forwards HR's mailbox, and the sheet maps all of SGA to it.
+- The Finest group (managers) is add-only.
+- `gygccall@` is synced as its Mailman list. Its forwarder targets are other groups, not people.
+- Removal guard: more than 20 removals, or more than 25% of a list, in one run skips that list. `--allow-big` was used once for the catch-up run.
+- The user accepts that manual adds of sheet employees with a filled cell get undone by the next sync.
+
+### Database changes
+```sql
+-- central_db
+ALTER TABLE gsheet_employees ADD COLUMN mailing_list VARCHAR(500) NULL DEFAULT NULL AFTER call_email_mode, ALGORITHM=INSTANT;
+```
+
+### Config / environment
+- New `.env` key `PORTAL_ADMIN_EMAILS`, currently empty. Changes need a `leavesystem` restart, then the person logs out and back in.
+- `.gitignore` now includes `mailing_list_sheet_sync.state`, which holds the last applied push timestamp.
+- Services restarted: `leavesystem` and `employee-sync`.
+
+### How to verify
+- `venv/bin/python scripts/mailing_list_sheet_sync.py` (dry run): every list should say "in sync".
+- Portal → Admin → Mailing Lists → History, filtered by "Sheet sync".
+
+### Open items / next steps
+- [ ] **The user must add the cron line**, because Claude was blocked from editing root's crontab: `*/30 * * * * cd /var/www/html/leavesystem && venv/bin/python scripts/mailing_list_sheet_sync.py --live >> mailing_list_sheet_sync.log 2>&1`
+- [ ] Name the successor admin, add them to `PORTAL_ADMIN_EMAILS`, then remove `andrewvincentt@gmail.com` from Admin and rotate credentials. The secrets in the `employee-sync` unit file and the Apps Script were exposed in chat.
+- [ ] Run Separated cleanup for lists the sheet doesn't cover (gygcs@ has 7).
+- [ ] Fix the one `#N/A` Mailing List formula in the sheet. Arctic CS Adelfa Maderazo and Jessamae Salazar are still on bo-cohere@ because their cells are blank.
+- [ ] Commit this session's code: `.gitignore`, the `app.py` admin change, `modules/mailing_lists.py`, `docs/mailing-lists.md`, the new script and its tests. The `app.py` diff also contains the pending documents-module work.
+
+---
+
 ## 2026-10-27 — Absences page now skips SUS days; absence sheet syncs every 2h
 Commit: `fd68361` (app.py change uncommitted) · Branch: `main`
 
