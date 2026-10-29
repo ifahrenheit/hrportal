@@ -34,7 +34,7 @@
       </div>
       <div class="col-md-4 text-end">
         <button type="button" id="copyItemsBtn" class="btn btn-outline-secondary me-2" onclick="copyItemsTable()"
-                title="Copy Item Name and Unit for a physical count">
+                title="Copy Item Name, Unit, Min Stock Alert and Max Stock for a physical count">
           <i class="me-1" data-lucide="copy"></i>Copy Table
         </button>
         <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addItemModal">
@@ -58,7 +58,7 @@
                 Item Name <i id="sort-arrow-1" data-lucide="arrow-up-down"></i>
               </th>
               <th>Description</th>
-              <th class="text-center">Stock</th><th class="text-center">Min Alert</th>
+              <th class="text-center">Stock</th><th class="text-center">Min Alert</th><th class="text-center">Max Stock</th>
               <th>Unit</th><th>Supplier</th><th>Location</th><th>Cost</th><th></th>
             </tr>
           </thead>
@@ -72,7 +72,7 @@
             <tr>
             {% endif %}
               <td><span class="badge bg-secondary">{{ item.category }}</span></td>
-              <td class="fw-semibold">{{ item.item_name }}</td>
+              <td class="fw-semibold" data-min="{{ item.min_stock_alert if item.min_stock_alert is not none else '' }}" data-max="{{ item.max_stock or '' }}">{{ item.item_name }}</td>
               <td class="small text-muted">{{ item.description or '—' }}</td>
               <td class="text-center">
                 {% if item.current_stock <= item.min_stock_alert %}
@@ -85,6 +85,7 @@
                 {% endif %}
               </td>
               <td class="text-center small">{{ item.min_stock_alert }}</td>
+              <td class="text-center small">{{ item.max_stock or "—" }}</td>
               <td class="small">{{ item.unit }}</td>
               <td class="small">{{ item.supplier or '—' }}</td>
               <td class="small">{{ item.location or '—' }}</td>
@@ -109,7 +110,7 @@
               </td>
             </tr>
             {% else %}
-            <tr><td colspan="10" class="text-center text-muted py-4">No items found.</td></tr>
+            <tr><td colspan="11" class="text-center text-muted py-4">No items found.</td></tr>
             {% endfor %}
           </tbody>
         </table>
@@ -731,13 +732,15 @@ function sortTable(col) {
 }
 </script>
 <script>
-// Copies Item Name, a blank count column, and Unit (current filter/sort order) as
-// tab-separated text, so it pastes into Excel/Sheets for a physical stock count.
+// Copies Item Name, a blank count column, Unit, Min Stock Alert and Max Stock
+// (current filter/sort order) as tab-separated text, so it pastes into Excel/Sheets for a physical stock count.
 function copyItemsTable() {
-  const lines = ['Item Name\tActual Count\tUnit'];
+  const lines = ['Item Name\tActual Count\tUnit\tMin Stock Alert\tMax Stock'];
   document.querySelectorAll('#itemsTable tbody tr').forEach(function(tr) {
     if (tr.cells.length < 6) return;  // "No items found." row
-    lines.push(tr.cells[1].innerText.trim() + '\t\t' + tr.cells[5].innerText.trim());
+    const name = tr.cells[1];
+    lines.push([name.innerText.trim(), '', tr.cells[6].innerText.trim(),
+                name.dataset.min || '', name.dataset.max || ''].join('\t'));
   });
   const text = lines.join('\n');
   const btn = document.getElementById('copyItemsBtn');
