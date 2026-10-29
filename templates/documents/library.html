@@ -1,11 +1,11 @@
 {% extends "base.html" %}
 {% block title %}Document Library{% endblock %}
 {% block page_title %}Document Library{% endblock %}
-{% block page_subtitle %}Scanned memos, policies and other HR documents · {{ total }} document{{ 's' if total != 1 else '' }}{% endblock %}
+{% block page_subtitle %}Scanned memos, policies and other HR documents · {{ all_count }} document{{ 's' if all_count != 1 else '' }}{% endblock %}
 {% block page_actions %}
 {% if can_manage %}
 <button type="button" class="btn btn-primary btn-sm" data-bs-toggle="modal" data-bs-target="#uploadModal">
-  <i data-lucide="upload"></i> Upload documents
+  <i data-lucide="upload"></i> Upload{% if current_folder or current_employee %} here{% else %} documents{% endif %}
 </button>
 {% endif %}
 {% endblock %}
@@ -16,21 +16,120 @@
   .doc-icon { flex:0 0 38px; height:46px; border-radius:6px; display:flex; align-items:center; justify-content:center;
               background:rgba(59,130,246,.12); color:#3b82f6; }
   .doc-icon.img { background:rgba(16,185,129,.12); color:#10b981; }
+  .doc-icon.folder { height:38px; background:rgba(245,158,11,.14); color:#d97706; }
   .doc-main { flex:1; min-width:0; }
   .doc-title { font-weight:600; text-decoration:none; }
   .doc-meta { font-size:.8rem; color:var(--text-muted); display:flex; flex-wrap:wrap; gap:.25rem .9rem; margin-top:.15rem; }
   .doc-snippet { font-size:.84rem; margin-top:.35rem; color:var(--text-muted); overflow-wrap:anywhere; }
   .doc-snippet mark { padding:0 .1rem; }
   .doc-side { flex:0 0 auto; text-align:right; font-size:.78rem; color:var(--text-muted); }
+  .folder-row { align-items:center; padding:.6rem 1rem; text-decoration:none; color:inherit; }
+  .folder-row:hover { background:rgba(59,130,246,.05); }
   @media (max-width: 576px) { .doc-side { display:none; } }
+
+  .doc-tree { font-size:.86rem; }
+  .doc-tree ul { list-style:none; margin:0; padding-left:1rem; }
+  .doc-tree > ul { padding-left:0; }
+  .doc-tree a, .doc-tree summary { display:flex; align-items:center; gap:.4rem; padding:.22rem .45rem; border-radius:6px;
+                                   color:inherit; text-decoration:none; cursor:pointer; }
+  .doc-tree a:hover, .doc-tree summary:hover { background:rgba(59,130,246,.07); }
+  .doc-tree a.active { background:rgba(59,130,246,.14); color:#2563eb; font-weight:600; }
+  .doc-tree summary { list-style:none; }
+  .doc-tree summary::-webkit-details-marker { display:none; }
+  .doc-tree summary .chev { transition:transform .15s; flex:0 0 auto; }
+  .doc-tree details[open] > summary .chev { transform:rotate(90deg); }
+  .doc-tree summary a { padding:0; flex:1; min-width:0; }
+  .doc-tree summary a:hover { background:none; }
+  .doc-tree .nm { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .doc-tree .ct { font-size:.72rem; color:var(--text-muted); }
+  .doc-tree .spacer { width:1em; flex:0 0 auto; }
+  .letter-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(88px, 1fr)); gap:.5rem; padding:1rem; }
+  .letter-grid a { border:1px solid var(--border); border-radius:8px; padding:.6rem; text-align:center; text-decoration:none; color:inherit; }
+  .letter-grid a:hover { border-color:#3b82f6; }
+  .letter-grid strong { display:block; font-size:1.2rem; }
 </style>
 
+{% set open_ids = current_folder.path|map(attribute='id')|list if current_folder else [] %}
+{% set open_letter = current_employee.letter if current_employee else letter %}
+
+{% macro folder_tree(nodes) -%}
+<ul>
+  {% for f in nodes %}
+  <li>
+    {% if f.children %}
+    <details {% if f.id in open_ids %}open{% endif %}>
+      <summary><i data-lucide="chevron-right" class="chev"></i>
+        <a href="{{ url_for('documents.library', folder=f.id) }}" class="{{ 'active' if current_folder and current_folder.id == f.id }}">
+          <i data-lucide="folder"></i><span class="nm">{{ f.name }}</span>{% if f.n %}<span class="ct">{{ f.n }}</span>{% endif %}</a>
+      </summary>
+      {{ folder_tree(f.children) }}
+    </details>
+    {% else %}
+    <a href="{{ url_for('documents.library', folder=f.id) }}" class="{{ 'active' if current_folder and current_folder.id == f.id }}">
+      <span class="spacer"></span><i data-lucide="folder"></i><span class="nm">{{ f.name }}</span>{% if f.n %}<span class="ct">{{ f.n }}</span>{% endif %}</a>
+    {% endif %}
+  </li>
+  {% endfor %}
+</ul>
+{%- endmacro %}
+
+<div class="row g-3">
+  <div class="col-lg-3">
+    <div class="card shadow-sm">
+      <div class="card-body p-2 doc-tree">
+        <ul>
+          <li><a href="{{ url_for('documents.library') }}"
+                 class="{{ 'active' if not (current_folder or current_employee or letter or view or filters.text_status) }}">
+            <span class="spacer"></span><i data-lucide="library"></i><span class="nm">All documents</span><span class="ct">{{ all_count }}</span></a></li>
+          <li>
+            <details {% if view == 'employees' or open_letter %}open{% endif %}>
+              <summary><i data-lucide="chevron-right" class="chev"></i>
+                <a href="{{ url_for('documents.library', view='employees') }}" class="{{ 'active' if view == 'employees' }}">
+                  <i data-lucide="users"></i><span class="nm">Employees</span></a></summary>
+              <ul>
+                {% for l, people in emp_letters.items() %}
+                <li>
+                  <details {% if open_letter == l %}open{% endif %}>
+                    <summary><i data-lucide="chevron-right" class="chev"></i>
+                      <a href="{{ url_for('documents.library', letter=l) }}" class="{{ 'active' if letter == l and not current_employee }}">
+                        <i data-lucide="folder"></i><span class="nm">{{ l }}</span><span class="ct">{{ people|length }}</span></a></summary>
+                    <ul>
+                      {% for p in people %}
+                      <li><a href="{{ url_for('documents.library', employee_id=p.employee_id) }}"
+                             class="{{ 'active' if current_employee and current_employee.employee_id == p.employee_id }}" title="{{ p.name }} · {{ p.employee_id }}">
+                        <span class="spacer"></span><i data-lucide="folder-closed"></i><span class="nm">{{ p.display }}</span><span class="ct">{{ p.n }}</span></a></li>
+                      {% endfor %}
+                    </ul>
+                  </details>
+                </li>
+                {% else %}
+                <li class="text-muted small px-2 py-1">No employee documents yet</li>
+                {% endfor %}
+              </ul>
+            </details>
+          </li>
+          <li>
+            <details {% if view == 'folders' or current_folder %}open{% endif %}>
+              <summary><i data-lucide="chevron-right" class="chev"></i>
+                <a href="{{ url_for('documents.library', view='folders') }}" class="{{ 'active' if view == 'folders' }}">
+                  <i data-lucide="building"></i><span class="nm">Company folders</span></a></summary>
+              {% if folder_roots %}{{ folder_tree(folder_roots) }}{% else %}<div class="text-muted small px-4 py-1">No folders yet</div>{% endif %}
+            </details>
+          </li>
+          <li><a href="{{ url_for('documents.library', view='unfiled') }}" class="{{ 'active' if view == 'unfiled' }}">
+            <span class="spacer"></span><i data-lucide="inbox"></i><span class="nm">Unfiled</span><span class="ct">{{ unfiled_count }}</span></a></li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-lg-9">
 <div class="card shadow-sm mb-3">
   <div class="card-body py-3 px-3">
     <form method="get" class="row g-2 align-items-end">
       <div class="col-md-5">
-        <label class="form-label small text-muted mb-1">Search</label>
-        <input type="search" name="q" class="form-control form-control-sm" autofocus
+        <label class="form-label small text-muted mb-1">Search{% if current_folder %} in this folder{% elif current_employee %} this employee's documents{% endif %}</label>
+        <input type="search" name="q" class="form-control form-control-sm"
                placeholder="Words in the document, title, memo no., employee name or ID…" value="{{ filters.q }}">
       </div>
       <div class="col-md-3">
@@ -48,16 +147,17 @@
         </select>
       </div>
       {% if filters.employee_id %}<input type="hidden" name="employee_id" value="{{ filters.employee_id }}">{% endif %}
+      {% if filters.folder %}<input type="hidden" name="folder" value="{{ filters.folder }}">{% endif %}
+      {% if view == 'unfiled' %}<input type="hidden" name="view" value="unfiled">{% endif %}
       {% if filters.text_status %}<input type="hidden" name="text_status" value="{{ filters.text_status }}">{% endif %}
       <div class="col-md-2 d-grid">
         <button type="submit" class="btn btn-sm btn-primary"><i data-lucide="search"></i> Search</button>
       </div>
     </form>
     <div class="d-flex flex-wrap gap-3 mt-2 small">
-      {% if filters.q or filters.category or filters.year or filters.employee_id or filters.text_status %}
-      <a href="{{ url_for('documents.library') }}" class="text-muted"><i data-lucide="circle-x"></i> Clear filters</a>
+      {% if filters.q or filters.category or filters.year or filters.text_status %}
+      <a href="{{ url_for('documents.library', folder=filters.folder or None, employee_id=filters.employee_id or None, view=(view if view == 'unfiled' else None)) }}" class="text-muted"><i data-lucide="circle-x"></i> Clear filters</a>
       {% endif %}
-      {% if filters.employee_id %}<span class="text-muted">Employee: <strong>{{ filters.employee_id }}</strong></span>{% endif %}
       {% if can_manage and needs_ocr and filters.text_status != 'needs_ocr' %}
       <a href="{{ url_for('documents.library', text_status='needs_ocr') }}" class="text-warning">
         <i data-lucide="scan-text"></i> {{ needs_ocr }} scan{{ 's' if needs_ocr != 1 else '' }} without readable text</a>
@@ -66,10 +166,96 @@
   </div>
 </div>
 
+{# where am I: breadcrumb + folder actions #}
+<div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-2">
+  <nav aria-label="Location" class="small">
+    <ol class="breadcrumb mb-0">
+      <li class="breadcrumb-item"><a href="{{ url_for('documents.library') }}">All documents</a></li>
+      {% if current_employee or letter or view == 'employees' %}
+        <li class="breadcrumb-item"><a href="{{ url_for('documents.library', view='employees') }}">Employees</a></li>
+        {% if open_letter %}<li class="breadcrumb-item"><a href="{{ url_for('documents.library', letter=open_letter) }}">{{ open_letter }}</a></li>{% endif %}
+        {% if current_employee %}<li class="breadcrumb-item active">{{ current_employee.display }} <span class="text-muted">· {{ current_employee.employee_id }}</span></li>{% endif %}
+      {% elif current_folder or view == 'folders' %}
+        <li class="breadcrumb-item"><a href="{{ url_for('documents.library', view='folders') }}">Company folders</a></li>
+        {% if current_folder %}{% for f in current_folder.path %}
+          <li class="breadcrumb-item {{ 'active' if loop.last }}">{% if loop.last %}{{ f.name }}{% else %}<a href="{{ url_for('documents.library', folder=f.id) }}">{{ f.name }}</a>{% endif %}</li>
+        {% endfor %}{% endif %}
+      {% elif view == 'unfiled' %}
+        <li class="breadcrumb-item active">Unfiled</li>
+      {% endif %}
+    </ol>
+  </nav>
+  {% if can_manage and (view == 'folders' or current_folder) %}
+  <div class="d-flex gap-2">
+    {% if not current_folder or current_folder.path|length < max_folder_depth %}
+    <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-toggle="modal" data-bs-target="#newFolderModal">
+      <i data-lucide="folder-plus"></i> New folder</button>
+    {% endif %}
+    {% if current_folder %}
+    <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-toggle="modal" data-bs-target="#renameFolderModal">
+      <i data-lucide="pencil"></i> Rename</button>
+    <form method="post" action="{{ url_for('documents.delete_folder', folder_id=current_folder.id) }}"
+          data-msg="Delete the empty folder “{{ current_folder.name }}”?" onsubmit="return confirm(this.dataset.msg);">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <button type="submit" class="btn btn-outline-danger btn-sm"
+              {% if current_folder.children or current_folder.n %}disabled title="Only empty folders can be deleted"{% endif %}>
+        <i data-lucide="trash"></i> Delete</button>
+    </form>
+    {% endif %}
+  </div>
+  {% endif %}
+</div>
+
+{% if can_manage and docs %}
+<div class="d-flex align-items-center gap-3 small mb-2 px-1" id="selBar">
+  <label class="form-check mb-0"><input class="form-check-input" type="checkbox" id="selAll">
+    <span class="form-check-label">Select all on this page</span></label>
+  <span class="text-muted" id="selCount"></span>
+  <button type="button" class="btn btn-outline-primary btn-sm ms-auto" id="moveBtn" disabled
+          data-bs-toggle="modal" data-bs-target="#moveModal"><i data-lucide="folder-input"></i> Move to…</button>
+</div>
+{% endif %}
+
 <div class="card shadow-sm">
   <div class="card-body p-0">
+    {% if folders_only and view == 'employees' %}
+      {% if emp_letters %}
+      <div class="letter-grid">
+        {% for l, people in emp_letters.items() %}
+        <a href="{{ url_for('documents.library', letter=l) }}"><strong>{{ l }}</strong>
+          <span class="small text-muted">{{ people|length }} employee{{ 's' if people|length != 1 }}</span></a>
+        {% endfor %}
+      </div>
+      {% else %}
+      <div class="text-center text-muted py-5">No documents are linked to an employee yet.</div>
+      {% endif %}
+    {% elif folders_only and letter %}
+      {% for p in emp_letters.get(letter, []) %}
+      <a class="doc-row folder-row" href="{{ url_for('documents.library', employee_id=p.employee_id) }}">
+        <div class="doc-icon folder"><i data-lucide="folder-closed"></i></div>
+        <div class="doc-main"><div class="doc-title">{{ p.display }}</div>
+          <div class="doc-meta"><span>{{ p.employee_id }}</span>{% if p.status and p.status != 'Active' %}<span>{{ p.status }}</span>{% endif %}</div></div>
+        <div class="doc-side">{{ p.n }} file{{ 's' if p.n != 1 }}</div>
+      </a>
+      {% else %}
+      <div class="text-center text-muted py-5">No employees under {{ letter }} have documents yet.</div>
+      {% endfor %}
+    {% else %}
+      {% set subfolders = (current_folder.children if current_folder else (folder_roots if view == 'folders' else [])) %}
+      {% if not filters.q %}
+      {% for f in subfolders %}
+      <a class="doc-row folder-row" href="{{ url_for('documents.library', folder=f.id) }}">
+        <div class="doc-icon folder"><i data-lucide="folder"></i></div>
+        <div class="doc-main"><div class="doc-title">{{ f.name }}</div>
+          {% if f.children %}<div class="doc-meta"><span>{{ f.children|length }} folder{{ 's' if f.children|length != 1 }}</span></div>{% endif %}</div>
+        <div class="doc-side">{{ f.n }} file{{ 's' if f.n != 1 }}</div>
+      </a>
+      {% endfor %}
+      {% endif %}
     {% for d in docs %}
     <div class="doc-row">
+      {% if can_manage %}<input class="form-check-input doc-check align-self-center m-0" type="checkbox" name="doc_ids"
+             value="{{ d.id }}" form="moveForm" aria-label="Select {{ d.title }}">{% endif %}
       <div class="doc-icon {{ 'img' if d.mime_type.startswith('image/') }}">
         <i data-lucide="{{ 'file-image' if d.mime_type.startswith('image/') else 'file-text' }}"></i>
       </div>
@@ -79,7 +265,8 @@
           <span class="badge bg-secondary">{{ d.category }}</span>
           {% if d.doc_date %}<span>{{ d.doc_date.strftime('%b %d, %Y') }}</span>{% endif %}
           {% if d.reference_no %}<span>No. {{ d.reference_no }}</span>{% endif %}
-          {% if d.employee_id %}<span><i data-lucide="user"></i> {{ d.employee_name or d.employee_id }}</span>{% endif %}
+          {% if d.employee_id and not current_employee %}<span><i data-lucide="user"></i> {{ d.employee_name or d.employee_id }}</span>{% endif %}
+          {% if d.folder_id and folders.get(d.folder_id) and not current_folder %}<span><i data-lucide="folder"></i> {{ folders[d.folder_id].label }}</span>{% endif %}
           {% if d.visibility == 'hr' %}<span><i data-lucide="lock"></i> HR only</span>{% endif %}
           {% if d.text_status == 'needs_ocr' %}<span class="text-warning" title="Scanned image without readable text yet">No text yet</span>{% endif %}
         </div>
@@ -92,17 +279,26 @@
       </div>
     </div>
     {% else %}
+    {% if filters.q or not subfolders %}
     <div class="text-center text-muted py-5">
       <i class="d-block mx-auto mb-2" data-lucide="folder-search" style="width:36px;height:36px"></i>
-      {% if filters.q or filters.category or filters.year or filters.employee_id or filters.text_status %}
+      {% if filters.q or filters.category or filters.year or filters.text_status %}
         No documents match these filters.
+      {% elif current_folder or current_employee %}
+        This folder is empty.{% if can_manage %} Use <strong>Upload here</strong> to add files.{% endif %}
+      {% elif view == 'folders' %}
+        No company folders yet.{% if can_manage %} Use <strong>New folder</strong> to make one.{% endif %}
+      {% elif view == 'unfiled' %}
+        Every document is filed under an employee or a folder.
       {% elif can_manage %}
         The library is empty. Use <strong>Upload documents</strong> to add scanned files.
       {% else %}
         No documents have been shared yet.
       {% endif %}
     </div>
+    {% endif %}
     {% endfor %}
+    {% endif %}
   </div>
 </div>
 
@@ -119,21 +315,135 @@
   </ul>
 </nav>
 {% endif %}
+  </div>
+</div>
+
+{% if can_manage %}
+<div class="modal fade" id="newFolderModal" tabindex="-1" aria-labelledby="newFolderLabel" aria-hidden="true">
+  <div class="modal-dialog modal-sm">
+    <form class="modal-content" method="post" action="{{ url_for('documents.create_folder') }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <input type="hidden" name="parent_id" value="{{ current_folder.id if current_folder else '' }}">
+      <input type="hidden" name="return_to" value="{{ request.full_path }}">
+      <div class="modal-header">
+        <h5 class="modal-title" id="newFolderLabel">New folder</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <div class="small text-muted mb-2">Inside: <strong>{{ current_folder.label if current_folder else 'Company folders' }}</strong></div>
+        <input type="text" name="name" class="form-control form-control-sm" maxlength="120" required placeholder="e.g. Policies 2026">
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
+        <button type="submit" class="btn btn-primary btn-sm">Create</button>
+      </div>
+    </form>
+  </div>
+</div>
+<div class="modal fade" id="moveModal" tabindex="-1" aria-labelledby="moveLabel" aria-hidden="true">
+  <div class="modal-dialog">
+    <form class="modal-content" method="post" action="{{ url_for('documents.move_documents') }}" id="moveForm">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <input type="hidden" name="return_to" value="{{ request.full_path }}">
+      <div class="modal-header">
+        <h5 class="modal-title" id="moveLabel">Move <span id="moveCount"></span></h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <div class="mb-3">
+          <label class="form-label small">Company folder</label>
+          <select name="folder" class="form-select form-select-sm">
+            <option value="keep">Don't change</option>
+            <option value="">No company folder</option>
+            {% for fid, label in folder_options %}<option value="{{ fid }}">{{ label }}</option>{% endfor %}
+          </select>
+        </div>
+        <div>
+          <label class="form-label small">Employee</label>
+          <select name="employee" class="form-select form-select-sm" id="moveEmp">
+            <option value="keep">Don't change</option>
+            <option value="set">Link to employee…</option>
+            <option value="clear">Remove employee link</option>
+          </select>
+          <input type="text" name="employee_id" id="moveEmpId" class="form-control form-control-sm mt-2" maxlength="50"
+                 placeholder="Employee ID, e.g. 220510-04" style="display:none">
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
+        <button type="submit" class="btn btn-primary btn-sm">Move</button>
+      </div>
+    </form>
+  </div>
+</div>
+{% if current_folder %}
+<div class="modal fade" id="renameFolderModal" tabindex="-1" aria-labelledby="renameFolderLabel" aria-hidden="true">
+  <div class="modal-dialog modal-sm">
+    <form class="modal-content" method="post" action="{{ url_for('documents.rename_folder', folder_id=current_folder.id) }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <div class="modal-header">
+        <h5 class="modal-title" id="renameFolderLabel">Rename folder</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <input type="text" name="name" class="form-control form-control-sm" maxlength="120" required value="{{ current_folder.name }}">
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
+        <button type="submit" class="btn btn-primary btn-sm">Save</button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endif %}
+{% endif %}
 
 {% if can_manage %}
 <div class="modal fade" id="uploadModal" tabindex="-1" aria-labelledby="uploadModalLabel" aria-hidden="true">
   <div class="modal-dialog modal-lg">
     <form class="modal-content" method="post" action="{{ url_for('documents.upload') }}" enctype="multipart/form-data" id="uploadForm">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <input type="hidden" name="return_to" value="{{ request.full_path }}">
       <div class="modal-header">
         <h5 class="modal-title" id="uploadModalLabel">Upload documents</h5>
         <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
       </div>
       <div class="modal-body">
+        {% if current_employee %}
+        <div class="alert alert-info py-2 small mb-3"><i data-lucide="folder"></i> Uploading into
+          <strong>{{ current_employee.display }} · {{ current_employee.employee_id }}</strong></div>
+        {% endif %}
         <div class="mb-3">
           <label class="form-label">Files</label>
           <input type="file" name="files" id="uploadFiles" class="form-control" multiple required accept=".pdf,.jpg,.jpeg,.png">
           <div class="form-text">PDF, JPG or PNG, up to 25 MB each and 50 files at a time. The details below apply to every file in this upload.</div>
+          <div class="d-flex flex-wrap align-items-center gap-2 mt-2">
+            <span class="small text-muted">or</span>
+            <label for="uploadFolder" class="btn btn-outline-primary btn-sm mb-0" role="button">
+              <i data-lucide="folder-up"></i> Choose a whole folder</label>
+            <span class="small text-muted">one sub-folder per employee (e.g. "Canonigo, Aaron"); each file is linked to that employee.</span>
+            <input type="file" id="uploadFolder" class="d-none" webkitdirectory multiple>
+          </div>
+        </div>
+        <div id="folderReview" class="mb-3" style="display:none">
+          <div class="d-flex justify-content-between align-items-baseline mb-1">
+            <strong class="small" id="folderSummary"></strong>
+            <button type="button" class="btn btn-link btn-sm p-0" id="folderClear">Choose files instead</button>
+          </div>
+          <div class="form-text mb-2">Check the employee for each folder. Folders left on "Not linked" are still uploaded, just without an employee.</div>
+          <div class="table-responsive" style="max-height:280px;overflow:auto">
+            <table class="table table-sm align-middle mb-0">
+              <thead><tr><th>Folder</th><th class="text-end">Files</th><th>Employee</th></tr></thead>
+              <tbody id="folderRows"></tbody>
+            </table>
+          </div>
+        </div>
+        <div id="uploadProgress" class="mb-3" style="display:none">
+          <div class="progress mb-1" role="progressbar" aria-label="Upload progress">
+            <div class="progress-bar" id="uploadBar" style="width:0%"></div>
+          </div>
+          <div class="small text-muted" id="uploadStatus"></div>
+          <div class="small mt-2" id="uploadResult"></div>
         </div>
         <div class="row g-2">
           <div class="col-md-8" id="titleWrap">
@@ -144,6 +454,7 @@
             <label class="form-label small">Category</label>
             <select name="category" class="form-select form-select-sm">
               {% for c in categories %}<option>{{ c }}</option>{% endfor %}
+              <option value="auto">Detect from file name</option>
             </select>
           </div>
           <div class="col-md-4">
@@ -154,9 +465,16 @@
             <label class="form-label small">Memo / reference no.</label>
             <input type="text" name="reference_no" class="form-control form-control-sm" maxlength="64">
           </div>
-          <div class="col-md-4">
+          <div class="col-md-4" id="empWrap">
             <label class="form-label small">Employee ID <span class="text-muted">(if about one person)</span></label>
-            <input type="text" name="employee_id" class="form-control form-control-sm" maxlength="50">
+            <input type="text" name="employee_id" class="form-control form-control-sm" maxlength="50" value="{{ filters.employee_id }}">
+          </div>
+          <div class="col-12">
+            <label class="form-label small">Company folder <span class="text-muted">(optional)</span></label>
+            <select name="folder_id" class="form-select form-select-sm">
+              <option value="">None</option>
+              {% for fid, label in folder_options %}<option value="{{ fid }}" {% if current_folder and current_folder.id == fid %}selected{% endif %}>{{ label }}</option>{% endfor %}
+            </select>
           </div>
           <div class="col-12">
             <label class="form-label small">Notes / keywords</label>
@@ -204,15 +522,205 @@
     el.textContent = ''; el.appendChild(frag);
   });
 
+  // ticking documents for "Move to…"
+  var checks = Array.prototype.slice.call(document.querySelectorAll('.doc-check'));
+  var selAll = document.getElementById('selAll');
+  if (selAll) {
+    var refresh = function () {
+      var n = checks.filter(function (c) { return c.checked; }).length;
+      document.getElementById('selCount').textContent = n ? n + ' selected' : '';
+      document.getElementById('moveCount').textContent = n + ' document' + (n === 1 ? '' : 's');
+      document.getElementById('moveBtn').disabled = !n;
+      selAll.checked = n === checks.length;
+      selAll.indeterminate = n > 0 && n < checks.length;
+    };
+    checks.forEach(function (c) { c.addEventListener('change', refresh); });
+    selAll.addEventListener('change', function () {
+      checks.forEach(function (c) { c.checked = selAll.checked; });
+      refresh();
+    });
+    var moveEmp = document.getElementById('moveEmp'), moveEmpId = document.getElementById('moveEmpId');
+    moveEmp.addEventListener('change', function () {
+      moveEmpId.style.display = moveEmp.value === 'set' ? '' : 'none';
+      moveEmpId.required = moveEmp.value === 'set';
+    });
+    refresh();
+  }
+
   var files = document.getElementById('uploadFiles');
   if (files) {
+    var form = document.getElementById('uploadForm');
+    var folderInput = document.getElementById('uploadFolder');
+    var btn = document.getElementById('uploadBtn');
+    var BATCH = 10;              // files per request, keeps each request well inside the proxy timeout
+    var OK_EXT = /\.(pdf|jpe?g|png)$/i;
+    var groups = null;           // folder mode: [{folder, files, select}]
+
+    function show(id, on) { document.getElementById(id).style.display = on ? '' : 'none'; }
+
     files.addEventListener('change', function () {
       // one title can't fit many files; each takes its own file name
-      document.getElementById('titleWrap').style.display = files.files.length > 1 ? 'none' : '';
+      show('titleWrap', files.files.length <= 1);
     });
-    document.getElementById('uploadForm').addEventListener('submit', function () {
-      var b = document.getElementById('uploadBtn');
-      b.disabled = true; b.textContent = 'Uploading…';
+
+    function leaveFolderMode() {
+      groups = null; folderInput.value = '';
+      files.disabled = false; files.required = true;
+      show('folderReview', false); show('empWrap', true); show('titleWrap', true);
+      form.category.value = form.category.options[0].value;
+    }
+    document.getElementById('folderClear').addEventListener('click', leaveFolderMode);
+
+    folderInput.addEventListener('change', function () {
+      // the picked folder is parts[0]; group by its sub-folders, files at the top use the picked folder's name
+      var byFolder = {}, order = [], ignored = 0;
+      Array.prototype.forEach.call(folderInput.files, function (f) {
+        if (!OK_EXT.test(f.name)) { ignored++; return; }
+        var parts = (f.webkitRelativePath || f.name).split('/');
+        var key = parts.length >= 3 ? parts[1] : parts[0];
+        if (!byFolder[key]) { byFolder[key] = []; order.push(key); }
+        byFolder[key].push(f);
+      });
+      if (!order.length) {
+        alert('No PDF, JPG or PNG files in that folder.');
+        folderInput.value = ''; return;
+      }
+      groups = order.map(function (k) { return { folder: k, files: byFolder[k] }; });
+      var total = order.reduce(function (n, k) { return n + byFolder[k].length; }, 0);
+
+      files.value = ''; files.disabled = true; files.required = false;
+      show('empWrap', false); show('titleWrap', false); show('folderReview', true);
+      form.category.value = 'auto';
+      document.getElementById('folderSummary').textContent =
+        total + ' file' + (total === 1 ? '' : 's') + ' in ' + order.length + ' folder' + (order.length === 1 ? '' : 's') +
+        (ignored ? ' (' + ignored + ' other file' + (ignored === 1 ? '' : 's') + ' ignored, e.g. Word or Excel)' : '');
+
+      var tbody = document.getElementById('folderRows');
+      tbody.textContent = '';
+      groups.forEach(function (g) {
+        var tr = document.createElement('tr');
+        var td1 = document.createElement('td'); td1.textContent = g.folder;
+        var td2 = document.createElement('td'); td2.className = 'text-end'; td2.textContent = g.files.length;
+        var td3 = document.createElement('td');
+        g.select = document.createElement('select');
+        g.select.className = 'form-select form-select-sm';
+        g.select.add(new Option('Matching…', ''));
+        td3.appendChild(g.select);
+        tr.append(td1, td2, td3); tbody.appendChild(tr);
+      });
+
+      fetch('{{ url_for("documents.match_folders") }}', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Accept': 'application/json',
+                   'X-CSRF-Token': form.csrf_token.value },
+        body: JSON.stringify({ folders: order })
+      }).then(function (r) { return r.json(); }).then(function (data) {
+        groups.forEach(function (g) {
+          var m = (data.matches || {})[g.folder] || { exact: [], maybe: [] };
+          var sel = g.select;
+          sel.textContent = '';
+          sel.add(new Option('Not linked', ''));
+          function add(list, label) {
+            if (!list.length) return;
+            var og = document.createElement('optgroup'); og.label = label;
+            list.forEach(function (c) {
+              og.appendChild(new Option(c.name + ' · ' + c.employee_id + (c.status && c.status !== 'Active' ? ' (' + c.status + ')' : ''), c.employee_id));
+            });
+            sel.appendChild(og);
+          }
+          add(m.exact, m.exact.length === 1 ? 'Match' : 'Possible matches');
+          add(m.maybe, 'Similar names');
+          var other = new Option('Type an employee ID…', '__type'); sel.add(other);
+          if (m.exact.length === 1) sel.value = m.exact[0].employee_id;
+          sel.classList.toggle('border-warning', m.exact.length !== 1);
+          sel.addEventListener('change', function () {
+            sel.classList.remove('border-warning');
+            if (sel.value !== '__type') return;
+            var id = (prompt('Employee ID for "' + g.folder + '"') || '').trim();
+            if (!id) { sel.value = ''; return; }
+            var opt = new Option(id, id); sel.add(opt, other); sel.value = id;
+          });
+        });
+      }).catch(function () {
+        groups.forEach(function (g) { g.select.textContent = ''; g.select.add(new Option('Not linked (matching failed)', '')); });
+      });
+    });
+
+    function postBatch(empId, batch) {
+      var fd = new FormData();
+      ['csrf_token', 'folder_id', 'category', 'doc_date', 'reference_no', 'description'].forEach(function (n) {
+        fd.append(n, form[n].value);
+      });
+      fd.append('visibility', form.querySelector('input[name=visibility]:checked').value);
+      fd.append('employee_id', empId);
+      batch.forEach(function (f) { fd.append('files', f, f.name); });
+      return fetch(form.action, { method: 'POST', body: fd, headers: { 'Accept': 'application/json' } })
+        .then(function (r) {
+          return r.json().catch(function () { return { error: 'server error ' + r.status }; });
+        })
+        .catch(function () { return { error: 'connection lost' }; });
+    }
+
+    form.addEventListener('submit', function (e) {
+      if (!groups) {             // plain file upload: let the form post as before
+        btn.disabled = true; btn.textContent = 'Uploading…';
+        return;
+      }
+      e.preventDefault();
+      if (groups.some(function (g) { return g.select.value === '__type'; })) return;
+
+      var jobs = [];
+      groups.forEach(function (g) {
+        for (var i = 0; i < g.files.length; i += BATCH) {
+          jobs.push({ g: g, emp: g.select.value, files: g.files.slice(i, i + BATCH) });
+        }
+      });
+      var total = jobs.reduce(function (n, j) { return n + j.files.length; }, 0);
+      var done = 0, added = 0, scans = 0, skipped = [], failed = [];
+      btn.disabled = true; folderInput.disabled = true;
+      groups.forEach(function (g) { g.select.disabled = true; });
+      show('uploadProgress', true);
+      var bar = document.getElementById('uploadBar'), status = document.getElementById('uploadStatus');
+
+      function next(i) {
+        if (i >= jobs.length) return finish();
+        var j = jobs[i];
+        status.textContent = 'Uploading ' + (done + 1) + '–' + (done + j.files.length) + ' of ' + total + ' (' + j.g.folder + ')…';
+        postBatch(j.emp, j.files).then(function (res) {
+          if (res.error) {
+            failed.push(j.g.folder + ': ' + j.files.map(function (f) { return f.name; }).join(', ') + ' (' + res.error + ')');
+          } else {
+            added += res.added.length;
+            scans += res.added.filter(function (a) { return a.status === 'needs_ocr'; }).length;
+            res.skipped.forEach(function (s) { skipped.push(j.g.folder + ': ' + s); });
+          }
+          done += j.files.length;
+          bar.style.width = Math.round(done * 100 / total) + '%';
+          next(i + 1);
+        });
+      }
+
+      function list(title, items, cls) {
+        if (!items.length) return;
+        var d = document.createElement('div'); d.className = cls + ' mt-1';
+        var s = document.createElement('strong'); s.textContent = title; d.appendChild(s);
+        var ul = document.createElement('ul'); ul.className = 'mb-0';
+        items.forEach(function (t) { var li = document.createElement('li'); li.textContent = t; ul.appendChild(li); });
+        d.appendChild(ul); document.getElementById('uploadResult').appendChild(d);
+      }
+
+      function finish() {
+        status.textContent = 'Uploaded ' + added + ' of ' + total + ' file' + (total === 1 ? '' : 's') + '.' +
+          (scans ? ' ' + scans + ' are scans without readable text yet.' : '');
+        list('Skipped', skipped, 'text-warning-emphasis');
+        list('Failed, upload these again (already-uploaded files are skipped automatically)', failed, 'text-danger');
+        btn.textContent = 'Done';
+        btn.disabled = false;
+        btn.type = 'button';
+        btn.onclick = function () { location.reload(); };
+      }
+
+      next(0);
     });
   }
 })();

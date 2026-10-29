@@ -37,6 +37,10 @@
           <dd>{{ doc.employee_name or '' }} <span class="text-muted">({{ doc.employee_id }})</span>
             <br><a class="small" href="{{ url_for('documents.library', employee_id=doc.employee_id) }}">All documents for this employee</a></dd>
           {% endif %}
+          {% if doc.folder %}
+          <dt>Folder</dt>
+          <dd><a href="{{ url_for('documents.library', folder=doc.folder.id) }}"><i data-lucide="folder"></i> {{ doc.folder.label }}</a></dd>
+          {% endif %}
           <dt>Visible to</dt>
           <dd>{% if doc.visibility == 'hr' %}<i data-lucide="lock"></i> {% endif %}{{ visibility_labels[doc.visibility] }}</dd>
           {% if doc.description %}<dt>Notes</dt><dd>{{ doc.description }}</dd>{% endif %}
@@ -91,6 +95,13 @@
             <div class="col-6">
               <label class="form-label small mb-1">Employee ID</label>
               <input type="text" name="employee_id" class="form-control form-control-sm" maxlength="50" value="{{ doc.employee_id or '' }}">
+            </div>
+            <div class="col-12">
+              <label class="form-label small mb-1">Company folder</label>
+              <select name="folder_id" class="form-select form-select-sm">
+                <option value="">None</option>
+                {% for fid, label in folder_options %}<option value="{{ fid }}" {% if doc.folder_id == fid %}selected{% endif %}>{{ label }}</option>{% endfor %}
+              </select>
             </div>
           </div>
           <div class="mb-2">
