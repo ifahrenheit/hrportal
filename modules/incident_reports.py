@@ -18,7 +18,7 @@ ir_bp = Blueprint('incident_reports', __name__)
 HR_EMAILS  = [e.strip() for e in os.getenv('IR_HR_EMAILS', '').split(',') if e.strip()]
 SGA_EMAILS = [e.strip() for e in os.getenv('IR_SGA_EMAILS', '').split(',') if e.strip()]
 IR_EMAIL_TO = ['managers@cohere.ph', 'jovin.lumapat@cohere.ph']
-IR_EMAIL_BCC = 'andrewvincentt@gmail.com'
+IR_EMAIL_BCC = [e.strip() for e in os.getenv('IR_EMAIL_BCC', '').split(',') if e.strip()]
 
 UPLOAD_DIR  = '/var/www/html/cohere_dashboard/incident_report/uploads'
 ALLOWED_EXT = {'jpg', 'jpeg', 'png', 'gif'}
@@ -292,7 +292,7 @@ def send_incident_email(report_number, incident_date, agent_eid, employee_name,
             action_url=f"https://hrportal.cohere.ph/incident-reports/{report_number}",
             alert='This incident requires your attention.'
         )
-        _send(recipients, f"New Incident Report: {report_number}", body, bcc_list=[IR_EMAIL_BCC])
+        _send(recipients, f"New Incident Report: {report_number}", body, bcc_list=IR_EMAIL_BCC)
     finally:
         try:
             conn.close()
@@ -502,7 +502,7 @@ def send_comment_notification(report_number, commenter_name, comment,
     </div></body></html>"""
 
         _send(recipients, f"Re: New Incident Report: {report_number}", body,
-              bcc_list=[IR_EMAIL_BCC], thread_id=report_number)
+              bcc_list=IR_EMAIL_BCC, thread_id=report_number)
     finally:
         try:
             conn.close()

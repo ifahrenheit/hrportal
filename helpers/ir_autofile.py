@@ -27,7 +27,7 @@ def _send_ir_notification(cur, report_number, incident_date, employee_id,
         smtp_user   = os.environ.get("SMTP_USER", "send_email@cohere.ph")
         smtp_pass   = os.environ.get("SMTP_PASSWORD", "")
         from_name   = os.environ.get("IR_FROM_NAME", "Incident Report System")
-        bcc         = os.environ.get("OVERBREAK_NOTIFY_BCC", "andrewvincentt@gmail.com")
+        bcc         = [e.strip() for e in os.environ.get("OVERBREAK_NOTIFY_BCC", "").split(",") if e.strip()]
 
         # Get supervisor email
         cur.execute("""
@@ -95,7 +95,7 @@ def _send_ir_notification(cur, report_number, incident_date, employee_id,
         msg["To"]      = ", ".join(recipients)
         msg.attach(MIMEText(body, "html"))
 
-        all_rcpt = list(set(recipients + [bcc]))
+        all_rcpt = list(set(recipients + bcc))
         with smtplib.SMTP(smtp_server, smtp_port) as s:
             s.login(smtp_user, smtp_pass)
             s.sendmail(smtp_user, all_rcpt, msg.as_string())

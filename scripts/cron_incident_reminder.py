@@ -28,7 +28,7 @@ SMTP_HOST = 'cohere.ph';  SMTP_PORT = 2525
 SMTP_USER = 'send_email@cohere.ph';  SMTP_PASS = os.environ.get('SMTP_PASSWORD')
 SMTP_FROM = 'wfm@cohere.ph';  SMTP_FROM_NAME = 'Incident Report System'
 IR_EMAIL_TO  = 'managers@cohere.ph'
-IR_EMAIL_BCC = 'andrewvincentt@gmail.com'
+IR_EMAIL_BCC = [e.strip() for e in os.environ.get('IR_EMAIL_BCC', '').split(',') if e.strip()]
 
 logging.basicConfig(format='%(asctime)s %(message)s', level=logging.INFO)
 
@@ -141,7 +141,7 @@ def send_reminder(incidents):
         msg['From']    = f"{SMTP_FROM_NAME} <{SMTP_FROM}>"
         msg['To']      = ', '.join(recipients)
         msg.attach(MIMEText(body, 'html'))
-        all_rcpt = list(recipients) + [IR_EMAIL_BCC]
+        all_rcpt = list(recipients) + IR_EMAIL_BCC
         with smtplib.SMTP(SMTP_HOST, SMTP_PORT) as s:
             s.login(SMTP_USER, SMTP_PASS)
             s.sendmail(SMTP_FROM, all_rcpt, msg.as_string())
