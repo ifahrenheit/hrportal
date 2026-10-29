@@ -91,6 +91,10 @@ app.register_blueprint(mailing_lists_bp)
 from modules.timestamp_records import timestamp_records_bp
 app.register_blueprint(timestamp_records_bp)
 
+## Sheet webhooks (employee/schedule sync, break auto-fix, biometric queue) moved from employee-sync
+from modules.sheet_webhooks import sheet_webhooks_bp
+app.register_blueprint(sheet_webhooks_bp)
+
 #coaching Blueprint
 from coaching import coaching_bp
 app.register_blueprint(coaching_bp)
