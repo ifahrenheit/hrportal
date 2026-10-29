@@ -13,6 +13,8 @@ from flask import Flask
 
 from modules import sheet_webhooks as sw
 
+sw.log.disabled = True  # keep test calls out of the real sheet_webhooks.log
+
 KEY = 'test-secret'
 HDR = {'X-Secret-Key': KEY}
 
