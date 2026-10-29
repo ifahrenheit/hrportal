@@ -1255,8 +1255,8 @@ def login_as(target_emp):
     if not validate_csrf():
         flash('Security check failed, please try again.', 'danger')
         return redirect(url_for('admin_sub_admins'))
-    # Store original admin session
-    session['original_admin'] = {
+    # Store original admin session (kept from the first hop if already viewing as an admin)
+    session['original_admin'] = session.get('original_admin') or {
         'emp_number': session['user']['emp_number'],
         'email':      session['user']['email'],
         'name':       session['user']['name'],
@@ -1305,7 +1305,18 @@ def login_as(target_emp):
         'name':       f"{emp['emp_firstname']} {emp['emp_lastname']}",
         'employee_id': emp.get('employee_id', '')
     }
-    session['is_admin']      = False
+    # Same admin rule as a real login (Employees.role = 'Admin' or PORTAL_ADMIN_EMAILS),
+    # so viewing as an admin shows what they actually see
+    target_email = (emp['user_name'] or '').strip().lower()
+    db = get_db()
+    try:
+        with db.cursor() as c:
+            c.execute("SELECT role FROM central_db.Employees WHERE LOWER(Email) = %s", (target_email,))
+            row = c.fetchone()
+            target_role = row['role'].strip() if row and row['role'] else 'Employee'
+    finally:
+        db.close()
+    session['is_admin']      = (target_role == 'Admin') or target_email in _env_admin_emails()
     session['is_supervisor'] = is_supervisor(emp['emp_number'])
     # CSAT TL flag for impersonated user (sidebar visibility)
     session['is_csat_tl'] = False
