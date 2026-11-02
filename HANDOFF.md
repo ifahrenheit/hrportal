@@ -51,6 +51,7 @@ ALTER USER 'employee_sync'@'203.28.65.222' IDENTIFIED BY '<new>';
 - [x] December 2026 added to Apps Script `SCHEDULE_SHEETS` (2026-11-02); 2026-12 rows arriving. Each new month still needs its tab added before it starts.
 - [x] First schedule-sync through the portal 2026-11-02 16:49: 7433 rows, 0 errors.
 - [ ] Watch the first break-autofix through the portal in `sheet_webhooks.log`.
+- [x] 2026-11-02: held-mail queues on managers@, sga@, qns_agents@, gygcc5@ are empty; `max_message_size` is 0 (unlimited) on all four (managers@ changed from 40 KB by Claude; not in `mailing_list_audit`, whose `action` enum has no settings type).
 - [ ] After 1–2 weeks of clean syncs, ask before deleting the old employee-sync unit file and UMMS-Core webapp.
 - [ ] Handover note for Jovin/Jericho published as an artifact (private until the user shares it): https://claude.ai/artifact/KcfeqkNmzPtT8exzBCtmdX
 - [x] From 2026-10-29: mailing-list sync cron line added by the user; that session's code committed.
