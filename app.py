@@ -6223,6 +6223,41 @@ def api_leave_cancel(leave_id):
         db.close()
     return jsonify({'success': True, 'message': 'Leave cancelled successfully.'})
 
+def _notify_leave_filed_for_employee(emp_number, employee_id, leave_type_id, leave_type_name,
+                                     deductions, total_hours):
+    """Emails for a leave filed on someone's behalf: the employee, their approver,
+    and (Sick Leave) the SL HR verifiers -- the same people a self-filed leave reaches."""
+    emp = None
+    cdb = get_central_db()
+    try:
+        with cdb.cursor() as c:
+            c.execute("SELECT schedule_name, email FROM gsheet_employees WHERE employee_id = %s",
+                      (employee_id,))
+            emp = c.fetchone()
+    finally:
+        cdb.close()
+    name  = markupsafe.escape((emp or {}).get('schedule_name') or employee_id)
+    filer = markupsafe.escape(session['user']['name'])
+    dates_str = ', '.join(d['date'].strftime('%b %d') for d in deductions)
+    details = (f"<ul><li><b>Leave Type:</b> {markupsafe.escape(leave_type_name)}</li>"
+               f"<li><b>Dates:</b> {dates_str}</li><li><b>Hours:</b> {total_hours:.1f} hrs</li></ul>")
+    if emp and emp.get('email'):
+        send_email(emp['email'], 'Leave Filed on Your Behalf',
+            f"<p>Hi {name},</p><p>{filer} filed a leave on your behalf. It is awaiting your "
+            f"supervisor's approval.</p>{details}<p><a href='https://hrportal.cohere.ph'>View HR Portal</a></p>")
+    sup_email = get_supervisor_email(emp_number)
+    if sup_email:
+        send_email(sup_email, f'Leave Request for {name}',
+            f"<p>Hi,</p><p>{filer} filed a leave on behalf of <b>{name}</b>. It is awaiting your "
+            f"approval.</p>{details}<p><a href='https://hrportal.cohere.ph'>Approve / Reject on HR Portal</a></p>")
+    if int(leave_type_id) == 2:
+        for sl_email in get_sl_verifier_emails():
+            send_email(sl_email, f'SL Verification needed: {name}',
+                f"<p>Hi,</p><p>{filer} filed a Sick Leave on behalf of <b>{name}</b> that needs HR "
+                f"verification before it can proceed to supervisor approval.</p>{details}"
+                f"<p><a href='https://hrportal.cohere.ph/leave/sl-verification'>Verify on HR Portal</a></p>")
+
+
 @app.route('/admin/file-leave', methods=['GET', 'POST'])
 @permission_required('can_file_for_emp')
 def admin_file_leave():
@@ -6404,34 +6439,36 @@ def admin_file_leave():
                 emp_employee_id = emp_row['employee_id'] if emp_row else None
 
                 for d in deductions:
-                    # Auto-approve: future = SCHEDULED(2), past/today = TAKEN(3)
-                    ohrm_status   = 3 if d['date'] <= date.today() else 2
-                    leave4day_status = 'approved' if d['date'] <= date.today() else 'scheduled'
+                    # Pending, like a self-filed leave: the approver still approves or
+                    # rejects it (Sick Leave goes to HR verification first)
                     c.execute("""
                         INSERT INTO ohrm_leave
                             (date, length_hours, length_days, status,
                              emp_number, leave_type_id, leave_request_id, duration_type)
-                        VALUES (%s, %s, %s, %s, %s, %s, %s, 0)
-                    """, (d['date'], d['hours'], d['days'], ohrm_status,
+                        VALUES (%s, %s, %s, 1, %s, %s, %s, 0)
+                    """, (d['date'], d['hours'], d['days'],
                           target_emp, leave_type_id, leave_request_id))
                     c.execute("""
                         INSERT INTO leave4day_requests
                             (emp_number, employee_id, leave_type_id, leave_date, hours_deducted,
-                             days_deducted, is_off_day, status, notes, leave_request_id, shift_half)
-                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                             days_deducted, is_off_day, status, notes, leave_request_id, shift_half,
+                             sl_hr_stage)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, 'pending', %s, %s, %s, %s)
                     """, (target_emp, emp_employee_id, leave_type_id, d['date'], d['hours'],
-                          d['days'], d['is_off_day'], leave4day_status, notes, leave_request_id,
-                          shift_value))
+                          d['days'], d['is_off_day'], notes, leave_request_id, shift_value,
+                          ('pending_hr' if int(leave_type_id) == 2 else None)))
 
                 credit_years = adjust_leave_entitlement(c, target_emp, leave_type_id,
                                                         [(d['date'], d['days']) for d in deductions])
                 mark_credit_pending(c, leave_request_id, credit_years)
 
             db2.commit()
-            flash(f'Leave filed successfully for employee.', 'success')
+            flash('Leave filed for the employee. It is pending and has been sent to their approver.', 'success')
             if credit_years:
                 flash(f"{', '.join(map(str, sorted(credit_years)))} leave balances aren't loaded yet for this employee. "
                       "These days will be deducted automatically once they are.", 'info')
+            _notify_leave_filed_for_employee(target_emp, emp_employee_id, leave_type_id,
+                                             balance['leave_type_name'], deductions, total_hours)
             return redirect(url_for('admin_all_leaves'))
         except Exception as e:
             db2.rollback()
