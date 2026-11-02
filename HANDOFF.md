@@ -52,6 +52,7 @@ ALTER USER 'employee_sync'@'203.28.65.222' IDENTIFIED BY '<new>';
 - [x] December 2026 added to Apps Script `SCHEDULE_SHEETS` (2026-11-02); 2026-12 rows arriving. Each new month still needs its tab added before it starts.
 - [x] First schedule-sync through the portal 2026-11-02 16:49: 7433 rows, 0 errors.
 - [ ] Watch the first break-autofix through the portal in `sheet_webhooks.log`.
+- [x] 2026-11-02 (`fc56acd`): leave filing checks each date against its own year's balance (`helpers/leave_credits.available_by_year` / `year_shortfalls`, used by `file_leave` and file-for-employee in `app.py`). Unloaded year = current year's full allowance minus already filed for that year. Use Remaining Balance refused across Jan 1. Display-only leftovers: `templates/file_leave.html` labels and the custom-hours max still show the current year's balance. Closes the "balance-checked against the current year" items in the 2026-10-22 entries.
 - [x] 2026-11-02: held-mail queues on managers@, sga@, qns_agents@, gygcc5@ are empty; `max_message_size` is 0 (unlimited) on all four (managers@ changed from 40 KB by Claude; not in `mailing_list_audit`, whose `action` enum has no settings type).
 - [ ] After 1–2 weeks of clean syncs, ask before deleting the old employee-sync unit file and UMMS-Core webapp.
 - [ ] Handover note for Jovin/Jericho published as an artifact (private until the user shares it): https://claude.ai/artifact/KcfeqkNmzPtT8exzBCtmdX
@@ -232,7 +233,7 @@ Commit: `ae19f18` · Branch: `main` (commits `f92d855`..`ae19f18`)
 ### Open items / next steps
 - [ ] Check the first nightly logs: `prorated_leave_grants.log`, `apply_pending_leave_credits.log`.
 - [ ] HR cross-check list (names in chat/logs, not here): 3 SL grants overdue before automation, 4 allowances below policy, first automatic SL grants on Nov 1 and Nov 4.
-- [ ] New next-year filings are still balance-checked against the current year's balance.
+- [x] ~~New next-year filings are still balance-checked against the current year's balance.~~ Fixed 2026-11-02 (`fc56acd`).
 - [ ] 2025 balances not reviewed; 2025 report still in git history (`e072dfe`).
 - [ ] Dashboard redesign on hold (`lovable_preview/`).
 
@@ -280,7 +281,7 @@ CREATE TABLE leave4day_entitlement_log (id, entitlement_id, emp_number, leave_ty
 
 ### Open items / next steps
 - [ ] December: load 2027 balances (208 active employees have none) — use the `year-end-rollover` agent; ask HR for regularization dates (no column exists; 2026 data fits deployment + ~6 months). 11.5 days of 2027 leave are waiting in `credit_pending`.
-- [ ] New 2027 filings are still balance-checked against the current year's balance.
+- [x] ~~New 2027 filings are still balance-checked against the current year's balance.~~ Fixed 2026-11-02 (`fc56acd`).
 - [ ] 2025 balances not reviewed/corrected (user: leave 2025 for now). Optional: purge the 2025 report from git history.
 - [ ] Dashboard redesign (`lovable_preview/`) on hold.
 
