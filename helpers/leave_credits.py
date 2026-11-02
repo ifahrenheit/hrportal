@@ -107,3 +107,70 @@ def apply_pending_credits(c, emp_number=None, live=True):
                           g['ids'])
         results.append(g)
     return results
+
+
+# ── Balance check per leave year ─────────────────────────────────────────────
+# A filing is checked against the balance of the year each date falls in, not
+# the current year's. A year with no entitlement row yet (filing is still
+# allowed, see credit_pending above) is estimated as the current year's full
+# allowance minus what is already filed for that year.
+
+def _used_hours(c, emp_number, leave_type_id, year):
+    """Hours filed in `year`, counted the same way as app.get_leave_balances."""
+    c.execute("""
+        SELECT COALESCE(SUM(hours_deducted), 0) AS used
+        FROM leave4day_requests
+        WHERE emp_number = %s AND leave_type_id = %s
+          AND status NOT IN ('rejected', 'cancelled', 'Deleted')
+          AND is_off_day = 0
+          AND leave_date >= MAKEDATE(%s, 1) AND leave_date < MAKEDATE(%s, 1)
+    """, (emp_number, leave_type_id, year, year + 1))
+    return float(c.fetchone()['used'])
+
+
+def available_by_year(c, emp_number, leave_type_id, years, current_year):
+    """{year: {'available': hours, 'loaded': bool}} for each year in `years`."""
+    out = {}
+    current_allowance = None
+    for year in sorted(set(years)):
+        _, row = find_entitlement(c, emp_number, leave_type_id, year)
+        if row:
+            total = float(row['no_of_days']) * 8
+            loaded = True
+        else:
+            if current_allowance is None:
+                _, cur = find_entitlement(c, emp_number, leave_type_id, current_year)
+                current_allowance = float(cur['no_of_days']) * 8 if cur else 0.0
+            total = current_allowance
+            loaded = False
+        out[year] = {'available': max(total - _used_hours(c, emp_number, leave_type_id, year), 0.0),
+                     'loaded': loaded}
+    return out
+
+
+def hours_by_year(deductions):
+    """{year: hours} from calculate_deduction() rows."""
+    out = {}
+    for d in deductions:
+        out[d['date'].year] = out.get(d['date'].year, 0.0) + float(d['hours'])
+    return out
+
+
+def year_shortfalls(deductions, available):
+    """[(year, available_hours, required_hours, loaded)] for each year the
+    filing needs more than is available. Empty list = enough balance."""
+    short = []
+    for year, need in sorted(hours_by_year(deductions).items()):
+        a = available.get(year, {'available': 0.0, 'loaded': False})
+        if need > a['available'] + 1e-6:
+            short.append((year, a['available'], need, a['loaded']))
+    return short
+
+
+def shortfall_message(leave_type_name, shortfalls):
+    """One flash message for year_shortfalls() output."""
+    parts = []
+    for year, avail, need, loaded in shortfalls:
+        label = f"{year}" if loaded else f"{year} (not loaded yet, estimated from this year's allowance)"
+        parts.append(f"{label}: available {avail:.1f} hrs, required {need:.1f} hrs")
+    return f"Insufficient {leave_type_name} balance. " + "; ".join(parts)

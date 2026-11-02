@@ -539,7 +539,8 @@ def _get_awol_type():
     return _AWOL_TYPE_CACHE['row']
 
 from helpers.leave_credits import (find_entitlement, mark_credit_pending,
-                                   charged_items, apply_pending_credits)
+                                   charged_items, apply_pending_credits,
+                                   available_by_year, year_shortfalls, shortfall_message)
 
 def adjust_leave_entitlement(c, emp_number, leave_type_id, items, refund=False):
     """Deduct (or refund) leave credits on the one entitlement row per leave year.
@@ -1998,13 +1999,26 @@ def file_leave():
             if not balance:
                 flash('Selected leave type not found.', 'danger')
                 return render_template('file_leave.html', balances=balances, user=session['user'])
+            # Each date is checked against its own leave year's balance (helpers/leave_credits)
+            years = sorted({d['date'].year for d in deductions})
+            if not balance.get('unlimited'):
+                db_bal = get_db()
+                try:
+                    with db_bal.cursor() as c:
+                        avail_by_year = available_by_year(c, emp_number, leave_type_id, years, date.today().year)
+                finally:
+                    db_bal.close()
             if balance.get('unlimited'):
                 pass  # LWOP: no balance limit
             elif use_remaining:
-                # Use exactly the remaining balance
-                available = balance['remaining_hours']
+                # Use exactly the remaining balance of the leave's year
+                if len(years) > 1:
+                    flash('Use Remaining Balance can only be used for dates within one year. '
+                          'File the dates before and after January 1 separately.', 'danger')
+                    return render_template('file_leave.html', balances=balances, user=session['user'])
+                available = avail_by_year[years[0]]['available']
                 if available <= 0:
-                    flash(f'No remaining balance for {balance["leave_type_name"]}.', 'danger')
+                    flash(f'No remaining {years[0]} balance for {balance["leave_type_name"]}.', 'danger')
                     return render_template('file_leave.html', balances=balances, user=session['user'])
                 # Distribute available hours across deduction days
                 total_base = sum(d['hours'] for d in deductions)
@@ -2015,12 +2029,11 @@ def file_leave():
                 total_hours = available
                 total_days  = sum(d['days'] for d in deductions)
                 flash(f'Remaining balance of {available:.1f} hrs will be fully used.', 'info')
-            elif total_hours > balance['remaining_hours']:
-                if balance['remaining_hours'] <= 0:
-                    flash(f'Insufficient balance. You have no remaining hours for {balance["leave_type_name"]}.', 'danger')
+            else:
+                shortfalls = year_shortfalls(deductions, avail_by_year)
+                if shortfalls:
+                    flash(shortfall_message(balance['leave_type_name'], shortfalls), 'danger')
                     return render_template('file_leave.html', balances=balances, user=session['user'])
-                flash(f'Insufficient balance. Available: {balance["remaining_hours"]:.1f} hrs | Required: {total_hours:.1f} hrs', 'danger')
-                return render_template('file_leave.html', balances=balances, user=session['user'])
 
         # Insert leave
         db = get_db()
@@ -6340,13 +6353,26 @@ def admin_file_leave():
         if not balance:
             flash('Insufficient leave balance.', 'danger')
             return _render(balances, request.form)
+        # Each date is checked against its own leave year's balance (helpers/leave_credits)
+        years = sorted({d['date'].year for d in deductions})
+        if not balance.get('unlimited'):
+            db_bal = get_db()
+            try:
+                with db_bal.cursor() as c:
+                    avail_by_year = available_by_year(c, target_emp, leave_type_id, years, date.today().year)
+            finally:
+                db_bal.close()
         if balance.get('unlimited'):
             pass  # LWOP: no balance limit
         elif use_remaining:
-            # Use exactly the remaining balance, spread across the days
-            available = balance['remaining_hours']
+            # Use exactly the remaining balance of the leave's year, spread across the days
+            if len(years) > 1:
+                flash('Use Remaining Balance can only be used for dates within one year. '
+                      'File the dates before and after January 1 separately.', 'danger')
+                return _render(balances, request.form)
+            available = avail_by_year[years[0]]['available']
             if available <= 0:
-                flash(f'No remaining balance for {balance["leave_type_name"]}.', 'danger')
+                flash(f'No remaining {years[0]} balance for {balance["leave_type_name"]}.', 'danger')
                 return _render(balances, request.form)
             ratio = available / total_hours
             for d in deductions:
@@ -6354,13 +6380,11 @@ def admin_file_leave():
                 d['days']  = round(d['days'] * ratio, 4)
             total_hours = available
             total_days  = sum(d['days'] for d in deductions)
-        elif use_custom:
-            if total_hours > balance['remaining_hours']:
-                flash(f'Insufficient balance. Available: {balance["remaining_hours"]:.1f} hrs | Required: {total_hours:.1f} hrs', 'danger')
+        else:
+            shortfalls = year_shortfalls(deductions, avail_by_year)
+            if shortfalls:
+                flash(shortfall_message(balance['leave_type_name'], shortfalls), 'danger')
                 return _render(balances, request.form)
-        elif (float(balance['remaining_days']) - total_days) < 0:
-            flash('Insufficient leave balance.', 'danger')
-            return _render(balances, request.form)
 
         # File the leave — same logic as regular filing, no 7-day check
         try:
