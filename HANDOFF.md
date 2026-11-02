@@ -3,8 +3,56 @@
 ## Project overview
 - **App:** Cohere HR portal ("Leave4Day" / hrportal), Flask monolith [app.py](app.py) plus blueprints in `modules/`, `blueprints/`, `break_log/`, `coaching.py`, `memos.py`. Frontend: Jinja + Bootstrap 5 + vanilla JS, Lucide icons.
 - **DBs:** `orangehrm2` via `get_db()` (OrangeHRM tables, leave balances) and `central_db` via `get_db_connection()` / `get_central_db()` (portal data, `gsheet_employees`). Raw PyMySQL with DictCursor.
-- **Deploy:** this checkout *is* production (`hrportal.cohere.ph`). systemd `leavesystem` runs `venv/bin/python app.py` on 127.0.0.1:5001 behind Apache. Restart with `sudo systemctl restart leavesystem`.
+- **Deploy:** this checkout *is* production (`hrportal.cohere.ph`). systemd `leavesystem` runs `venv/bin/python app.py` on 127.0.0.1:5001 behind Apache. Restart with `sudo systemctl restart leavesystem`. `webhook.cohere.ph` (Apps Script sheet sync, biometric queue) also proxies to it (`modules/sheet_webhooks.py`); the old employee-sync service is retired.
 - **Cron:** tardiness/overbreak/undertime notify scripts and others under root's crontab (see CLAUDE.md).
+
+---
+
+## 2026-10-30 — Admin handover: successors, webhooks moved into the portal, credentials rotated
+Commit: `8596b93` · Branch: `main`
+
+### What was built / changed
+- Documents library: company folders, employee A–Z tree, bulk move (`modules/documents.py`, `templates/documents/*`) — committed `fc85877` (was pending work).
+- Inventory: Max Stock column; Copy Table includes min/max (`templates/admin/inventory.html`) — `c336776`.
+- Login-as keeps the target's admin status (Employees.role Admin or `PORTAL_ADMIN_EMAILS`) and keeps the first `original_admin` on a nested login-as (`app.py` `login_as`) — `c9b7539`.
+- IR emails: BCC comes from new `IR_EMAIL_BCC`; `helpers/ir_autofile.py` splits `OVERBREAK_NOTIFY_BCC` into a list (`modules/incident_reports.py`, `scripts/cron_incident_reminder.py`) — `4ccd454`.
+- **employee-sync retired:** its live endpoints now live in `modules/sheet_webhooks.py` (registered in `app.py`): `POST /webhook/employee-sync`, `/webhook/schedule-sync`, `/webhook/break-autofix`, `GET /api/biometric/pending`, `POST /api/biometric/complete`, `GET /health`. Same requests/responses as the old UMMS-Core app. Logs to `sheet_webhooks.log`. Tests `tests/test_sheet_webhooks.py`; doc `docs/sheet-webhooks.md` — `f7bbea1`, `8596b93`.
+
+### Why / decisions
+- Successors: Jovin Lumapat and Jericho Garcia (full admins via `PORTAL_ADMIN_EMAILS`). The user keeps both own Admin accounts (consultant later); don't offer to remove them.
+- `TARDINESS_NOTIFY_BCC`, `OVERBREAK_NOTIFY_BCC`, `SL_VERIFY_CC`, `IR_EMAIL_BCC` are **empty on purpose** (user had added themselves for testing; successors already get IRs). Keep the keys present: deleted, the notify scripts fall back to the user's Gmail and SL_VERIFY_CC to som@/wfm@/hr@.
+- `MATERIAL_FINAL_EMAIL` left as the user: single-address check, admins pass anyway.
+- Webhooks moved instead of re-pointing callers: Apps Script and the office biometric PCs keep calling `webhook.cohere.ph`; only the vhost changed.
+- Old `cohere_dashboard` PHP site is ignored per user. Its 4 cron mailers (OT/RDW/CWS/FTS) never ran: their log path is `/var/www/htm/...` (typo, dir missing), so the shell aborts before PHP.
+
+### Database changes
+```sql
+-- MySQL (as root): employee_sync password changed on all three accounts
+ALTER USER 'employee_sync'@'localhost'     IDENTIFIED BY '<new>';
+ALTER USER 'employee_sync'@'113.19.42.130' IDENTIFIED BY '<new>';
+ALTER USER 'employee_sync'@'203.28.65.222' IDENTIFIED BY '<new>';
+-- validate_password.policy = MEDIUM: needs mixed case, digit and a special char
+```
+
+### Config / environment
+- `.env` new keys: `IR_EMAIL_BCC` (empty), `WEBHOOK_SECRET_KEY`. Changed: `MAILING_LIST_ALERT_EMAILS` (both successors), `SMTP_PASSWORD`, `KEYCLOAK_ADMIN_CLIENT_SECRET`, `MAIN_DB_PASSWORD`, `WEBHOOK_SECRET_KEY`.
+- Rotated 2026-10-30: send_email@ SMTP password (also `calendar-app/.env` `MAIL_PASS`, `pm2 restart calendar-app`), Keycloak client `employee-management-service` secret, MySQL `employee_sync`, webhook secret (Apps Script "CSAT and MasterList sheet" > `EmployeeSync.gs` line 9 `SECRET_KEY`).
+- Apache `webhook.cohere.ph` (`/etc/apache2/sites-available/employee-sync.conf` and `-le-ssl.conf`): proxies only `/webhook/`, `/api/biometric/`, `/health` to :5001; everything else 302 to hrportal. Backups `*.bak.20261030*`.
+- systemd `employee-sync` stopped + disabled (files kept for rollback, steps in `docs/sheet-webhooks.md`).
+- Moved public user-import files out of `cohere_dashboard/uploads/` to `/root/private/dashboard_uploads_20251113/`.
+
+### How to verify
+- `curl -s https://webhook.cohere.ph/health` → healthy; `tail sheet_webhooks.log` shows `Batch sync: N synced, 0 errors` after each Apps Script run (00/06/12/18h). First real run 2026-10-30 04:20: 972 synced, 0 errors.
+- Full suite: 403 tests, only the 3 known pre-existing failures (awol/undertime boundary cases).
+
+### Open items / next steps
+- [ ] Re-rotate `WEBHOOK_SECRET_KEY` once more: the user's screenshot showed the full new key (and part of `MEMO_SECRET_KEY` = `.env` `MEMO_SYNC_SECRET`). Have the user copy from `.env`; never print secrets in chat.
+- [ ] Decide: drop `employee_sync`@office-IP accounts (0 connections in 31 days) and close MySQL 3306 (bound to 0.0.0.0) to the internet.
+- [ ] Apps Script `SCHEDULE_SHEETS` stops at November 2026; someone will add December 2026 (and each month after) — the user confirmed.
+- [ ] Watch the first schedule-sync and break-autofix through the portal in `sheet_webhooks.log`.
+- [ ] After 1–2 weeks of clean syncs, ask before deleting the old employee-sync unit file and UMMS-Core webapp.
+- [ ] Handover note for Jovin/Jericho published as an artifact (private until the user shares it): https://claude.ai/artifact/KcfeqkNmzPtT8exzBCtmdX
+- [x] From 2026-10-29: mailing-list sync cron line added by the user; that session's code committed.
 
 ---
 
@@ -315,82 +363,6 @@ ALTER TABLE mailing_list_audit MODIFY action ENUM('add','remove','create','moder
 - [ ] Still untested live: forwarder add/create, delete group, delivery toggle, privacy switch, owners edit.
 
 ---
-
-## 2026-10-20 (6) — Mailing Lists: alerts, delivery status, sender filters, person view, cleanup, offboarding, delete
-Commits: `f0075cc`, `45dcc04`, this one · Branch: `main`
-
-### What was built / changed
-- **Item 1 (live Mailman change, the user asked):** `send_email@cohere.ph` added to accept_these_nonmembers on `managers@` and `sga@`, so new portal mail goes through. The user will Discard the old backlog (~1669 + 54) themselves. They were told not to tick "Remember these senders" while doing so.
-- **Delivery off:** `parse_mailman_nomail`, flagged on list pages, and `mailman_set_delivery`. No member currently has delivery off.
-- **Allowed & blocked senders:** `fetch_sender_filters`, `update_sender_filter`, `sender_entry_problem`, `wildcard_to_regex`. `gygccall@` has 4 `*@` entries flagged; not fixed, the user decides.
-- **`mailman_form_update()`:** safe full-form submit with a before/after diff.
-- **Delete group:** `delete_group` and `POST /<type>/<address>/delete`.
-- **Person view:** `/person`. **Separated cleanup:** `/cleanup`, which found 173 people and 236 memberships.
-- **Offboarding:** `templates/admin/offboarding.html` gets a mailing-list step (`/api/memberships`, `/api/remove-everywhere`; `can_onboarding` is allowed for these two only).
-- **Alerts:** `scripts/mailing_list_pending_check.py`, `central_db.mailing_list_pending`, `/api/pending-total`, the `mlPendingBadge` element in `_topnav.html` and its refresh in `base.html`.
-- Tests: `tests/test_mailing_lists.py`, 70+.
-
-### Database changes
-```sql
--- central_db
-ALTER TABLE mailing_list_audit MODIFY action ENUM('add','remove','create','moderate','delivery','senders','delete') NOT NULL;
-CREATE TABLE mailing_list_pending (...);  -- see scripts/mailing_list_audit_schema.sql
-```
-
-### Config / environment
-- `.env`: new `MAILING_LIST_ALERT_EMAILS` (backup in the session scratchpad).
-- Root crontab: 2 lines added (`--store` every 30 min, `--send` at 08:00). Backup: `/root/crontab.bak.20261020031809`.
-- Test alert email sent to the user on 2026-10-20 03:17.
-
-### Open items
-- [ ] The user discards the `send_email@` backlog on `managers@`/`sga@`. Real employee posts are held on `training-team@`, `new-l2@`, `qns_agents@`, `gygcc5@` (the last two are too big: max_message_size is 40 KB).
-- [ ] `gygccall@` `*@` accept entries: Fix or leave (user decision).
-- [ ] Not yet used live: forwarder add/remove/create, delete, delivery toggle, and the person/cleanup removals.
-
----
-
-## 2026-10-20 (5) — SpamAssassin: portal "block sender" on Discard; fixed blocklist/allowlist typos
-Commit: this one · Branch: `main`
-
-### What was built / changed
-- `modules/mailing_lists.py`: `blocklist_entry()` and `spam_blocklist_add()` (read, append, write the full list, verify), plus `_block_in_spamassassin()`. Triggered by the new `spam_block` checkbox with Discard on the Pending page. Audited as `moderate` rows. Tests: 46.
-
-### Live cPanel change (the user said yes)
-- `blacklist_from`: `*@@untility3048.cc` became `*@untility3048.cc`; removed `@rhetth.com` (`*@rhetth.com` already present). 2 exact duplicates were collapsed, so the count went from 34 to 31.
-- `whitelist_from`: `okta.com`, `oktaemail.com`, `assembled.com` and `assembledhq.com` became `*@…`. Before, bare domains matched nobody, so mail from those senders really skips spam checks now.
-- Left `amazonses.com` / `amazonaws.com` as they were (bare, so they match nothing). Making them `*@` would allow any Amazon SES sender, including spammers.
-- Rollback: before-values are in the session scratchpad (`spamassassin_before_20261020005140.json`, ephemeral). The old entries are listed above.
-
----
-
-## 2026-10-20 (4) — Mailing Lists: Mailman moderation queue (Pending requests)
-Commit: this one · Branch: `main`
-
-### What was built / changed
-- `modules/mailing_lists.py`:
-  - Parsers `parse_held_messages`, `parse_pending_subs` and `parse_spam`.
-  - `fetch_pending`, `moderation_form`, `moderate` (by id and/or by sender, optional "remember sender" filter: 6 accept / 3 discard; 300 s timeout).
-  - Routes `GET/POST /admin/mailing-lists/mailman/<address>/pending` and `/api/pending/<address>`.
-- `templates/mailing_lists/pending.html` (new). Index has a Pending column; the list page has a Pending requests button.
-- Audit enum now also has `moderate`. Tests: 43.
-
-### Found while building (needs the user's decision, nothing changed)
-- **The portal's own mail to lists has been held since May.** `send_email@cohere.ph` (the portal's SMTP_USER) isn't a member, so Mailman holds it as "Post by non-member":
-  - `managers@`: 1667 (IR notices, replies, reminders, since 2026-05-05)
-  - `sga@`: 54 (onboarding, overbreak memos, since 2026-06-16)
-  - Fix going forward: accept_these_nonmembers on those lists (the portal's Accept + "Remember these senders" does it). Old ones: probably Discard, not Accept, to avoid flooding members.
-- `training-team@`: 12 real employees' replies held (Jun–Aug).
-- Phishing held on several lists (`webmail-autho.*` credential-harvest links, `URI_PHISH`). Never Accept.
-
-### Database changes
-```sql
--- central_db
-ALTER TABLE mailing_list_audit MODIFY action ENUM('add','remove','create','moderate') NOT NULL;
-```
-
-### Open items
-- [ ] User to decide on the held `send_email@` mail (`managers@`, `sga@`) and on the `training-team@` replies.
-- [ ] The join/leave request parser is built from Mailman's source format; there were no live requests to test it against.
 
 ---
 
