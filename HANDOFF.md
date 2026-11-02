@@ -47,7 +47,8 @@ ALTER USER 'employee_sync'@'203.28.65.222' IDENTIFIED BY '<new>';
 
 ### Open items / next steps
 - [ ] Re-rotate `WEBHOOK_SECRET_KEY` once more: the user's screenshot showed the full new key (and part of `MEMO_SECRET_KEY` = `.env` `MEMO_SYNC_SECRET`). Have the user copy from `.env`; never print secrets in chat.
-- [ ] Decide: drop `employee_sync`@office-IP accounts (0 connections in 31 days) and close MySQL 3306 (bound to 0.0.0.0) to the internet.
+- [x] 2026-11-02: dropped `employee_sync`@113.19.42.130 and @203.28.65.222; MySQL `bind-address` and `mysqlx-bind-address` set to 127.0.0.1 in `/etc/mysql/mysql.conf.d/mysql.cnf` + `mysqld.cnf` (backups in `/root/private/mysql_conf_bak_20261102204958/`), MySQL restarted. Before: 178 outside IPs had hit 3306. Verified portal, webhooks, calendar app, cron DB users all on localhost. `rehire_fix.py` (manual scripts) still point at the public IP and would need `localhost` if run again.
+- [ ] MySQL root password is hardcoded in several PHP/cron files (e.g. `cloud-leave/process_timerecords.php`) and appeared in this session's chat. Lower risk now that 3306 is local-only; rotate when the files using it are moved to a shared config.
 - [x] December 2026 added to Apps Script `SCHEDULE_SHEETS` (2026-11-02); 2026-12 rows arriving. Each new month still needs its tab added before it starts.
 - [x] First schedule-sync through the portal 2026-11-02 16:49: 7433 rows, 0 errors.
 - [ ] Watch the first break-autofix through the portal in `sheet_webhooks.log`.
