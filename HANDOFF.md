@@ -48,8 +48,9 @@ ALTER USER 'employee_sync'@'203.28.65.222' IDENTIFIED BY '<new>';
 ### Open items / next steps
 - [ ] Re-rotate `WEBHOOK_SECRET_KEY` once more: the user's screenshot showed the full new key (and part of `MEMO_SECRET_KEY` = `.env` `MEMO_SYNC_SECRET`). Have the user copy from `.env`; never print secrets in chat.
 - [ ] Decide: drop `employee_sync`@office-IP accounts (0 connections in 31 days) and close MySQL 3306 (bound to 0.0.0.0) to the internet.
-- [ ] Apps Script `SCHEDULE_SHEETS` stops at November 2026; someone will add December 2026 (and each month after) — the user confirmed.
-- [ ] Watch the first schedule-sync and break-autofix through the portal in `sheet_webhooks.log`.
+- [x] December 2026 added to Apps Script `SCHEDULE_SHEETS` (2026-11-02); 2026-12 rows arriving. Each new month still needs its tab added before it starts.
+- [x] First schedule-sync through the portal 2026-11-02 16:49: 7433 rows, 0 errors.
+- [ ] Watch the first break-autofix through the portal in `sheet_webhooks.log`.
 - [ ] After 1–2 weeks of clean syncs, ask before deleting the old employee-sync unit file and UMMS-Core webapp.
 - [ ] Handover note for Jovin/Jericho published as an artifact (private until the user shares it): https://claude.ai/artifact/KcfeqkNmzPtT8exzBCtmdX
 - [x] From 2026-10-29: mailing-list sync cron line added by the user; that session's code committed.
