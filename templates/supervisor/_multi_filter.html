@@ -1,0 +1,82 @@
+{# Multi-select filter: a dropdown of checkboxes that submit as repeated ?name=v params.
+   options is a list of (value, label) pairs or plain strings; selected is the list of chosen values.
+   autosubmit submits the form when the dropdown closes with a changed selection;
+   clears names other pickers to reset at the same time (e.g. TL when the approver changes).
+   Call multi_filter_assets() once per page. #}
+{% macro multi_filter(name, label, options, selected, all_label, noun, autosubmit=False, clears='') -%}
+{%- set sel = selected | map('string') | list -%}
+{%- set opts = [] -%}
+{%- for o in options %}{% set _ = opts.append((o, o) if o is string else o) %}{% endfor -%}
+{%- set picked = [] -%}
+{%- for v, l in opts if v|string in sel %}{% set _ = picked.append(l) %}{% endfor -%}
+<div>
+  <label class="form-label small mb-1">{{ label }}</label>
+  <div class="dropdown multi-filter" data-all-label="{{ all_label }}" data-noun="{{ noun }}"
+       {% if autosubmit %}data-autosubmit="1"{% endif %} {% if clears %}data-clears="{{ clears }}"{% endif %}>
+    <button type="button" class="form-select form-select-sm text-start multi-filter-btn"
+            data-bs-toggle="dropdown" data-bs-auto-close="outside" aria-expanded="false">
+      <span class="multi-filter-label">
+        {%- if not picked %}{{ all_label }}
+        {%- elif picked|length <= 2 %}{{ picked|join(', ') }}
+        {%- else %}{{ picked|length }} {{ noun }}{% endif -%}
+      </span>
+    </button>
+    <div class="dropdown-menu p-1 multi-filter-menu">
+      <div class="d-flex justify-content-between gap-3 small px-2 py-1 border-bottom mb-1">
+        <a href="#" class="text-decoration-none" data-mf-all>Select all</a>
+        <a href="#" class="text-decoration-none text-muted" data-mf-none>Clear</a>
+      </div>
+      {% for v, l in opts %}
+      <label class="dropdown-item d-flex align-items-center gap-2 small py-1 px-2 rounded">
+        <input type="checkbox" class="form-check-input m-0 flex-shrink-0" name="{{ name }}" value="{{ v }}"
+               data-label="{{ l }}" {% if v|string in sel %}checked{% endif %}>
+        <span>{{ l }}</span>
+      </label>
+      {% endfor %}
+    </div>
+  </div>
+</div>
+{%- endmacro %}
+
+{% macro multi_filter_assets() %}
+<style>
+  .multi-filter-btn { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .multi-filter-menu { min-width: 100%; max-width: 340px; max-height: 300px; overflow-y: auto; }
+  .multi-filter-menu .dropdown-item { cursor: pointer; white-space: normal; }
+  .multi-filter-menu .dropdown-item:active { background: var(--bs-tertiary-bg); color: inherit; }
+</style>
+<script>
+document.querySelectorAll('.multi-filter').forEach(function (picker) {
+  var boxes = Array.prototype.slice.call(picker.querySelectorAll('input[type="checkbox"]'));
+  var label = picker.querySelector('.multi-filter-label');
+  var checked = function () { return boxes.filter(function (b) { return b.checked; }); };
+  var initial = checked().map(function (b) { return b.value; }).join('|');
+
+  function updateLabel() {
+    var c = checked();
+    label.textContent = !c.length ? picker.dataset.allLabel
+      : c.length <= 2 ? c.map(function (b) { return b.dataset.label; }).join(', ')
+      : c.length + ' ' + picker.dataset.noun;
+    picker.dispatchEvent(new Event('multi-filter-change'));
+  }
+  boxes.forEach(function (b) { b.addEventListener('change', updateLabel); });
+  picker.querySelector('[data-mf-all]').addEventListener('click', function (e) {
+    e.preventDefault(); boxes.forEach(function (b) { b.checked = true; }); updateLabel();
+  });
+  picker.querySelector('[data-mf-none]').addEventListener('click', function (e) {
+    e.preventDefault(); boxes.forEach(function (b) { b.checked = false; }); updateLabel();
+  });
+
+  if (picker.dataset.autosubmit) {
+    picker.addEventListener('hidden.bs.dropdown', function () {
+      if (checked().map(function (b) { return b.value; }).join('|') === initial) return;
+      var form = picker.closest('form');
+      (picker.dataset.clears || '').split(',').filter(Boolean).forEach(function (n) {
+        form.querySelectorAll('input[name="' + n + '"]').forEach(function (b) { b.checked = false; });
+      });
+      form.submit();
+    });
+  }
+});
+</script>
+{% endmacro %}

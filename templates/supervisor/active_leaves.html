@@ -1,75 +1,63 @@
 {% extends 'base.html' %}
 {% block page_title %}Team Leaves{% endblock %}
 {% block content %}
+{% from 'supervisor/_multi_filter.html' import multi_filter, multi_filter_assets %}
+<style>
+  /* Filters sit on one line when they fit, then wrap into equal columns */
+  .filter-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: .5rem; align-items: end; }
+  .filter-grid > div { min-width: 0; }
+  .filter-grid .form-select { text-overflow: ellipsis; }
+  .filter-actions { display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; margin-top: .75rem; }
+</style>
 
 
 {# ── Filter Form ─────────────────────────────────────────── #}
 <div class="card mb-3">
   <div class="card-body pb-2">
     <form method="GET" action="{{ url_for('supervisor_active_leaves') }}">
-      <div class="row g-2 align-items-end">
+      <div class="filter-grid">
 
-        <div class="col-6 col-md-2">
+        <div>
           <label class="form-label small mb-1">Date From</label>
           <input type="date" name="date_from" class="form-control form-control-sm" value="{{ date_from }}">
         </div>
 
-        <div class="col-6 col-md-2">
+        <div>
           <label class="form-label small mb-1">Date To</label>
           <input type="date" name="date_to" class="form-control form-control-sm" value="{{ date_to }}">
         </div>
 
-        <div class="col-6 col-md-2">
-          <label class="form-label small mb-1">Status</label>
-          <select name="status" class="form-select form-select-sm">
-            <option value="">All Statuses</option>
-            {% for s in ['pending', 'approved', 'scheduled', 'rejected', 'cancelled'] %}
-            <option value="{{ s }}" {% if status == s %}selected{% endif %}>{{ s|capitalize }}</option>
-            {% endfor %}
-          </select>
-        </div>
+        {{ multi_filter('status', 'Status', [('pending','Pending'),('approved','Approved'),('scheduled','Scheduled'),('rejected','Rejected'),('cancelled','Cancelled')], status, 'All Statuses', 'statuses') }}
 
-        <div class="col-6 col-md-2">
-          <label class="form-label small mb-1">Leave Type</label>
-          <select name="leave_type" class="form-select form-select-sm">
-            <option value="">All Types</option>
-            {% for lt in leave_types %}
-            <option value="{{ lt.id }}" {% if leave_type|string == lt.id|string %}selected{% endif %}>{{ lt.name }}</option>
-            {% endfor %}
-          </select>
-        </div>
+        {% set leave_type_opts = [] %}
+        {% for lt in leave_types %}{% set _ = leave_type_opts.append((lt.id, lt.name)) %}{% endfor %}
+        {{ multi_filter('leave_type', 'Leave Type', leave_type_opts, leave_type, 'All Types', 'types') }}
 
-        <div class="col-6 col-md-2">
-          <label class="form-label small mb-1">Team Lead</label>
-          <select name="tl" class="form-select form-select-sm">
-            <option value="">All TLs</option>
-            {% for tl in tl_list %}
-            <option value="{{ tl }}" {% if tl_filter == tl %}selected{% endif %}>{{ tl }}</option>
-            {% endfor %}
-          </select>
-        </div>
+        {{ multi_filter('tl', 'Team Lead', tl_list, tl_filter, 'All TLs', 'TLs') }}
 
-        <div class="col-6 col-md-2">
+        {{ multi_filter('group', 'Group', group_list, group_filter, 'All Groups', 'groups') }}
+
+        <div>
           <label class="form-label small mb-1">Employee</label>
           <input type="text" name="emp_search" class="form-control form-control-sm"
                  placeholder="Name or ID…" value="{{ emp_search }}">
         </div>
 
-        <div class="col-12 d-flex gap-2">
-          <button type="submit" class="btn btn-primary btn-sm">
-            <i class="me-1" data-lucide="search"></i>Apply
-          </button>
-          <a href="{{ url_for('supervisor_active_leaves') }}" class="btn btn-outline-secondary btn-sm">
-            <i class="me-1" data-lucide="circle-x"></i>Clear
-          </a>
-          <span class="ms-auto text-muted small align-self-center">
-            {{ active|length }} record{{ 's' if active|length != 1 }}
-          </span>
-          <button type="button" class="btn btn-outline-secondary btn-sm" onclick="copyTable()" title="Copy table to clipboard">
-            <i class="me-1" data-lucide="clipboard"></i>Copy Table
-          </button>
-        </div>
+      </div>
 
+      <div class="filter-actions">
+        <button type="submit" class="btn btn-primary btn-sm">
+          <i class="me-1" data-lucide="search"></i>Apply
+        </button>
+        <a href="{{ url_for('supervisor_active_leaves') }}" class="btn btn-outline-secondary btn-sm">
+          <i class="me-1" data-lucide="circle-x"></i>Clear
+        </a>
+        <span class="ms-auto text-muted small align-self-center">
+          {{ active|length }} record{{ 's' if active|length != 1 }}
+        </span>
+        <button type="button" class="btn btn-outline-secondary btn-sm" onclick="copyTable()" title="Copy table to clipboard">
+          <i class="me-1" data-lucide="clipboard"></i>Copy Table
+        </button>
       </div>
     </form>
   </div>
@@ -132,6 +120,8 @@
 {% endif %}
 {% endblock %}
 {% block scripts %}
+{% from 'supervisor/_multi_filter.html' import multi_filter, multi_filter_assets %}
+{{ multi_filter_assets() }}
 <script>
 function cancelLeave(leaveId, empName, btn) {
   if (!confirm('Cancel leave for ' + empName + '?')) return;

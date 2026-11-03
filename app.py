@@ -5235,9 +5235,10 @@ def supervisor_active_leaves():
 
     date_from  = request.args.get('date_from', '')
     date_to    = request.args.get('date_to', '')
-    status     = request.args.get('status', '')
-    leave_type = request.args.get('leave_type', '')
-    tl_filter  = request.args.get('tl', '')
+    status     = [v for v in request.args.getlist('status') if v]
+    leave_type = [v for v in request.args.getlist('leave_type') if v]
+    tl_filter  = [v for v in request.args.getlist('tl') if v]
+    group_filter = [g for g in request.args.getlist('group') if g]
     emp_search = request.args.get('emp_search', '')
 
     db = get_db()
@@ -5263,6 +5264,22 @@ def supervisor_active_leaves():
                 """, (session['user']['email'],))
             tl_list = [r['tl'] for r in c.fetchall()]
 
+            if session.get('is_admin'):
+                c.execute("""
+                    SELECT DISTINCT group_name FROM central_db.gsheet_employees
+                    WHERE group_name IS NOT NULL AND group_name != '' AND status != 'Separated'
+                    ORDER BY group_name
+                """)
+            else:
+                c.execute("""
+                    SELECT DISTINCT group_name FROM central_db.gsheet_employees
+                    WHERE approver = %s
+                      AND group_name IS NOT NULL AND group_name != ''
+                      AND status != 'Separated'
+                    ORDER BY group_name
+                """, (session['user']['email'],))
+            group_list = [r['group_name'] for r in c.fetchall()]
+
             where  = ["r.status != 'cancelled'"]
             params = []
 
@@ -5277,14 +5294,17 @@ def supervisor_active_leaves():
                 where.append("r.leave_date <= %s")
                 params.append(date_to)
             if status:
-                where.append("r.status = %s")
-                params.append(status)
+                where.append(f"r.status IN ({','.join(['%s'] * len(status))})")
+                params.extend(status)
             if leave_type:
-                where.append("r.leave_type_id = %s")
-                params.append(leave_type)
+                where.append(f"r.leave_type_id IN ({','.join(['%s'] * len(leave_type))})")
+                params.extend(leave_type)
             if tl_filter:
-                where.append("g.tl = %s")
-                params.append(tl_filter)
+                where.append(f"g.tl IN ({','.join(['%s'] * len(tl_filter))})")
+                params.extend(tl_filter)
+            if group_filter:
+                where.append(f"g.group_name IN ({','.join(['%s'] * len(group_filter))})")
+                params.extend(group_filter)
             if emp_search:
                 where.append("(e.emp_firstname LIKE %s OR e.emp_lastname LIKE %s OR e.employee_id LIKE %s)")
                 params.extend([f'%{emp_search}%', f'%{emp_search}%', f'%{emp_search}%'])
@@ -5308,9 +5328,11 @@ def supervisor_active_leaves():
     return render_template('supervisor/active_leaves.html', active=active,
                            user=session['user'], is_admin=session.get('is_admin', False),
                            leave_types=leave_types, tl_list=tl_list,
+                           group_list=group_list,
                            date_from=date_from, date_to=date_to,
                            status=status, leave_type=leave_type,
-                           tl_filter=tl_filter, emp_search=emp_search)
+                           tl_filter=tl_filter, group_filter=group_filter,
+                           emp_search=emp_search)
 
 @app.route('/supervisor/action', methods=['POST'])
 @login_required
@@ -8689,12 +8711,13 @@ def file_requests_hub():
     from datetime import date
     date_from  = request.args.get('date_from', date.today().strftime('%Y-01-01'))
     date_to    = request.args.get('date_to', date.today().strftime('%Y-%m-%d'))
-    status_f   = request.args.get('status', '')
-    req_type   = request.args.get('req_type', '')
+    status_f   = [v for v in request.args.getlist('status') if v]
+    req_type   = [v for v in request.args.getlist('req_type') if v]
     sub_type   = request.args.get('sub_type', '')
     emp_search = request.args.get('emp_search', '')
-    tl_filter  = request.args.get('tl', '')
-    approver_filter = request.args.get('approver', '') if session.get('is_admin') else ''
+    tl_filter  = [v for v in request.args.getlist('tl') if v]
+    group_filter = [g for g in request.args.getlist('group') if g]
+    approver_filter = [v for v in request.args.getlist('approver') if v] if session.get('is_admin') else []
 
     is_admin      = bool(session.get('is_admin'))
     is_supervisor = bool(session.get('is_supervisor'))
@@ -8712,21 +8735,24 @@ def file_requests_hub():
         allowed_ids = [own_emp_id] if own_emp_id else []
 
     def build_filters(date_col, id_col, name_expr, tbl_alias='t'):
-        where  = [] if is_admin else ([] if status_f == 'Deleted' else [f"{tbl_alias}.deleted_at IS NULL"])
+        where  = [] if is_admin else ([] if 'Deleted' in status_f else [f"{tbl_alias}.deleted_at IS NULL"])
         params = []
         if date_from:
             where.append(f"{date_col} >= %s");  params.append(date_from)
         if date_to:
             where.append(f"{date_col} <= %s");  params.append(date_to)
         if status_f:
-            where.append(f"{tbl_alias}.status = %s");        params.append(status_f)
+            where.append(f"{tbl_alias}.status IN ({','.join(['%s'] * len(status_f))})");  params += status_f
         if emp_search:
             where.append(f"({name_expr} LIKE %s OR {id_col} LIKE %s)")
             params += [f'%{emp_search}%', f'%{emp_search}%']
         if tl_filter:
-            where.append("g.tl = %s");          params.append(tl_filter)
+            where.append(f"g.tl IN ({','.join(['%s'] * len(tl_filter))})");  params += tl_filter
+        if group_filter:
+            where.append(f"g.group_name IN ({','.join(['%s'] * len(group_filter))})")
+            params += group_filter
         if approver_filter:
-            where.append("g.approver = %s");    params.append(approver_filter)
+            where.append(f"g.approver IN ({','.join(['%s'] * len(approver_filter))})");  params += approver_filter
         if allowed_ids is not None:
             if not allowed_ids:
                 where.append("1=0")
@@ -8741,9 +8767,9 @@ def file_requests_hub():
         with cdb.cursor() as c:
             if is_admin:
                 if approver_filter:
-                    c.execute("""SELECT DISTINCT tl FROM gsheet_employees
-                             WHERE approver = %s AND tl IS NOT NULL AND tl != '' AND status != 'Separated'
-                             ORDER BY tl""", (approver_filter,))
+                    c.execute(f"""SELECT DISTINCT tl FROM gsheet_employees
+                             WHERE approver IN ({','.join(['%s'] * len(approver_filter))}) AND tl IS NOT NULL AND tl != '' AND status != 'Separated'
+                             ORDER BY tl""", approver_filter)
                 else:
                     c.execute("""SELECT DISTINCT tl FROM gsheet_employees
                              WHERE tl IS NOT NULL AND tl != '' AND status != 'Separated'
@@ -8758,6 +8784,20 @@ def file_requests_hub():
                                AND status != 'Separated' ORDER BY tl""",
                           (session['user']['email'],))
             tl_list = [r['tl'] for r in c.fetchall()]
+            if is_admin and approver_filter:
+                c.execute(f"""SELECT DISTINCT group_name FROM gsheet_employees
+                             WHERE approver IN ({','.join(['%s'] * len(approver_filter))}) AND group_name IS NOT NULL AND group_name != ''
+                               AND status != 'Separated' ORDER BY group_name""", approver_filter)
+            elif is_admin or can_all_requests:
+                c.execute("""SELECT DISTINCT group_name FROM gsheet_employees
+                             WHERE group_name IS NOT NULL AND group_name != ''
+                               AND status != 'Separated' ORDER BY group_name""")
+            else:
+                c.execute("""SELECT DISTINCT group_name FROM gsheet_employees
+                             WHERE approver = %s AND group_name IS NOT NULL AND group_name != ''
+                               AND status != 'Separated' ORDER BY group_name""",
+                          (session['user']['email'],))
+            group_list = [r['group_name'] for r in c.fetchall()]
             approver_list = []
             if session.get('is_admin'):
                 c.execute("""SELECT DISTINCT approver FROM gsheet_employees
@@ -8767,7 +8807,7 @@ def file_requests_hub():
 
             records = []
 
-            if not req_type or req_type == 'FTS':
+            if not req_type or 'FTS' in req_type:
                 w, p = build_filters('f.fts_date', 'f.employeeID', 'f.employee_name', 'f')
                 c.execute(f"""
                     SELECT 'FTS' AS req_type, f.id, f.employeeID AS emp_id,
@@ -8782,7 +8822,7 @@ def file_requests_hub():
                 """, p)
                 records.extend(c.fetchall())
 
-            if not req_type or req_type == 'OT':
+            if not req_type or 'OT' in req_type:
                 w, p = build_filters('o.ot_date', 'o.employee_id', 'g.schedule_name', 'o')
                 if sub_type and sub_type in ('PRE','POST','TEAM_MEETING','OVERHEAD_OT','DAILY_OT','QA_REFRESHER','OT260'):
                     w += ' AND o.ot_type = %s'; p.append(sub_type)
@@ -8805,7 +8845,7 @@ def file_requests_hub():
                 """, p)
                 records.extend(c.fetchall())
 
-            if not req_type or req_type == 'CWS':
+            if not req_type or 'CWS' in req_type:
                 w, p = build_filters('c.original_date', 'c.employee_id', 'g.schedule_name', 'c')
                 c.execute(f"""
                     SELECT 'CWS' AS req_type, c.id, c.employee_id AS emp_id,
@@ -8821,7 +8861,7 @@ def file_requests_hub():
                 """, p)
                 records.extend(c.fetchall())
 
-            if not req_type or req_type == 'RDW':
+            if not req_type or 'RDW' in req_type:
                 w, p = build_filters('r.rd_date', 'r.employee_id', 'g.schedule_name', 'r')
                 if sub_type and sub_type in ('REGULAR','OVERHEAD_OT','TEAM_MEETING','OT260','DAILY_OT'):
                     w += ' AND r.work_category = %s'; p.append(sub_type)
@@ -8844,7 +8884,7 @@ def file_requests_hub():
                 """, p)
                 records.extend(c.fetchall())
 
-            if not req_type or req_type == 'MCWS':
+            if not req_type or 'MCWS' in req_type:
                 # Magic CWS has no deleted_at column; deletion is status='Deleted'
                 w, p = build_filters('m.original_date', 'm.employee_id',
                                      'COALESCE(g.schedule_name, m.employee_name)', 'm')
@@ -8896,6 +8936,7 @@ def file_requests_hub():
                            status=status_f, req_type=req_type,
                            emp_search=emp_search, emp_display=emp_display,
                            tl_filter=tl_filter,
+                           group_list=group_list, group_filter=group_filter,
                            approver_filter=approver_filter,
                            approver_list=approver_list,
                            sub_type=sub_type)
