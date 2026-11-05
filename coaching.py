@@ -620,8 +620,10 @@ def _parse_form():
         "session_date": g("session_date"),
         "session_time": g("session_time"),
         "coaching_type": g("coaching_type"),
-        "topic": g("topic"),
-        "discussion_notes": g("discussion_notes"),
+        # topic / discussion_notes are NOT NULL in coaching_sessions (shared
+        # with the PHP app), but drafts may leave them blank — store '' then.
+        "topic": g("topic") or "",
+        "discussion_notes": g("discussion_notes") or "",
         "strengths": g("strengths"),
         "areas_for_improvement": g("areas_for_improvement"),
         "follow_up_date": g("follow_up_date"),
