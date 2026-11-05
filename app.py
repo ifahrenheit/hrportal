@@ -95,6 +95,10 @@ app.register_blueprint(timestamp_records_bp)
 from modules.sheet_webhooks import sheet_webhooks_bp
 app.register_blueprint(sheet_webhooks_bp)
 
+## FTS filing check + agent reminder emails on the Absence Report
+from modules.fts_reminders import fts_reminders_bp
+app.register_blueprint(fts_reminders_bp)
+
 #coaching Blueprint
 from coaching import coaching_bp
 app.register_blueprint(coaching_bp)
@@ -12003,13 +12007,43 @@ def admin_absences():
         'fts_out': sum(1 for r in records if r['attendance_status'] == 'FTS OUT'),
     }
 
+    # Status filter (checkbox dropdown, repeated ?status= params). The pills
+    # above keep counting the whole range; only the table rows are filtered.
+    status_options = ['Absent', 'FTS IN', 'FTS OUT']
+    status_options += sorted({r['attendance_status'] for r in records} - set(status_options))
+    status_filter = [s for s in request.args.getlist('status') if s]
+    total_records = len(records)
+    if status_filter:
+        records = [r for r in records if r['attendance_status'] in status_filter]
+
+    # FTS filing check: has the agent filed an FTS request for each FTS IN/OUT row?
+    from modules.fts_reminders import fts_filing_map, FTS_STATUSES
+    try:
+        fts_map = fts_filing_map(records)
+    except Exception as e:
+        app.logger.error(f"fts_filing_map failed: {e}")
+        fts_map = {}
+    fts_filter = [s for s in request.args.getlist('fts') if s in ('filed', 'rejected', 'not_filed')]
+    if fts_filter:
+        def _fts_state(r):
+            t = FTS_STATUSES.get(r['attendance_status'])
+            info = fts_map.get(f"{r['employee_id']}|{str(r['absent_date'])[:10]}|{t}") if t else None
+            return info['state'] if info else None
+        records = [r for r in records if _fts_state(r) in fts_filter]
+
     return render_template('admin/absences.html',
                            records=records,
                            date_from=str(date_from),
                            date_to=str(date_to),
                            leave_map=leave_map,
                            cws_map=cws_map,
-                           summary=summary)
+                           summary=summary,
+                           status_options=status_options,
+                           status_filter=status_filter,
+                           total_records=total_records,
+                           fts_map=fts_map,
+                           fts_filter=fts_filter,
+                           any_filter=bool(status_filter or fts_filter))
 
 @app.route('/admin/awol-report')
 def admin_awol_report():

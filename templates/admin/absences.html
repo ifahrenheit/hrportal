@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from 'supervisor/_multi_filter.html' import multi_filter, multi_filter_assets %}
 {% block title %}Absence Report{% endblock %}
 {% block page_title %}Absence Report{% endblock %}
 
@@ -22,6 +23,8 @@
     border: 1px solid var(--border); border-radius: 8px; background: var(--bg); color: var(--text-muted);
   }
   .date-nav .btn-icon:hover { background: var(--accent); color: #fff; border-color: var(--accent); }
+  .status-filter .form-label { display: none; }   /* inline label below instead */
+  .status-filter .multi-filter-btn { min-width: 150px; }
 </style>
 
 <div class="filter-bar">
@@ -42,10 +45,23 @@
       <button type="button" class="btn btn-outline-secondary btn-sm" id="currentPeriodBtn">Current Period</button>
       <button type="button" class="btn btn-outline-secondary btn-sm" id="todayBtn">Today</button>
     </div>
+    <div class="status-filter d-flex align-items-center gap-2">
+      <label>Status</label>
+      {{ multi_filter('status', 'Status', status_options, status_filter, 'All Statuses', 'statuses', autosubmit=True) }}
+    </div>
+    <div class="status-filter d-flex align-items-center gap-2">
+      <label>FTS filing</label>
+      {{ multi_filter('fts', 'FTS filing', [('filed','Filed'),('rejected','Rejected'),('not_filed','Not filed')], fts_filter, 'Any', 'states', autosubmit=True) }}
+    </div>
     <button class="btn btn-primary btn-sm" type="submit">
       <i class="me-1" data-lucide="search"></i>Check
     </button>
   </form>
+  {% if summary.fts_in or summary.fts_out %}
+  <button type="button" class="btn btn-outline-primary btn-sm" id="ftsRemindBtn">
+    <i class="me-1" data-lucide="mail"></i>Email FTS reminders
+  </button>
+  {% endif %}
   {% if records %}
   <button class="btn btn-outline-secondary btn-sm" id="copyTableBtn" onclick="copyTable()">
     <i class="me-1" data-lucide="clipboard"></i>Copy Table
@@ -53,8 +69,8 @@
   {% endif %}
 </div>
 
-{# Summary pills #}
-{% if records %}
+{# Summary pills (counts cover the whole date range, before the status filter) #}
+{% if total_records %}
 <div class="d-flex gap-2 mb-3 flex-wrap">
   <span class="badge rounded-pill px-3 py-2"
         style="background:#fef2f2;color:#991b1b;border:1px solid #fecaca;font-size:.8rem;">
@@ -70,12 +86,18 @@
   </span>
   <span class="text-muted ms-2" style="font-size:.83rem;align-self:center;">
     {% if date_from == date_to %}{{ date_from }}{% else %}{{ date_from }} &rarr; {{ date_to }}{% endif %}
-    &mdash; {{ records|length }} record(s)
+    &mdash; {% if any_filter %}{{ records|length }} of {{ total_records }} record(s) shown{% else %}{{ records|length }} record(s){% endif %}
   </span>
 </div>
 {% endif %}
 
-{% if not records %}
+{% if not records and any_filter and total_records %}
+<div class="card p-4 text-center">
+  <i class="text-muted" data-lucide="filter-x" style="font-size:2.5rem;"></i>
+  <div class="mt-2 fw-semibold">No records match the selected filters</div>
+  <div class="text-muted" style="font-size:.85rem;">Change the Status or FTS filing filter to see the other {{ total_records }} record(s).</div>
+</div>
+{% elif not records %}
 <div class="card p-4 text-center">
   <i class="text-success" data-lucide="circle-check" style="font-size:2.5rem;"></i>
   <div class="mt-2 fw-semibold">No issues found for the selected date range</div>
@@ -125,6 +147,7 @@
 
   {% set emp_leaves = leave_map.get(remark_key, []) %}
   {% set emp_cws    = cws_map.get(remark_key, []) %}
+  {% set fts_info   = fts_map.get(remark_key ~ '|' ~ row.attendance_status[4:]) if row.attendance_status in ('FTS IN', 'FTS OUT') else none %}
 
   <tr>
     <td class="fw-semibold">{{ row.schedule_name }}</td>
@@ -191,7 +214,31 @@
             <span style="opacity:.7;">({{ cw.status }})</span>
           </span>
         {% endfor %}
-        {% if not emp_leaves and not emp_cws %}
+        {% if fts_info %}
+          {% if fts_info.state == 'filed' %}
+          <span class="badge rounded-pill" title="FTS {{ fts_info.fts_date }} {{ fts_info.fts_time }}"
+                style="background:#f0fdf4;color:#15803d;border:1px solid #bbf7d0;font-size:.72rem;">
+            <i class="me-1" data-lucide="file-check"></i>FTS filed
+            <span style="opacity:.7;">({{ fts_info.status }}{% if fts_info.fts_date != row.absent_date|string %}, {{ fts_info.fts_date[5:] }}{% endif %})</span>
+          </span>
+          {% elif fts_info.state == 'rejected' %}
+          <span class="badge rounded-pill" title="FTS {{ fts_info.fts_date }} {{ fts_info.fts_time }} was rejected"
+                style="background:#fef2f2;color:#991b1b;border:1px solid #fecaca;font-size:.72rem;">
+            <i class="me-1" data-lucide="file-x"></i>FTS rejected
+          </span>
+          {% else %}
+          <span class="badge rounded-pill"
+                style="background:#fffbeb;color:#92400e;border:1px solid #fde68a;font-size:.72rem;">
+            <i class="me-1" data-lucide="file-warning"></i>FTS not filed
+          </span>
+          {% endif %}
+          {% if fts_info.reminded_at %}
+          <span class="text-muted" style="font-size:.72rem;" title="Reminder emails sent: {{ fts_info.reminded_count }}">
+            <i data-lucide="mail-check" style="width:12px;height:12px;"></i> reminded {{ fts_info.reminded_at.strftime('%b %d %H:%M') }}
+          </span>
+          {% endif %}
+        {% endif %}
+        {% if not emp_leaves and not emp_cws and not fts_info %}
           <span class="text-muted" style="font-size:.8rem;">&mdash;</span>
         {% endif %}
       </div>
@@ -201,9 +248,117 @@
 </tbody></table></div></div>
 
 {% endif %}
+
+{# FTS reminder modal: preview who gets emailed, then send #}
+<div class="modal fade" id="ftsRemindModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-lg modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Email FTS reminders</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <p class="small text-muted mb-2">
+          Agents with an FTS IN/OUT from <b id="ftsRangeLabel"></b> that has no FTS request yet (or a rejected one).
+          Each ticked agent gets one email listing their dates, asking them to file and to disregard it if they already have.
+          Agents reminded in the last 24 hours start unticked.
+        </p>
+        <div id="ftsRemindBody"><div class="text-muted small">Loading…</div></div>
+      </div>
+      <div class="modal-footer">
+        <span class="me-auto small text-muted" id="ftsRemindCount"></span>
+        <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal">Close</button>
+        <button type="button" class="btn btn-primary btn-sm" id="ftsRemindSend" disabled>
+          <i class="me-1" data-lucide="send"></i>Send
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
 {% endblock %}
 
 {% block scripts %}
+{{ multi_filter_assets() }}
+<script>
+(function () {
+  const btn = document.getElementById('ftsRemindBtn');
+  if (!btn) return;
+  const modalEl = document.getElementById('ftsRemindModal');
+  const body = document.getElementById('ftsRemindBody');
+  const sendBtn = document.getElementById('ftsRemindSend');
+  const countEl = document.getElementById('ftsRemindCount');
+  const csrf = document.querySelector('meta[name="csrf-token"]')?.content || '';
+  const range = () => ({ date_from: document.getElementById('date_from').value,
+                         date_to: document.getElementById('date_to').value });
+  const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  let modal;
+
+  function post(url, payload) {
+    return fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
+                        body: JSON.stringify(payload) })
+      .then(r => r.json().then(j => { if (!r.ok) throw new Error(j.error || 'Request failed'); return j; }));
+  }
+  function updateCount() {
+    const n = body.querySelectorAll('.fts-agent:checked').length;
+    countEl.textContent = n + ' agent(s) selected';
+    sendBtn.disabled = n === 0;
+  }
+
+  btn.addEventListener('click', function () {
+    modal = modal || new bootstrap.Modal(modalEl);
+    const r = range();
+    document.getElementById('ftsRangeLabel').textContent = r.date_from + ' to ' + r.date_to;
+    body.innerHTML = '<div class="text-muted small">Loading…</div>';
+    countEl.textContent = ''; sendBtn.disabled = true; sendBtn.dataset.done = '';
+    modal.show();
+    post('{{ url_for("fts_reminders.preview") }}', r).then(j => {
+      if (!j.agents.length) {
+        body.innerHTML = '<div class="alert alert-success small mb-0">Everyone with an FTS in this range has already filed it.</div>';
+        return;
+      }
+      let h = '<div class="d-flex gap-3 small mb-2"><a href="#" data-all>Select all</a><a href="#" class="text-muted" data-none>Clear</a></div>';
+      h += '<table class="table table-sm align-middle small mb-0"><thead><tr><th></th><th>Agent</th><th>Missing FTS</th><th>Email</th></tr></thead><tbody>';
+      j.agents.forEach(a => {
+        const items = a.items.map(i => esc(i.date.slice(5)) + ' ' + (i.type === 'IN' ? 'time-in' : 'time-out') +
+          (i.state === 'rejected' ? ' <span class="text-danger">(rejected)</span>' : '')).join('<br>');
+        const noEmail = !a.email;
+        h += '<tr><td><input type="checkbox" class="form-check-input fts-agent" value="' + esc(a.employee_id) + '"' +
+             (noEmail ? ' disabled' : (a.reminded_recently ? '' : ' checked')) + '></td>' +
+             '<td><div class="fw-semibold">' + esc(a.name) + '</div><div class="text-muted">' + esc(a.group) + ' · ' + esc(a.tl) + '</div></td>' +
+             '<td>' + items + '</td>' +
+             '<td>' + (noEmail ? '<span class="text-danger">No email in sheet</span>' : esc(a.email)) +
+             (a.last_reminded ? '<div class="text-muted">reminded ' + esc(a.last_reminded) + '</div>' : '') + '</td></tr>';
+      });
+      body.innerHTML = h + '</tbody></table>';
+      body.querySelectorAll('.fts-agent').forEach(c => c.addEventListener('change', updateCount));
+      body.querySelector('[data-all]').addEventListener('click', e => { e.preventDefault();
+        body.querySelectorAll('.fts-agent:not(:disabled)').forEach(c => c.checked = true); updateCount(); });
+      body.querySelector('[data-none]').addEventListener('click', e => { e.preventDefault();
+        body.querySelectorAll('.fts-agent').forEach(c => c.checked = false); updateCount(); });
+      updateCount();
+    }).catch(e => { body.innerHTML = '<div class="alert alert-danger small mb-0">' + esc(e.message) + '</div>'; });
+  });
+
+  sendBtn.addEventListener('click', function () {
+    if (sendBtn.dataset.done) { location.reload(); return; }
+    const ids = Array.from(body.querySelectorAll('.fts-agent:checked')).map(c => c.value);
+    if (!ids.length || !confirm('Send FTS reminder emails to ' + ids.length + ' agent(s)?')) return;
+    sendBtn.disabled = true; sendBtn.textContent = 'Sending…';
+    post('{{ url_for("fts_reminders.send") }}', Object.assign(range(), { employee_ids: ids })).then(j => {
+      let h = '<div class="alert ' + (j.failed ? 'alert-warning' : 'alert-success') + ' small">Sent ' + j.sent + ' email(s)' +
+              (j.failed ? ', ' + j.failed + ' failed' : '') +
+              (j.already_filed ? '. ' + j.already_filed + ' agent(s) skipped: they filed in the meantime' : '') + '.</div>';
+      h += '<ul class="small mb-0">' + j.results.map(r => '<li>' + esc(r.name) + ': ' +
+           (r.ok ? 'sent to ' + esc(r.email) : '<span class="text-danger">' + esc(r.error) + '</span>') + '</li>').join('') + '</ul>';
+      body.innerHTML = h; countEl.textContent = '';
+      sendBtn.disabled = false; sendBtn.dataset.done = '1'; sendBtn.textContent = 'Done (refresh page)';
+    }).catch(e => {
+      body.insertAdjacentHTML('afterbegin', '<div class="alert alert-danger small">' + esc(e.message) + '</div>');
+      sendBtn.disabled = false; sendBtn.textContent = 'Send';
+    });
+  });
+})();
+</script>
 <script>
 // ── Payroll period navigation (mirrors payroll_period.py) ──
 document.addEventListener('DOMContentLoaded', function () {
