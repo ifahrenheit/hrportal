@@ -8,6 +8,45 @@
 
 ---
 
+## 2026-11-05 — Absence Report FTS filing check + reminder emails; coaching draft 500 fixed; admin guide
+Commits: `c9fc071`, `959308e` · Branch: `main`
+
+### What was built / changed
+- Coaching: saving a Draft with blank Topic/Discussion Notes gave a 500 (`IntegrityError 1048`, both columns NOT NULL). `_parse_form` now stores `''` — `coaching.py`.
+- Absence Report (`/admin/absences`, `admin_absences` in `app.py`, `templates/admin/absences.html`):
+  - **Status** checkbox filter (repeated `?status=`) via `templates/supervisor/_multi_filter.html`. Pills still count the whole range; "N of M record(s) shown" when filtered.
+  - FTS IN/OUT rows show **FTS filed (status) / FTS rejected / FTS not filed** + "reminded <date>"; **FTS filing** filter (`?fts=filed|rejected|not_filed`).
+  - **Email FTS reminders** button: modal preview (agents with unfiled/rejected FTS in the range), tick, Send. One email per agent, Reply-To = sender, "disregard if already filed".
+- New `modules/fts_reminders.py` (blueprint `fts_reminders`, registered in `app.py`): `fts_filing_map(records)`, `POST /admin/absences/fts-reminders/preview` and `/send` (JSON, `X-CSRF-Token`, admin or `can_absences`).
+- Admin guide + FAQ for Jovin/Jericho as a Claude Doc: https://claude.ai/artifact/JW1aoFqHfNCjacDUmZ5tsb
+
+### Why / decisions
+- FTS match: same employee + type, not Deleted/Cancelled; IN = shift date; OUT = shift date or next day when the shift crosses midnight (e.g. 7pm-6am filed under the next date; 1pm-12mn filed as next day 00:00). Unparseable shift: next-day OUT only if time <= 12:00. Best status wins: Approved > Pending > Rejected.
+- Rejected counts as needing a reminder. Emails go to the agent only (TLs already get the 16:00 `fts_notify.py` digest from `/home/cohere/fts_pathb`). Send re-computes server-side and skips agents who filed meanwhile; agents reminded in the last 24h start unticked.
+- Send is synchronous SMTP (per-recipient results), not the threaded `send_email`.
+
+### Database changes
+```sql
+-- central_db, created on first use by modules/fts_reminders.py (_ensure_log_table)
+CREATE TABLE IF NOT EXISTS fts_reminder_log (
+  id INT AUTO_INCREMENT PRIMARY KEY, employee_id VARCHAR(50) NOT NULL, shift_date DATE NOT NULL,
+  fts_type ENUM('IN','OUT') NOT NULL, email VARCHAR(255) NOT NULL, sent_by VARCHAR(255) NOT NULL,
+  sent_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP, KEY idx_emp_date (employee_id, shift_date));
+```
+
+### Deploy / run notes
+- Backups `app.py.bak.20261105221912`, `templates/admin/absences.html.bak.2026110522*`. Service restarted 22:27, clean.
+
+### How to verify
+- `/admin/absences?date_from=2026-10-08&date_to=2026-10-22&status=FTS+IN&status=FTS+OUT` -> 14 rows, 11 filed, 3 not filed (Rachel Marikit, Honey Mae Tradio, Kimberly Rose Cobol). Test send used a mocked SMTP; ZZTEST log row deleted. One sample email sent to the user only.
+
+### Open items / next steps
+- [ ] Bug: Sub-Admins **IT Ticket Queue** / **HR Ticket Queue** checkboxes are never saved or loaded (`can_it_tickets`, `can_hr_tickets` missing from the save SQL and `get_sub_admin_permissions` in `app.py`). Only full admins see the Ticket Queue/Routine Tracker. Noted in the admin guide FAQ.
+- [ ] Option offered, not built: CC the TL on FTS reminder emails.
+- [ ] `.claude/agents/lead-researcher.md` is untracked (not part of this work).
+
+---
+
 ## 2026-10-30 — Admin handover: successors, webhooks moved into the portal, credentials rotated
 Commit: `8596b93` · Branch: `main`
 
@@ -336,38 +375,6 @@ Commits: `0fc0638`, this one · Branch: `main`
 - **Forwarder last target**: removing a forwarder's only target makes cPanel delete the address. `change_members()` re-read it via `_current_emails` and raised KeyError, so the cleanup showed it as failed and it wasn't audited. It now re-reads `fetch_forwarders` and marks the result done, with a "cPanel deleted the forwarder" note.
   - This happened in the Separated cleanup to `gygl2@`, `jondel.lerio@`, `juniel.cabantingan@` and `montesa.montebon@`, which are now deleted. Audit rows were backfilled; the removed target address wasn't recorded.
   - **`gygl2@` was a group address**: mail to it now bounces. Recreate it if it's still used.
-
----
-
-## 2026-10-20 (7) — Mailing Lists 8–12: private by default, privacy switch, owners/moderators, all-lists history, view-only permission
-Commit: this one · Branch: `main`
-
-### What was built / changed
-- `modules/mailing_lists.py`:
-  - `PRIVACY_PRESETS`, `fetch_privacy`, `set_privacy` and `POST /mailman/<addr>/privacy`. New lists default to Private and get the preset after `add_list`.
-  - `fetch_list_admins`, `update_list_admins` and `POST /mailman/<addr>/admins` (the last owner is protected).
-  - `/history` and `/history.csv` with `_history_filters` (parameterised).
-  - `ml_can_view()`; `_access_required` now lets GET through with view or full access, while POST needs full access (403).
-- Templates: privacy and owners cards on `detail.html`, the new `history.html`, and change controls hidden for view-only users on every page.
-- New sub-admin permission `can_mailing_lists_view` ("Mailing Lists (view only)", Tools & Access). Both sub-admin INSERTs are now 42 cols / 42 values. app.py backup: `app.py.bak.20261020034306`.
-
-### Database changes
-```sql
--- orangehrm2
-ALTER TABLE leave4day_sub_admins ADD COLUMN can_mailing_lists_view TINYINT(1) NOT NULL DEFAULT 0;
--- central_db
-ALTER TABLE mailing_list_audit MODIFY action ENUM('add','remove','create','moderate','delivery','senders','delete','privacy','owners') NOT NULL;
-```
-
-### Live use by the user today (from the audit log, no failures)
-- Separated cleanup: 72 forwarder removals on 14 groups (first live proof of `delete_forwarder`) and 160 Mailman removals on 11 lists.
-- 43 moderation decisions. The cleanup page now shows 0 separated people.
-
-### Open items
-- [ ] Per-list access (e.g. a team lead manages only their list), possibly via Mailman owners. Not built; ask the user.
-- [ ] Still untested live: forwarder add/create, delete group, delivery toggle, privacy switch, owners edit.
-
----
 
 ---
 
