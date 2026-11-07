@@ -51,6 +51,10 @@ def get_supervisor_emails(conn, incident_list):
     return emails
 
 def get_group_emails(conn, incident_list):
+    """CC the filer's group, but only when the filer is currently in a
+    TL (TL, BO TL, L2 TL, ...), QA, RTA, SGA, IT or Finest group. Filers in agent groups
+    (CS, BO, Numa CS, Numa BO, ...) get no group copy — those groups are agents,
+    and the IR must not go to the subject's coworkers."""
     emails = set()
     with conn.cursor() as cur:
         for inc in incident_list:
@@ -59,12 +63,26 @@ def get_group_emails(conn, incident_list):
                 FROM gsheet_employees g1
                 INNER JOIN gsheet_employees g2 ON g1.group_name = g2.group_name
                 WHERE g1.employee_id = %s
-                  AND g1.group_name IS NOT NULL
-                  AND g1.group_name != '' AND g1.group_name != 'TL'
+                  AND (g1.group_name IN ('TL', 'QA', 'RTA', 'SGA', 'IT', 'Finest')
+                       OR g1.group_name LIKE '%% TL')
                   AND g2.status = 'Active' AND g2.email IS NOT NULL
             """, (inc['submitted_by_id'],))
             for row in cur.fetchall():
                 emails.add(row['email'])
+    return emails
+
+def get_filer_emails(conn, incident_list):
+    """The person who filed each IR always gets the reminder, whatever their group."""
+    emails = set()
+    with conn.cursor() as cur:
+        for inc in incident_list:
+            cur.execute("""
+                SELECT email FROM gsheet_employees
+                WHERE employee_id = %s AND email IS NOT NULL AND email != ''
+                LIMIT 1
+            """, (inc['submitted_by_id'],))
+            row = cur.fetchone()
+            if row: emails.add(row['email'])
     return emails
 
 # ─── Email ────────────────────────────────────────────────────────────────────
@@ -132,6 +150,7 @@ def send_reminder(incidents):
         recipients = {IR_EMAIL_TO}
         recipients |= get_supervisor_emails(conn, incidents)
         recipients |= get_group_emails(conn, incidents)
+        recipients |= get_filer_emails(conn, incidents)
     finally:
         conn.close()
 
@@ -180,7 +199,8 @@ def main():
 
         logging.info(f"Found {len(stale)} stale incident(s).")
         if '--send' not in sys.argv:
-            recipients = {IR_EMAIL_TO} | get_supervisor_emails(conn, stale) | get_group_emails(conn, stale)
+            recipients = ({IR_EMAIL_TO} | get_supervisor_emails(conn, stale)
+                          | get_group_emails(conn, stale) | get_filer_emails(conn, stale))
             for inc in stale:
                 logging.info(f"  [dry-run] {inc['report_number']} {inc['status']} "
                              f"{inc['employee_name']} idle {inc['hours_since_activity']}h")
