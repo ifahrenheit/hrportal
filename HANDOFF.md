@@ -40,7 +40,7 @@ INSERT INTO leave4day_settings (setting_key, setting_value) VALUES
 - Test client with hold forced on: CS employee sees VL/SL/CO disabled + banner, Numa CS sees none; POST VL refused, no row inserted.
 
 ### Open items / next steps
-- [ ] Hold is seeded **OFF** — user flips the switch on Admin › Settings when ready.
+- Hold turned **ON** by user 2026-11-09 21:04 (11 groups). Fixed: the AWOL holiday JS in `file_leave.html` re-enabled held options on date change; options now carry `data-hold="1"` and stay disabled.
 - [ ] Commit `modules/leave_hold.py`, test, template + `app.py` edits (with the uncommitted leave_recalc work).
 
 ---
