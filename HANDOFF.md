@@ -8,6 +8,40 @@
 
 ---
 
+## 2026-11-09 — Cogonon parental leave fixed; "Recalculate Filed Leave" tool
+Commit: `68bf5ea` (feature files uncommitted) · Branch: `main`
+
+### What was built / changed
+- New `/admin/emp-settings/recalc` (blueprint `leave_recalc`, `modules/leave_recalc.py`, `templates/admin/leave_recalc.html`, `can_work_mode` or admin). Enter employee ID + "applies from" date → preview old vs new hours → Apply. Re-runs each filed day (pending/approved/scheduled) through `calculate_deduction` with the current work mode + schedule; updates `leave4day_requests`, `ohrm_leave`, charges/refunds `ohrm_leave_entitlement.days_used` by the difference (skips credit_pending rows), logs to `central_db.employee_audit_log` (`change_source='leave_recalc'`).
+- `app.py` `admin_emp_settings`: single-employee save redirects to the recalc preview (from 1st of month) when the employee has leave filed this month or later; bulk save flashes a reminder. Blueprint registered next to `file_for_emp_bp` with injected helpers.
+- `templates/admin/emp_settings.html`: "Recalculate Filed Leave" button + note.
+- `tests/test_leave_recalc.py` (mocked, 5 tests).
+
+### Why / decisions
+- Leave hours are frozen at filing; work mode / gsheet schedule changes never touched filed leave (Cogonon filed 2026-11-04 20:29, switched to 5-day 20:30).
+- Never adds/removes rows (5-day rest days have no row; 4-day rest days are 0-h rows). Skips holidays, AWOL, custom-hours rows (hours not in 0/4/5/8/10).
+- The from-date matters: an earlier date would "fix" leave that was correct under the old mode (e.g. Cogonon's Oct VL at 10 h).
+
+### Database changes
+```sql
+-- orangehrm2, manual fix, emp_number 227 (Mary Joy Cogonon), leave_request_id 4128, Parental leave Nov 3-6
+UPDATE leave4day_requests SET hours_deducted=8, days_deducted=1, is_off_day=0 WHERE id IN (3010,3011,3012,3013);
+UPDATE ohrm_leave SET length_hours=8, length_days=1 WHERE id IN (5798,5799,5800,5801);
+UPDATE ohrm_leave_entitlement SET days_used=4.0 WHERE id=2499;  -- was 3.75
+```
+
+### Deploy / run notes
+- Backups `app.py.bak.20261109204827`, `templates/admin/emp_settings.html.bak.*`. ast gate passed, service restarted clean.
+
+### How to verify
+- `/admin/emp-settings/recalc?employee_id=250303-03&from=2026-11-01` → "already matches" (0 changes).
+
+### Open items / next steps
+- [ ] Commit `modules/leave_recalc.py`, template, test and the `app.py`/emp_settings edits (app.py also has other uncommitted changes from before this session).
+- [ ] No Apply has been run through the tool on real data yet.
+
+---
+
 ## 2026-11-05 — Absence Report FTS filing check + reminder emails; coaching draft 500 fixed; admin guide
 Commits: `c9fc071`, `959308e` · Branch: `main`
 
