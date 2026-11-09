@@ -52,6 +52,61 @@
       which saves them straight to OrangeHRM. Both always show the same numbers.</p>
   </div>
   </div>
+    {% set lh = leave_hold %}
+    <div class="card p-4 mt-4" id="leave-hold">
+      <div class="d-flex align-items-center justify-content-between mb-1">
+        <h6 class="fw-semibold mb-0">Leave Filing Hold</h6>
+        {% if lh.config.enabled %}
+        <span class="badge bg-warning text-dark">ON, {{ lh.held_people }} employee(s) held</span>
+        {% else %}
+        <span class="badge bg-secondary">OFF</span>
+        {% endif %}
+      </div>
+      <p class="text-muted small mb-3">When on, employees in the ticked groups see the ticked leave types greyed out on their File Leave page.
+        Leave already filed is not touched. Admin › File Leave for Employee still works for exceptions.</p>
+      <form method="POST" action="{{ url_for('leave_hold.save_leave_hold') }}" id="leaveHoldForm">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <div class="form-check form-switch mb-3">
+          <input class="form-check-input" type="checkbox" role="switch" name="enabled" value="1" id="holdEnabled"
+                 {% if lh.config.enabled %}checked{% endif %}>
+          <label class="form-check-label fw-semibold" for="holdEnabled">Hold leave filing</label>
+        </div>
+
+        <label class="form-label small fw-semibold mb-1">Leave types on hold</label>
+        <div class="d-flex flex-wrap gap-3 mb-3">
+          {% for t in lh.leave_types %}
+          <div class="form-check">
+            <input class="form-check-input" type="checkbox" name="type_ids" value="{{ t.id }}" id="holdType{{ t.id }}"
+                   {% if t.id in lh.config.type_ids %}checked{% endif %}>
+            <label class="form-check-label small" for="holdType{{ t.id }}">{{ t.name }}</label>
+          </div>
+          {% endfor %}
+        </div>
+
+        <div class="d-flex align-items-center justify-content-between mb-1">
+          <label class="form-label small fw-semibold mb-0">Groups on hold</label>
+          <span class="small"><a href="#" data-hold-all="1">All</a> · <a href="#" data-hold-all="0">None</a></span>
+        </div>
+        <div class="row row-cols-2 g-1 mb-3">
+          {% for g in lh.groups %}
+          <div class="col">
+            <div class="form-check">
+              <input class="form-check-input hold-group" type="checkbox" name="groups" value="{{ g.name }}" id="holdGrp{{ loop.index }}"
+                     {% if g.held %}checked{% endif %}>
+              <label class="form-check-label small" for="holdGrp{{ loop.index }}">{{ g.name }} <span class="text-muted">({{ g.count }})</span></label>
+            </div>
+          </div>
+          {% endfor %}
+        </div>
+        <div class="form-text mb-3">Unticked groups can file as usual. A new group added to the sheet later is not held until you tick it here.</div>
+
+        <label class="form-label small fw-semibold mb-1" for="holdMessage">Message shown to employees</label>
+        <textarea class="form-control form-control-sm mb-3" name="message" id="holdMessage" rows="2" maxlength="255">{{ lh.config.message }}</textarea>
+
+        <button type="submit" class="btn btn-primary btn-sm">Save</button>
+      </form>
+    </div>
+
     <div class="card p-4 mt-4">
       <h6 class="fw-semibold mb-1">Quick Links</h6>
       <p class="text-muted small mb-3">Manage quick links from the <a href="{{ url_for('admin_quick_links') }}">Quick Links Manager</a>.</p>
@@ -62,6 +117,16 @@
 
 {% block scripts %}
 <script>
+// Leave filing hold: All / None group shortcuts + confirm
+document.querySelectorAll('[data-hold-all]').forEach(a => a.addEventListener('click', e => {
+  e.preventDefault();
+  document.querySelectorAll('.hold-group').forEach(cb => cb.checked = a.dataset.holdAll === '1');
+}));
+document.getElementById('leaveHoldForm')?.addEventListener('submit', e => {
+  const on = document.getElementById('holdEnabled').checked;
+  if (on && !confirm('Employees in the ticked groups will not be able to file the ticked leave types. Continue?')) e.preventDefault();
+});
+
 // Override onclick on work mode cards
 document.querySelectorAll('[onclick*="mode4day"], [onclick*="mode5day"]').forEach(el => {
   const original = el.getAttribute('onclick');

@@ -1858,12 +1858,20 @@ def file_leave():
             'remaining_days':  0.0,
             'is_awol':         True,
         }]
+    # --- LEAVE_HOLD --- grey out held leave types for held groups (modules/leave_hold.py)
+    from modules.leave_hold import mark_balances as _hold_mark
+    balances = _hold_mark(balances, emp_number)
 
     if request.method == 'POST':
         if not validate_csrf():
             flash('Security check failed, please try again.', 'danger')
             return redirect(url_for('file_leave'))
         leave_type_id = int(request.form['leave_type_id'])
+        # --- LEAVE_HOLD --- refuse a held type even if the form was tampered with
+        _held = next((b for b in balances if b['leave_type_id'] == leave_type_id and b.get('on_hold')), None)
+        if _held:
+            flash(f"{_held['leave_type_name']}: {_held['hold_message']}", 'warning')
+            return redirect(url_for('file_leave'))
         # --- AWOL_PATCH --- resolve AWOL + enforce holiday-only + single-day
         _awol = _get_awol_type()
         is_awol = bool(_awol and leave_type_id == _awol['id'])
@@ -4372,6 +4380,8 @@ def admin_emp_settings():
                         count += 1
                 db.commit()
                 flash(f'Updated {count} employees in {group_name} to {"Global Default" if work_mode == "global" else work_mode}!', 'success')
+                flash('Leave already filed keeps its old hours. Use "Recalculate Filed Leave" '
+                      'for anyone in this group with leave filed.', 'info')
             else:
                 employee_id = request.form.get('employee_id', '').strip()
                 work_mode   = request.form.get('work_mode', '')
@@ -4392,6 +4402,21 @@ def admin_emp_settings():
                               work_mode, session['user']['emp_number']))
                 db.commit()
                 flash('Employee work mode updated successfully!', 'success')
+                # Leave already filed keeps the hours it was filed with; if this
+                # employee has any this month or later, send the admin to the
+                # recalculation preview (modules/leave_recalc.py).
+                month_start = date.today().replace(day=1)
+                with db.cursor() as c:
+                    c.execute("""SELECT COUNT(*) AS n FROM leave4day_requests
+                                 WHERE emp_number = %s AND leave_date >= %s AND deleted_at IS NULL
+                                   AND status IN ('pending','approved','scheduled')""",
+                              (target_emp, month_start))
+                    has_filed = c.fetchone()['n']
+                if has_filed:
+                    flash('This employee has leave already filed under the old setting. '
+                          'Review it below and click Apply if the hours need updating.', 'info')
+                    return redirect(url_for('leave_recalc.recalc_filed_leave', employee_id=employee_id,
+                                            **{'from': month_start.isoformat()}))
         except Exception as e:
             db.rollback()
             flash(f'Error: {e}', 'danger')
@@ -4552,9 +4577,11 @@ def admin_settings():
             quick_links_visible = (row['setting_value'] == '1') if row else False
     finally:
         db.close()
+    from modules.leave_hold import settings_context as _hold_ctx
     return render_template('admin/settings.html', work_mode=current_mode,
                            entitlement_source=current_source,
                            quick_links_visible=quick_links_visible,
+                           leave_hold=_hold_ctx(),
                            user=session['user'])
 
 @app.route('/admin/settings/quick-links', methods=['POST'])
@@ -11767,6 +11794,37 @@ def build_attendance_map(personids, window_start, window_end, shift_starts=None)
 
     return attendance_map
 
+_OHRM_LEAVE_STATUS = {1: 'pending', 2: 'scheduled', 3: 'taken'}
+
+def add_ohrm_leave_to_map(c, leave_map, emp_ids, date_from, date_to):
+    """Add OrangeHRM leave (ohrm_leave: pending / scheduled / taken) to a
+    '<employee_id>|<YYYY-MM-DD>' -> [rows] leave_map built from leave4day_requests.
+    Leave entered straight into OrangeHRM (common for managers) has no
+    leave4day_requests row, so without this the attendance reports flag
+    those days as absences. A day already covered by the same leave type
+    from the portal is not added twice. `c` is an orangehrm2 cursor."""
+    if not emp_ids:
+        return
+    ph = ','.join(['%s'] * len(emp_ids))
+    c.execute(f"""
+        SELECT e.employee_id, lt.name AS leave_type_name, ol.status, ol.date AS leave_date
+        FROM ohrm_leave ol
+        JOIN hs_hr_employee e ON e.emp_number = ol.emp_number
+        JOIN ohrm_leave_type lt ON lt.id = ol.leave_type_id
+        WHERE e.employee_id IN ({ph})
+          AND ol.date BETWEEN %s AND %s
+          AND ol.status IN (1, 2, 3)
+    """, list(emp_ids) + [date_from, date_to])
+    for row in c.fetchall():
+        key = '{}|{}'.format(row['employee_id'], row['leave_date'])
+        existing = leave_map.setdefault(key, [])
+        if any(x.get('leave_type_name') == row['leave_type_name'] for x in existing):
+            continue
+        row['status'] = _OHRM_LEAVE_STATUS.get(row['status'], 'filed')
+        row['source'] = 'orangehrm'
+        existing.append(row)
+
+
 def get_absence_records(date_from, date_to):
     """
     Scheduled, active employees with no 'Present' shift between date_from
@@ -11943,6 +12001,7 @@ def get_absence_records(date_from, date_to):
                     for row in c.fetchall():
                         key = '{}|{}'.format(row['employee_id'], row['leave_date'])
                         leave_map.setdefault(key, []).append(row)
+                    add_ohrm_leave_to_map(c, leave_map, emp_ids, date_from, date_to)
             finally:
                 odb.close()
 
@@ -12290,6 +12349,7 @@ def admin_awol_report():
                     for row in c.fetchall():
                         key = '{}|{}'.format(row['employee_id'], row['leave_date'])
                         leave_map.setdefault(key, []).append(row)
+                    add_ohrm_leave_to_map(c, leave_map, emp_ids, date_from, date_to)
             finally:
                 odb.close()
 
@@ -12616,6 +12676,7 @@ def admin_undertime_report():
                     for row in c.fetchall():
                         key = '{}|{}'.format(row['employee_id'], row['leave_date'])
                         leave_map.setdefault(key, []).append(row)
+                    add_ohrm_leave_to_map(c, leave_map, emp_ids, date_from, date_to)
             finally:
                 odb.close()
 
@@ -13600,13 +13661,20 @@ def _perf_scope_data(conn, employee_id, date_from, date_to, perf_safe_last_day, 
             try:
                 with leave_db.cursor(pymysql.cursors.DictCursor) as leave_cursor:
                     leave_cursor.execute("""
+                        SELECT ol.date AS leave_date, lt.name AS leave_type_name
+                        FROM ohrm_leave ol
+                        JOIN hs_hr_employee e ON e.emp_number = ol.emp_number
+                        JOIN ohrm_leave_type lt ON lt.id = ol.leave_type_id
+                        WHERE e.employee_id = %s AND ol.date BETWEEN %s AND %s
+                          AND ol.status IN (1, 2, 3)
+                        UNION ALL
                         SELECT lr.leave_date, lt.name AS leave_type_name
                         FROM leave4day_requests lr
                         JOIN ohrm_leave_type lt ON lt.id = lr.leave_type_id
                         WHERE lr.employee_id = %s
                           AND lr.leave_date BETWEEN %s AND %s
                           AND LOWER(lr.status) NOT IN ('rejected','cancelled','deleted')
-                    """, (employee_id, date_from, date_to))
+                    """, (employee_id, date_from, date_to, employee_id, date_from, date_to))
                     for row in leave_cursor.fetchall():
                         leave_by_date[row['leave_date']] = row['leave_type_name']
             finally:
@@ -13735,12 +13803,18 @@ def _perf_scope_data(conn, employee_id, date_from, date_to, perf_safe_last_day, 
             try:
                 with leave_db_ut.cursor(pymysql.cursors.DictCursor) as c_ut:
                     c_ut.execute("""
+                        SELECT ol.date AS leave_date
+                        FROM ohrm_leave ol
+                        JOIN hs_hr_employee e ON e.emp_number = ol.emp_number
+                        WHERE e.employee_id = %s AND ol.date BETWEEN %s AND %s
+                          AND ol.status IN (1, 2, 3)
+                        UNION ALL
                         SELECT lr.leave_date
                         FROM leave4day_requests lr
                         WHERE lr.employee_id = %s
                           AND lr.leave_date BETWEEN %s AND %s
                           AND LOWER(lr.status) NOT IN ('rejected','cancelled','deleted')
-                    """, (employee_id, date_from, date_to))
+                    """, (employee_id, date_from, date_to, employee_id, date_from, date_to))
                     leave_dates_ut = {r['leave_date'] for r in c_ut.fetchall()}
             finally:
                 leave_db_ut.close()
@@ -14231,12 +14305,19 @@ def _pim_attendance_grid(employee, emp_number, schedule_rows, year, month, safe_
         with odb.cursor() as c:
             if emp_number:
                 c.execute("""
+                    SELECT ol.date AS leave_date, lt.name AS leave_type_name,
+                           CASE ol.status WHEN 1 THEN 'pending' WHEN 2 THEN 'Scheduled' ELSE 'taken' END AS status
+                    FROM ohrm_leave ol
+                    JOIN ohrm_leave_type lt ON lt.id = ol.leave_type_id
+                    WHERE ol.emp_number = %s AND ol.date BETWEEN %s AND %s
+                      AND ol.status IN (1, 2, 3)
+                    UNION ALL
                     SELECT lr.leave_date, lt.name AS leave_type_name, lr.status
                     FROM leave4day_requests lr
                     JOIN ohrm_leave_type lt ON lt.id = lr.leave_type_id
                     WHERE lr.emp_number = %s AND lr.leave_date BETWEEN %s AND %s
                       AND lr.status NOT IN ('Rejected','Cancelled','Deleted','rejected','cancelled')
-                """, (emp_number, month_start, month_end))
+                """, (emp_number, month_start, month_end, emp_number, month_start, month_end))
                 for lv in c.fetchall():
                     leave_map[lv['leave_date']] = {
                         'name': lv['leave_type_name'],
@@ -16667,6 +16748,13 @@ def admin_attendance_grid():
         try:
             with odb.cursor() as lc:
                 lc.execute("""
+                    SELECT e.employee_id, ol.date AS leave_date,
+                           lt.name AS leave_type_name, CASE ol.status WHEN 1 THEN 'pending' WHEN 2 THEN 'Scheduled' ELSE 'taken' END AS status
+                    FROM ohrm_leave ol
+                    JOIN hs_hr_employee e ON e.emp_number = ol.emp_number
+                    JOIN ohrm_leave_type lt ON lt.id = ol.leave_type_id
+                    WHERE ol.date BETWEEN %s AND %s AND ol.status IN (1, 2, 3)
+                    UNION ALL
                     SELECT e.employee_id, lr.leave_date,
                            lt.name AS leave_type_name, lr.status
                     FROM leave4day_requests lr
@@ -16674,7 +16762,7 @@ def admin_attendance_grid():
                     JOIN ohrm_leave_type lt ON lt.id = lr.leave_type_id
                     WHERE lr.leave_date BETWEEN %s AND %s
                       AND lr.status NOT IN ('Rejected','Cancelled','Deleted','rejected','cancelled')
-                """, [month_start, month_end])
+                """, [month_start, month_end, month_start, month_end])
                 emp_ids_set = set(emp_ids)
                 for lv in lc.fetchall():
                     if lv['employee_id'] not in emp_ids_set:
@@ -17012,6 +17100,13 @@ def admin_attendance_stack_rank():
         try:
             with odb.cursor() as lc:
                 lc.execute("""
+                    SELECT e.employee_id, ol.date AS leave_date,
+                           lt.name AS leave_type_name, CASE ol.status WHEN 1 THEN 'pending' WHEN 2 THEN 'Scheduled' ELSE 'taken' END AS status
+                    FROM ohrm_leave ol
+                    JOIN hs_hr_employee e ON e.emp_number = ol.emp_number
+                    JOIN ohrm_leave_type lt ON lt.id = ol.leave_type_id
+                    WHERE ol.date BETWEEN %s AND %s AND ol.status IN (1, 2, 3)
+                    UNION ALL
                     SELECT e.employee_id, lr.leave_date,
                            lt.name AS leave_type_name, lr.status
                     FROM leave4day_requests lr
@@ -17019,7 +17114,7 @@ def admin_attendance_stack_rank():
                     JOIN ohrm_leave_type lt ON lt.id = lr.leave_type_id
                     WHERE lr.leave_date BETWEEN %s AND %s
                       AND lr.status NOT IN ('Rejected','Cancelled','Deleted','rejected','cancelled')
-                """, [date_from, date_to])
+                """, [date_from, date_to, date_from, date_to])
                 emp_ids_set = set(emp_ids)
                 for lv in lc.fetchall():
                     if lv['employee_id'] not in emp_ids_set:
@@ -17199,6 +17294,25 @@ init_file_for_emp(get_central_db=get_central_db, get_db=get_db, send_email=send_
                   fetch_requests=_fetch_pim_requests,
                   ticket_required_types=TICKET_REQUIRED_TYPES)
 app.register_blueprint(file_for_emp_bp)
+
+# Recalculate filed leave after a work mode / schedule change. Registered down
+# here for the same reason as file_for_emp_bp (see modules/leave_recalc.py).
+from modules.leave_recalc import leave_recalc_bp, init_leave_recalc
+init_leave_recalc(get_db=get_db, get_central_db=get_central_db,
+                  calculate_deduction=calculate_deduction, is_holiday=is_holiday,
+                  get_work_mode=get_work_mode, adjust_leave_entitlement=adjust_leave_entitlement,
+                  resolve_emp_number=resolve_emp_number, awol_type=_get_awol_type)
+app.register_blueprint(leave_recalc_bp)
+
+# Leave filing hold (Admin > Settings): grey out VL/CO/SL for chosen groups.
+from modules.leave_hold import leave_hold_bp, init_leave_hold
+init_leave_hold(get_db=get_db)
+app.register_blueprint(leave_hold_bp)
+
+# SL Conversion report (policy 3.2.2), read-only: Analytics > SL Conversion.
+from modules.sl_conversion import sl_conversion_bp, init_sl_conversion
+init_sl_conversion(get_db=get_db, get_central_db=get_central_db)
+app.register_blueprint(sl_conversion_bp)
 
 # Add this route to app.py (or a Blueprint if you prefer to keep it separate).
 # Requires: ABSENCE_SYNC_KEY set in .env

@@ -1,0 +1,115 @@
+{% extends 'base.html' %}
+{% block title %}Recalculate Filed Leave{% endblock %}
+{% block page_title %}Recalculate Filed Leave{% endblock %}
+{% block content %}
+<div class="mb-3">
+  <a href="{{ url_for('admin_emp_settings') }}" class="btn btn-sm btn-outline-secondary">
+    <i data-lucide="arrow-left" class="me-1"></i>Back to Work Mode
+  </a>
+</div>
+
+<div class="card p-3 mb-3" style="border-left:3px solid var(--accent);">
+  <div class="small text-muted">
+    <i class="me-1" data-lucide="info"></i>
+    Leave hours are fixed when the leave is filed. If an employee's work mode or Google Sheet
+    schedule changed afterwards, this re-checks each filed day against the <strong>current</strong>
+    work mode and schedule, the same way filing does, and fixes the hours and leave balance.
+    Days are never added or removed. Holidays, AWOL and Custom Hours filings are left alone.
+  </div>
+</div>
+
+<div class="card p-3 mb-3">
+  <form method="GET" class="d-flex gap-2 align-items-end flex-wrap mb-0">
+    <div>
+      <label class="form-label small mb-1">Employee ID</label>
+      <input type="text" name="employee_id" class="form-control form-control-sm" required
+             value="{{ employee_id }}" placeholder="e.g. 250303-03" style="max-width:200px;">
+    </div>
+    <div>
+      <label class="form-label small mb-1">New work mode / schedule applies from</label>
+      <input type="date" name="from" class="form-control form-control-sm" value="{{ from_date.isoformat() }}">
+    </div>
+    <button type="submit" class="btn btn-sm btn-primary"><i data-lucide="search" class="me-1"></i>Preview</button>
+    <div class="small text-muted w-100">
+      Only leave dated on or after this date is rechecked. Don't pick a date before the change
+      took effect, or leave that was correct under the old work mode will be changed too.
+    </div>
+  </form>
+</div>
+
+{% if emp %}
+<div class="card p-3 mb-3">
+  <div class="d-flex flex-wrap gap-4 small">
+    <div><span class="text-muted">Employee</span><br><strong>{{ emp.name }}</strong> ({{ emp.employee_id }})</div>
+    <div><span class="text-muted">Current work mode</span><br>
+      <strong>{{ '5-Day (8 hrs)' if work_mode == '5day' else '4-Day (10 hrs)' }}</strong>
+      {% if emp.individual_mode %}<span class="text-muted">(individual)</span>{% else %}<span class="text-muted">(group / global)</span>{% endif %}
+    </div>
+    {% if emp.mode_updated_at %}
+    <div><span class="text-muted">Work mode last changed</span><br>{{ emp.mode_updated_at.strftime('%b %d, %Y %I:%M %p') }}</div>
+    {% endif %}
+  </div>
+</div>
+
+<div class="card mb-3">
+  <div class="p-3 border-bottom d-flex align-items-center gap-2 flex-wrap">
+    <strong>Days to change ({{ changes|length }})</strong>
+    {% if changes %}
+    <span class="text-muted small">Balance change: {{ '%+g'|format(total_delta) }} day(s) used</span>
+    <form method="POST" class="ms-auto mb-0"
+          onsubmit="return confirm('Update {{ changes|length }} leave day(s) and the leave balance for {{ emp.name }}?');">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <input type="hidden" name="employee_id" value="{{ emp.employee_id }}">
+      <input type="hidden" name="from" value="{{ from_date.isoformat() }}">
+      <button type="submit" class="btn btn-sm btn-primary"><i data-lucide="check" class="me-1"></i>Apply</button>
+    </form>
+    {% endif %}
+  </div>
+  {% if changes %}
+  <div class="table-responsive">
+    <table class="table table-hover mb-0">
+      <thead class="table-light">
+        <tr><th>Date</th><th>Leave Type</th><th>Status</th><th>Now</th><th>Will be</th><th>Days used</th></tr>
+      </thead>
+      <tbody>
+        {% for ch in changes %}
+        <tr>
+          <td>{{ ch.leave_date.strftime('%b %d, %Y') }} <span class="text-muted small">({{ ch.leave_date.strftime('%A') }})</span>
+            {% if ch.shift_half %}<span class="text-muted small">· {{ ch.shift_half }}</span>{% endif %}</td>
+          <td>{{ ch.leave_type_name }}</td>
+          <td class="text-capitalize">{{ ch.status }}</td>
+          <td>{% if ch.is_off_day %}Off-day (0){% else %}{{ '%g'|format(ch.hours_deducted|float) }} hrs{% endif %}</td>
+          <td><strong>{% if ch.new_is_off %}Off-day (0){% else %}{{ '%g'|format(ch.new_hours) }} hrs{% endif %}</strong></td>
+          <td>{{ '%+g'|format(ch.delta_days) }}{% if ch.credit_pending %} <span class="text-muted small">(not charged yet)</span>{% endif %}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div class="p-3 text-muted small">Filed leave from {{ from_date.strftime('%b %d, %Y') }} already matches the current work mode and schedule.</div>
+  {% endif %}
+</div>
+
+{% if skipped %}
+<div class="card mb-3">
+  <div class="p-3 border-bottom"><strong>Left unchanged ({{ skipped|length }})</strong></div>
+  <div class="table-responsive">
+    <table class="table mb-0">
+      <thead class="table-light"><tr><th>Date</th><th>Leave Type</th><th>Hours</th><th>Reason</th></tr></thead>
+      <tbody>
+        {% for s in skipped %}
+        <tr>
+          <td>{{ s.leave_date.strftime('%b %d, %Y') }}</td>
+          <td>{{ s.leave_type_name }}</td>
+          <td>{{ '%g'|format(s.hours_deducted|float) }}</td>
+          <td class="text-muted small">{{ s.reason }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+{% endif %}
+{% endblock %}

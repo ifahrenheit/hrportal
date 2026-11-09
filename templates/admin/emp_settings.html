@@ -26,10 +26,16 @@
   </div>
 </div>
 <div class="card p-3 mb-3" style="border-left:3px solid var(--accent);">
-  <div class="small text-muted">
-    <i class="me-1" data-lucide="info"></i>
-    Global default is currently <strong>{{ '4-Day' if global_mode == '4day' else '5-Day' }}</strong>.
-    Employees with no individual setting will use this default.
+  <div class="d-flex align-items-center gap-2 flex-wrap">
+    <div class="small text-muted">
+      <i class="me-1" data-lucide="info"></i>
+      Global default is currently <strong>{{ '4-Day' if global_mode == '4day' else '5-Day' }}</strong>.
+      Employees with no individual setting will use this default.
+      Changing a work mode or schedule doesn't update leave that's already filed.
+    </div>
+    <a href="{{ url_for('leave_recalc.recalc_filed_leave') }}" class="btn btn-sm btn-outline-primary ms-auto">
+      <i data-lucide="refresh-cw" class="me-1"></i>Recalculate Filed Leave
+    </a>
   </div>
 </div>
 <div class="card">

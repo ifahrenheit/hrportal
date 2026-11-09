@@ -5,6 +5,14 @@
 <div class="row g-4">
   <div class="col-md-5">
     <div class="card p-4">
+      {% set _held = balances|selectattr('on_hold')|list %}
+      {% if _held %}
+      <div class="alert alert-warning small mb-3">
+        <i class="me-1" data-lucide="pause-circle"></i>
+        <strong>{{ _held|map(attribute='leave_type_name')|join(', ') }}</strong> filing is on hold.
+        {{ _held[0].hold_message }}
+      </div>
+      {% endif %}
       <form method="POST" id="leaveForm">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <div class="mb-3">
@@ -13,8 +21,8 @@
             <option value="">— Select —</option>
             {% for b in balances %}
             <option value="{{ b.leave_type_id }}" data-hrs="{{ 24 if b.unlimited else b.remaining_hours }}" data-days="{{ b.remaining_days }}"
-                    {% if b.is_awol %}data-awol="1"{% endif %}>
-              {{ b.leave_type_name }}{% if b.unlimited %} (no limit){% elif not b.is_awol %} ({{ "%.1f"|format(b.remaining_hours) }} hrs left){% else %} (holidays only){% endif %}
+                    {% if b.is_awol %}data-awol="1"{% endif %}{% if b.on_hold %} disabled data-hold="1"{% endif %}>
+              {{ b.leave_type_name }}{% if b.on_hold %} (on hold){% elif b.unlimited %} (no limit){% elif not b.is_awol %} ({{ "%.1f"|format(b.remaining_hours) }} hrs left){% else %} (holidays only){% endif %}
             </option>
             {% endfor %}
           </select>
@@ -220,6 +228,8 @@ function _applyAwolUI(isHoliday, holidayName) {
   Array.from(_sel.options).forEach(o => {
     if (!o.value) return; // keep placeholder
     const isAwol = o.getAttribute('data-awol') === '1';
+    // --- LEAVE_HOLD --- held types stay disabled whatever the date
+    if (o.getAttribute('data-hold') === '1') { o.disabled = true; return; }
     if (isHoliday) {
       // holiday: only AWOL selectable
       o.disabled = !isAwol;
