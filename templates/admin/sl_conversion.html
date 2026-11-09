@@ -1,0 +1,210 @@
+{% extends "base.html" %}
+{% block title %}SL Conversion{% endblock %}
+{% block page_title %}SL Conversion Report{% endblock %}
+
+{% block content %}
+<style>
+  .slc-filter {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 14px;
+    box-shadow: var(--card-shadow); padding: 1rem 1.25rem; margin-bottom: 1rem;
+  }
+  .slc-filter label { font-size: .78rem; color: var(--text-muted); font-weight: 500; margin-bottom: .2rem; }
+  .slc-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: .75rem; margin-bottom: 1rem; }
+  .slc-stat {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
+    padding: .8rem 1rem; box-shadow: var(--card-shadow);
+  }
+  .slc-stat .lbl { font-size: .75rem; color: var(--text-muted); font-weight: 500; }
+  .slc-stat .val { font-size: 1.45rem; font-weight: 700; line-height: 1.2; }
+  .slc-stat .sub { font-size: .72rem; color: var(--text-muted); }
+  .slc-table th { font-size: .78rem; white-space: nowrap; }
+  .slc-table td { font-size: .83rem; vertical-align: top; }
+  .slc-table th.sortable { cursor: pointer; user-select: none; }
+  .slc-badge { font-size: .72rem; font-weight: 600; padding: .25rem .55rem; border-radius: 999px; white-space: nowrap; }
+  .slc-qualified       { background: #ecfdf5; color: #065f46; border: 1px solid #a7f3d0; }
+  .slc-review          { background: #fffbeb; color: #92400e; border: 1px solid #fde68a; }
+  .slc-not_qualified   { background: #fef2f2; color: #991b1b; border: 1px solid #fecaca; }
+  .slc-not_convertible { background: #f3f4f6; color: #4b5563; border: 1px solid #e5e7eb; }
+  .slc-reasons { margin: 0; padding-left: 1rem; }
+  .slc-reasons li.review { color: #92400e; }
+</style>
+
+<div class="card p-3 mb-3" style="border-left:3px solid var(--accent);">
+  <div class="small text-muted">
+    <i class="me-1" data-lucide="info"></i>
+    Policy 3.2.2: unused Sick Leave for {{ year }} is converted and released on
+    <strong>{{ release.strftime('%b %d, %Y') }}</strong>. Tiers by unused SL hours:
+    96 h or more = 100%, 88 h = 50%, 80 h = 25%, below 80 h = not convertible.
+    To qualify an employee must be regular by Jan 1, {{ year }}
+    (operational date + {{ reg_months }} months), have no AWOL in {{ year }}, have no sickness filed as
+    VL / LWOP / AWOL, and be active with no exit date. Sick-reason matches are keyword-based, so
+    they're flagged <em>Needs review</em> rather than disqualified. Peso amounts aren't shown.
+  </div>
+</div>
+
+{% if projection %}
+<div class="alert alert-warning d-flex align-items-start gap-2 py-2" style="font-size:.85rem;">
+  <i data-lucide="triangle-alert" class="mt-1"></i>
+  <div>
+    <strong>Projection as of {{ today.strftime('%b %d, %Y') }}.</strong>
+    {{ year }} hasn't ended yet, so employees can still use their remaining SL and the final
+    figures may be lower. AWOL and sick-reason checks only cover what's on record so far.
+  </div>
+</div>
+{% endif %}
+
+<form method="get" class="slc-filter d-flex align-items-end gap-2 flex-wrap">
+  <div>
+    <label for="slc-year" class="d-block">Effective year</label>
+    <select id="slc-year" name="year" class="form-select form-select-sm" onchange="this.form.submit()">
+      {% for y in years %}<option value="{{ y }}" {% if y == year %}selected{% endif %}>{{ y }}</option>{% endfor %}
+    </select>
+  </div>
+  <div>
+    <label for="slc-group" class="d-block">Group</label>
+    <select id="slc-group" name="group" class="form-select form-select-sm" onchange="this.form.submit()">
+      <option value="">All groups</option>
+      {% for g in groups %}<option value="{{ g }}" {% if g == group %}selected{% endif %}>{{ g }}</option>{% endfor %}
+    </select>
+  </div>
+  <div>
+    <label for="slc-status" class="d-block">Status</label>
+    <select id="slc-status" name="status" class="form-select form-select-sm" onchange="this.form.submit()">
+      <option value="all">All statuses</option>
+      {% for key, label in status_labels.items() %}
+      <option value="{{ key }}" {% if key == status %}selected{% endif %}>{{ label }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div>
+    <label for="slc-q" class="d-block">Search</label>
+    <input id="slc-q" type="text" name="q" value="{{ q }}" class="form-control form-control-sm"
+           placeholder="Name or employee ID" style="min-width:200px;">
+  </div>
+  <button type="submit" class="btn btn-primary btn-sm"><i class="me-1" data-lucide="search"></i>Apply</button>
+  {% if group or q or status != 'all' %}
+  <a href="{{ url_for('sl_conversion.sl_conversion_report', year=year) }}" class="btn btn-outline-secondary btn-sm">Clear</a>
+  {% endif %}
+  <a href="{{ url_for('sl_conversion.sl_conversion_report', year=year, group=group, status=status, q=q, format='csv') }}"
+     class="btn btn-outline-secondary btn-sm ms-auto">
+    <i class="me-1" data-lucide="download"></i>Export CSV
+  </a>
+</form>
+
+<div class="slc-stats">
+  <div class="slc-stat"><div class="lbl">100% tier (96 h+)</div><div class="val">{{ summary.t100 }}</div></div>
+  <div class="slc-stat"><div class="lbl">50% tier (88 h+)</div><div class="val">{{ summary.t50 }}</div></div>
+  <div class="slc-stat"><div class="lbl">25% tier (80 h+)</div><div class="val">{{ summary.t25 }}</div></div>
+  <div class="slc-stat"><div class="lbl">Below 80 h</div><div class="val">{{ summary.t0 }}</div></div>
+  <div class="slc-stat" style="border-color:#a7f3d0;">
+    <div class="lbl">Qualified</div><div class="val" style="color:#065f46;">{{ summary.qualified }}</div>
+    <div class="sub">{{ summary.not_qualified }} not qualified</div>
+  </div>
+  <div class="slc-stat" style="border-color:#a7f3d0;">
+    <div class="lbl">Converted days (qualified)</div>
+    <div class="val">{{ '%.2f'|format(summary.qualified_days) }}</div>
+    <div class="sub">{{ '%.2f'|format(summary.qualified_days * 8) }} h</div>
+  </div>
+  <div class="slc-stat" style="border-color:#fde68a;">
+    <div class="lbl">Needs review</div><div class="val" style="color:#92400e;">{{ summary.review }}</div>
+    <div class="sub">{{ '%.2f'|format(summary.review_days) }} day(s) if cleared</div>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-header d-flex align-items-center gap-2 py-2" style="background:var(--bg);border-bottom:1px solid var(--border);">
+    <i data-lucide="wallet" style="color:var(--accent);"></i>
+    <span class="fw-semibold" style="font-size:.92rem;">Employees with {{ year }} SL entitlement</span>
+    <span class="text-muted small ms-auto">
+      {% if rows|length != total %}{{ rows|length }} of {{ total }} shown{% else %}{{ total }} employee(s){% endif %}
+    </span>
+  </div>
+  {% if not rows %}
+  <div class="p-4 text-center">
+    <i class="text-muted" data-lucide="filter-x" style="font-size:2.5rem;"></i>
+    <div class="mt-2 fw-semibold">No employees match</div>
+    <div class="text-muted small">{% if total %}Change the filters to see the other {{ total }} employee(s).{% else %}There are no SL entitlement rows for {{ year }}.{% endif %}</div>
+  </div>
+  {% else %}
+  <div class="table-responsive">
+    <table class="table table-hover mb-0 slc-table" id="slcTable">
+      <thead>
+        <tr>
+          <th class="sortable" data-type="text">Employee ID <i data-lucide="arrow-up-down" style="width:12px;height:12px;"></i></th>
+          <th class="sortable" data-type="text">Name <i data-lucide="arrow-up-down" style="width:12px;height:12px;"></i></th>
+          <th class="sortable" data-type="text">Group</th>
+          <th class="sortable" data-type="text">Account</th>
+          <th class="sortable" data-type="text">Regularized</th>
+          <th class="sortable text-end" data-type="num">Unused SL</th>
+          <th class="sortable text-end" data-type="num">Tier</th>
+          <th class="sortable text-end" data-type="num">Converted</th>
+          <th class="sortable" data-type="num">Status</th>
+          <th>Reasons</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in rows %}
+        <tr>
+          <td>{{ row.employee_id }}</td>
+          <td>{{ row.name }}</td>
+          <td>{{ row.group_name or '-' }}</td>
+          <td>{{ row.account or '-' }}</td>
+          <td>{{ row.reg_date.isoformat() if row.reg_date else '-' }}</td>
+          <td class="text-end" data-sort="{{ row.unused_hours }}">
+            {{ '%.2f'|format(row.unused_hours) }} h<br>
+            <span class="text-muted small">{{ '%.2f'|format(row.unused_days) }} d</span>
+          </td>
+          <td class="text-end" data-sort="{{ row.tier }}">{% if row.tier %}{{ row.tier }}%{% else %}-{% endif %}</td>
+          <td class="text-end" data-sort="{{ row.converted_hours }}">
+            {% if row.converted_hours %}
+            {{ '%.2f'|format(row.converted_hours) }} h<br>
+            <span class="text-muted small">{{ '%.2f'|format(row.converted_days) }} d</span>
+            {% else %}-{% endif %}
+          </td>
+          <td data-sort="{{ {'qualified':0,'review':1,'not_qualified':2,'not_convertible':3}[row.status] }}">
+            <span class="slc-badge slc-{{ row.status }}">{{ row.status_label }}</span>
+          </td>
+          <td>
+            {% if row.reasons or row.review %}
+            <ul class="slc-reasons small">
+              {% for r in row.reasons %}<li>{{ r }}</li>{% endfor %}
+              {% for r in row.review %}<li class="review">{{ r }}</li>{% endfor %}
+            </ul>
+            {% else %}<span class="text-muted small">-</span>{% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+  const table = document.getElementById('slcTable');
+  if (!table) return;
+  const tbody = table.tBodies[0];
+  table.querySelectorAll('th.sortable').forEach((th, idx) => {
+    let asc = true;
+    th.addEventListener('click', () => {
+      const num = th.dataset.type === 'num';
+      const val = (tr) => {
+        const td = tr.children[idx];
+        const raw = td.dataset.sort !== undefined ? td.dataset.sort : td.textContent.trim();
+        return num ? parseFloat(raw) || 0 : raw.toLowerCase();
+      };
+      const rows = Array.from(tbody.rows);
+      rows.sort((a, b) => {
+        const x = val(a), y = val(b);
+        return (x < y ? -1 : x > y ? 1 : 0) * (asc ? 1 : -1);
+      });
+      rows.forEach(r => tbody.appendChild(r));
+      asc = !asc;
+    });
+  });
+})();
+</script>
+{% endblock %}

@@ -484,7 +484,7 @@
       {% if (WRAP and (ADMIN or P.get('can_reports') or P.get('can_schedules')
             or P.get('can_view_tickets') or P.get('can_absences') or P.get('can_attrition_report')
             or P.get('can_surveys') or P.get('can_ot_hours') or P.get('can_night_differential') or P.get('can_holiday_awol')
-            or P.get('can_overbreak') or P.get('can_tardiness') or P.get('can_timestamp_records')))
+            or P.get('can_overbreak') or P.get('can_tardiness') or P.get('can_timestamp_records') or P.get('can_entitlements')))
             or ADMIN or SUPER or P.get('can_csat') or session.get('is_csat_tl') %}
       <button class="tn-trigger" data-panel="analytics" aria-expanded="false">
         Analytics <i class="tn-caret" data-lucide="chevron-down"></i><span class="tn-dot"></span>
@@ -806,7 +806,7 @@
     {% if (WRAP and (ADMIN or P.get('can_reports') or P.get('can_schedules')
           or P.get('can_view_tickets') or P.get('can_absences') or P.get('can_attrition_report')
           or P.get('can_surveys') or P.get('can_ot_hours') or P.get('can_night_differential') or P.get('can_holiday_awol')
-          or P.get('can_overbreak') or P.get('can_tardiness') or P.get('can_timestamp_records')))
+          or P.get('can_overbreak') or P.get('can_tardiness') or P.get('can_timestamp_records') or P.get('can_entitlements')))
           or ADMIN or SUPER or P.get('can_csat') or session.get('is_csat_tl') %}
     <div class="tn-panel" data-panel="analytics">
       <div class="tn-cols">
@@ -827,6 +827,10 @@
         {% if WRAP and (ADMIN or P.get('can_absences')) %}
         <a class="tn-item {% if EP in ['admin_absences', 'admin_attendance_grid', 'admin_awol_report', 'admin_undertime_report', 'admin_attendance_stack_rank'] %}active{% endif %}" href="{{ url_for('admin_absences') }}" data-k="attendance absences absence awol undertime attendance grid stack rank">
           <i data-lucide="user-x"></i> Attendance Reports</a>
+        {% endif %}
+        {% if WRAP and (ADMIN or P.get('can_entitlements') or P.get('can_reports')) %}
+        <a class="tn-item {% if EP == 'sl_conversion.sl_conversion_report' %}active{% endif %}" href="{{ url_for('sl_conversion.sl_conversion_report') }}" data-k="sl conversion sick leave conversion">
+          <i data-lucide="wallet"></i> SL Conversion</a>
         {% endif %}
         {% if WRAP and (ADMIN or P.get('can_tardiness')) %}
         <a class="tn-item {% if EP == 'tardiness.tardiness_page' %}active{% endif %}" href="{{ url_for('tardiness.tardiness_page') }}" data-k="tardiness late">

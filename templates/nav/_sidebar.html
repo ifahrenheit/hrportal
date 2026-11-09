@@ -398,7 +398,7 @@
       {% endif %}
 
       {# Analytics #}
-      {% if session.get('is_admin') or session.get('permissions', {}).get('can_reports') or session.get('permissions', {}).get('can_schedules') or session.get('permissions', {}).get('can_view_tickets') or session.get('permissions', {}).get('can_absences') or session.get('permissions', {}).get('can_attrition_report') or session.get('permissions', {}).get('can_surveys') or session.get('permissions', {}).get('can_ot_hours') or session.get('permissions', {}).get('can_night_differential') or session.get('permissions', {}).get('can_holiday_awol') or session.get('permissions', {}).get('can_overbreak') or session.get('permissions', {}).get('can_tardiness') or session.get('permissions', {}).get('can_timestamp_records') %}
+      {% if session.get('is_admin') or session.get('permissions', {}).get('can_reports') or session.get('permissions', {}).get('can_schedules') or session.get('permissions', {}).get('can_view_tickets') or session.get('permissions', {}).get('can_absences') or session.get('permissions', {}).get('can_attrition_report') or session.get('permissions', {}).get('can_surveys') or session.get('permissions', {}).get('can_ot_hours') or session.get('permissions', {}).get('can_night_differential') or session.get('permissions', {}).get('can_holiday_awol') or session.get('permissions', {}).get('can_overbreak') or session.get('permissions', {}).get('can_tardiness') or session.get('permissions', {}).get('can_timestamp_records') or session.get('permissions', {}).get('can_entitlements') %}
       <div class="nav-section-toggle nav-label" onclick="toggleSection('analytics')" id="analytics-header">
         <span>Analytics</span>
         <i class="section-arrow" data-lucide="chevron-down" id="analytics-arrow"></i>
@@ -454,6 +454,13 @@
 <a class="nav-link {% if request.endpoint == 'admin_absences' %}active{% endif %}"
    href="{{ url_for('admin_absences') }}">
   <i data-lucide="user-x"></i> <span class="nav-label">Attendance</span>
+</a>
+{% endif %}
+
+{% if session.get('is_admin') or session.get('permissions', {}).get('can_entitlements') or session.get('permissions', {}).get('can_reports') %}
+<a class="nav-link {% if request.endpoint == 'sl_conversion.sl_conversion_report' %}active{% endif %}"
+   href="{{ url_for('sl_conversion.sl_conversion_report') }}">
+  <i data-lucide="wallet"></i> <span class="nav-label">SL Conversion</span>
 </a>
 {% endif %}
 
