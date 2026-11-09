@@ -2,6 +2,57 @@
 
 Entries moved out of HANDOFF.md, newest first.
 
+## 2026-10-20 (9) — SL Verification: per-date validity, HR remarks, "No medical certificate"
+Commit: this one · Branch: `main`
+
+### What was built / changed
+- **Per-date Valid/Invalid** on `/leave/sl-verification` (`templates/supervisor/sl_verification.html`). Each absence date has its own Valid/Invalid toggle and a reason (`SL_INVALID_REASONS` in `app.py`: Late notice / Outside consult/fit-to-work range / Med cert not verified / No medical certificate / Other (see remarks)). The "Valid absence" readout now reads e.g. "Partial — 2 of 3 dates valid".
+- **Medical certificate submitted? Yes/No** at the top of each card. Selecting No hides the cert fields and marks every date invalid with "No medical certificate".
+- **Remarks to approver** textarea. Required when any date uses "Other".
+- `sl_verification_submit()` stores a verdict per row (`sl_valid_absence`, `sl_invalid_reason`), plus `sl_no_medcert` and `sl_hr_remarks` on the whole request. HR can only invalidate a date the auto rules pass, never validate one they fail. Unknown reasons are coerced to "Other (see remarks)".
+- `send_sl_verification_email()` has a per-date "Valid Absence (per date)" row and an "HR Remarks" row (escaped). For no-medcert it sends a short table plus an "absence is invalid" note instead of the void note.
+- `/supervisor/pending` (`templates/supervisor/pending.html`, query in `app.py`): the HR Verification box shows per-date badges, the no-medcert banner and the remarks. "Manage Individual Dates" has an "HR verdict" column, so the SOM can cancel the invalid date and approve the rest.
+- No-medcert filings show only **Reject** to the SOM: Approve is hidden and there's no hard-copy checkbox.
+- Backups: `app.py.bak.20261020*`, `templates/supervisor/{pending,sl_verification}.html.bak.20261020*`.
+
+### Why / decisions
+- The SOM could already cancel single dates, but HR's single Yes/No for the whole request hid which date was the problem (e.g. Oct 9 late notice, Oct 10–11 fine).
+- Late notice isn't in the auto rules, which is why HR has a manual Invalid override on top of them.
+
+### Database changes
+```sql
+-- orangehrm2
+ALTER TABLE leave4day_requests
+  ADD COLUMN sl_invalid_reason VARCHAR(60) NULL AFTER sl_valid_absence,
+  ADD COLUMN sl_no_medcert TINYINT(1) NOT NULL DEFAULT 0 AFTER sl_invalid_reason,
+  ADD COLUMN sl_hr_remarks TEXT NULL AFTER sl_hr_verified_at;
+```
+
+### Deploy / run notes
+- `sudo systemctl restart leavesystem`, clean start.
+- Tested with a fake cursor (scratch script, not committed): late-notice override, the 1-day consult allowance, no-medcert, "Other" without remarks (400) and a bogus reason. Both templates were render-tested.
+
+### How to verify
+- Verify a multi-day SL on `/leave/sl-verification` with one date set Invalid. Then check the SOM card on `/supervisor/pending` and the VERIFICATION email.
+
+### Open items / next steps
+- [ ] Watch the first real multi-day and no-medcert verifications go through.
+- [ ] Filings HR-verified before this change have no per-date data, so the approver card falls back to the single Yes/No.
+
+---
+
+## 2026-10-20 (8) — Fixes: Accept + Remember did nothing; last-target forwarder removal reported as error
+Commits: `0fc0638`, this one · Branch: `main`
+
+### What was fixed
+- **Accept + "Remember these senders"**: Mailman 2 silently drops approvals when the same admindb POST also has `senderfilterp-`/`senderfilter-` fields. On managers@, 37 accepts all stayed queued. `moderate()` now posts decisions only, then adds senders through `update_sender_filter()` (verified, skips duplicates). Discard + remember works the same way.
+  - Confirmed live by accepting 1 message alone (IR-20261019-B0088E, id 1651): done. The other 36 are still queued for the user to retry.
+- **Forwarder last target**: removing a forwarder's only target makes cPanel delete the address. `change_members()` re-read it via `_current_emails` and raised KeyError, so the cleanup showed it as failed and it wasn't audited. It now re-reads `fetch_forwarders` and marks the result done, with a "cPanel deleted the forwarder" note.
+  - This happened in the Separated cleanup to `gygl2@`, `jondel.lerio@`, `juniel.cabantingan@` and `montesa.montebon@`, which are now deleted. Audit rows were backfilled; the removed target address wasn't recorded.
+  - **`gygl2@` was a group address**: mail to it now bounces. Recreate it if it's still used.
+
+---
+
 ## 2026-10-20 (7) — Mailing Lists 8–12: private by default, privacy switch, owners/moderators, all-lists history, view-only permission
 Commit: this one · Branch: `main`
 
