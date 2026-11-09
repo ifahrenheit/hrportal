@@ -8,6 +8,31 @@
 
 ---
 
+## 2026-11-09 (3) — SL Conversion report (policy 3.2.2)
+Commit: `122fc53` · Branch: `main` (pushed)
+
+### What was built / changed
+- `/admin/reports/sl-conversion` (blueprint `sl_conversion`, `modules/sl_conversion.py`, `templates/admin/sl_conversion.html`): read-only report, filters year / group / status / search, CSV via `?format=csv`. Access: admin, `can_entitlements` or `can_reports`. Nav links in `templates/nav/_sidebar.html` + `_topnav.html` (Analytics gate now also includes `can_entitlements`).
+- Shipped via /ship: developer, tester (`tests/test_sl_conversion.py`, 57 tests), reviewer / security / database (no blockers), fixes, restart.
+- Also committed in `122fc53`: leave filing hold, leave recalc, and the earlier uncommitted `add_ohrm_leave_to_map` attendance-report change in `app.py`.
+
+### Rules implemented
+- Unused SL = SUM(no_of_days - days_used) of the year's SL entitlement x 8 h. >=96 h 100 %, >=88 50 %, >=80 25 %, else not convertible (0.02 h tolerance). Released Mar 15 of year+1; current year shown as a projection.
+- Not qualified: reg (operational_date + 6 months) after Jan 1; any AWOL in the year (portal AWOL in ACTIVE_STATUSES + `absence_records` code `AWOL`, approval not Disapproved/Exempted, dates de-duplicated); gsheet status not `Active`; any `exit_date` unless a later `promotion_date`.
+- Needs review: sickness keywords in absence reasons / leave notes on VL/LWOP/AWOL (fuzzy; also matches family illness).
+- CSV: cells starting with = + - @ get a leading `'`; `Cache-Control: no-store`.
+
+### How to verify
+- 2026 projection on 2026-11-09: 199 rows, 61 qualified (703.19 days), 6 needs review, 44 not qualified, 88 not convertible.
+
+### Open items / next steps
+- [ ] HR to confirm: Pending AWOL counts; `AWOL Half day` code not counted; Training not eligible; who may see sick-reason free text (now can_entitlements / can_reports).
+- [ ] 2 Active employees (IDs 190601-01, -02) have no `operational_date`, so they show Not qualified until the sheet is fixed.
+- [ ] Earlier years: AWOL entered only in `ohrm_leave` is not read (fine for 2026).
+- [ ] 4 test failures that also fail on a clean HEAD: test_awol_report / test_undertime_report empty-state + leave-covered, test_documents full_flow.
+
+---
+
 ## 2026-11-09 (2) — Leave Filing Hold switch (VL / Carry-Over / SL by group)
 Commit: `a03d90a` (feature files uncommitted) · Branch: `main`
 
@@ -41,7 +66,7 @@ INSERT INTO leave4day_settings (setting_key, setting_value) VALUES
 
 ### Open items / next steps
 - Hold turned **ON** by user 2026-11-09 21:04 (11 groups). Fixed: the AWOL holiday JS in `file_leave.html` re-enabled held options on date change; options now carry `data-hold="1"` and stay disabled.
-- [ ] Commit `modules/leave_hold.py`, test, template + `app.py` edits (with the uncommitted leave_recalc work).
+- Committed in `122fc53`.
 
 ---
 
