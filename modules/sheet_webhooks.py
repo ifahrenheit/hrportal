@@ -263,6 +263,48 @@ def _shift_minutes(shift_time):
     return out[0], out[1]
 
 
+def fix_misdated_breaks(conn, date_from, dry_run=False):
+    """Move overnight-shift breaks that were dated to their calendar day back
+    one shift day. Returns (rows_that_need_fixing, fixed_count). Caller commits.
+
+    Candidates: breaks before 9 AM still dated to their calendar day. Only move
+    one back to the previous day when it belongs to an overnight shift. If that
+    day's own schedule is a daytime shift that had already started (e.g. 5am-2pm,
+    1am-12nn), the break belongs to that day and is left alone.
+    Used by POST /webhook/break-autofix and scripts/break_autofix.py (cron)."""
+    with conn.cursor() as cur:
+        cur.execute("""
+            SELECT bl.id, bl.employee_id, bl.employee_name, bl.break_start, bl.shift_date,
+                   es.shift_time, es.is_rest_day
+            FROM break_logs bl
+            LEFT JOIN employee_schedules es
+              ON es.employee_id = bl.employee_id
+             AND es.schedule_date = DATE(bl.break_start)
+            WHERE bl.account_type IN ('Numa', 'Arctic', 'GYG')
+              AND bl.break_start >= %s
+              AND HOUR(bl.break_start) < 9
+              AND bl.shift_date = DATE(bl.break_start)
+        """, (date_from,))
+        to_fix = []
+        for row in cur.fetchall():
+            window = None if row['is_rest_day'] else _shift_minutes(row['shift_time'])
+            if window:
+                start_min, end_min = window
+                break_min = row['break_start'].hour * 60 + row['break_start'].minute
+                if start_min <= end_min and break_min >= start_min:
+                    continue  # daytime shift already running -> correct as is
+            to_fix.append(row)
+        fixed_count = 0
+        if to_fix and not dry_run:
+            ids = [r['id'] for r in to_fix]
+            cur.execute(
+                "UPDATE break_logs SET shift_date = DATE_SUB(shift_date, INTERVAL 1 DAY) "
+                f"WHERE id IN ({','.join(['%s'] * len(ids))}) AND shift_date = DATE(break_start)",
+                ids)
+            fixed_count = cur.rowcount
+    return to_fix, fixed_count
+
+
 @sheet_webhooks_bp.route('/webhook/break-autofix', methods=['POST'])
 @require_secret_key
 def break_autofix():
@@ -273,39 +315,7 @@ def break_autofix():
     conn = None
     try:
         conn = get_db_connection()
-        with conn.cursor() as cur:
-            # Candidates: breaks before 9 AM still dated to their calendar day.
-            # Only move one back to the previous day when it belongs to an
-            # overnight shift. If that day's own schedule is a daytime shift that
-            # had already started (e.g. 5am-2pm, 1am-12nn), the break belongs to
-            # that day and is left alone.
-            cur.execute("""
-                SELECT bl.id, bl.break_start, es.shift_time, es.is_rest_day
-                FROM break_logs bl
-                LEFT JOIN employee_schedules es
-                  ON es.employee_id = bl.employee_id
-                 AND es.schedule_date = DATE(bl.break_start)
-                WHERE bl.account_type IN ('Numa', 'Arctic', 'GYG')
-                  AND bl.break_start >= %s
-                  AND HOUR(bl.break_start) < 9
-                  AND bl.shift_date = DATE(bl.break_start)
-            """, (date_from,))
-            to_fix = []
-            for row in cur.fetchall():
-                window = None if row['is_rest_day'] else _shift_minutes(row['shift_time'])
-                if window:
-                    start_min, end_min = window
-                    break_min = row['break_start'].hour * 60 + row['break_start'].minute
-                    if start_min <= end_min and break_min >= start_min:
-                        continue  # daytime shift already running -> correct as is
-                to_fix.append(row['id'])
-            fixed_count = 0
-            if to_fix:
-                cur.execute(
-                    "UPDATE break_logs SET shift_date = DATE_SUB(shift_date, INTERVAL 1 DAY) "
-                    f"WHERE id IN ({','.join(['%s'] * len(to_fix))}) AND shift_date = DATE(break_start)",
-                    to_fix)
-                fixed_count = cur.rowcount
+        _, fixed_count = fix_misdated_breaks(conn, date_from)
         conn.commit()
         log.info(f'Break auto-fix: {fixed_count} breaks corrected (from {date_from})')
         return jsonify({'success': True, 'message': 'Auto-fix completed',
