@@ -250,16 +250,22 @@
   });
 
   document.addEventListener('visibilitychange', () => {
-    if (!document.hidden) stopFlashTitle();
+    if (!document.hidden) {
+      stopFlashTitle();
+      // Background tabs / sleeping laptops pause the 30s poll, so re-sync the
+      // moment the agent comes back instead of showing a stale running timer.
+      checkActiveBreak();
+    }
   });
 
-  function showAlert(message, type) {
+  // sticky=true keeps the alert until the agent closes it (used for auto-close).
+  function showAlert(message, type, sticky) {
     const container = document.getElementById('alertContainer');
     const el = document.createElement('div');
     el.className = `alert alert-${type} alert-dismissible fade show`;
     el.innerHTML = `${message}<button type="button" class="btn-close" data-bs-dismiss="alert"></button>`;
     container.appendChild(el);
-    setTimeout(() => el.remove(), 5000);
+    if (!sticky) setTimeout(() => el.remove(), 5000);
   }
 
   function formatTime(seconds) {
@@ -324,9 +330,12 @@
       } else if (isOnBreak) {
         // Server has no active break but the page thinks one is running →
         // it was force-closed (2-hour cap) or ended elsewhere. Re-sync.
+        const started = breakStartTime ? formatDateTime(breakStartTime) : '';
         stopTimer();
         loadBreakLogs();
-        showAlert('Your break was automatically closed after reaching the 2-hour limit. Please make sure to end breaks manually.', 'warning');
+        showAlert(`<strong>Your break${started ? ' started at ' + started : ''} was automatically closed at the 2-hour limit</strong> `
+                  + 'and recorded as a 2:00:00 break. You do not need to end it. '
+                  + 'Please remember to click End Break when you return.', 'warning', true);
       }
     } catch(e) { console.error(e); }
   }
@@ -346,6 +355,11 @@
         showAlert(d.message, 'success');
         if (action === 'start') startTimer(d.break_start);
         else { stopTimer(); loadBreakLogs(); }
+      } else if (action === 'end') {
+        // Ending failed: most likely the server already auto-closed the break.
+        // Re-sync; if it was auto-closed this stops the timer and explains why.
+        await checkActiveBreak();
+        if (isOnBreak) showAlert(d.error || 'An error occurred', 'danger');
       } else {
         showAlert(d.error || 'An error occurred', 'danger');
       }
