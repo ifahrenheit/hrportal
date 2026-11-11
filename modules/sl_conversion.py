@@ -17,6 +17,9 @@ To qualify:
   d. Active at release time and not on notice: gsheet status 'Active' and no
      exit_date at all.
 
+Scope: only employees whose gsheet status is 'Active' are listed; separated,
+other statuses and employees with no gsheet_employees row are left out.
+
 Data:
   unused SL = SUM(no_of_days - days_used) of the year's SL rows in
   orangehrm2.ohrm_leave_entitlement (deleted = 0), x 8 hours per day.
@@ -171,9 +174,7 @@ def evaluate(emp, awol_list, sick_list, year, today):
 
     # c. sickness filed as VL / LWOP / AWOL
     for s in sick_list:
-        reason = (s.get('reason') or '').strip()
-        if len(reason) > 80:
-            reason = reason[:77] + '...'
+        reason = ' '.join((s.get('reason') or '').split())
         review.append(f"Sick reason as {s['code']}: {_fmt_day(s['date'])} '{reason}'")
 
     if tier == 0:
@@ -265,7 +266,7 @@ def available_years():
 
 
 def build_report(year, today=None):
-    """Every employee with an SL entitlement row in `year`, evaluated."""
+    """Every Active employee (gsheet status) with an SL entitlement row in `year`, evaluated."""
     today = today or date.today()
     y_from, y_to = date(year, 1, 1), date(year, 12, 31)
 
@@ -358,6 +359,10 @@ def build_report(year, today=None):
     for e in ents:
         eid = (e['employee_id'] or '').strip()
         m = by_eid.get(eid)
+        # Active employees only: separated / other statuses and anyone without a
+        # gsheet_employees row are left out of the report entirely.
+        if not m or (m['status'] or '').strip().casefold() != 'active':
+            continue
         emp = {'unused_days': e['unused_days'], 'has_master': bool(m)}
         if m:
             emp.update(status=m['status'], operational_date=m['operational_date'],

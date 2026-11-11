@@ -199,11 +199,12 @@ class StatusPrecedenceTests(unittest.TestCase):
         self.assertEqual(r['status'], 'not_qualified')
         self.assertEqual(len(r['review']), 1)   # note kept alongside the failure
 
-    def test_long_reason_truncated(self):
-        hit = dict(self.HIT, reason='fever ' + 'x' * 200)
+    def test_long_reason_shown_in_full(self):
+        reason = 'fever ' + 'x' * 200
+        hit = dict(self.HIT, reason=reason)
         note = evaluate(emp(), [], [hit], 2026, TODAY)['review'][0]
-        self.assertTrue(note.endswith("...'"))
-        self.assertLess(len(note), 120)
+        self.assertIn(reason, note)
+        self.assertNotIn("...'", note)
 
     def test_sort_order(self):
         rows = [dict(evaluate(emp(unused_days=d, **kw), [], [], 2026, TODAY), name=n)
@@ -343,12 +344,18 @@ class BuildReportTests(unittest.TestCase):
         self.assertEqual(by['E1']['status'], 'review')
         self.assertEqual(len(by['E1']['review']), 2)   # one VL + one LWOP for the same day
 
-    def test_no_master_row_and_name_fallbacks(self):
+    def test_no_master_row_excluded_and_name_fallbacks(self):
         by, _ = self.run_report([ent(10, 'E1', 12, name=' '), ent(11, 'E2', 12, name='')],
                                 masters=[master('E2')])
-        self.assertEqual(by['E1']['status'], 'not_qualified')
-        self.assertEqual(by['E1']['name'], 'E1')
+        self.assertNotIn('E1', by)
         self.assertEqual(by['E2']['name'], 'ZD E2')
+
+    def test_only_active_employees_listed(self):
+        ents = [ent(1, 'A', 12), ent(2, 'S', 12), ent(3, 'T', 12), ent(4, 'B', 12), ent(5, 'C', 12)]
+        masters = [master('A'), master('S', status='Separated'), master('T', status='Training'),
+                   master('B', status=None), master('C', status=' active ')]
+        by, _ = self.run_report(ents, masters=masters)
+        self.assertEqual(sorted(by), ['A', 'C'])
 
     def test_rows_sorted(self):
         _, rows = self.run_report([ent(1, 'A', 5), ent(2, 'B', 11), ent(3, 'C', 12)],

@@ -25,7 +25,7 @@
   .slc-review          { background: #fffbeb; color: #92400e; border: 1px solid #fde68a; }
   .slc-not_qualified   { background: #fef2f2; color: #991b1b; border: 1px solid #fecaca; }
   .slc-not_convertible { background: #f3f4f6; color: #4b5563; border: 1px solid #e5e7eb; }
-  .slc-reasons { margin: 0; padding-left: 1rem; }
+  .slc-reasons { margin: 0; padding-left: 1rem; min-width: 260px; max-width: 520px; white-space: normal; overflow-wrap: anywhere; }
   .slc-reasons li.review { color: #92400e; }
 </style>
 
@@ -39,6 +39,7 @@
     (operational date + {{ reg_months }} months), have no AWOL in {{ year }}, have no sickness filed as
     VL / LWOP / AWOL, and be active with no exit date. Sick-reason matches are keyword-based, so
     they're flagged <em>Needs review</em> rather than disqualified. Peso amounts aren't shown.
+    Only employees marked <strong>Active</strong> in the employee sheet are listed.
   </div>
 </div>
 
@@ -56,7 +57,7 @@
 <form method="get" class="slc-filter d-flex align-items-end gap-2 flex-wrap">
   <div>
     <label for="slc-year" class="d-block">Effective year</label>
-    <select id="slc-year" name="year" class="form-select form-select-sm" onchange="this.form.submit()">
+    <select id="slc-year" name="year" autocomplete="off" class="form-select form-select-sm" onchange="this.form.submit()">
       {% for y in years %}<option value="{{ y }}" {% if y == year %}selected{% endif %}>{{ y }}</option>{% endfor %}
     </select>
   </div>
@@ -85,10 +86,12 @@
   {% if group or q or status != 'all' %}
   <a href="{{ url_for('sl_conversion.sl_conversion_report', year=year) }}" class="btn btn-outline-secondary btn-sm">Clear</a>
   {% endif %}
-  <a href="{{ url_for('sl_conversion.sl_conversion_report', year=year, group=group, status=status, q=q, format='csv') }}"
-     class="btn btn-outline-secondary btn-sm ms-auto">
-    <i class="me-1" data-lucide="download"></i>Export CSV
-  </a>
+  {% if rows %}
+  <button type="button" id="slcCopy" class="btn btn-outline-secondary btn-sm ms-auto"
+          title="Copy the rows shown, ready to paste into Excel or Google Sheets">
+    <i class="me-1" data-lucide="copy"></i><span>Copy table</span>
+  </button>
+  {% endif %}
 </form>
 
 <div class="slc-stats">
@@ -144,7 +147,11 @@
       </thead>
       <tbody>
         {% for row in rows %}
-        <tr>
+        <tr data-copy="{{ [row.employee_id, row.name, row.group_name, row.account,
+                           row.reg_date.isoformat() if row.reg_date else '',
+                           '%.2f'|format(row.unused_hours), '%.2f'|format(row.unused_days),
+                           row.tier ~ '%', '%.2f'|format(row.converted_hours), '%.2f'|format(row.converted_days),
+                           row.status_label, (row.reasons + row.review)|join('; ')]|tojson|forceescape }}">
           <td>{{ row.employee_id }}</td>
           <td>{{ row.name }}</td>
           <td>{{ row.group_name or '-' }}</td>
@@ -204,6 +211,44 @@
       rows.forEach(r => tbody.appendChild(r));
       asc = !asc;
     });
+  });
+
+  // Copy table: the rows shown, in their current order, as tab-separated text.
+  const btn = document.getElementById('slcCopy');
+  if (!btn) return;
+  const HEAD = ['Employee ID', 'Name', 'Group', 'Account', 'Regularized', 'Unused SL Hours',
+                'Unused SL Days', 'Tier', 'Converted Hours', 'Converted Days', 'Status', 'Reasons'];
+  const clean = (v) => String(v == null ? '' : v).replace(/[\t\r\n]+/g, ' ').trim();
+  const label = btn.querySelector('span');
+  const flash = (text) => {
+    label.textContent = text;
+    setTimeout(() => { label.textContent = 'Copy table'; }, 2000);
+  };
+  const fallback = (text) => {
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.position = 'fixed';
+    ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.select();
+    let ok = false;
+    try { ok = document.execCommand('copy'); } catch (e) { ok = false; }
+    ta.remove();
+    return ok;
+  };
+  btn.addEventListener('click', () => {
+    const lines = [HEAD.join('\t')];
+    Array.from(tbody.rows).forEach(tr => {
+      try { lines.push(JSON.parse(tr.dataset.copy).map(clean).join('\t')); } catch (e) { /* skip */ }
+    });
+    const text = lines.join('\n');
+    const n = lines.length - 1;
+    const done = () => flash(`Copied ${n} row${n === 1 ? '' : 's'}`);
+    if (navigator.clipboard && window.isSecureContext) {
+      navigator.clipboard.writeText(text).then(done, () => (fallback(text) ? done() : flash('Copy failed')));
+    } else {
+      fallback(text) ? done() : flash('Copy failed');
+    }
   });
 })();
 </script>
