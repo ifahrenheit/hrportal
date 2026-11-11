@@ -12,6 +12,37 @@
     </div>
   {% endif %}
 
+  <div class="req-stats" id="reqStats">
+    <button type="button" class="req-stat" data-status="">
+      <span class="req-stat-label">Total</span>
+      <span class="req-stat-num" id="statTotal">0</span>
+    </button>
+    <button type="button" class="req-stat req-stat-ok" data-status="complete">
+      <span class="req-stat-label">Complete</span>
+      <span class="req-stat-num" id="statComplete">0</span>
+      <span class="req-stat-sub" id="statCompletePct"></span>
+    </button>
+    <button type="button" class="req-stat req-stat-bad" data-status="incomplete">
+      <span class="req-stat-label">Incomplete</span>
+      <span class="req-stat-num" id="statIncomplete">0</span>
+      <span class="req-stat-sub" id="statIncompletePct"></span>
+    </button>
+    <div class="req-stat req-stat-wide">
+      <span class="req-stat-label">Overall completion</span>
+      <div class="req-progress"><div class="req-progress-bar" id="statBar"></div></div>
+      <span class="req-stat-sub" id="statItems"></span>
+    </div>
+  </div>
+
+  <div class="req-missing-row">
+    <span class="req-missing-title">Missing per requirement:</span>
+    {% for key, label in fields %}
+      <button type="button" class="req-chip" data-field="{{ key }}">
+        {{ label }} <b id="miss-{{ key }}">0</b>
+      </button>
+    {% endfor %}
+  </div>
+
   <div class="req-toolbar">
     <input type="text" id="reqSearch" class="form-control req-search"
            placeholder="Search name or ID…">
@@ -30,6 +61,17 @@
             {% if scope_kind == 'tl' %}style="display:none"{% endif %}>
       <option value="">All TLs</option>
       {% for t in tls %}<option value="{{ t }}">{{ t }}</option>{% endfor %}
+    </select>
+
+    <select id="reqStatusFilter" class="form-select req-filter" title="Completion">
+      <option value="">All (complete + incomplete)</option>
+      <option value="incomplete">Incomplete only</option>
+      <option value="complete">Complete only</option>
+    </select>
+
+    <select id="reqMissingFilter" class="form-select req-filter" title="Missing requirement">
+      <option value="">Missing: any / none</option>
+      {% for key, label in fields %}<option value="{{ key }}">Missing {{ label }}</option>{% endfor %}
     </select>
 
     <span id="reqCount" class="req-count"></span>
@@ -78,6 +120,32 @@
     background: rgba(59,130,246,.08); border: 1px solid rgba(59,130,246,.25);
     padding: 8px 12px; border-radius: 8px; margin-bottom: 12px; font-size: 13px;
   }
+  .req-stats { display:grid; grid-template-columns:repeat(3, minmax(120px,1fr)) minmax(220px,2fr); gap:10px; margin-bottom:10px; }
+  @media (max-width: 768px) { .req-stats { grid-template-columns:repeat(3, 1fr); } .req-stat-wide { grid-column:1 / -1; } }
+  .req-stat {
+    display:flex; flex-direction:column; align-items:flex-start; gap:2px; text-align:left;
+    padding:10px 14px; border-radius:10px; border:1px solid rgba(127,127,127,.25);
+    background:var(--surface,#fff); color:inherit; font:inherit;
+  }
+  button.req-stat { cursor:pointer; transition:border-color .15s, box-shadow .15s; }
+  button.req-stat:hover { border-color:rgba(59,130,246,.6); }
+  .req-stat.is-active { border-color:rgb(59,130,246); box-shadow:0 0 0 2px rgba(59,130,246,.2); }
+  .req-stat-label { font-size:12px; opacity:.7; text-transform:uppercase; letter-spacing:.03em; }
+  .req-stat-num { font-size:24px; font-weight:700; line-height:1.1; font-variant-numeric:tabular-nums; }
+  .req-stat-sub { font-size:12px; opacity:.7; }
+  .req-stat-ok .req-stat-num { color:rgb(22,163,74); }
+  .req-stat-bad .req-stat-num { color:rgb(220,38,38); }
+  .req-progress { width:100%; height:10px; border-radius:6px; background:rgba(239,68,68,.18); overflow:hidden; margin:6px 0 2px; }
+  .req-progress-bar { height:100%; width:0; background:rgb(34,197,94); transition:width .2s; }
+  .req-missing-row { display:flex; flex-wrap:wrap; gap:6px; align-items:center; margin-bottom:12px; }
+  .req-missing-title { font-size:13px; opacity:.7; margin-right:4px; }
+  .req-chip {
+    font-size:12px; padding:3px 10px; border-radius:999px; cursor:pointer; color:inherit;
+    border:1px solid rgba(239,68,68,.35); background:rgba(239,68,68,.08);
+  }
+  .req-chip b { font-variant-numeric:tabular-nums; margin-left:2px; }
+  .req-chip.is-zero { border-color:rgba(34,197,94,.35); background:rgba(34,197,94,.08); }
+  .req-chip.is-active { border-color:rgb(59,130,246); box-shadow:0 0 0 2px rgba(59,130,246,.2); }
   .req-toolbar { display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin-bottom:12px; }
   .req-search { max-width: 260px; }
   .req-filter { max-width: 200px; }
@@ -110,25 +178,91 @@
   var acct   = document.getElementById('reqAccountFilter');
   var grp    = document.getElementById('reqGroupFilter');
   var tl     = document.getElementById('reqTlFilter');
+  var stat   = document.getElementById('reqStatusFilter');
+  var miss   = document.getElementById('reqMissingFilter');
   var table  = document.getElementById('reqTable');
   var countEl= document.getElementById('reqCount');
   var rows   = Array.prototype.slice.call(table.querySelectorAll('tbody tr'));
 
-  function applyFilters() {
+  // statsOnly: recount after a checkbox save without hiding/showing rows,
+  // so a row doesn't vanish while HR is still working on it.
+  function applyFilters(statsOnly) {
+    statsOnly = statsOnly === true;
     var q = (search.value || '').toLowerCase().trim();
-    var a = acct.value, g = grp.value, t = tl.value, visible = 0;
+    var a = acct.value, g = grp.value, t = tl.value, s = stat.value, m = miss.value, visible = 0;
+    // Stats cover rows matching search/account/group/TL (not the
+    // completion/missing filters, so the cards keep the full picture).
+    var total = 0, complete = 0, itemsDone = 0, itemsAll = 0, missBy = {};
     rows.forEach(function (tr) {
       if (!tr.dataset.search) return;
-      var show = (!q || tr.dataset.search.indexOf(q) !== -1)
+      // Read live checkbox state so filters reflect edits made on the page.
+      var boxes = tr.querySelectorAll('.req-check');
+      var missing = 0;
+      boxes.forEach(function (b) { if (!b.checked) missing++; });
+      var missField = m ? tr.querySelector('.req-check[data-field="' + m + '"]') : null;
+      var base = (!q || tr.dataset.search.indexOf(q) !== -1)
               && (!a || tr.dataset.account === a)
               && (!g || tr.dataset.group === g)
               && (!t || tr.dataset.tl === t);
+      if (base) {
+        total++;
+        if (missing === 0) complete++;
+        itemsAll += boxes.length;
+        itemsDone += boxes.length - missing;
+        boxes.forEach(function (b) {
+          if (!b.checked) missBy[b.dataset.field] = (missBy[b.dataset.field] || 0) + 1;
+        });
+      }
+      var show = base
+              && (!s || (s === 'incomplete' ? missing > 0 : missing === 0))
+              && (!m || (missField && !missField.checked));
+      if (statsOnly) { if (tr.style.display !== 'none') visible++; return; }
       tr.style.display = show ? '' : 'none';
       if (show) visible++;
     });
-    countEl.textContent = visible + ' employee' + (visible === 1 ? '' : 's');
+    countEl.textContent = visible + ' employee' + (visible === 1 ? '' : 's') + ' shown';
+    renderStats(total, complete, itemsDone, itemsAll, missBy, s, m);
   }
-  [search, acct, grp, tl].forEach(function (el) {
+
+  function pct(n, d) { return d ? Math.round(n * 1000 / d) / 10 : 0; }
+
+  function renderStats(total, complete, itemsDone, itemsAll, missBy, s, m) {
+    var incomplete = total - complete;
+    document.getElementById('statTotal').textContent = total;
+    document.getElementById('statComplete').textContent = complete;
+    document.getElementById('statIncomplete').textContent = incomplete;
+    document.getElementById('statCompletePct').textContent = pct(complete, total) + '%';
+    document.getElementById('statIncompletePct').textContent = pct(incomplete, total) + '%';
+    var p = pct(itemsDone, itemsAll);
+    document.getElementById('statBar').style.width = p + '%';
+    document.getElementById('statItems').textContent =
+      p + '% of requirements submitted (' + itemsDone + ' / ' + itemsAll + ')';
+    document.querySelectorAll('.req-chip').forEach(function (chip) {
+      var n = missBy[chip.dataset.field] || 0;
+      chip.querySelector('b').textContent = n;
+      chip.classList.toggle('is-zero', n === 0);
+      chip.classList.toggle('is-active', chip.dataset.field === m);
+    });
+    document.querySelectorAll('button.req-stat').forEach(function (card) {
+      card.classList.toggle('is-active', !!s && card.dataset.status === s);
+    });
+  }
+
+  // Cards set the Completion filter; chips toggle the Missing filter.
+  document.querySelectorAll('button.req-stat').forEach(function (card) {
+    card.addEventListener('click', function () {
+      stat.value = card.dataset.status;
+      if (!card.dataset.status) miss.value = '';
+      applyFilters();
+    });
+  });
+  document.querySelectorAll('.req-chip').forEach(function (chip) {
+    chip.addEventListener('click', function () {
+      miss.value = (miss.value === chip.dataset.field) ? '' : chip.dataset.field;
+      applyFilters();
+    });
+  });
+  [search, acct, grp, tl, stat, miss].forEach(function (el) {
     el.addEventListener('input', applyFilters);
     el.addEventListener('change', applyFilters);
   });
@@ -150,6 +284,7 @@
         if (!res.ok || !res.j.ok) throw new Error(res.j.error || 'save failed');
         cell.classList.toggle('is-checked', box.checked);
         cell.classList.toggle('is-missing', !box.checked);
+        applyFilters(true);
       })
       .catch(function () { box.checked = prev; alert('Could not save. Please try again.'); })
       .finally(function () { box.disabled = false; });
