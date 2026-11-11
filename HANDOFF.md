@@ -8,6 +8,33 @@
 
 ---
 
+## 2026-11-12 — Requirements page: completion filters + counts; earlier work committed
+Commit: `f894c1f` · Branch: `main` (pushed; commits `4948352`..`f894c1f`)
+
+### What was built / changed
+- `/requirements`: **Completion** filter (incomplete / complete) and **Missing** filter (one requirement), plus a summary strip: Total / Complete / Incomplete cards (click to filter), overall completion bar, clickable missing-per-requirement chips — `templates/requirements/requirements.html` (template only, client-side JS).
+  - Counts follow search / account / group / TL filters (not the completion/missing filters). Ticking a box recounts without hiding the row.
+  - 2026-11-12 numbers: 176 employees, 45 complete, 131 incomplete; most missing NBI 104, UB# 71.
+- Committed earlier uncommitted work: SL conversion active-only + Copy table (`578ba6d`), break auto-fix helper `fix_misdated_breaks` + `scripts/break_autofix.py` (`cf19daf`, cron already live hourly at :20), Break Log re-sync / sticky auto-close notice (`99286d7`), lead-researcher agent (`f894c1f`).
+
+### Investigation (no changes): holiday absence list Jan 1 / Feb 17
+- Melvin Rubas, Khim Jun Mozo (Jan 1 + Feb 17), Fe Edilyn Tinapay: approved CWS in `cws_requests` (#551, #554, #555, #557) but absence sheet still codes LWOP. Frances Jackson: REST / sheet `CWS 2`.
+- Jenny Nalangan, Renalyn Comeda, Kristele Hubero, Jeanilyn Gemeras: scheduled to work Jan 1, no CWS filed anywhere, no punches. User says they should be RD (unfiled CWS); left with TLs to confirm and fix the sheets.
+- Note: `employee_schedules` rows are re-imported (all re-created 2026-11-11 21:01), so past schedules reflect the sheet now, not as it was.
+
+### Deploy / run notes
+- `sudo systemctl restart leavesystem` (clean, twice). Templates are cached (debug off), so template edits need a restart.
+
+### How to verify
+- `/requirements` → cards + chips show counts; click Incomplete / a chip to filter.
+
+### Open items / next steps
+- [ ] Browser check of the requirements summary strip in light + dark theme (not viewed after deploy; page needs login).
+- [ ] Absence sheet: change Melvin / Khim / Fe holiday LWOP rows to CWS; TLs to confirm make-up dates for Jenny / Renalyn / Kristele / Jeanilyn (Renalyn also has a 0-day LWOP in OrangeHRM on Jan 1).
+- [ ] Carried over: Reasons text for Qualified SL-conversion rows; optional `can_sl_conversion` permission; 4 pre-existing failing tests.
+
+---
+
 ## 2026-11-10 — SL Conversion: active employees only, "Copy table" replaces Export CSV
 Commit: `558f1be` (code changes below are **uncommitted**) · Branch: `main`
 
@@ -322,48 +349,6 @@ Commit: `f7378ec` · Branch: `main`
 - [ ] After 13:05 on 2026-10-27 (first live run, for 2026-10-26), check absence_notify.log for "Sent" / "Email error" / "FATAL".
 - [ ] `tl_view_map` is missing some TLs (e.g. Khristofer Mozo, Magdaleno II Arong, Rachel Marikit, Lee Anne Borgonia logged "no TL email"); those alerts go to the SOM + OM only.
 - [ ] Rollback: uncomment the PHP line and drop `--live`.
-
----
-
-## 2026-10-22 (3) — Timestamp Records page (raw punches from Google Drive)
-Commit: `c5141e3` · Branch: `main`
-
-### What was built / changed
-- Read-only page `/admin/timestamp-records` + JSON `/admin/timestamp-records/data?from=YYYY-MM-DD&to=YYYY-MM-DD[&refresh=1]` — `modules/timestamp_records.py`, `templates/timestamp_records/index.html`.
-- Drive reader `helpers/drive_timestamps.py`: Cohere Raw Logs / YYYY / YYYYMM / YYYYMMDD-.csv; paginated listing; range loading across month/year folders; duplicate file names → newest upload only (yellow notice); bad rows/files reported, never dropped silently; memory + disk cache (`instance/drive_timestamps/`, gitignored) keyed on file id + modifiedTime/md5/size.
-- UI: payroll-period dropdown (portal cut-offs 8–22 / 23–7, defaults to last completed) + custom From/To (max 62 days), search, IN/OUT filter, pagination, Copy table (TSV of all matching rows), loading/empty/error states.
-- New sub-admin permission `can_timestamp_records` (Analytics & Reports): `permission.py`, `templates/admin/sub_admins.html`, app.py session dict + both sub-admin saves + SELECT; nav links in `nav/_attendance_tabs.html`, `_sidebar.html`, `_topnav.html`.
-- Tests: `tests/test_timestamp_records.py` (51, incl. one live Drive read).
-
-### Why / decisions
-- CSV header is `companyid,Day,Time,Type` — no names; First/Last Name come from OrangeHRM `hs_hr_employee` by employee_id (active row wins; unmatched → blank + notice).
-- Each daily file = one shift date; overnight clock-outs carry the next Day. Ranges select by **file (shift) date**, so the last shift's overnight out is included.
-- Auth switched from API key to a service account: Google throttled API-key downloads of link-shared files (403 "Sorry…" HTML page) after ~150 test downloads. Auth mode is chosen by config only, never auto-fallback.
-- Year folders reached via hardcoded `YEAR_FOLDERS` (2026, 2025) because the service account is shared on the 2026 folder, not the root. Folder access is checked first (files.list on an unshared folder returns empty, not an error).
-- Dedicated permission (user's choice) instead of reusing can_absences/can_tardiness/can_reports.
-
-### Database changes
-```sql
--- orangehrm2 (36 rows, all 0 after)
-ALTER TABLE leave4day_sub_admins ADD COLUMN can_timestamp_records TINYINT(1) NOT NULL DEFAULT 0;
-```
-
-### Config / environment
-- `.env`: `GOOGLE_DRIVE_SA_KEY_FILE` (path to service-account JSON in `/etc/leavesystem/`, root-only 600), `GOOGLE_DRIVE_API_KEY` (fallback only, unused while SA is set).
-- Service account `timestamp-drive-reader@wpforms-smtp-501221.iam.gserviceaccount.com`, scope drive.readonly; Drive API enabled in that project.
-- app.py backup: `app.py.bak.20261022231254`. Service restarted by the user at 23:28.
-
-### How to verify
-- `https://hrportal.cohere.ph/admin/timestamp-records` (admin, or sub-admin with the new checkbox) → Sep 23 – Oct 7 2026 = 15 files, 3,913 punches.
-- `venv/bin/python -m unittest tests.test_timestamp_records -v`
-
-### Open items / next steps
-- [x] Service-account key rotated 2026-10-22: new key `898730ea…` in `/etc/leavesystem/`, `.env` points at it, service restarted 23:53; old key `fd194495…` deleted in Google (sign-in now rejected) and its file removed. Old `GOOGLE_DRIVE_API_KEY` deleted in Google and removed from `.env`.
-- [x] 2025 dropped (owner has left, can't be shared): page covers 2026-01-01 onward (`FIRST_DATE`), 2025 removed from `YEAR_FOLDERS`.
-- [ ] Continuity risk: root "Cohere Raw Logs" is owned by the departed gmail.com account and is reached only via anyone-with-link; 2026 folder is owned by a getyourguide.com account. Before 2027: create a company-owned home (ideally a Shared Drive), share it with the service account, add the 2027 folder id to `YEAR_FOLDERS` in `helpers/drive_timestamps.py`.
-- [ ] Tick "Timestamp Records" on the Sub-Admins page for whoever needs it.
-- [ ] Confirm payroll period start (portal says 23rd; user mentioned "Sept 22").
-- [ ] Pre-existing failing tests (fail on HEAD too): test_awol_report / test_undertime_report empty-state + leave-covered cases.
 
 ---
 
