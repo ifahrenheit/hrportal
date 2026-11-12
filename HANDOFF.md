@@ -15,7 +15,20 @@ Commit: `f894c1f` · Branch: `main` (pushed; commits `4948352`..`f894c1f`)
 - `/requirements`: **Completion** filter (incomplete / complete) and **Missing** filter (one requirement), plus a summary strip: Total / Complete / Incomplete cards (click to filter), overall completion bar, clickable missing-per-requirement chips — `templates/requirements/requirements.html` (template only, client-side JS).
   - Counts follow search / account / group / TL filters (not the completion/missing filters). Ticking a box recounts without hiding the row.
   - 2026-11-12 numbers: 176 employees, 45 complete, 131 incomplete; most missing NBI 104, UB# 71.
+  - Later: **Employee status** filter (All / Active only / Training only, built from the statuses present on the page; 173 Active + 3 Training today) plus an amber badge next to non-Active names. Filter feeds the cards and chips. Default is All. Template only, uncommitted.
 - Committed earlier uncommitted work: SL conversion active-only + Copy table (`578ba6d`), break auto-fix helper `fix_misdated_breaks` + `scripts/break_autofix.py` (`cf19daf`, cron already live hourly at :20), Break Log re-sync / sticky auto-close notice (`99286d7`), lead-researcher agent (`f894c1f`).
+
+### IR video attachments (later 2026-11-12, uncommitted)
+- IR filing form and IR comments accept **mp4 / webm / mov up to 50 MB each** (still max 4 files). Checked client-side and server-side (`check_uploads`) before the report/comment row is created; requests over 205 MB get 413 (`_limit_upload_size`). XHR upload with % progress. Videos render as `<video controls>` + Download; `.mov` served as video/mp4 so Chrome plays H.264 iPhone clips (HEVC won't play in Chrome on Windows; download still works). Range requests work (seeking).
+- **Attachment access now checked**: `/incident-reports/uploads/<file>` allows admin, filer, the employee, `ir_role` (HR/SGA/TL), or anyone whose IR dashboard lists the report (`report_scope_conds`, extracted from `dashboard()`). Denials log `[IR] attachment denied`. The view page shows a note instead of files when denied. The report page itself is still viewable by any logged-in user with the link (not changed).
+- Files: `modules/incident_reports.py`, `templates/incident_form.html`, `templates/incident_view.html` (+ `.bak.*` copies). Test suite: 3 failures, same as before the change.
+- [ ] Try a real phone video upload in the browser; watch `journalctl -u leavesystem | grep "attachment denied"` for legit users being blocked.
+
+### IR attachment editing (later 2026-11-12) — LIVE
+- Schema `scripts/ir_attachment_edit_schema.sql` applied to central_db 22:35 with user's go-ahead (adds `removed_at/removed_by_id/removed_by_name/remove_reason` to both attachment tables + new `incident_attachment_log`); service restarted clean. End-to-end test on a ZZTEST IR passed (add, over-limit, reason required, double remove, comment remove, outsider 403, removed file admin-only, history shown); test rows and files deleted.
+- Filer (or admin) can Remove (soft: hidden, row + file kept, reason required) and Add files on the IR page; comment authors can Remove their comment files. New routes `/incident-reports/attachments/add` and `/attachments/remove`. Every add (including at filing and in comments) and remove is logged with actor, time, original filename, size, reason → "Attachment history" on the IR page; admins also get "Removed files" with links (removed files are admin-only in `serve_upload`).
+- `incident_view.html` hides the edit UI unless the view passes `attachment_log`, and uses literal URLs, so it renders fine under the still-running old code.
+- [ ] Real browser check of Remove / Add files on an IR (test client only so far).
 
 ### Investigation (no changes): holiday absence list Jan 1 / Feb 17
 - Melvin Rubas, Khim Jun Mozo (Jan 1 + Feb 17), Fe Edilyn Tinapay: approved CWS in `cws_requests` (#551, #554, #555, #557) but absence sheet still codes LWOP. Frances Jackson: REST / sheet `CWS 2`.
