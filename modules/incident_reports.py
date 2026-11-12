@@ -21,7 +21,13 @@ IR_EMAIL_TO = ['managers@cohere.ph', 'jovin.lumapat@cohere.ph']
 IR_EMAIL_BCC = [e.strip() for e in os.getenv('IR_EMAIL_BCC', '').split(',') if e.strip()]
 
 UPLOAD_DIR  = '/var/www/html/cohere_dashboard/incident_report/uploads'
-ALLOWED_EXT = {'jpg', 'jpeg', 'png', 'gif'}
+IMAGE_EXT   = {'jpg', 'jpeg', 'png', 'gif'}
+VIDEO_EXT   = {'mp4', 'webm', 'mov'}
+ALLOWED_EXT = IMAGE_EXT | VIDEO_EXT
+MAX_FILES         = 4
+MAX_VIDEO_BYTES   = 50 * 1024 * 1024
+# Whole-request ceiling for the upload endpoints (4 max-size videos + form).
+MAX_REQUEST_BYTES = MAX_FILES * MAX_VIDEO_BYTES + 5 * 1024 * 1024
 
 SMTP_HOST      = 'cohere.ph'
 SMTP_PORT      = 2525
@@ -73,8 +79,34 @@ def ir_user():
 def generate_report_number():
     return 'IR-' + datetime.now().strftime('%Y%m%d') + '-' + str(uuid.uuid4())[:6].upper()
 
+def file_ext(filename):
+    return filename.rsplit('.', 1)[1].lower() if filename and '.' in filename else ''
+
 def allowed_file(filename):
-    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXT
+    return file_ext(filename) in ALLOWED_EXT
+
+def is_video(filename):
+    return file_ext(filename) in VIDEO_EXT
+
+def _upload_size(f):
+    pos = f.stream.tell()
+    f.stream.seek(0, os.SEEK_END)
+    size = f.stream.tell()
+    f.stream.seek(pos)
+    return size
+
+def check_uploads(files):
+    """Validate uploads before anything is written. Returns an error message or None."""
+    for f in files[:MAX_FILES]:
+        if not f or not f.filename:
+            continue
+        if not allowed_file(f.filename):
+            return (f'"{f.filename}" is not allowed. Use images (jpg, png, gif) '
+                    f'or videos (mp4, webm, mov).')
+        if is_video(f.filename) and _upload_size(f) > MAX_VIDEO_BYTES:
+            return (f'"{f.filename}" is over {MAX_VIDEO_BYTES // (1024 * 1024)} MB. '
+                    f'Please trim or compress the video.')
+    return None
 
 def save_upload(file, report_number, prefix=''):
     """Save uploaded file, return filename or None."""
@@ -85,6 +117,50 @@ def save_upload(file, report_number, prefix=''):
     filename = f"{report_number}_{prefix}_{int(datetime.now().timestamp())}.{ext}"
     file.save(os.path.join(UPLOAD_DIR, filename))
     return filename
+
+def log_attachment(conn, report_id, attachment_id, action, file_name, actor,
+                   comment_id=None, original_name=None, file_size=None,
+                   mime_type=None, reason=None):
+    """Append one row to incident_attachment_log (who / when / what / why)."""
+    with conn.cursor() as cur:
+        cur.execute("""INSERT INTO incident_attachment_log
+            (report_id, comment_id, attachment_id, action, file_name, original_name,
+             file_size, mime_type, reason, actor_employee_id, actor_name)
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
+            (report_id, comment_id, attachment_id, action, file_name,
+             (original_name or '')[:255] or None, file_size, mime_type,
+             (reason or '')[:255] or None, actor['employee_id'], actor['name']))
+
+
+def store_uploads(conn, files, report_number, report_id, actor, prefix, comment_id=None):
+    """Save files, insert their attachment rows and log each as 'added'.
+    prefix(i) gives the per-file part of the stored name. Returns the count saved.
+    Caller commits."""
+    saved = 0
+    for i, f in enumerate(files[:MAX_FILES]):
+        filename = save_upload(f, report_number, prefix(i))
+        if not filename:
+            continue
+        path  = os.path.join(UPLOAD_DIR, filename)
+        fsize = os.path.getsize(path)
+        with conn.cursor() as cur:
+            if comment_id:
+                cur.execute("""INSERT INTO incident_comment_attachments
+                    (comment_id, file_name, file_path, file_size, mime_type)
+                    VALUES (%s,%s,%s,%s,%s)""",
+                    (comment_id, filename, path, fsize, f.content_type))
+            else:
+                cur.execute("""INSERT INTO incident_attachments
+                    (report_id, file_name, file_path, file_size, mime_type)
+                    VALUES (%s,%s,%s,%s,%s)""",
+                    (report_id, filename, path, fsize, f.content_type))
+            att_id = cur.lastrowid
+        log_attachment(conn, report_id, att_id, 'added', filename, actor,
+                       comment_id=comment_id, original_name=f.filename,
+                       file_size=fsize, mime_type=f.content_type)
+        saved += 1
+    return saved
+
 
 def get_personid(employee_id, conn):
     """Look up userdata.personid for edit-history tracking (backward compat)."""
@@ -212,6 +288,74 @@ def ir_role(u, report, conn):
     if is_agent_lead(u['email'], report['employee_id'], conn):
         return 'tl'
     return None
+
+def report_scope_conds(u, conn):
+    """WHERE conditions (on alias ir) limiting incident_reports to what this
+    user sees on the IR dashboard. Returns (conds, params)."""
+    conds, params = ["1=1"], []
+    # Check if TL supervisor via supervisor_mapping
+    _is_tl_sup = False
+    if not u['is_admin'] and not u['is_supervisor']:
+        with conn.cursor() as _cur:
+            _cur.execute("SELECT COUNT(*) as cnt FROM supervisor_mapping WHERE supervisor_email = %s",
+                         (u['email'],))
+            _is_tl_sup = (_cur.fetchone()['cnt'] or 0) > 0
+
+    if not u['is_admin'] and (u['is_supervisor'] or _is_tl_sup):
+        conds.append("""ir.employee_id COLLATE utf8mb4_unicode_ci IN (
+            SELECT g.employee_id FROM supervisor_mapping sm
+            INNER JOIN gsheet_employees g ON sm.agent_email COLLATE utf8mb4_unicode_ci = g.email
+            WHERE sm.supervisor_email COLLATE utf8mb4_unicode_ci = %s)""")
+        params.append(u['email'])
+
+    elif not u['is_admin'] and not u['is_supervisor'] and not _is_tl_sup:
+        user_group = None
+        if not u['is_sga']:
+            with conn.cursor() as cur:
+                cur.execute("""SELECT group_name FROM gsheet_employees
+                               WHERE email=%s AND group_name IS NOT NULL
+                               AND group_name != 'TL' AND status='Active' LIMIT 1""",
+                            (u['email'],))
+                row = cur.fetchone()
+                user_group = row['group_name'] if row else None
+
+        if user_group and not u['is_hr'] and not u['is_sga']:
+            conds.append("""ir.submitted_by_id IN (
+                SELECT employee_id FROM gsheet_employees
+                WHERE group_name=%s AND status='Active')""")
+            params.append(user_group)
+        elif u['is_hr']:
+            # Everything that has reached HR, including closed ones that went through RWE
+            conds.append("""(ir.rwe_requested_at IS NOT NULL OR ir.status IN
+                ('rwe_request','rwe_for_signature','rwe_for_service','awaiting_explanation',
+                 'rwe_served','forwarded','for_memo','reviewed'))""")
+        # SGA sees all reports (no filter)
+    return conds, params
+
+def can_view_report_files(u, report, conn):
+    """Attachments are visible to admins, the filer, the employee the IR is about,
+    anyone with a workflow role, and anyone whose dashboard lists the report."""
+    if u['is_admin']:
+        return True
+    if u['employee_id'] in (report.get('submitted_by_id'), report.get('employee_id')):
+        return True
+    if ir_role(u, report, conn):
+        return True
+    conds, params = report_scope_conds(u, conn)
+    with conn.cursor() as cur:
+        cur.execute(f"SELECT 1 FROM incident_reports ir WHERE ir.id = %s AND {' AND '.join(conds)} LIMIT 1",
+                    [report['id']] + params)
+        return cur.fetchone() is not None
+
+
+@ir_bp.before_request
+def _limit_upload_size():
+    if request.endpoint in ('incident_reports.submit_report', 'incident_reports.add_comment',
+                            'incident_reports.add_report_attachments'):
+        if (request.content_length or 0) > MAX_REQUEST_BYTES:
+            return jsonify({'success': False,
+                            'message': 'Upload is too large. Each video must be 50 MB or less.'}), 413
+
 
 # ─── Email ────────────────────────────────────────────────────────────────────
 def _send(to_list, subject, html_body, bcc_list=None, thread_id=None):
@@ -524,44 +668,7 @@ def dashboard():
         sort_by       = request.args.get('sort', 'updated')
         group_filter  = request.args.get('group', '')   # 'account:Numa' or 'group:Numa CS'
 
-        conds, params = ["1=1"], []
-        # Check if TL supervisor via supervisor_mapping
-        _is_tl_sup = False
-        if not u['is_admin'] and not u['is_supervisor']:
-            with conn.cursor() as _cur:
-                _cur.execute("SELECT COUNT(*) as cnt FROM supervisor_mapping WHERE supervisor_email = %s",
-                             (u['email'],))
-                _is_tl_sup = (_cur.fetchone()['cnt'] or 0) > 0
-
-        if not u['is_admin'] and (u['is_supervisor'] or _is_tl_sup):
-            conds.append("""ir.employee_id COLLATE utf8mb4_unicode_ci IN (
-                SELECT g.employee_id FROM supervisor_mapping sm
-                INNER JOIN gsheet_employees g ON sm.agent_email COLLATE utf8mb4_unicode_ci = g.email
-                WHERE sm.supervisor_email COLLATE utf8mb4_unicode_ci = %s)""")
-            params.append(u['email'])
-
-        elif not u['is_admin'] and not u['is_supervisor'] and not _is_tl_sup:
-            user_group = None
-            if not u['is_sga']:
-                with conn.cursor() as cur:
-                    cur.execute("""SELECT group_name FROM gsheet_employees
-                                   WHERE email=%s AND group_name IS NOT NULL
-                                   AND group_name != 'TL' AND status='Active' LIMIT 1""",
-                                (u['email'],))
-                    row = cur.fetchone()
-                    user_group = row['group_name'] if row else None
-
-            if user_group and not u['is_hr'] and not u['is_sga']:
-                conds.append("""ir.submitted_by_id IN (
-                    SELECT employee_id FROM gsheet_employees
-                    WHERE group_name=%s AND status='Active')""")
-                params.append(user_group)
-            elif u['is_hr']:
-                # Everything that has reached HR, including closed ones that went through RWE
-                conds.append("""(ir.rwe_requested_at IS NOT NULL OR ir.status IN
-                    ('rwe_request','rwe_for_signature','rwe_for_service','awaiting_explanation',
-                     'rwe_served','forwarded','for_memo','reviewed'))""")
-            # SGA sees all reports (no filter)
+        conds, params = report_scope_conds(u, conn)
 
         if status_filter != 'all':
             conds.append("ir.status = %s"); params.append(status_filter)
@@ -605,7 +712,7 @@ def dashboard():
 
         # Stats (admin sees all, supervisor filtered)
         s_conds, s_params = ["1=1"], []
-        if not u['is_admin'] and (u['is_supervisor'] or _is_tl_sup):
+        if not u['is_admin'] and u['is_supervisor']:  # ir_user() folds in supervisor_mapping
             s_conds.append("""ir.employee_id COLLATE utf8mb4_unicode_ci IN (
                 SELECT g.employee_id FROM supervisor_mapping sm
                 INNER JOIN gsheet_employees g ON sm.agent_email COLLATE utf8mb4_unicode_ci = g.email
@@ -935,6 +1042,10 @@ def submit_report():
         if not agent:
             return jsonify({'success': False, 'message': 'Employee not found'})
 
+        upload_error = check_uploads(request.files.getlist('attachments[]'))
+        if upload_error:
+            return jsonify({'success': False, 'message': upload_error})
+
         employee_name  = agent['full_name']
         report_number  = generate_report_number()
         initial_status = 'rwe_request' if escalate_to_hr else 'pending'
@@ -957,19 +1068,9 @@ def submit_report():
         conn.commit()
 
         # File uploads (up to 4)
-        uploaded = 0
-        for i, f in enumerate(request.files.getlist('attachments[]')[:4]):
-            filename = save_upload(f, report_number, str(i + 1))
-            if filename:
-                fsize = os.path.getsize(os.path.join(UPLOAD_DIR, filename))
-                with conn.cursor() as cur:
-                    cur.execute("""INSERT INTO incident_attachments
-                        (report_id, file_name, file_path, file_size, mime_type)
-                        VALUES (%s,%s,%s,%s,%s)""",
-                        (report_id, filename, os.path.join(UPLOAD_DIR, filename),
-                         fsize, f.content_type))
-                conn.commit()
-                uploaded += 1
+        uploaded = store_uploads(conn, request.files.getlist('attachments[]'),
+                                 report_number, report_id, u, lambda i: str(i + 1))
+        conn.commit()
 
         # Emails (non-blocking)
         try:
@@ -1022,7 +1123,12 @@ def view_report(report_number):
         with conn.cursor() as cur:
             cur.execute("SELECT * FROM incident_attachments WHERE report_id=%s ORDER BY uploaded_at",
                         (report['id'],))
-            attachments = cur.fetchall()
+            all_attachments = cur.fetchall()
+            attachments = [a for a in all_attachments if not a['removed_at']]
+            removed_attachments = [a for a in all_attachments if a['removed_at']]
+            cur.execute("""SELECT * FROM incident_attachment_log
+                           WHERE report_id=%s ORDER BY created_at DESC, id DESC""", (report['id'],))
+            attachment_log = cur.fetchall()
 
         with conn.cursor() as cur:
             cur.execute("SELECT * FROM incident_comments WHERE report_id=%s ORDER BY created_at ASC",
@@ -1033,13 +1139,18 @@ def view_report(report_number):
         for c in comments:
             with conn.cursor() as cur:
                 cur.execute("""SELECT * FROM incident_comment_attachments
-                               WHERE comment_id=%s ORDER BY uploaded_at""", (c['id'],))
+                               WHERE comment_id=%s AND removed_at IS NULL
+                               ORDER BY uploaded_at""", (c['id'],))
                 comment_attachments[c['id']] = cur.fetchall()
 
         can_edit_report = u['is_admin'] or (report['submitted_by_id'] == u['employee_id'])
         role = ir_role(u, report, conn)
+        can_see_files = can_view_report_files(u, report, conn)
 
         return render_template('incident_view.html',
+            can_see_files=can_see_files, is_video=is_video,
+            removed_attachments=removed_attachments, attachment_log=attachment_log,
+            max_files=MAX_FILES,
             report=report, attachments=attachments,
             comments=comments, comment_attachments=comment_attachments,
             can_edit_report=can_edit_report,
@@ -1104,6 +1215,118 @@ def edit_report():
         conn.commit()
         return jsonify({'success': True, 'message': 'Report updated successfully'})
     except Exception as e:
+        return jsonify({'success': False, 'message': str(e)})
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
+
+
+@ir_bp.route('/attachments/add', methods=['POST'])
+@login_required
+def add_report_attachments():
+    """Filer (or admin) adds files to an existing IR. Logged as 'added'."""
+    if not validate_csrf():
+        return jsonify({'success': False, 'message': 'Security check failed, please try again.'})
+    u = ir_user()
+    conn = get_db()
+    try:
+        report_id = request.form.get('report_id', 0, type=int)
+        with conn.cursor() as cur:
+            cur.execute("SELECT id, report_number, submitted_by_id FROM incident_reports WHERE id=%s",
+                        (report_id,))
+            report = cur.fetchone()
+        if not report:
+            return jsonify({'success': False, 'message': 'Report not found'})
+        if not (u['is_admin'] or report['submitted_by_id'] == u['employee_id']):
+            return jsonify({'success': False, 'message': 'Only the person who filed this IR can change its attachments.'}), 403
+
+        files = [f for f in request.files.getlist('attachments[]') if f and f.filename]
+        if not files:
+            return jsonify({'success': False, 'message': 'No files selected'})
+        upload_error = check_uploads(files)
+        if upload_error:
+            return jsonify({'success': False, 'message': upload_error})
+        with conn.cursor() as cur:
+            cur.execute("""SELECT COUNT(*) AS n FROM incident_attachments
+                           WHERE report_id=%s AND removed_at IS NULL""", (report_id,))
+            active = cur.fetchone()['n'] or 0
+        room = MAX_FILES - active
+        if len(files) > room:
+            return jsonify({'success': False,
+                            'message': f'An IR can have up to {MAX_FILES} attachments. '
+                                       f'It has {active}; remove one first or add {max(room, 0)} or fewer.'})
+
+        tag = uuid.uuid4().hex[:6]
+        added = store_uploads(conn, files, report['report_number'], report_id, u,
+                              lambda i: f'e{tag}_{i+1}')
+        with conn.cursor() as cur:
+            cur.execute("UPDATE incident_reports SET updated_at=NOW() WHERE id=%s", (report_id,))
+        conn.commit()
+        return jsonify({'success': True, 'message': f'{added} file(s) added'})
+    except Exception as e:
+        logging.error(f"IR add attachment error: {e}")
+        return jsonify({'success': False, 'message': str(e)})
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
+
+
+@ir_bp.route('/attachments/remove', methods=['POST'])
+@login_required
+def remove_attachment():
+    """Soft-remove an attachment: hidden from the IR, file and row kept, logged
+    with the reason. Report files: filer or admin. Comment files: comment author or admin."""
+    if not validate_csrf():
+        return jsonify({'success': False, 'message': 'Security check failed, please try again.'})
+    u = ir_user()
+    conn = get_db()
+    try:
+        kind   = request.form.get('kind', '')
+        att_id = request.form.get('attachment_id', 0, type=int)
+        reason = (request.form.get('reason') or '').strip()
+        if not reason:
+            return jsonify({'success': False, 'message': 'Please give a reason for removing the file.'})
+        if kind == 'report':
+            sql = """SELECT a.*, ir.id AS rid, ir.submitted_by_id AS owner_id, NULL AS cid
+                     FROM incident_attachments a JOIN incident_reports ir ON ir.id = a.report_id
+                     WHERE a.id=%s"""
+            table = 'incident_attachments'
+        elif kind == 'comment':
+            sql = """SELECT ca.*, c.report_id AS rid, c.employee_id AS owner_id, c.id AS cid
+                     FROM incident_comment_attachments ca
+                     JOIN incident_comments c ON c.id = ca.comment_id
+                     WHERE ca.id=%s"""
+            table = 'incident_comment_attachments'
+        else:
+            return jsonify({'success': False, 'message': 'Invalid attachment type'})
+        with conn.cursor() as cur:
+            cur.execute(sql, (att_id,))
+            att = cur.fetchone()
+        if not att:
+            return jsonify({'success': False, 'message': 'Attachment not found'})
+        if att['removed_at']:
+            return jsonify({'success': False, 'message': 'That file was already removed.'})
+        if not (u['is_admin'] or att['owner_id'] == u['employee_id']):
+            return jsonify({'success': False, 'message': 'Only the person who uploaded this file can remove it.'}), 403
+
+        with conn.cursor() as cur:
+            cur.execute(f"""UPDATE {table}
+                SET removed_at=NOW(), removed_by_id=%s, removed_by_name=%s, remove_reason=%s
+                WHERE id=%s AND removed_at IS NULL""",
+                (u['employee_id'], u['name'], reason[:255], att_id))
+        log_attachment(conn, att['rid'], att_id, 'removed', att['file_name'], u,
+                       comment_id=att['cid'], file_size=att['file_size'],
+                       mime_type=att['mime_type'], reason=reason)
+        with conn.cursor() as cur:
+            cur.execute("UPDATE incident_reports SET updated_at=NOW() WHERE id=%s", (att['rid'],))
+        conn.commit()
+        return jsonify({'success': True, 'message': 'File removed'})
+    except Exception as e:
+        logging.error(f"IR remove attachment error: {e}")
         return jsonify({'success': False, 'message': str(e)})
     finally:
         try:
@@ -1191,6 +1414,10 @@ def add_comment():
                 return jsonify({'success': False,
                                 'message': 'You are not allowed to make that status change at this stage.'})
 
+        upload_error = check_uploads(request.files.getlist('comment_attachments[]'))
+        if upload_error:
+            return jsonify({'success': False, 'message': upload_error})
+
         with conn.cursor() as cur:
             cur.execute("""INSERT INTO incident_comments
                 (report_id, employee_id, employee_name, comment)
@@ -1199,18 +1426,9 @@ def add_comment():
             comment_id = cur.lastrowid
 
         # Comment file uploads
-        uploaded = 0
-        for i, f in enumerate(request.files.getlist('comment_attachments[]')[:4]):
-            filename = save_upload(f, report_number, f'c{comment_id}_{i+1}')
-            if filename:
-                fsize = os.path.getsize(os.path.join(UPLOAD_DIR, filename))
-                with conn.cursor() as cur:
-                    cur.execute("""INSERT INTO incident_comment_attachments
-                        (comment_id, file_name, file_path, file_size, mime_type)
-                        VALUES (%s,%s,%s,%s,%s)""",
-                        (comment_id, filename, os.path.join(UPLOAD_DIR, filename),
-                         fsize, f.content_type))
-                uploaded += 1
+        uploaded = store_uploads(conn, request.files.getlist('comment_attachments[]'),
+                                 report_number, report['id'], u,
+                                 lambda i: f'c{comment_id}_{i+1}', comment_id=comment_id)
 
         if status_action:
             with conn.cursor() as cur:
@@ -1384,11 +1602,41 @@ def update_status():
 @ir_bp.route('/uploads/<filename>')
 @login_required
 def serve_upload(filename):
-    from flask import send_from_directory
-    return send_from_directory(
-        '/var/www/html/cohere_dashboard/incident_report/uploads',
-        filename
-    )
+    from flask import send_from_directory, abort
+    u = ir_user()
+    conn = get_db()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("""SELECT ir.*, a.removed_at AS att_removed_at FROM incident_attachments a
+                           JOIN incident_reports ir ON ir.id = a.report_id
+                           WHERE a.file_name = %s LIMIT 1""", (filename,))
+            report = cur.fetchone()
+            if not report:
+                cur.execute("""SELECT ir.*, ca.removed_at AS att_removed_at
+                               FROM incident_comment_attachments ca
+                               JOIN incident_comments c ON c.id = ca.comment_id
+                               JOIN incident_reports ir ON ir.id = c.report_id
+                               WHERE ca.file_name = %s LIMIT 1""", (filename,))
+                report = cur.fetchone()
+        if not report:
+            abort(404)
+        # Removed (soft-deleted) files stay on disk for audit; admins only.
+        if report['att_removed_at'] and not u['is_admin']:
+            abort(404)
+        if not can_view_report_files(u, report, conn):
+            logging.warning(f"[IR] attachment denied: {u['email']} -> {filename}")
+            abort(403)
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
+    # Chrome plays H.264 .mov files when they are labelled mp4.
+    mimetype = 'video/mp4' if file_ext(filename) == 'mov' else None
+    resp = send_from_directory(UPLOAD_DIR, filename, mimetype=mimetype)
+    resp.headers['X-Content-Type-Options'] = 'nosniff'
+    resp.headers['Cache-Control'] = 'private, max-age=3600'
+    return resp
 
 @ir_bp.route('/timeline-csv')
 @login_required

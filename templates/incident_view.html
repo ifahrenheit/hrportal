@@ -61,6 +61,28 @@
                  border:2px solid var(--border); transition:all .2s; }
   .attach-item:hover { border-color:var(--accent); transform:scale(1.03); }
   .attach-item img { width:100%; height:160px; object-fit:cover; display:block; }
+  .attach-video { grid-column:1 / -1; max-width:640px; border-radius:10px; overflow:hidden;
+                  border:2px solid var(--border); }
+  .attach-video video { width:100%; max-height:420px; display:block; background:#000; }
+  .attach-video .attach-info { display:flex; justify-content:space-between; gap:8px; }
+  .attach-video .attach-info a { color:var(--accent); }
+  .c-video { display:block; margin:6px 0; max-width:420px; }
+  .c-video video { width:100%; max-height:280px; border-radius:6px; background:#000; display:block; }
+  .c-video a { font-size:11px; color:var(--accent); }
+  .att-remove { background:none; border:none; color:var(--danger); font-size:11px; padding:0; cursor:pointer; }
+  .att-remove:hover { text-decoration:underline; }
+  .attach-item .attach-info { display:flex; justify-content:space-between; gap:6px; }
+  .att-add-box { margin-top:14px; padding:12px; border:1px dashed var(--border); border-radius:10px; }
+  .att-log { margin-top:14px; font-size:12px; }
+  .att-log summary { cursor:pointer; color:var(--text-muted); font-weight:600; }
+  .att-log ul { list-style:none; padding:0; margin:8px 0 0; }
+  .att-log li { padding:6px 0; border-bottom:1px solid var(--border); }
+  .att-log .lg-when { color:var(--text-muted); white-space:nowrap; margin-right:6px; }
+  .att-log .lg-removed { color:var(--danger); font-weight:600; }
+  .att-log .lg-added { color:var(--success, #16a34a); font-weight:600; }
+  .att-log .lg-reason { color:var(--text-muted); font-style:italic; }
+  .files-hidden-note { font-size:12px; color:var(--text-muted); font-style:italic; }
+  .upload-progress { font-size:12px; color:var(--text-muted); margin-right:12px; align-self:center; }
   .attach-info { background:var(--bg); padding:6px 8px; font-size:11px;
                  color:var(--text-muted); text-align:center; }
   /* Comments */
@@ -90,7 +112,7 @@
   .preview-wrap { display:flex; gap:8px; flex-wrap:wrap; margin-top:8px; }
   .preview-item { position:relative; width:80px; height:80px;
                   border:2px solid var(--border); border-radius:8px; overflow:hidden; }
-  .preview-item img { width:100%; height:100%; object-fit:cover; }
+  .preview-item img, .preview-item video { width:100%; height:100%; object-fit:cover; display:block; background:#000; }
   .preview-item .rm { position:absolute; top:2px; right:2px; background:var(--danger);
                       color:white; border:none; border-radius:50%; width:18px; height:18px;
                       cursor:pointer; font-size:11px; line-height:1;
@@ -231,19 +253,97 @@
   </div>
 
   {# Attachments #}
-  {% if attachments %}
+  {% set att_edit = can_edit_report and attachment_log is defined %}
+  {% set att_log = attachment_log|default([]) %}
+  {% set att_max = max_files|default(4) %}
+  {% if attachments or (can_see_files and (att_edit or att_log)) %}
   <div class="ir-section">
     <div class="ir-section-title">
       <i data-lucide="paperclip"></i>Attachments ({{ attachments|length }})
     </div>
+    {% if can_see_files %}
     <div class="attach-grid">
       {% for att in attachments %}
-      <div class="attach-item" onclick="openLB('{{ url_for('incident_reports.serve_upload', filename=att.file_name) }}')">
-        <img src="{{ url_for('incident_reports.serve_upload', filename=att.file_name) }}" alt="">
-        <div class="attach-info">{{ (att.file_size/1024)|int }} KB</div>
+      {% set att_url = url_for('incident_reports.serve_upload', filename=att.file_name) %}
+      {% if is_video(att.file_name) %}
+      <div class="attach-video">
+        <video src="{{ att_url }}" controls preload="metadata" playsinline></video>
+        <div class="attach-info">
+          <span>Video · {{ '%.1f' % (att.file_size/1048576) }} MB</span>
+          <span>
+            <a href="{{ att_url }}" download>Download</a>
+            {% if att_edit %}
+            · <button type="button" class="att-remove" onclick="removeAttachment('report', {{ att.id }}, 'this video')">Remove</button>
+            {% endif %}
+          </span>
+        </div>
       </div>
+      {% else %}
+      <div class="attach-item" onclick="openLB('{{ att_url }}')">
+        <img src="{{ att_url }}" alt="">
+        <div class="attach-info">
+          <span>{{ (att.file_size/1024)|int }} KB</span>
+          {% if att_edit %}
+          <button type="button" class="att-remove" onclick="event.stopPropagation(); removeAttachment('report', {{ att.id }}, 'this image')">Remove</button>
+          {% endif %}
+        </div>
+      </div>
+      {% endif %}
       {% endfor %}
     </div>
+    {% if not attachments %}<p class="files-hidden-note">No attachments.</p>{% endif %}
+
+    {% if att_edit and attachments|length < att_max %}
+    <div class="att-add-box d-print-none">
+      <label style="font-size:12px;font-weight:600;color:var(--text-muted);">
+        <i class="me-1" data-lucide="upload"></i>Add files ({{ att_max - attachments|length }} more allowed · images, or videos up to 50 MB)
+      </label>
+      <input type="file" class="form-control form-control-sm mt-1" id="addAttachInput"
+             multiple accept="image/*,video/mp4,video/webm,video/quicktime,.mp4,.webm,.mov">
+      <div class="preview-wrap" id="addPreviewWrap"></div>
+      <div class="d-flex justify-content-end mt-2">
+        <span class="upload-progress d-none" id="addUploadProgress"></span>
+        <button type="button" class="btn-sm-success" id="addAttachBtn" style="display:none;" onclick="uploadMoreAttachments()">Upload</button>
+      </div>
+    </div>
+    {% endif %}
+
+    {% if user.is_admin and removed_attachments|default([]) %}
+    <details class="att-log">
+      <summary>Removed files ({{ removed_attachments|length }}) · admins only</summary>
+      <ul>
+        {% for ra in removed_attachments %}
+        <li>
+          <a href="{{ url_for('incident_reports.serve_upload', filename=ra.file_name) }}" target="_blank">{{ ra.file_name }}</a>
+          — removed by {{ ra.removed_by_name }} on {{ ra.removed_at.strftime('%b %d, %Y %I:%M %p') }}
+          <span class="lg-reason">“{{ ra.remove_reason }}”</span>
+        </li>
+        {% endfor %}
+      </ul>
+    </details>
+    {% endif %}
+
+    {% if att_log %}
+    <details class="att-log">
+      <summary>Attachment history ({{ att_log|length }})</summary>
+      <ul>
+        {% for lg in att_log %}
+        <li>
+          <span class="lg-when">{{ lg.created_at.strftime('%b %d, %Y %I:%M %p') }}</span>
+          {{ lg.actor_name or lg.actor_employee_id }}
+          <span class="lg-{{ lg.action }}">{{ lg.action }}</span>
+          {{ 'a video' if is_video(lg.file_name) else 'an image' }}
+          {%- if lg.comment_id %} on a comment{% endif %}
+          {%- if lg.original_name %} ({{ lg.original_name }}{% if lg.file_size %}, {{ '%.1f' % (lg.file_size/1048576) }} MB{% endif %}){% endif %}
+          {% if lg.reason %}<span class="lg-reason">— “{{ lg.reason }}”</span>{% endif %}
+        </li>
+        {% endfor %}
+      </ul>
+    </details>
+    {% endif %}
+    {% else %}
+    <p class="files-hidden-note">Attachments are only visible to the filer, the employee, their leads, HR and admins.</p>
+    {% endif %}
   </div>
   {% endif %}
 
@@ -288,11 +388,31 @@
         <div style="font-size:11px;color:var(--text-muted);font-weight:600;margin-bottom:4px;">
           <i class="me-1" data-lucide="paperclip"></i>Attachments
         </div>
+        {% if can_see_files %}
         {% for ca in comment_attachments[c.id] %}
-        <div class="c-thumb" onclick="openLB('{{ url_for('incident_reports.serve_upload', filename=ca.file_name) }}')">
-          <img src="{{ url_for('incident_reports.serve_upload', filename=ca.file_name) }}" alt="">
+        {% set ca_url = url_for('incident_reports.serve_upload', filename=ca.file_name) %}
+        {% if is_video(ca.file_name) %}
+        <div class="c-video">
+          <video src="{{ ca_url }}" controls preload="metadata" playsinline></video>
+          <a href="{{ ca_url }}" download>Download video</a>
+          {% if attachment_log is defined and (user.is_admin or c.employee_id == user.employee_id) %}
+          · <button type="button" class="att-remove" onclick="removeAttachment('comment', {{ ca.id }}, 'this video')">Remove</button>
+          {% endif %}
         </div>
+        {% else %}
+        <div style="display:inline-block;text-align:center;vertical-align:top;">
+          <div class="c-thumb" onclick="openLB('{{ ca_url }}')">
+            <img src="{{ ca_url }}" alt="">
+          </div>
+          {% if attachment_log is defined and (user.is_admin or c.employee_id == user.employee_id) %}
+          <div><button type="button" class="att-remove" onclick="removeAttachment('comment', {{ ca.id }}, 'this image')">Remove</button></div>
+          {% endif %}
+        </div>
+        {% endif %}
         {% endfor %}
+        {% else %}
+        <span class="files-hidden-note">Hidden ({{ comment_attachments[c.id]|length }} file(s)).</span>
+        {% endif %}
       </div>
       {% endif %}
     </div>
@@ -311,10 +431,10 @@
         </div>
         <div class="mb-3">
           <label style="font-size:12px;font-weight:600;color:var(--text-muted);">
-            <i class="me-1" data-lucide="paperclip"></i>Attachments (optional, up to 4)
+            <i class="me-1" data-lucide="paperclip"></i>Attachments (optional, up to 4 images or videos; videos up to 50 MB each)
           </label>
           <input type="file" class="form-control form-control-sm mt-1" id="cAttachInput"
-                 multiple accept="image/*">
+                 multiple accept="image/*,video/mp4,video/webm,video/quicktime,.mp4,.webm,.mov">
           <div class="preview-wrap" id="cPreviewWrap"></div>
         </div>
  {% if ir_role %}
@@ -418,6 +538,7 @@
 
         {% endif %}
         <div class="d-flex justify-content-end">
+          <span class="upload-progress d-none" id="cUploadProgress"></span>
           <button type="submit" class="btn-ir-submit" id="commentBtn">
             <span id="cBtnText"><i data-lucide="send"></i>Post Comment</span>
             <span id="cBtnSpin" class="spinner-border spinner-border-sm d-none"></span>
@@ -457,6 +578,98 @@ const REPORT_ID  = {{ report.id }};
 const REPORT_NUM = "{{ report.report_number }}";
 const TODAY      = "{{ today }}";
 let cCompressed  = [];
+const MAX_VIDEO_MB = 50;
+const VIDEO_EXT = ['mp4','webm','mov'];
+
+function isVideoFile(f){
+  const ext=(f.name.split('.').pop()||'').toLowerCase();
+  return f.type.startsWith('video/') || VIDEO_EXT.includes(ext);
+}
+function videoItem(f){
+  const ext=(f.name.split('.').pop()||'').toLowerCase();
+  if(!VIDEO_EXT.includes(ext)){ alert(`"${f.name}": videos must be mp4, webm or mov.`); return null; }
+  if(f.size > MAX_VIDEO_MB*1024*1024){
+    alert(`"${f.name}" is ${(f.size/1048576).toFixed(1)} MB. Videos must be ${MAX_VIDEO_MB} MB or less. Please trim or compress it.`);
+    return null;
+  }
+  return {file:f, video:true, preview:URL.createObjectURL(f)};
+}
+// Attachment editing (filer / comment author / admin). Every change is logged server-side.
+async function removeAttachment(kind, id, label){
+  const reason = prompt(`Remove ${label}?\n\nReason (required, saved in the attachment history):`);
+  if(reason === null) return;
+  if(!reason.trim()){ alert('A reason is required.'); return; }
+  const fd = new FormData();
+  fd.append('csrf_token', getCsrfToken());
+  fd.append('kind', kind); fd.append('attachment_id', id); fd.append('reason', reason.trim());
+  try{
+    const r = await fetch('/incident-reports/attachments/remove', {method:'POST', body:fd});
+    const d = await r.json();
+    if(d.success) location.reload(); else alert('❌ ' + d.message);
+  } catch(err){ alert('❌ Error: ' + err.message); }
+}
+
+let addItems = [];
+function renderAddPreviews(){
+  const wrap = document.getElementById('addPreviewWrap'); if(!wrap) return;
+  wrap.innerHTML = '';
+  addItems.forEach((item, i) => {
+    const div = document.createElement('div'); div.className = 'preview-item';
+    let el;
+    if(item.video){ el = document.createElement('video'); el.src = item.preview; el.muted = true; el.preload = 'metadata'; }
+    else { el = document.createElement('img'); el.src = item.preview; }
+    const rm = document.createElement('button'); rm.className = 'rm'; rm.type = 'button'; rm.innerHTML = '×';
+    rm.onclick = () => { if(item.video) URL.revokeObjectURL(item.preview); addItems.splice(i, 1); renderAddPreviews(); };
+    div.append(el, rm); wrap.appendChild(div);
+  });
+  document.getElementById('addAttachBtn').style.display = addItems.length ? '' : 'none';
+}
+document.addEventListener('DOMContentLoaded', () => {
+  const inp = document.getElementById('addAttachInput');
+  if(!inp) return;
+  const room = {{ (att_max - attachments|length) if att_edit else 0 }};
+  inp.addEventListener('change', async e => {
+    const files = Array.from(e.target.files);
+    if(files.length + addItems.length > room){ alert(`You can add ${room} more file(s).`); e.target.value = ''; return; }
+    for(const f of files){
+      if(isVideoFile(f)){ const v = videoItem(f); if(v) addItems.push(v); continue; }
+      if(!f.type.startsWith('image/')){ alert('Images or videos only.'); continue; }
+      addItems.push(await compressImage(f));
+    }
+    renderAddPreviews(); e.target.value = '';
+  });
+});
+async function uploadMoreAttachments(){
+  if(!addItems.length) return;
+  const btn = document.getElementById('addAttachBtn');
+  const prog = document.getElementById('addUploadProgress');
+  const fd = new FormData();
+  fd.append('csrf_token', getCsrfToken());
+  fd.append('report_id', REPORT_ID);
+  addItems.forEach(item => fd.append('attachments[]', item.file));
+  btn.disabled = true; prog.textContent = 'Uploading 0%…'; prog.classList.remove('d-none');
+  try{
+    const d = await postForm('/incident-reports/attachments/add', fd,
+      pct => { prog.textContent = pct < 100 ? `Uploading ${pct}%…` : 'Saving…'; });
+    if(d.success) location.reload(); else alert('❌ ' + d.message);
+  } catch(err){ alert('❌ Error: ' + err.message); }
+  finally{ btn.disabled = false; prog.classList.add('d-none'); }
+}
+
+// POST with upload progress (fetch cannot report it). Resolves to parsed JSON.
+function postForm(url, fd, onProgress){
+  return new Promise((resolve,reject)=>{
+    const xhr=new XMLHttpRequest();
+    xhr.open('POST',url);
+    xhr.upload.onprogress=e=>{ if(e.lengthComputable) onProgress(Math.round(e.loaded*100/e.total)); };
+    xhr.onload=()=>{
+      try{ resolve(JSON.parse(xhr.responseText)); }
+      catch(_){ reject(new Error(xhr.status===413?'Upload too large.':'Server error ('+xhr.status+')')); }
+    };
+    xhr.onerror=()=>reject(new Error('Network error. Check your connection and try again.'));
+    xhr.send(fd);
+  });
+}
 
 // Lightbox
 function openLB(src){ document.getElementById('lbImg').src=src; document.getElementById('lightbox').classList.add('on'); }
@@ -559,8 +772,9 @@ async function showHistory(type,id){
 // Comment attachments
 document.getElementById('cAttachInput').addEventListener('change',async function(e){
   const files=Array.from(e.target.files);
-  if(files.length+cCompressed.length>4){alert('Max 4 images.');e.target.value='';return;}
+  if(files.length+cCompressed.length>4){alert('Max 4 files.');e.target.value='';return;}
   for(const f of files){
+    if(isVideoFile(f)){ const v=videoItem(f); if(v) cCompressed.push(v); continue; }
     if(!f.type.startsWith('image/')) continue;
     cCompressed.push(await compressImage(f));
   }
@@ -592,9 +806,11 @@ function renderCPreviews(){
   const wrap=document.getElementById('cPreviewWrap'); wrap.innerHTML='';
   cCompressed.forEach((item,i)=>{
     const div=document.createElement('div'); div.className='preview-item';
-    const img=document.createElement('img'); img.src=item.preview;
+    let img;
+    if(item.video){ img=document.createElement('video'); img.src=item.preview; img.muted=true; img.preload='metadata'; }
+    else { img=document.createElement('img'); img.src=item.preview; }
     const rm=document.createElement('button'); rm.className='rm'; rm.type='button';
-    rm.innerHTML='×'; rm.onclick=()=>{cCompressed.splice(i,1);renderCPreviews();};
+    rm.innerHTML='×'; rm.onclick=()=>{ if(item.video) URL.revokeObjectURL(item.preview); cCompressed.splice(i,1);renderCPreviews();};
     div.append(img,rm); wrap.appendChild(div);
   });
 }
@@ -635,12 +851,15 @@ document.getElementById('commentForm').addEventListener('submit',async function(
   btn.disabled=true; txt.classList.add('d-none'); spin.classList.remove('d-none');
   const fd=new FormData(this);
   cCompressed.forEach(item=>fd.append('comment_attachments[]',item.file));
+  const prog=document.getElementById('cUploadProgress');
+  const hasVideo=cCompressed.some(item=>item.video);
+  if(hasVideo){ prog.textContent='Uploading 0%…'; prog.classList.remove('d-none'); }
   try{
-    const r=await fetch('{{ url_for("incident_reports.add_comment") }}',{method:'POST',body:fd});
-    const d=await r.json();
+    const d=await postForm('{{ url_for("incident_reports.add_comment") }}', fd,
+      pct=>{ if(hasVideo) prog.textContent = pct<100 ? `Uploading ${pct}%…` : 'Saving…'; });
     if(d.success) location.reload(); else alert('❌ '+d.message);
   } catch(err){ alert('❌ Error: '+err.message); }
-  finally{ btn.disabled=false; txt.classList.remove('d-none'); spin.classList.add('d-none'); }
+  finally{ btn.disabled=false; txt.classList.remove('d-none'); spin.classList.add('d-none'); prog.classList.add('d-none'); }
 });
 </script>
 {% endblock %}

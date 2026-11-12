@@ -39,7 +39,8 @@
     position:relative; width:110px; height:110px;
     border:2px solid var(--border); border-radius:10px; overflow:hidden;
   }
-  .preview-item img { width:100%; height:100%; object-fit:cover; }
+  .preview-item img, .preview-item video { width:100%; height:100%; object-fit:cover; display:block; background:#000; }
+  .upload-progress { font-size:12px; color:var(--text-muted); margin-right:12px; align-self:center; }
   .preview-item .rm {
     position:absolute; top:4px; right:4px; background:var(--danger); color:white;
     border:none; border-radius:50%; width:22px; height:22px;
@@ -112,14 +113,16 @@
       <div class="mb-4">
         <label class="form-label">
           <i class="me-1" data-lucide="paperclip"></i>Attachments
-          <span style="font-weight:400;color:var(--text-muted);">(optional, up to 4 images)</span>
+          <span style="font-weight:400;color:var(--text-muted);">(optional, up to 4 images or videos)</span>
         </label>
-        <input type="file" class="form-control" id="attachInput" multiple accept="image/*">
-        <div class="form-text">Images are auto-compressed before upload.</div>
+        <input type="file" class="form-control" id="attachInput" multiple
+               accept="image/*,video/mp4,video/webm,video/quicktime,.mp4,.webm,.mov">
+        <div class="form-text">Images are auto-compressed. Videos: mp4, webm or mov, up to 50 MB each (about 1–2 minutes of phone video).</div>
         <div class="preview-wrap" id="previewWrap"></div>
       </div>
 
       <div class="d-flex justify-content-end pt-2">
+        <span class="upload-progress d-none" id="uploadProgress"></span>
         <button type="submit" class="btn-ir-submit" id="submitBtn">
           <span id="btnText"><i data-lucide="send"></i> Submit Report</span>
           <span id="btnSpinner" class="spinner-border spinner-border-sm d-none"></span>
@@ -133,12 +136,45 @@
 <script>
 let compressed = [];
 const MAX = 4;
+const MAX_VIDEO_MB = 50;
+const VIDEO_EXT = ['mp4','webm','mov'];
+
+function isVideoFile(f){
+  const ext=(f.name.split('.').pop()||'').toLowerCase();
+  return f.type.startsWith('video/') || VIDEO_EXT.includes(ext);
+}
+
+function videoItem(f){
+  const ext=(f.name.split('.').pop()||'').toLowerCase();
+  if(!VIDEO_EXT.includes(ext)){ alert(`"${f.name}": videos must be mp4, webm or mov.`); return null; }
+  if(f.size > MAX_VIDEO_MB*1024*1024){
+    alert(`"${f.name}" is ${(f.size/1048576).toFixed(1)} MB. Videos must be ${MAX_VIDEO_MB} MB or less. Please trim or compress it.`);
+    return null;
+  }
+  return {file:f, orig:f.size, comp:f.size, video:true, preview:URL.createObjectURL(f)};
+}
+
+// POST with upload progress (fetch cannot report it). Resolves to parsed JSON.
+function postForm(url, fd, onProgress){
+  return new Promise((resolve,reject)=>{
+    const xhr=new XMLHttpRequest();
+    xhr.open('POST',url);
+    xhr.upload.onprogress=e=>{ if(e.lengthComputable) onProgress(Math.round(e.loaded*100/e.total)); };
+    xhr.onload=()=>{
+      try{ resolve(JSON.parse(xhr.responseText)); }
+      catch(_){ reject(new Error(xhr.status===413?'Upload too large.':'Server error ('+xhr.status+')')); }
+    };
+    xhr.onerror=()=>reject(new Error('Network error. Check your connection and try again.'));
+    xhr.send(fd);
+  });
+}
 
 document.getElementById('attachInput').addEventListener('change', async function(e) {
   const files = Array.from(e.target.files);
-  if(files.length + compressed.length > MAX){ alert(`Max ${MAX} images.`); e.target.value=''; return; }
+  if(files.length + compressed.length > MAX){ alert(`Max ${MAX} files.`); e.target.value=''; return; }
   for(const f of files){
-    if(!f.type.startsWith('image/')){ alert('Images only.'); continue; }
+    if(isVideoFile(f)){ const v=videoItem(f); if(v) compressed.push(v); continue; }
+    if(!f.type.startsWith('image/')){ alert('Images or videos only.'); continue; }
     compressed.push(await compressImage(f));
   }
   renderPreviews(); e.target.value='';
@@ -169,11 +205,13 @@ function renderPreviews(){
   const wrap=document.getElementById('previewWrap'); wrap.innerHTML='';
   compressed.forEach((item,i)=>{
     const div=document.createElement('div'); div.className='preview-item';
-    const img=document.createElement('img'); img.src=item.preview;
+    let img;
+    if(item.video){ img=document.createElement('video'); img.src=item.preview; img.muted=true; img.preload='metadata'; }
+    else { img=document.createElement('img'); img.src=item.preview; }
     const rm=document.createElement('button'); rm.className='rm'; rm.type='button';
-    rm.innerHTML='×'; rm.onclick=()=>{ compressed.splice(i,1); renderPreviews(); };
+    rm.innerHTML='×'; rm.onclick=()=>{ if(item.video) URL.revokeObjectURL(item.preview); compressed.splice(i,1); renderPreviews(); };
     const info=document.createElement('div'); info.className='info';
-    info.textContent=`${Math.round(item.comp/1024)}KB`;
+    info.textContent=item.video ? `Video · ${(item.comp/1048576).toFixed(1)} MB` : `${Math.round(item.comp/1024)}KB`;
     div.append(img,rm,info); wrap.appendChild(div);
   });
 }
@@ -186,16 +224,22 @@ document.getElementById('irForm').addEventListener('submit', async function(e){
   btn.disabled=true; txt.classList.add('d-none'); spin.classList.remove('d-none');
   const fd=new FormData(this);
   compressed.forEach(item=>fd.append('attachments[]',item.file));
+  const prog=document.getElementById('uploadProgress');
+  const hasVideo=compressed.some(item=>item.video);
+  if(hasVideo){ prog.textContent='Uploading 0%…'; prog.classList.remove('d-none'); }
   try{
-    const res=await fetch('{{ url_for("incident_reports.submit_report") }}',{method:'POST',body:fd});
-    const data=await res.json();
+    const data=await postForm('{{ url_for("incident_reports.submit_report") }}', fd,
+      pct=>{ if(hasVideo) prog.textContent = pct<100 ? `Uploading ${pct}%…` : 'Saving…'; });
     if(data.success){
       alert(`✅ Report submitted!\nIR #: ${data.report_number}`);
-      this.reset(); compressed=[]; renderPreviews();
+      this.reset();
+      compressed.forEach(item=>{ if(item.video) URL.revokeObjectURL(item.preview); });
+      compressed=[]; renderPreviews();
     } else { alert('❌ '+data.message); }
   } catch(err){ alert('❌ Error: '+err.message); }
   finally{
     btn.disabled=false; txt.classList.remove('d-none'); spin.classList.add('d-none');
+    prog.classList.add('d-none');
   }
 });
 </script>
