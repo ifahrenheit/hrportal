@@ -63,6 +63,13 @@
       {% for t in tls %}<option value="{{ t }}">{{ t }}</option>{% endfor %}
     </select>
 
+    <select id="reqEmpStatusFilter" class="form-select req-filter" title="Employee status">
+      <option value="">All statuses</option>
+      {% for st in rows | map(attribute='status') | reject('none') | unique | sort %}
+        <option value="{{ st }}">{{ st }} only</option>
+      {% endfor %}
+    </select>
+
     <select id="reqStatusFilter" class="form-select req-filter" title="Completion">
       <option value="">All (complete + incomplete)</option>
       <option value="incomplete">Incomplete only</option>
@@ -91,9 +98,10 @@
           <tr data-account="{{ row.account or '' }}"
               data-group="{{ row.group_name or '' }}"
               data-tl="{{ row.tl or '' }}"
+              data-empstatus="{{ row.status or '' }}"
               data-search="{{ ((row.schedule_name or '') ~ ' ' ~ row.employee_id) | lower }}">
             <td class="sticky-col">
-              <div class="req-name">{{ row.schedule_name or '—' }}</div>
+              <div class="req-name">{{ row.schedule_name or '—' }}{% if row.status and row.status != 'Active' %} <span class="req-status-badge">{{ row.status }}</span>{% endif %}</div>
               <div class="req-empid">{{ row.employee_id }}</div>
             </td>
             <td>{{ row.account or '—' }}</td>
@@ -164,6 +172,10 @@
   }
   .req-table thead th.sticky-col { z-index:4; }
   .req-name { font-weight:600; }
+  .req-status-badge {
+    font-size:10px; font-weight:600; padding:1px 6px; border-radius:999px; vertical-align:middle;
+    background:rgba(245,158,11,.15); border:1px solid rgba(245,158,11,.4); color:inherit;
+  }
   .req-empid { font-size:11px; opacity:.6; }
   .req-col { min-width:60px; }
   .req-cell.is-checked { background:rgba(34,197,94,.12); }
@@ -178,6 +190,7 @@
   var acct   = document.getElementById('reqAccountFilter');
   var grp    = document.getElementById('reqGroupFilter');
   var tl     = document.getElementById('reqTlFilter');
+  var est    = document.getElementById('reqEmpStatusFilter');
   var stat   = document.getElementById('reqStatusFilter');
   var miss   = document.getElementById('reqMissingFilter');
   var table  = document.getElementById('reqTable');
@@ -189,8 +202,8 @@
   function applyFilters(statsOnly) {
     statsOnly = statsOnly === true;
     var q = (search.value || '').toLowerCase().trim();
-    var a = acct.value, g = grp.value, t = tl.value, s = stat.value, m = miss.value, visible = 0;
-    // Stats cover rows matching search/account/group/TL (not the
+    var a = acct.value, g = grp.value, t = tl.value, e = est.value, s = stat.value, m = miss.value, visible = 0;
+    // Stats cover rows matching search/account/group/TL/status (not the
     // completion/missing filters, so the cards keep the full picture).
     var total = 0, complete = 0, itemsDone = 0, itemsAll = 0, missBy = {};
     rows.forEach(function (tr) {
@@ -203,7 +216,8 @@
       var base = (!q || tr.dataset.search.indexOf(q) !== -1)
               && (!a || tr.dataset.account === a)
               && (!g || tr.dataset.group === g)
-              && (!t || tr.dataset.tl === t);
+              && (!t || tr.dataset.tl === t)
+              && (!e || tr.dataset.empstatus === e);
       if (base) {
         total++;
         if (missing === 0) complete++;
@@ -262,7 +276,7 @@
       applyFilters();
     });
   });
-  [search, acct, grp, tl, stat, miss].forEach(function (el) {
+  [search, acct, grp, tl, est, stat, miss].forEach(function (el) {
     el.addEventListener('input', applyFilters);
     el.addEventListener('change', applyFilters);
   });
