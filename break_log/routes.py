@@ -119,6 +119,24 @@ def _force_close_stale(conn):
     conn.commit()
 
 
+def _last_ended_break(c, employee_id):
+    """Most recent finished break in the last 24h, so the Break Log page can
+    say how it ended (agent / other tab vs the 2-hour auto-close) instead of
+    guessing."""
+    c.execute("""
+        SELECT id, break_start, break_end,
+               TIMESTAMPDIFF(SECOND, break_start, break_end) AS duration,
+               auto_closed
+        FROM break_logs
+        WHERE employee_id = %s
+          AND break_end IS NOT NULL
+          AND break_start >= NOW() - INTERVAL 24 HOUR
+        ORDER BY break_start DESC LIMIT 1
+    """, (employee_id,))
+    row = c.fetchone()
+    return _serialize_row(row) if row else None
+
+
 def _shift_date(conn, employee_id):
     """
     Returns the business shift date for an employee.
@@ -362,6 +380,7 @@ def break_api():
                             LIMIT 1
                         """, (employee_id,))
                         active = c.fetchone()
+                        last = None if active else _last_ended_break(c, employee_id)
                 finally:
                     db.close()
 
@@ -370,7 +389,7 @@ def break_api():
                         'id': active['id'],
                         'break_start': active['break_start'].isoformat()
                     }})
-                return jsonify({'success': True, 'activeBreak': None})
+                return jsonify({'success': True, 'activeBreak': None, 'lastBreak': last})
 
             elif action == 'get_logs':
                 db = get_central_db()
@@ -379,7 +398,8 @@ def break_api():
                     with db.cursor() as c:
                         c.execute("""
                             SELECT id, break_start, break_end,
-                                   TIMESTAMPDIFF(SECOND, break_start, break_end) AS duration
+                                   TIMESTAMPDIFF(SECOND, break_start, break_end) AS duration,
+                                   auto_closed
                             FROM break_logs
                             WHERE employee_id = %s
                               AND shift_date = %s
@@ -428,7 +448,7 @@ def break_api():
                     emp = c.fetchone()
                     account_type = emp['account'] if emp else 'Unknown'
 
-                    now = datetime.now()
+                    now = datetime.now().replace(microsecond=0)
                     c.execute("""
                         INSERT INTO break_logs (employee_id, employee_name, account_type, break_start, shift_date)
                         VALUES (%s, %s, %s, %s, %s)
@@ -466,9 +486,15 @@ def break_api():
                         stale = c.fetchone()
                         _logger.info(f"END FAIL emp={employee_id} reason=no_active_in_24h "
                                      f"older_open={stale['break_start'] if stale else None}")
-                        return jsonify({'success': False, 'error': 'No active break found'})
+                        # Usually the break was already ended (another tab, or
+                        # the 2-hour cap). Tell the page so it can explain.
+                        return jsonify({'success': False, 'already_ended': True,
+                                        'error': 'Your break was already ended.',
+                                        'lastBreak': _last_ended_break(c, employee_id)})
 
-                    now = datetime.now()
+                    # Whole seconds: DATETIME rounds microseconds, which made
+                    # the stored duration 1s off from the logs table.
+                    now = datetime.now().replace(microsecond=0)
                     duration = int((now - active['break_start']).total_seconds())
                     c.execute("""UPDATE break_logs
                                  SET break_end = %s, duration = %s, is_active = 0
@@ -476,13 +502,24 @@ def break_api():
                               (now, duration, active['id']))
                     db.commit()
                     _logger.info(f"END OK emp={employee_id} break_id={active['id']} dur={duration}s")
+
+                    # Shift total after this break, for the "recorded" summary
+                    c.execute("""
+                        SELECT COALESCE(SUM(TIMESTAMPDIFF(SECOND, break_start, break_end)), 0) AS total
+                        FROM break_logs
+                        WHERE employee_id = %s AND break_end IS NOT NULL
+                          AND shift_date = (SELECT shift_date FROM break_logs WHERE id = %s)
+                    """, (employee_id, active['id']))
+                    shift_total = int(c.fetchone()['total'] or 0)
             finally:
                 db.close()
 
             return jsonify({
                 'success': True,
                 'message': 'Break ended',
-                'duration': duration
+                'break_id': active['id'],
+                'duration': duration,
+                'total_break_time': shift_total
             })
 
         return jsonify({'success': False, 'error': 'Invalid action'})

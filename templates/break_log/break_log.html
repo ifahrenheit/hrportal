@@ -147,6 +147,17 @@
   }
   .total-label.overtime { color: var(--danger) !important; animation: bl-pulse 2s ease-in-out infinite; }
 
+  /* Allowance left today (1h30) */
+  .remaining-label { font-size: .78rem; font-weight: 600; margin-top: .15rem; text-align: right; }
+  .remaining-label.ok   { color: var(--success); }
+  .remaining-label.low  { color: var(--warning); }
+  .remaining-label.over { color: var(--danger); }
+  .auto-tag {
+    display: inline-block; margin-left: .4rem; padding: .1rem .45rem;
+    border-radius: 5px; font-size: .7rem; font-weight: 600;
+    color: var(--danger); border: 1px solid var(--danger);
+  }
+
   /* Duration badge */
   .dur-badge {
     display: inline-block;
@@ -212,7 +223,10 @@
   <div class="bl-card">
     <div class="d-flex justify-content-between align-items-center mb-3">
       <div class="bl-card-title mb-0">Today's Break Logs</div>
-      <span class="total-label" id="totalBreakTime">Total: 00:00:00</span>
+      <div>
+        <div class="total-label text-end" id="totalBreakTime">Total: 00:00:00</div>
+        <div class="remaining-label ok" id="remainingTime">Remaining: 01:30:00</div>
+      </div>
     </div>
 
     <div class="table-responsive">
@@ -236,9 +250,24 @@
 
 {% block scripts %}
 <script>
+  const MAX_BREAK = 90 * 60;            // 1h30 daily allowance, in seconds
+
   let timerInterval  = null;
   let breakStartTime = null;
+  let activeBreakId  = null;
   let isOnBreak      = false;
+
+  // Every Start/End click bumps syncSeq. A check_active reply for a request
+  // sent before the click may describe the row as it was before the click
+  // committed, so it is dropped. Without this, a poll that raced an End click
+  // restarted the just-ended break and the page counted it twice, which sent a
+  // false "119 minutes" overbreak alert (2026-11-16).
+  let syncSeq = 0;
+  const endedHere = new Set();          // break ids this page ended; never restart them
+
+  let completedBreakSeconds = 0;        // finished breaks this shift (from the server)
+  let completedIds = new Set();
+  let overtimeConfirmed = false;        // the server agreed the total is over 1h30
 
   document.addEventListener('DOMContentLoaded', function () {
     checkActiveBreak();
@@ -258,17 +287,18 @@
     }
   });
 
-  // sticky=true keeps the alert until the agent closes it (used for auto-close).
+  // sticky: true keeps the alert until closed; a number sets how long it stays (ms).
   function showAlert(message, type, sticky) {
     const container = document.getElementById('alertContainer');
     const el = document.createElement('div');
     el.className = `alert alert-${type} alert-dismissible fade show`;
     el.innerHTML = `${message}<button type="button" class="btn-close" data-bs-dismiss="alert"></button>`;
     container.appendChild(el);
-    if (!sticky) setTimeout(() => el.remove(), 5000);
+    if (sticky !== true) setTimeout(() => el.remove(), typeof sticky === 'number' ? sticky : 5000);
   }
 
   function formatTime(seconds) {
+    seconds = Math.max(0, Math.floor(seconds || 0));
     const h = Math.floor(seconds / 3600);
     const m = Math.floor((seconds % 3600) / 60);
     const s = seconds % 60;
@@ -281,15 +311,19 @@
     });
   }
 
+  function secondsSince(dateString) {
+    return Math.max(0, Math.floor((Date.now() - new Date(dateString)) / 1000));
+  }
+
   function updateTimer() {
     if (!breakStartTime) return;
-    const diff = Math.floor((Date.now() - new Date(breakStartTime)) / 1000);
-    document.getElementById('timer').textContent = formatTime(diff);
+    document.getElementById('timer').textContent = formatTime(secondsSince(breakStartTime));
     renderBreakTotals();  // local only -- completed breaks can't change mid-break
   }
 
-  function startTimer(startTime) {
+  function startTimer(startTime, id) {
     breakStartTime = startTime;
+    activeBreakId  = id || null;
     isOnBreak = true;
     // Ask for notification permission so reminders reach the agent on other tabs
     if ('Notification' in window && Notification.permission === 'default') {
@@ -302,6 +336,7 @@
     box.style.display = 'block';
     box.className = 'break-status-box active';
     document.getElementById('startTime').textContent = 'Started at ' + formatDateTime(startTime);
+    if (timerInterval) clearInterval(timerInterval);
     updateTimer();
     timerInterval = setInterval(updateTimer, 1000);
   }
@@ -309,6 +344,7 @@
   function stopTimer() {
     isOnBreak = false;
     breakStartTime = null;
+    activeBreakId = null;
     stopFlashTitle();
     sessionStorage.removeItem('warned85');
     sessionStorage.removeItem('warned89');
@@ -319,52 +355,98 @@
     btn.innerHTML = '▶ Start Break';
     document.getElementById('breakStatus').style.display = 'none';
     document.getElementById('timer').textContent = '00:00:00';
+    renderBreakTotals();
+  }
+
+  // Explain a break that ended without this page's End click, using what the
+  // server says actually happened (never assume the 2-hour cap).
+  function explainEnded(lb) {
+    if (lb && lb.auto_closed) {
+      showAlert(`<strong>Your break started at ${formatDateTime(lb.break_start)} was automatically closed at the 2-hour limit</strong> `
+                + 'and recorded as a 2:00:00 break. You do not need to end it. '
+                + 'Please remember to click End Break when you return.', 'warning', true);
+    } else if (lb) {
+      showAlert(`<strong>Your break was already ended at ${formatDateTime(lb.break_end)}</strong> `
+                + `(${formatTime(lb.duration)} recorded), probably from another tab or device. `
+                + 'No action needed. Your logs below are up to date.', 'info', true);
+    } else {
+      showAlert('Your break is no longer running. No action needed. Your logs below are up to date.', 'info', true);
+    }
   }
 
   async function checkActiveBreak() {
+    const seq = syncSeq;
     try {
       const r = await fetch('/api/break?action=check_active');
       const d = await r.json();
-      if (d.success && d.activeBreak) {
-        if (!isOnBreak) startTimer(d.activeBreak.break_start);
+      if (seq !== syncSeq || !d.success) return;   // a Start/End happened meanwhile: stale reply
+      const a = d.activeBreak;
+      if (a) {
+        if (endedHere.has(a.id)) return;           // read before our End committed
+        if (isOnBreak && activeBreakId && a.id !== activeBreakId) {
+          // Ended and restarted elsewhere: follow the server's break
+          stopTimer();
+          loadBreakLogs();
+        }
+        if (!isOnBreak) startTimer(a.break_start, a.id);
       } else if (isOnBreak) {
         // Server has no active break but the page thinks one is running →
-        // it was force-closed (2-hour cap) or ended elsewhere. Re-sync.
-        const started = breakStartTime ? formatDateTime(breakStartTime) : '';
+        // it was ended elsewhere or auto-closed. Re-sync and say which.
         stopTimer();
         loadBreakLogs();
-        showAlert(`<strong>Your break${started ? ' started at ' + started : ''} was automatically closed at the 2-hour limit</strong> `
-                  + 'and recorded as a 2:00:00 break. You do not need to end it. '
-                  + 'Please remember to click End Break when you return.', 'warning', true);
+        explainEnded(d.lastBreak);
       }
     } catch(e) { console.error(e); }
   }
 
+  function showEndedSummary(d) {
+    const total = (typeof d.total_break_time === 'number') ? d.total_break_time : completedBreakSeconds;
+    const left = MAX_BREAK - total;
+    const tail = left >= 0
+      ? `Remaining today: <strong>${formatTime(left)}</strong>.`
+      : `<strong>Over the 1:30:00 limit by ${formatTime(-left)}.</strong>`;
+    showAlert(`✅ <strong>Break ended: ${formatTime(d.duration)} recorded.</strong> `
+              + `Today's total: ${formatTime(total)} of 1:30:00. ${tail}`,
+              left >= 0 ? 'success' : 'warning', 15000);
+  }
+
   async function toggleBreak() {
     const btn = document.getElementById('breakToggle');
+    if (btn.disabled) return;
     btn.disabled = true;
+    const action = isOnBreak ? 'end' : 'start';
+    syncSeq++;
     try {
-      const action = isOnBreak ? 'end' : 'start';
       const r = await fetch('/api/break', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': getCsrfToken() },
         body: JSON.stringify({ action })
       });
       const d = await r.json();
-      if (d.success) {
-        showAlert(d.message, 'success');
-        if (action === 'start') startTimer(d.break_start);
-        else { stopTimer(); loadBreakLogs(); }
-      } else if (action === 'end') {
-        // Ending failed: most likely the server already auto-closed the break.
-        // Re-sync; if it was auto-closed this stops the timer and explains why.
-        await checkActiveBreak();
-        if (isOnBreak) showAlert(d.error || 'An error occurred', 'danger');
+      syncSeq++;   // drop any poll reply that was in flight during the click
+      if (d.success && action === 'start') {
+        startTimer(d.break_start, d.log_id);
+        showAlert('Break started.', 'success');
+      } else if (d.success) {
+        if (d.break_id) endedHere.add(d.break_id);
+        stopTimer();
+        await loadBreakLogs();
+        showEndedSummary(d);
+      } else if (d.already_ended) {
+        // End clicked but the break had already ended: not an error for the agent.
+        stopTimer();
+        loadBreakLogs();
+        explainEnded(d.lastBreak);
       } else {
-        showAlert(d.error || 'An error occurred', 'danger');
+        await checkActiveBreak();
+        if (action === 'start' && isOnBreak) {
+          showAlert(`Your break is already running (started at ${formatDateTime(breakStartTime)}).`, 'info');
+        } else {
+          showAlert(d.error || 'An error occurred', 'danger');
+        }
       }
     } catch(e) {
-      showAlert('Network error occurred', 'danger');
+      showAlert('Network error occurred. Please check your connection and try again.', 'danger');
     } finally {
       btn.disabled = false;
     }
@@ -374,14 +456,15 @@
     try {
       const r = await fetch('/api/break?action=get_logs');
       const d = await r.json();
-      const tbody   = document.getElementById('breakLogsTable');
+      const tbody = document.getElementById('breakLogsTable');
 
       if (d.success) {
-        if (d.breaks && d.breaks.length > 0) {
-          tbody.innerHTML = d.breaks.map(log => `
+        const breaks = d.breaks || [];
+        if (breaks.length > 0) {
+          tbody.innerHTML = breaks.map(log => `
             <tr>
               <td>${formatDateTime(log.break_start)}</td>
-              <td>${formatDateTime(log.break_end)}</td>
+              <td>${formatDateTime(log.break_end)}${log.auto_closed ? '<span class="auto-tag" title="Closed by the system at the 2-hour limit">auto-closed</span>' : ''}</td>
               <td><span class="dur-badge">${formatTime(log.duration)}</span></td>
             </tr>
           `).join('');
@@ -390,52 +473,117 @@
         }
 
         completedBreakSeconds = d.total_break_time || 0;
+        completedIds = new Set(breaks.map(b => b.id));
         renderBreakTotals();
       }
     } catch(e) { console.error(e); }
   }
 
+  // If the running break also shows up as finished, the page is out of sync:
+  // don't count it twice, re-sync instead (at most every 10s).
+  let lastResync = 0;
+  function resyncSoon() {
+    if (Date.now() - lastResync < 10000) return;
+    lastResync = Date.now();
+    checkActiveBreak();
+    loadBreakLogs();
+  }
+
   // Total = completed breaks (from the last get_logs) + the running break.
   // Called every second by updateTimer without hitting the server.
-  let completedBreakSeconds = 0;
+  function currentTotal() {
+    let total = completedBreakSeconds;
+    if (isOnBreak && breakStartTime) {
+      if (activeBreakId && completedIds.has(activeBreakId)) resyncSoon();
+      else total += secondsSince(breakStartTime);
+    }
+    return total;
+  }
+
+  // Before any break alert, ask the server for the real total. A page that is
+  // out of sync then re-syncs instead of warning an agent who isn't over.
+  const verifyState = {};
+  async function verifyThen(key, threshold, onConfirmed) {
+    const st = verifyState[key] || (verifyState[key] = { busy: false, last: 0 });
+    if (st.busy || Date.now() - st.last < 30000) return;
+    st.busy = true; st.last = Date.now();
+    try {
+      const [a, l] = await Promise.all([
+        fetch('/api/break?action=check_active').then(r => r.json()),
+        fetch('/api/break?action=get_logs').then(r => r.json()),
+      ]);
+      if (!a.success || !l.success) return;
+      const ids = new Set((l.breaks || []).map(b => b.id));
+      let total = l.total_break_time || 0;
+      const act = a.activeBreak;
+      if (act && !ids.has(act.id)) total += secondsSince(act.break_start);
+      if (total >= threshold) onConfirmed(total, !!act);
+      else resyncSoon();
+    } catch(e) { console.error(e); }
+    finally { st.busy = false; }
+  }
+
+  function renderRemaining(total) {
+    const el = document.getElementById('remainingTime');
+    const left = MAX_BREAK - total;
+    if (left >= 0) {
+      el.textContent = 'Remaining: ' + formatTime(left);
+      el.className = 'remaining-label ' + (left <= 10 * 60 ? 'low' : 'ok');
+    } else if (overtimeConfirmed) {
+      el.textContent = 'Over by ' + formatTime(-left);
+      el.className = 'remaining-label over';
+    } else {
+      el.textContent = 'Remaining: checking…';
+      el.className = 'remaining-label low';
+    }
+  }
+
   function renderBreakTotals() {
     const totalEl = document.getElementById('totalBreakTime');
     const otAlert = document.getElementById('overtimeAlert');
-    let total = completedBreakSeconds;
-    if (isOnBreak && breakStartTime) {
-      total += Math.floor((Date.now() - new Date(breakStartTime)) / 1000);
-    }
+    const total = currentTotal();
     totalEl.textContent = 'Total: ' + formatTime(total);
 
     if (isOnBreak) {
       if (total >= 85 * 60 && total < 89 * 60 && !sessionStorage.getItem('warned85')) {
-        sessionStorage.setItem('warned85', 'true');
-        showAlert('⏰ Your total break time today is almost 1 hour 30 minutes. Please end your break soon.', 'warning');
-        showBreakNotification('⏰ Break Reminder', "You're almost at your 1 hour 30 minute break limit. Please end your break soon.");
-        playBreakSound();
-        flashTitle('⏰ END YOUR BREAK');
+        verifyThen('warned85', 85 * 60, (t, onBreak) => {
+          if (!onBreak || sessionStorage.getItem('warned85')) return;
+          sessionStorage.setItem('warned85', 'true');
+          showAlert('⏰ Your total break time today is almost 1 hour 30 minutes. Please end your break soon.', 'warning');
+          showBreakNotification('⏰ Break Reminder', "You're almost at your 1 hour 30 minute break limit. Please end your break soon.");
+          playBreakSound();
+          flashTitle('⏰ END YOUR BREAK');
+        });
       }
-      if (total >= 89 * 60 && total < 90 * 60 && !sessionStorage.getItem('warned89')) {
-        sessionStorage.setItem('warned89', 'true');
-        showAlert('⚠️ You are about to reach your 1 hour 30 minute break limit. Please end it now.', 'danger');
-        showBreakNotification('⚠️ Break Limit', 'You are about to reach your 1 hour 30 minute break limit. Please end it now.');
-        playBreakSound();
-        flashTitle('⏰ END YOUR BREAK');
+      if (total >= 89 * 60 && total < MAX_BREAK && !sessionStorage.getItem('warned89')) {
+        verifyThen('warned89', 89 * 60, (t, onBreak) => {
+          if (!onBreak || sessionStorage.getItem('warned89')) return;
+          sessionStorage.setItem('warned89', 'true');
+          showAlert('⚠️ You are about to reach your 1 hour 30 minute break limit. Please end it now.', 'danger');
+          showBreakNotification('⚠️ Break Limit', 'You are about to reach your 1 hour 30 minute break limit. Please end it now.');
+          playBreakSound();
+          flashTitle('⏰ END YOUR BREAK');
+        });
       }
     }
 
-    const MAX = 90 * 60;
-    if (total > MAX) {
-      totalEl.classList.add('overtime');
-      otAlert.style.display = 'block';
-      if (!sessionStorage.getItem('overtimeNotified')) {
-        showOvertimeNotification(total);
-        sessionStorage.setItem('overtimeNotified', 'true');
+    if (total > MAX_BREAK) {
+      if (!overtimeConfirmed) {
+        verifyThen('overtime', MAX_BREAK + 1, (t) => {
+          overtimeConfirmed = true;
+          if (!sessionStorage.getItem('overtimeNotified')) {
+            sessionStorage.setItem('overtimeNotified', 'true');
+            showOvertimeNotification(t);
+          }
+        });
       }
     } else {
-      totalEl.classList.remove('overtime');
-      otAlert.style.display = 'none';
+      overtimeConfirmed = false;
     }
+    const over = overtimeConfirmed && total > MAX_BREAK;
+    totalEl.classList.toggle('overtime', over);
+    otAlert.style.display = over ? 'block' : 'none';
+    renderRemaining(total);
   }
 
   function showBreakNotification(title, body) {
