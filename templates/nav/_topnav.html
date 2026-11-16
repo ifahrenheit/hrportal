@@ -886,6 +886,8 @@
           <i data-lucide="settings"></i> Settings</a>
         <a class="tn-item {% if EP == 'admin_holidays' %}active{% endif %}" href="{{ url_for('admin_holidays') }}" data-k="holidays">
           <i data-lucide="calendar-x-2"></i> Holidays</a>
+        <a class="tn-item {% if EP == 'break_log.break_log_access' %}active{% endif %}" href="{{ url_for('break_log.break_log_access') }}" data-k="break log access groups monitoring overbreak">
+          <i data-lucide="coffee"></i> Break Log Access</a>
         {% endif %}
         {% if ADMIN or P.get('can_work_mode') %}
         <a class="tn-item {% if EP == 'admin_emp_settings' %}active{% endif %}" href="{{ url_for('admin_emp_settings') }}" data-k="work mode 4 day 5 day">
@@ -1130,12 +1132,13 @@
   <a class="tn-subtab {% if EP == 'admin_tickets' %}active{% endif %}" href="{{ url_for('admin_tickets') }}">Ticket Queue</a>
   {% endif %}
 </div></div>
-{% elif EP in ['admin_settings', 'admin_holidays', 'admin_leave_types', 'admin_entitlements', 'admin_emp_settings', 'entitlements_audit.can_entitlements_audit'] %}
+{% elif EP in ['admin_settings', 'admin_holidays', 'break_log.break_log_access', 'admin_leave_types', 'admin_entitlements', 'admin_emp_settings', 'entitlements_audit.can_entitlements_audit'] %}
 <div class="tn-subnav"><div class="tn-subnav-inner">
   <span class="tn-subnav-label">Settings</span>
   {% if ADMIN or P.get('can_settings') %}
   <a class="tn-subtab {% if EP == 'admin_settings' %}active{% endif %}" href="{{ url_for('admin_settings') }}">Settings</a>
   <a class="tn-subtab {% if EP == 'admin_holidays' %}active{% endif %}" href="{{ url_for('admin_holidays') }}">Holidays</a>
+  <a class="tn-subtab {% if EP == 'break_log.break_log_access' %}active{% endif %}" href="{{ url_for('break_log.break_log_access') }}">Break Log Access</a>
   {% endif %}
   {% if ADMIN or P.get('can_entitlements') %}
   <a class="tn-subtab {% if EP == 'admin_leave_types' %}active{% endif %}" href="{{ url_for('admin_leave_types') }}">Leave Types</a>

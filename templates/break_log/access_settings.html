@@ -1,0 +1,143 @@
+{% extends 'base.html' %}
+{% block title %}Break Log Access{% endblock %}
+{% block page_title %}Break Log Access{% endblock %}
+{% block content %}
+<div class="card p-4 mb-4">
+  <p class="text-muted small mb-3">
+    Choose per account and group who can use Break Log. Changes apply right away, and nobody has to log out.
+    Admins, supervisors and sub-admins with the Overbreak permission can always monitor.
+    Groups that aren't listed here yet, or are marked <span class="bla-new">New</span>, have everything off.
+  </p>
+  <ul class="small text-muted mb-3 ps-3">
+    <li><b>Log breaks</b>: can open Break Log and clock their own breaks. Their breaks show in Break Monitoring.</li>
+    <li><b>Monitor</b>: can open Break Monitoring and Overbreak Review.</li>
+    <li><b>Overbreak Review</b>: their overbreaks show in the portal's Overbreak Review, where supervisors create or waive IRs.
+      Set the <b>from</b> date to start on a given day; leave it blank for "always".
+      This does <b>not</b> turn off the overbreak sheet: groups in the sheet (GYG) still get their automatic IRs. Overbreak Review shows
+      the IR already filed for that agent and date, so the reviewer waives it ("Covered by IR-…") instead of filing a second one.</li>
+  </ul>
+
+  <form method="POST" action="{{ url_for('break_log.break_log_access_save') }}" id="blaForm">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <input type="hidden" name="n" value="{{ rows|length }}">
+    <div class="table-responsive">
+      <table class="table table-sm align-middle bla-table">
+        <thead>
+          <tr>
+            <th>Account</th>
+            <th>Group</th>
+            <th class="text-end">Employees</th>
+            {% for f in fields %}<th class="text-center">{{ labels[f] }}</th>{% endfor %}
+          </tr>
+        </thead>
+        <tbody>
+          {% for r in rows %}
+          {% set i = loop.index0 %}
+          <tr class="{{ 'bla-row-new' if r.is_new }}">
+            <td>
+              <input type="hidden" name="acc_{{ i }}" value="{{ r.account }}">
+              {{ r.account or '(blank)' }}
+            </td>
+            <td>
+              <input type="hidden" name="grp_{{ i }}" value="{{ r.group_name }}">
+              {{ r.group_name or '(blank)' }}
+              {% if r.is_new %}<span class="bla-new">New</span>{% endif %}
+            </td>
+            <td class="text-end text-muted">{{ r.employees }}</td>
+            {% for f in fields %}
+            <td class="text-center">
+              <input type="checkbox" class="form-check-input" name="{{ f }}_{{ i }}"
+                     {% if r[f] %}checked{% endif %}
+                     {% if f == 'overbreak_review' and r.from_sheet %}data-sheet="1" data-label="{{ r.account }} / {{ r.group_name }}"{% endif %}>
+              {% if f == 'overbreak_review' %}
+              <div class="bla-from">
+                <label>from</label>
+                <input type="date" class="form-control form-control-sm" name="obfrom_{{ i }}"
+                       value="{{ r.overbreak_review_from.isoformat() if r.overbreak_review_from else '' }}"
+                       data-orig="{{ r.overbreak_review_from.isoformat() if r.overbreak_review_from else '' }}">
+              </div>
+              {% if r.from_sheet %}
+              <div class="bla-sheet" title="This group had overbreaks from the overbreak sheet in the last {{ lookback }} days. The sheet keeps filing those IRs automatically; Overbreak Review shows them next to each overbreak.">
+                {% if r.overbreak_review %}+ sheet auto IR{% else %}IRs come from the sheet{% endif %}
+              </div>
+              {% endif %}
+              {% endif %}
+            </td>
+            {% endfor %}
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <div class="d-flex justify-content-end">
+      <button type="submit" class="btn btn-primary btn-sm"><i data-lucide="save"></i> Save changes</button>
+    </div>
+  </form>
+</div>
+
+<div class="card p-4">
+  <h6 class="fw-semibold mb-2">Change history</h6>
+  {% if log %}
+  <div class="table-responsive">
+    <table class="table table-sm small mb-0">
+      <thead><tr><th>When</th><th>By</th><th>Account / group</th><th>Setting</th><th>Change</th></tr></thead>
+      <tbody>
+        {% for e in log %}
+        <tr>
+          <td class="text-nowrap">{{ e.created_at.strftime('%b %d, %Y %I:%M %p') }}</td>
+          <td>{{ e.actor_name or e.actor_id }}</td>
+          <td>{{ e.account or '(blank)' }} / {{ e.group_name or '(blank)' }}</td>
+          <td>{{ labels.get(e.field, e.field) }}</td>
+          <td>
+            {% if e.field == 'overbreak_review_from' %}
+              {{ e.old_text or '(none)' }} → <b>{{ e.new_text or '(none)' }}</b>
+            {% elif e.new_value %}<span class="bla-on">turned on</span>{% else %}<span class="bla-off">turned off</span>{% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p class="text-muted small mb-0">No changes yet. The starting values match the rules that were hard-coded before this page existed.</p>
+  {% endif %}
+</div>
+
+<style>
+  .bla-table th { font-size:12px; text-transform:uppercase; letter-spacing:.03em; color:var(--text-muted); }
+  .bla-table .form-check-input { width:1.15em; height:1.15em; cursor:pointer; }
+  .bla-new { font-size:10px; font-weight:700; padding:1px 7px; border-radius:999px; margin-left:4px;
+             background:rgba(245,158,11,.15); border:1px solid rgba(245,158,11,.45); }
+  .bla-row-new td { background:rgba(245,158,11,.05); }
+  .bla-from { display:flex; align-items:center; gap:4px; justify-content:center; margin-top:4px; }
+  .bla-from label { font-size:10px; color:var(--text-muted); }
+  .bla-from input { width:140px; font-size:12px; padding:2px 6px; }
+  .bla-sheet { font-size:10px; color:var(--warning, #b45309); margin-top:2px; cursor:help; }
+  .bla-on { color:var(--success, #16a34a); font-weight:600; }
+  .bla-off { color:var(--danger, #dc2626); font-weight:600; }
+</style>
+{% endblock %}
+
+{% block scripts %}
+<script>
+var TODAY = '{{ today }}';
+document.getElementById('blaForm').addEventListener('submit', function (e) {
+  var switching = [];
+  this.querySelectorAll('input[data-sheet="1"]').forEach(function (b) {
+    if (!b.checked) return;
+    var d = b.closest('td').querySelector('input[type="date"]');
+    if (!d.value) d.value = TODAY;            // sheet groups always get a start date
+    if (!b.defaultChecked || d.value !== d.dataset.orig) {
+      switching.push('• ' + b.dataset.label + ' from ' + d.value);
+    }
+  });
+  if (!switching.length) return;
+  if (!confirm('Add these groups to the portal Overbreak Review?\n\n' +
+               switching.join('\n') +
+               '\n\nThe overbreak sheet keeps filing its automatic IRs for them. In Overbreak Review a supervisor ' +
+               'waives overbreaks that already have an IR ("Covered by IR-…") and creates or waives the rest.')) {
+    e.preventDefault();
+  }
+});
+</script>
+{% endblock %}

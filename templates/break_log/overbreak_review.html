@@ -35,6 +35,8 @@
   .brk-outside td{opacity:.7}
   .pill-ir{background:#fdecec;color:#c0392b}
   .pill-waived{background:#e6f4ea;color:#1e7e34}
+  .pill-hasir{background:#eef2ff;color:#3730a3;border:1px solid #c7d2fe;text-decoration:none;margin-top:2px}
+  .pill-sheet{background:#f3f4f6;color:#4b5563;border:1px dashed #9ca3af;cursor:help;margin-top:2px}
 
   .obr-btn{border:0;border-radius:8px;padding:7px 16px;font-weight:600;font-size:13px;cursor:pointer}
   .btn-ir{background:#dc3545;color:#fff}
@@ -78,6 +80,8 @@
   [data-theme="dark"] .pill-cycle,
   [data-theme="dark"] .pill-ir     { background: #3b1219; color: #fca5a5; }
   [data-theme="dark"] .pill-auto   { background: #422006; color: #fbbf24; }
+  [data-theme="dark"] .pill-hasir  { background: #312e81; color: #c7d2fe; border-color: #4338ca; }
+  [data-theme="dark"] .pill-sheet  { background: #1f2937; color: #d1d5db; border-color: #4b5563; }
   [data-theme="dark"] .pill-waived { background: #022c22; color: #34d399; }
 </style>
 
@@ -181,7 +185,23 @@ async function loadData() {
     data.reviewed.filter(r => r.status === 'waived').length;
 }
 
+// IRs already on file for the same agent + date (e.g. the overbreak sheet's
+// automatic IR for GYG). Shown so the reviewer waives instead of filing twice.
+let PENDING = {};
+function esc(s) { const d = document.createElement('div'); d.textContent = s == null ? '' : String(s); return d.innerHTML; }
+function irLinks(r) {
+  const irs = r.existing_irs || [];
+  let out = irs.map(ir => `<a class="pill pill-hasir" href="/incident-reports/${encodeURIComponent(ir.report_number)}" target="_blank"
+      title="${ir.auto ? 'Filed automatically from the overbreak sheet' : 'Filed by ' + esc(ir.filed_by)} · ${esc(ir.status)}">📄 ${esc(ir.report_number)}${ir.auto ? ' (auto)' : ''}</a>`).join(' ');
+  if (!irs.length && r.in_sheet) {
+    out += `<span class="pill pill-sheet" title="This overbreak is also in the overbreak sheet. The sheet files an IR automatically if its rules are met (3 overbreaks in a cycle, 2 totalling over 3.5 h, or one over 2 h). No IR yet.">In sheet · no IR yet</span>`;
+  }
+  return out;
+}
+
 function renderPending(rows) {
+  PENDING = {};
+  rows.forEach(r => { PENDING[`${r.employee_id}|${r.shift_date}`] = r; });
   const box = document.getElementById('obr-pending');
   if (!rows.length) {
     box.innerHTML = '<tr><td colspan="8" class="obr-empty">✅ No pending overbreaks</td></tr>';
@@ -198,6 +218,7 @@ function renderPending(rows) {
       <td>
         ${r.cycle_days >= 3 ? `<span class="pill pill-cycle">🔁 ${nth(r.nth_in_cycle)} this cycle</span> ` : ''}
         ${r.has_auto_closed ? '<span class="pill pill-auto">⚠️ auto-closed</span>' : ''}
+        ${irLinks(r)}
       </td>
       <td style="text-align:right;white-space:nowrap">
         <button class="obr-btn btn-detail" id="chev-${r.employee_id}-${r.shift_date}" onclick="toggleDetail('${r.employee_id}','${r.shift_date}')" title="Show breaks">›</button>
@@ -267,12 +288,17 @@ async function toggleDetail(eid, sdate) {
 
 async function review(eid, sdate, action) {
   let reason = '';
+  const irs = ((PENDING[`${eid}|${sdate}`] || {}).existing_irs || []).map(i => i.report_number);
   if (action === 'waive') {
-    reason = prompt('Waive reason (e.g. "Posted on Slack, forgot to end on web"):');
+    reason = prompt('Waive reason (e.g. "Posted on Slack, forgot to end on web"):',
+                    irs.length ? `Covered by ${irs.join(', ')}` : '');
     if (reason === null) return;
     if (!reason.trim()) { showMsg('Waive reason is required', false); return; }
   } else {
-    if (!confirm('Create an Incident Report for this overbreak?\nThis will notify HR.')) return;
+    const msg = irs.length
+      ? `This overbreak already has an IR: ${irs.join(', ')}.\n\nCreate ANOTHER Incident Report anyway?\nUsually you should Waive with "Covered by ${irs[0]}" instead.`
+      : 'Create an Incident Report for this overbreak?\nThis will notify HR.';
+    if (!confirm(msg)) return;
   }
   const res = await fetch('/api/supervisor/overbreaks/review', {
     method: 'POST',

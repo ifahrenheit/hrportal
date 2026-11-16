@@ -193,19 +193,20 @@ def login_required(f):
     return decorated
 
 
-OVERHEAD_GROUPS = {'Finest', 'RTA', 'QA', 'IT', 'TL', 'Trainer', 'BO TL'}
+# Who may log / monitor / appear in Overbreak Review is set per account + group on
+# Admin -> Break Log Access (break_log_group_access, see break_log/access.py).
+from break_log import access as bl_access
 
 def _has_supervisor_access():
-    """Admin/supervisor, the can_overbreak permission, or overhead group (RTA, QA, etc.).
-    Group lookup is cached in session to avoid a DB hit on every page render."""
+    """Admin/supervisor, the can_overbreak permission, or a group with Monitor
+    ticked on the Break Log Access page."""
     if 'user' not in session:
         return False
     # Sub-admins need the Overbreak permission (previously any sub-admin got in)
     if (session.get('is_admin') or session.get('is_supervisor')
             or session.get('permissions', {}).get('can_overbreak')):
         return True
-    return _cached_for_user('bl_is_overhead',
-                            lambda emp: bool(emp and emp.get('group_name') in OVERHEAD_GROUPS))
+    return bl_access.allowed(_session_emp(), 'can_monitor')
 
 def supervisor_required(f):
     @wraps(f)
@@ -222,29 +223,35 @@ def _inject_break_log_access():
     return {'break_log_supervisor_access': _has_supervisor_access,
             'break_log_user_access': _has_break_log_access}
 
-BREAK_LOG_ACCOUNTS = ('Arctic', 'Numa', 'Test')
+def _break_log_eligible(emp):
+    """emp is a gsheet_employees row (account, group_name) or None."""
+    return bl_access.allowed(emp, 'can_log')
 
-def _cached_for_user(key, decide):
-    """Per-session cache of an access answer, tied to the email it was worked
-    out for. Login As swaps session['user'] without clearing other keys, so an
-    unkeyed cache would keep the admin's answer while viewing as someone else."""
+def _session_emp():
+    """The user's account/group, cached in session to avoid a DB hit on every
+    page render. Keyed by email: Login As swaps session['user'] without clearing
+    other keys. Rules themselves are not cached here, so a change on the access
+    page applies without logging out."""
     email = (session['user'].get('email') or '').lower()
-    cached = session.get(key)
+    cached = session.get('bl_emp')
     if isinstance(cached, dict) and cached.get('email') == email:
-        return cached['ok']
+        return cached['emp']
     try:
-        ok = decide(_get_employee_id(email))
+        row = _get_employee_id(email)
     except Exception:
-        return False
-    session[key] = {'email': email, 'ok': ok}
-    return ok
+        return None
+    # Plain strings only: the session is serialized to a cookie.
+    _s = lambda v: v if isinstance(v, str) else None
+    emp = ({'account': _s(row.get('account')), 'group_name': _s(row.get('group_name'))}
+           if isinstance(row, dict) else None)
+    session['bl_emp'] = {'email': email, 'emp': emp}
+    return emp
 
 def _has_break_log_access():
-    """Same account rule as the /break-log page itself, for showing its links."""
+    """Same rule as the /break-log page itself, for showing its links."""
     if 'user' not in session:
         return False
-    return _cached_for_user('bl_account_ok',
-                            lambda emp: bool(emp and emp.get('account') in BREAK_LOG_ACCOUNTS))
+    return _break_log_eligible(_session_emp())
 
 def _get_employee_id(email):
     """Resolve employee_id from gsheet_employees using email."""
@@ -278,9 +285,10 @@ def break_log():
     email = session['user'].get('email', '')
     emp = _get_employee_id(email)
 
-    if not emp or emp['account'] not in BREAK_LOG_ACCOUNTS:
+    if not _break_log_eligible(emp):
         return render_template('break_log/access_denied.html',
-                               account_type=emp['account'] if emp else 'Unknown'), 403
+                               account_type=(emp['account'] if emp else None) or 'Unknown',
+                               group_name=(emp.get('group_name') if emp else None) or 'Unknown'), 403
 
     employee_id = emp['employee_id']
     db = get_central_db()
@@ -328,6 +336,8 @@ def break_api():
         emp = _get_employee_id(email)
         if not emp:
             return jsonify({'success': False, 'error': 'Employee not found'})
+        if not _break_log_eligible(emp):
+            return jsonify({'success': False, 'error': 'Break Log is not enabled for your account'}), 403
         employee_id = emp['employee_id']
 
         # Self-heal: force-close any abandoned breaks before processing
@@ -508,16 +518,21 @@ def supervisor_break_logs():
                 FROM central_db.Employees e
                 INNER JOIN gsheet_employees g
                   ON e.EmployeeID COLLATE utf8mb4_unicode_ci = g.employee_id
-                WHERE g.account IN ('Arctic', 'Numa', 'GYG')
-                  AND g.status = 'Active'
+                INNER JOIN break_log_group_access a
+                  ON a.account = TRIM(COALESCE(g.account, ''))
+                 AND a.group_name = TRIM(COALESCE(g.group_name, ''))
+                 AND a.can_log = 1
+                WHERE g.status = 'Active'
                 ORDER BY g.account, name
             """)
             agents_list = c.fetchall()
     finally:
         db.close()
 
+    log_accounts = sorted({acc for acc, _ in bl_access.pairs_with('can_log') if acc})
     return render_template('break_log/supervisor.html',
                            agents_list=agents_list,
+                           log_accounts=log_accounts,
                            filter_date=filter_date)
 
 
@@ -680,7 +695,85 @@ def supervisor_api():
 # ─────────────────────────────────────────────────────────────────────────────
 OVERBREAK_LIMIT_MIN = 90
 OVERBREAK_LIMIT_SEC = OVERBREAK_LIMIT_MIN * 60   # duration column is stored in SECONDS
-OVERBREAK_ACCOUNTS = ('Numa', 'Arctic')
+# Which breaks feed this review: the "Overbreak Review" tick per account + group
+# on Admin -> Break Log Access, from its "from" date (NULL = always). This does
+# NOT stop the overbreak sheet: overbreak_notify.py keeps filing its automatic
+# IRs (GYG), so each pending row lists any IR already on file for that agent and
+# date (_attach_existing_irs) and the reviewer waives instead of filing twice.
+# Alias bl = break_logs.
+OVERBREAK_SCOPE_SQL = """
+    EXISTS (SELECT 1 FROM gsheet_employees g
+            JOIN break_log_group_access a
+              ON a.account = TRIM(COALESCE(g.account, ''))
+             AND a.group_name = TRIM(COALESCE(g.group_name, ''))
+            WHERE g.employee_id = bl.employee_id
+              AND a.overbreak_review = 1
+              AND (a.overbreak_review_from IS NULL OR bl.shift_date >= a.overbreak_review_from))
+"""
+
+
+def _us_date(d):
+    """M/D/YYYY, the date style overbreak_notify.py writes in IR summaries."""
+    return f"{d.month}/{d.day}/{d.year}"
+
+
+# Rule 1/2 sheet IRs are dated on the triggering overbreak but list every
+# overbreak in the cycle, so look this many days past a shift for them.
+IR_MATCH_WINDOW_DAYS = 20
+
+
+def _attach_existing_irs(c, rows):
+    """Add to each pending overbreak row:
+      existing_irs: overbreak IRs (summary mentions "break") already on file for
+                    that agent + shift date: dated that day, or an automatic
+                    overbreak-sheet IR whose summary table lists that date.
+                    Tardiness / absence IRs on the same day are ignored.
+      in_sheet:     the overbreak sheet has a row for that agent + date, so its
+                    automatic IR rules (3 instances / pair > 3.5 h / single > 2 h)
+                    apply.
+    """
+    for r in rows:
+        r['existing_irs'] = []
+        r['in_sheet'] = False
+    if not rows:
+        return
+    emp_ids = sorted({r['employee_id'] for r in rows})
+    lo = min(r['shift_date'] for r in rows)
+    hi = max(r['shift_date'] for r in rows) + timedelta(days=IR_MATCH_WINDOW_DAYS)
+    ph = ','.join(['%s'] * len(emp_ids))
+
+    c.execute(f"""SELECT report_number, employee_id, incident_date, status,
+                         submitted_by_id, submitted_by_name, summary
+                  FROM incident_reports
+                  WHERE employee_id IN ({ph}) AND incident_date BETWEEN %s AND %s
+                  ORDER BY incident_date, id""", (*emp_ids, lo, hi))
+    irs = c.fetchall()
+
+    c.execute(f"""SELECT DISTINCT employee_id, record_date FROM overbreak_records
+                  WHERE employee_id IN ({ph}) AND record_date BETWEEN %s AND %s""",
+              (*emp_ids, lo, hi))
+    sheet = {(s['employee_id'], s['record_date']) for s in c.fetchall()}
+
+    for r in rows:
+        d = r['shift_date']
+        r['in_sheet'] = (r['employee_id'], d) in sheet
+        needle = '\n' + _us_date(d) + ' '
+        for ir in irs:
+            summary = ir['summary'] or ''
+            if ir['employee_id'] != r['employee_id'] or 'break' not in summary.lower():
+                continue
+            same_day = ir['incident_date'] == d
+            auto = (ir['submitted_by_id'] == 'SYSTEM'
+                    and d <= ir['incident_date'] <= d + timedelta(days=IR_MATCH_WINDOW_DAYS)
+                    and needle in summary)
+            if same_day or auto:
+                r['existing_irs'].append({
+                    'report_number': ir['report_number'],
+                    'status': ir['status'],
+                    'auto': ir['submitted_by_id'] == 'SYSTEM',
+                    'filed_by': ir['submitted_by_name'],
+                    'incident_date': ir['incident_date'].strftime('%Y-%m-%d'),
+                })
 
 
 @break_log_bp.route('/overbreak-review')
@@ -751,7 +844,7 @@ def overbreaks_api():
                                CAST(ROUND(SUM(bl.duration)/60) - %s AS SIGNED) AS overbreak_minutes,
                                MAX(bl.auto_closed) AS has_auto_closed
                         FROM break_logs bl
-                        WHERE bl.account_type IN %s
+                        WHERE """ + OVERBREAK_SCOPE_SQL + """
                           AND bl.break_end IS NOT NULL
                           AND bl.shift_date BETWEEN %s AND %s
                         GROUP BY bl.employee_id, bl.employee_name, bl.account_type, bl.shift_date
@@ -768,10 +861,12 @@ def overbreaks_api():
                   AND p.shift_date BETWEEN %s AND %s
                   AND (p.overbreak_minutes >= 31 OR p.cycle_days >= 3)
                 ORDER BY p.shift_date DESC, p.employee_name
-            """, (OVERBREAK_LIMIT_MIN, OVERBREAK_ACCOUNTS,
+            """, (OVERBREAK_LIMIT_MIN,
                   data_start, data_end, OVERBREAK_LIMIT_SEC,
                   disp_start, disp_end))
-            pending = [_serialize_row(r) for r in c.fetchall()]
+            raw = c.fetchall()
+            _attach_existing_irs(c, raw)
+            pending = [_serialize_row(r) for r in raw]
 
             c.execute("""
                 SELECT employee_id, employee_name, account_type, shift_date,
@@ -924,3 +1019,7 @@ def overbreak_review_action():
         return jsonify(success=False, error='Server error'), 500
     finally:
         db.close()
+
+
+# Admin -> Break Log Access page (registers its routes on break_log_bp)
+from break_log import settings as _bl_settings  # noqa: E402,F401

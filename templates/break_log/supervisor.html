@@ -304,9 +304,9 @@
         <label>Account</label>
         <select name="account" id="accountFilter" class="form-select form-select-sm">
           <option value="all"   {{ 'selected' if request.args.get('account','all')=='all' }}>All</option>
-          <option value="Arctic"{{ 'selected' if request.args.get('account')=='Arctic' }}>Arctic</option>
-          <option value="Numa"  {{ 'selected' if request.args.get('account')=='Numa' }}>Numa</option>
-          <option value="GYG"   {{ 'selected' if request.args.get('account')=='GYG' }}>GYG</option>
+          {% for acc in log_accounts %}
+          <option value="{{ acc }}" {{ 'selected' if request.args.get('account')==acc }}>{{ acc }}</option>
+          {% endfor %}
         </select>
       </div>
 

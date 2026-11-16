@@ -537,6 +537,9 @@
         <a class="nav-link {% if request.endpoint == 'admin_holidays' %}active{% endif %}" href="{{ url_for('admin_holidays') }}">
           <i data-lucide="calendar-x-2"></i> <span class="nav-label">Holidays</span>
         </a>
+        <a class="nav-link {% if request.endpoint == 'break_log.break_log_access' %}active{% endif %}" href="{{ url_for('break_log.break_log_access') }}">
+          <i data-lucide="coffee"></i> <span class="nav-label">Break Log Access</span>
+        </a>
         {% endif %}
         {% if session.get('is_admin') or session.get('permissions', {}).get('can_work_mode') %}
         <a class="nav-link {% if request.endpoint == 'admin_emp_settings' %}active{% endif %}" href="{{ url_for('admin_emp_settings') }}">
