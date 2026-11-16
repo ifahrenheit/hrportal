@@ -8,6 +8,34 @@
 
 ---
 
+## 2026-11-16 — Break Log: false "119 minutes" overbreak alert fixed (page race)
+Commit: `04f7eec` (changes uncommitted) · Branch: `main`
+
+### What happened
+- Jessa Barcastigue (230306-37) got a "Break Time Exceeded, 119 minutes" browser notification at 01:06 on 2026-11-16 with only 59:41 used. Then a banner wrongly said her break was "automatically closed at the 2-hour limit".
+- Cause: a `check_active` poll (fired when she returned to the tab) was read by the server just before her End click committed, and its reply arrived after the page had stopped the timer. The page restarted the ended break, so completed (59:41) + "running" (59:41) = 119 min. Her next End click failed (`END FAIL` 01:06:22) and the page assumed the 2-hour cap. Her click after that created a 3-second break (id 7426 is real; **7432 is the 3s artifact**, left in place). Server data and `overbreak_notify.py` were never affected (shift total 59:44).
+
+### What was built / changed
+- `templates/break_log/break_log.html` (script rewritten):
+  - `syncSeq` drops poll replies that were sent before a Start/End click; `endedHere` never restarts a break this page ended; if the running break also appears in the completed list, it isn't counted twice and the page re-syncs.
+  - 85/89-minute warnings and the overtime alert/notification now fire only after `verifyThen()` re-reads check_active + get_logs from the server.
+  - End shows "Break ended: mm:ss recorded. Today's total … Remaining …" (15 s). A **Remaining / Over by** label sits under Total. Auto-closed rows are tagged in the logs table.
+  - The ended-elsewhere banner now uses the server's `lastBreak.auto_closed`: it says "2-hour limit" only when true, otherwise "already ended at HH:MM (mm:ss recorded), no action needed".
+- `break_log/routes.py`:
+  - `_last_ended_break()` helper. `check_active` returns `lastBreak` when there's no active break. A failed End returns `already_ended` + `lastBreak`. A successful End returns `break_id` + the shift `total_break_time`. `get_logs` returns `auto_closed`.
+  - Start/End timestamps are whole seconds, which fixes stored `duration` being 1 s off the table.
+- Backups: `*.bak.20261116205022` for both files.
+
+### How to verify
+- Race reproduced in a Node harness with mocked fetch: the old page gives the exact "119 minutes" notification, the new page doesn't, and a genuine 95-minute break still alerts. Test suite: same 3 pre-existing failures. Service restarted clean 2026-11-16 ~20:55.
+
+### Open items / next steps
+- [ ] Watch for agent reports. `grep "END FAIL" break_log.log` should drop now that the page re-syncs instead of showing End.
+- [ ] Optional: delete row 7432 (3 s, 230306-37), pending user OK.
+- [ ] Commit break_log changes together with the uncommitted Break Log Access work below.
+
+---
+
 ## 2026-11-12 — Requirements page: completion filters + counts; earlier work committed
 Commit: `f894c1f` · Branch: `main` (pushed; commits `4948352`..`f894c1f`)
 
@@ -29,6 +57,18 @@ Commit: `f894c1f` · Branch: `main` (pushed; commits `4948352`..`f894c1f`)
 - Filer (or admin) can Remove (soft: hidden, row + file kept, reason required) and Add files on the IR page; comment authors can Remove their comment files. New routes `/incident-reports/attachments/add` and `/attachments/remove`. Every add (including at filing and in comments) and remove is logged with actor, time, original filename, size, reason → "Attachment history" on the IR page; admins also get "Removed files" with links (removed files are admin-only in `serve_upload`).
 - `incident_view.html` hides the edit UI unless the view passes `attachment_log`, and uses literal URLs, so it renders fine under the still-running old code.
 - [ ] Real browser check of Remove / Add files on an IR (test client only so far).
+
+### Break Log Access page (2026-11-13, uncommitted) — replaces the hard-coded lists
+- **Admin → Break Log Access** (`/admin/break-log-access`, admin or `can_settings`): per account + group checkboxes **Log breaks** / **Monitor** / **Overbreak Review**, change history. Applies immediately (rules cached 60 s in memory, save invalidates; user's account/group cached in session as `bl_emp`).
+- Tables (central_db): `break_log_group_access` (PK account+group, blank = ''), `break_log_access_log`. Schema + seed: `scripts/break_log_group_access_schema.sql`, applied 2026-11-13 00:43; seeded with the old hard-coded rules (GYG/Numa/Arctic/Test log; Finest/RTA/QA/IT/TL/Trainer/BO TL monitor; Numa/Arctic overbreak review). Parity checked: 173 active employees same access, Overbreak Review same 39 days in last 60.
+- Code: `break_log/access.py` (rules), `break_log/settings.py` (page), `templates/break_log/access_settings.html`; `break_log/routes.py` no longer has BREAK_LOG_ACCOUNTS / OVERHEAD_GROUPS / OVERBREAK_ACCOUNTS; Break Monitoring roster + account dropdown follow "Log breaks"; Overbreak Review filters by current group (`OVERBREAK_EMPLOYEES_SQL`), not `break_logs.account_type`. `/api/break` also checks Log breaks.
+- New/unknown groups = everything off, shown as "New". Groups with overbreak_records in last 60 days are flagged "IRs come from the sheet" and ticking Overbreak Review for them asks for confirmation (GYG CS/BO/L2 today).
+- **Overbreak Review "from" date** (`overbreak_review_from`): from that shift date the group's Break Log overbreaks show in the portal Overbreak Review (`OVERBREAK_SCOPE_SQL`). NULL = always. Sheet groups ticked without a date get today. All 10 GYG groups are on from **2026-12-01** (logged "Andrew Vincent Tacdoro (via Claude)").
+- **Sheet auto IR is untouched (user, 2026-11-13 ~04:20):** "don't touch the auto IR for GYG". The `reviewed_in_portal` skip in `overbreak_notify.py` was removed (file restored to HEAD; `tests/test_notify_commit.py` too). GYG keeps automatic sheet IRs on Dec 1 and later, *and* shows in Overbreak Review.
+- **IR mapping in Overbreak Review:** `_attach_existing_irs` in `break_log/routes.py` adds `existing_irs` and `in_sheet` to each pending row. It matches overbreak IRs (summary contains "break") filed for the same agent on the same date, plus SYSTEM sheet IRs whose summary table lists the date as `M/D/YYYY`, dated up to 20 days later (Rule 1/2 IRs cover several dates). Tardiness and absence IRs on the same day are ignored. The page shows a 📄 IR link (auto) or an "In sheet · no IR yet" badge. Waive pre-fills "Covered by IR-…", and Create IR warns when an IR already exists. Verified on real data: 4 auto IRs since Oct 8 list 12 dates, and exactly those 12 sheet rows map. Tests: `ExistingIrMatchTests` in `tests/test_break_log_access.py`.
+- **Delegate rule:** the row has an IR link → Waive ("Covered by IR-…"). "In sheet · no IR yet" → the sheet may still file one at its next run (every 2 h); wait, or review normally. No badge → review normally.
+- IP allowlist still in code (`ALLOWED_IPS`), on purpose.
+- Tests: `tests/test_break_log_access.py` (6), new `test_portal_reviewed_row_marked_processed_without_ir` in `tests/test_notify_commit.py`. Suite: same 3 pre-existing failures.
 
 ### Investigation (no changes): holiday absence list Jan 1 / Feb 17
 - Melvin Rubas, Khim Jun Mozo (Jan 1 + Feb 17), Fe Edilyn Tinapay: approved CWS in `cws_requests` (#551, #554, #555, #557) but absence sheet still codes LWOP. Frances Jackson: REST / sheet `CWS 2`.
