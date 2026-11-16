@@ -9,7 +9,7 @@
 ---
 
 ## 2026-11-16 — Break Log: false "119 minutes" overbreak alert fixed (page race)
-Commit: `04f7eec` (changes uncommitted) · Branch: `main`
+Commit: `4b5c54f` (fix) · `d3f5bc2` (Break Log Access) · Branch: `main`
 
 ### What happened
 - Jessa Barcastigue (230306-37) got a "Break Time Exceeded, 119 minutes" browser notification at 01:06 on 2026-11-16 with only 59:41 used. Then a banner wrongly said her break was "automatically closed at the 2-hour limit".
@@ -32,7 +32,7 @@ Commit: `04f7eec` (changes uncommitted) · Branch: `main`
 ### Open items / next steps
 - [ ] Watch for agent reports. `grep "END FAIL" break_log.log` should drop now that the page re-syncs instead of showing End.
 - [ ] Optional: delete row 7432 (3 s, 230306-37), pending user OK.
-- [ ] Commit break_log changes together with the uncommitted Break Log Access work below.
+- [x] Committed: `d3f5bc2` Break Log Access, `4b5c54f` this fix.
 
 ---
 
