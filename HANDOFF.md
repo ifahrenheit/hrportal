@@ -8,6 +8,30 @@
 
 ---
 
+## 2026-11-17 — Supervisor Break Logs: "Overbreaks only" filter
+Commit: `be8dece` (code uncommitted) · Branch: `main`
+
+### What was built / changed
+- `/supervisor-break-logs`: **Overbreaks only** toggle (URL `?over=1`; applies immediately, no Apply needed). It keeps only the agent + shift days whose total break is over 1:30, and only active breaks already over 1:30 including the running one. Totals over 1:30 are red with "+N min", and the Completed heading shows "· N overbreaks (over 1:30)". — `templates/break_log/supervisor.html`
+- `/api/supervisor/breaks?over=1` filters completed rows server side, so the stats cards and the CSV (`overbreaks.csv`) match the table. — `break_log/routes.py`
+- Fix: the Completed table used to group by agent only, so "Total Today" summed the whole date range. It now groups by agent + shift_date.
+- Backups: `*.bak.20261117230515` for both files.
+
+### Why / decisions
+- The threshold is the shift total over 90 min (strictly greater), the same as `/overbreak-review` (`OVERBREAK_LIMIT_SEC`).
+- This page isn't scoped by TL. Anyone with supervisor/monitor access sees all `can_log` agents. Not changed.
+- Explained to user: automatic overbreak IRs (`overbreak_notify.py`, cron every 2 h at :15) read the **Google-Sheet `overbreak_records`**, not `break_logs`. Rule 1 is 3 valid instances per payroll cycle, Rule 2 is 2 instances over 3.5 h total, Rule 3 is a single instance over 2 h. The memo goes to the TL via `gsheet_employees.tl` → `tl_view_map`. `/overbreak-review` is the portal-based manual Create IR / Waive (GYG from 2026-12-01).
+
+### How to verify
+- Test client, Nov 8–17: 130 agent-days in total, 7 over 1:30, and `over=1` returns exactly those 7 (17 rows). The CSV is named overbreaks.csv. The page JS passes `node --check`. Service restarted clean ~23:06.
+
+### Open items / next steps
+- [ ] Real browser check of the toggle by a TL.
+- [ ] Commit `break_log/routes.py` + `templates/break_log/supervisor.html` (other uncommitted files belong to earlier work).
+- [ ] Possible follow-up: scope the supervisor page to the TL's own team (`gsheet_employees.tl`).
+
+---
+
 ## 2026-11-16 — Break Log: false "119 minutes" overbreak alert fixed (page race)
 Commit: `4b5c54f` (fix) · `d3f5bc2` (Break Log Access) · Branch: `main`
 
