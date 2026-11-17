@@ -533,6 +533,13 @@ def break_api():
 # ─────────────────────────────────────────────────────────────────────────────
 # SUPERVISOR DASHBOARD PAGE
 # ─────────────────────────────────────────────────────────────────────────────
+# Team (TL) choices on Supervisor Break Logs, matched to gsheet_employees.tl.
+# Only agent-team TLs: Mozo/Charlie (managers), Kim (QA), Jovin (RTA) and the
+# Binbin test account are left out on purpose (user, 2026-11-17).
+SUPERVISOR_TEAMS = ('Crestine', 'Flor', 'Florence', 'Honey', 'Jake',
+                    'Jareth', 'Jhon', 'Jubeth', 'Jully')
+
+
 @break_log_bp.route('/supervisor-break-logs')
 @supervisor_required
 def supervisor_break_logs():
@@ -551,7 +558,9 @@ def supervisor_break_logs():
             c.execute("""
                 SELECT DISTINCT e.EmployeeID,
                        CONCAT(e.FirstName, ' ', e.LastName) AS name,
-                       g.account
+                       g.account,
+                       TRIM(COALESCE(g.group_name, '')) AS group_name,
+                       TRIM(COALESCE(g.tl, ''))         AS team
                 FROM central_db.Employees e
                 INNER JOIN gsheet_employees g
                   ON e.EmployeeID COLLATE utf8mb4_unicode_ci = g.employee_id
@@ -563,13 +572,24 @@ def supervisor_break_logs():
                 ORDER BY g.account, name
             """)
             agents_list = c.fetchall()
+
+            # The TL's own team (tl_view_map, as used by the overbreak memo
+            # emails) opens selected; only when the email maps to one team.
+            email = (session['user'].get('email') or '').strip().lower()
+            c.execute("SELECT DISTINCT TRIM(tl_name) AS tl FROM tl_view_map "
+                      "WHERE LOWER(TRIM(login_email)) = %s", (email,))
+            mine = [r['tl'] for r in c.fetchall() if r['tl']]
     finally:
         db.close()
 
     log_accounts = sorted({acc for acc, _ in bl_access.pairs_with('can_log') if acc})
+    teams  = list(SUPERVISOR_TEAMS)
+    groups = sorted({a['group_name'] for a in agents_list if a['group_name']}, key=str.lower)
+    my_team = mine[0] if len(mine) == 1 and mine[0] in teams else ''
     return render_template('break_log/supervisor.html',
                            agents_list=agents_list,
                            log_accounts=log_accounts,
+                           teams=teams, groups=groups, my_team=my_team,
                            filter_date=filter_date)
 
 
@@ -653,6 +673,20 @@ def supervisor_api():
     if account != 'all':
         agent_condition += ' AND bl.account_type = %s'
         agent_params.append(account)
+    # Team (TL) and group come from the employee's CURRENT sheet row, so past
+    # breaks follow the agent's present team, not the team they had then.
+    team = (request.args.get('team') or 'all').strip()
+    group = (request.args.get('group') or 'all').strip()
+    if team != 'all':
+        agent_condition += (' AND EXISTS (SELECT 1 FROM gsheet_employees gt'
+                            ' WHERE gt.employee_id = bl.employee_id'
+                            ' AND TRIM(COALESCE(gt.tl, \'\')) = %s)')
+        agent_params.append(team)
+    if group != 'all':
+        agent_condition += (' AND EXISTS (SELECT 1 FROM gsheet_employees gg'
+                            ' WHERE gg.employee_id = bl.employee_id'
+                            ' AND TRIM(COALESCE(gg.group_name, \'\')) = %s)')
+        agent_params.append(group)
 
     db = get_central_db()
     try:
@@ -696,6 +730,16 @@ def supervisor_api():
     finally:
         db.close()
 
+    # ── Overbreaks only: keep agent + shift days whose total is over 1:30 ────
+    over_only = request.args.get('over') == '1'
+    if over_only:
+        day_totals = {}
+        for r in completed:
+            k = (r['employee_id'], r['shift_date'])
+            day_totals[k] = day_totals.get(k, 0) + (r['duration'] or 0)
+        completed = [r for r in completed
+                     if day_totals[(r['employee_id'], r['shift_date'])] > OVERBREAK_LIMIT_SEC]
+
     # ── CSV export ────────────────────────────────────────────────────────────
     if request.args.get('export') == 'csv':
         out = io.StringIO()
@@ -707,9 +751,10 @@ def supervisor_api():
                         r['shift_time'] or '', r['break_start'],
                         r['break_end'], r['duration']])
         out.seek(0)
+        fname = 'overbreaks.csv' if over_only else 'break_logs.csv'
         return Response(out.getvalue(), mimetype='text/csv',
                         headers={'Content-Disposition':
-                                 'attachment;filename=break_logs.csv'})
+                                 f'attachment;filename={fname}'})
 
     # ── Stats ─────────────────────────────────────────────────────────────────
     total_time = sum(r['duration'] or 0 for r in completed)

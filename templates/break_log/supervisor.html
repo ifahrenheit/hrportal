@@ -142,6 +142,18 @@
     font-weight: 700;
   }
 
+  .total-dur-badge.over { background: rgba(239,68,68,.12); border-color: var(--danger); color: var(--danger); }
+  .over-note { font-size: .72rem; font-weight: 600; color: var(--danger); margin-left: .35rem; white-space: nowrap; }
+  /* .filter-group prefix so these beat the generic ".filter-group label" rule */
+  .filter-group .over-toggle {
+    display: flex; align-items: center; gap: .5rem; cursor: pointer; margin: 0;
+    height: calc(1.5em + .5rem + 2px); padding: 0 .65rem; line-height: 1;
+    border: 1px solid var(--danger); border-radius: 6px; background: rgba(239,68,68,.04);
+    color: var(--danger); font-size: .875rem; font-weight: 600; white-space: nowrap;
+  }
+  .filter-group .over-toggle input { margin: 0; width: 15px; height: 15px; accent-color: var(--danger); }
+  .over-count { font-size: .78rem; font-weight: 600; color: var(--danger); margin-left: .5rem; }
+
   @keyframes sup-pulse {
     0%, 100% { opacity: 1; }
     50% { opacity: .6; }
@@ -284,21 +296,6 @@
         </select>
       </div>
 
-      <!-- Agent -->
-      <div class="filter-group">
-        <label>Agent</label>
-        <select name="agent" id="agentFilter" class="form-select form-select-sm">
-          <option value="all">All Agents</option>
-          {% for agent in agents_list %}
-          <option value="{{ agent.EmployeeID }}"
-                  data-account="{{ agent.account }}"
-                  {{ 'selected' if request.args.get('agent') == agent.EmployeeID }}>
-            {{ agent.name }}
-          </option>
-          {% endfor %}
-        </select>
-      </div>
-
       <!-- Account -->
       <div class="filter-group">
         <label>Account</label>
@@ -308,6 +305,56 @@
           <option value="{{ acc }}" {{ 'selected' if request.args.get('account')==acc }}>{{ acc }}</option>
           {% endfor %}
         </select>
+      </div>
+
+      <!-- Group (gsheet_employees.group_name) -->
+      <div class="filter-group">
+        <label>Group</label>
+        <select name="group" id="groupFilter" class="form-select form-select-sm">
+          <option value="all">All Groups</option>
+          {% for g in groups %}
+          <option value="{{ g }}" {{ 'selected' if request.args.get('group')==g }}>{{ g }}</option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <!-- Team (gsheet_employees.tl); a TL's own team opens selected -->
+      {% set sel_team = request.args.get('team', my_team or 'all') %}
+      <div class="filter-group">
+        <label>Team (TL)</label>
+        <select name="team" id="teamFilter" class="form-select form-select-sm">
+          <option value="all">All Teams</option>
+          {% for t in teams %}
+          <option value="{{ t }}" {{ 'selected' if sel_team==t }}>{{ t }}{{ ' (my team)' if t == my_team }}</option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <!-- Agent (list narrows to the account / group / team above) -->
+      <div class="filter-group">
+        <label>Agent</label>
+        <select name="agent" id="agentFilter" class="form-select form-select-sm">
+          <option value="all">All Agents</option>
+          {% for agent in agents_list %}
+          <option value="{{ agent.EmployeeID }}"
+                  data-account="{{ agent.account }}"
+                  data-group="{{ agent.group_name }}"
+                  data-team="{{ agent.team }}"
+                  {{ 'selected' if request.args.get('agent') == agent.EmployeeID }}>
+            {{ agent.name }}
+          </option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <!-- Overbreaks only: shift days whose total break is over 1:30 -->
+      <div class="filter-group">
+        <label>&nbsp;</label>
+        <label class="over-toggle" title="Show only agents whose total break for a shift day is over 1 hr 30 min">
+          <input type="checkbox" name="over" value="1" id="overOnly"
+                 {{ 'checked' if request.args.get('over') == '1' }}>
+          <span>Overbreaks only</span>
+        </label>
       </div>
 
       <div class="filter-group">
@@ -352,7 +399,7 @@
 <!-- Completed breaks table -->
 <div class="sup-table-card">
   <div class="card-heading">
-    <span>✅ Completed Breaks</span>
+    <span>✅ Completed Breaks<span class="over-count" id="overCount"></span></span>
     <button class="btn btn-sm btn-outline-success" onclick="copyCompletedBreaks()">
       📋 Copy
     </button>
@@ -389,25 +436,50 @@ document.addEventListener('DOMContentLoaded', function () {
   if ('Notification' in window && Notification.permission === 'default') {
     Notification.requestPermission();
   }
-  loadData();
-  setInterval(loadData, 10000);
+
+  // Overbreaks only: apply at once (no need to press Apply) and keep it in the URL
+  document.getElementById('overOnly').addEventListener('change', function () {
+    const params = new URLSearchParams(window.location.search);
+    if (this.checked) params.set('over', '1'); else params.delete('over');
+    const qs = params.toString();
+    history.replaceState(null, '', window.location.pathname + (qs ? '?' + qs : ''));
+    loadData();
+  });
   updateDateFilterDisplay();
   document.getElementById('dateFilterType').addEventListener('change', updateDateFilterDisplay);
 
-  // Filter agents by account
+  // Narrow the Agent list to the chosen account / group / team
   const accountSel = document.getElementById('accountFilter');
+  const groupSel   = document.getElementById('groupFilter');
+  const teamSel    = document.getElementById('teamFilter');
   const agentSel   = document.getElementById('agentFilter');
-  const allOpts    = Array.from(agentSel.options);
-  accountSel.addEventListener('change', function () {
-    const acc = this.value;
+  const allOpts    = Array.from(agentSel.options).filter(o => o.value !== 'all');
+  function narrowAgents() {
+    const keep = agentSel.value;
+    const match = (sel, attr) => sel.value === 'all' || sel.value === '' ||
+                                 (opt => opt.getAttribute(attr) === sel.value);
+    const tests = [[accountSel, 'data-account'], [groupSel, 'data-group'], [teamSel, 'data-team']]
+      .map(([sel, attr]) => match(sel, attr)).filter(t => t !== true);
     agentSel.innerHTML = '<option value="all">All Agents</option>';
     allOpts.forEach(opt => {
-      if (opt.value === 'all') return;
-      if (acc === 'all' || opt.getAttribute('data-account') === acc) {
-        agentSel.appendChild(opt.cloneNode(true));
-      }
+      if (tests.every(t => t(opt))) agentSel.appendChild(opt.cloneNode(true));
     });
-  });
+    // keep the picked agent if still in the list, otherwise fall back to All
+    agentSel.value = Array.from(agentSel.options).some(o => o.value === keep) ? keep : 'all';
+  }
+  [accountSel, groupSel, teamSel].forEach(s => s.addEventListener('change', narrowAgents));
+  narrowAgents();
+
+  // A TL's own team opens pre-selected: put it in the URL so the data matches
+  const params0 = new URLSearchParams(window.location.search);
+  if (!params0.has('team') && teamSel.value !== 'all') {
+    params0.set('team', teamSel.value);
+    history.replaceState(null, '', window.location.pathname + '?' + params0.toString());
+  }
+
+  // Load only after the URL holds every filter (loadData reads the URL)
+  loadData();
+  setInterval(loadData, 10000);
 });
 
 /* ── Utilities ─────────────────────────────────────────────────────── */
@@ -465,18 +537,32 @@ function updateStats(stats) {
   document.getElementById('avgBreakDuration').textContent   = formatTime(stats.avg_duration  ?? 0);
 }
 
+const OVER_LIMIT_SEC = 90 * 60;
+const isOverOnly = () => document.getElementById('overOnly')?.checked;
+
 function updateActiveBreaks(breaks, completedBreaks) {
   const tbody = document.getElementById('activeBreaksTable');
-  if (!breaks || !breaks.length) {
-    tbody.innerHTML = '<tr><td colspan="7" class="text-center text-muted py-4">No agents currently on break</td></tr>';
-    return;
-  }
+  activeBreakTimers = {};
 
   // Build completed totals per agent
   const completedTotals = {};
   (completedBreaks || []).forEach(b => {
     completedTotals[b.employee_id] = (completedTotals[b.employee_id] || 0) + (b.duration || 0);
   });
+
+  // Overbreaks only: just the agents already past 1:30 including this break
+  if (isOverOnly() && breaks) {
+    breaks = breaks.filter(brk => {
+      const elapsed = Math.floor((Date.now() - new Date(brk.break_start).getTime()) / 1000);
+      return elapsed + (completedTotals[brk.employee_id] || 0) > OVER_LIMIT_SEC;
+    });
+  }
+
+  if (!breaks || !breaks.length) {
+    tbody.innerHTML = `<tr><td colspan="7" class="text-center text-muted py-4">${
+      isOverOnly() ? 'No agent on break is over 1 hr 30 min' : 'No agents currently on break'}</td></tr>`;
+    return;
+  }
 
   tbody.innerHTML = '';
   breaks.forEach(brk => {
@@ -548,21 +634,33 @@ function startLiveTimers() {
 
 function updateCompletedBreaks(breaks) {
   const tbody = document.getElementById('completedBreaksTable');
+
+  // Group by agent + shift day, so "Total Today" is one day's total even
+  // when the date filter covers several days
+  const byAgent = {};
+  (breaks || []).forEach(b => {
+    const key = `${b.employee_id}|${b.shift_date}`;
+    if (!byAgent[key]) byAgent[key] = { breaks: [], total: 0, name: b.employee_name };
+    byAgent[key].breaks.push(b);
+    byAgent[key].total += (b.duration || 0);
+  });
+
+  const overDays = Object.values(byAgent).filter(a => a.total > OVER_LIMIT_SEC).length;
+  document.getElementById('overCount').textContent =
+    overDays ? `· ${overDays} overbreak${overDays === 1 ? '' : 's'} (over 1:30)` : '';
+
   if (!breaks || !breaks.length) {
-    tbody.innerHTML = '<tr><td colspan="8" class="text-center text-muted py-4">No completed breaks found</td></tr>';
+    tbody.innerHTML = `<tr><td colspan="8" class="text-center text-muted py-4">${
+      isOverOnly() ? 'No overbreaks found for this filter' : 'No completed breaks found'}</td></tr>`;
     return;
   }
 
-  // Group by agent
-  const byAgent = {};
-  breaks.forEach(b => {
-    if (!byAgent[b.employee_id]) byAgent[b.employee_id] = { breaks: [], total: 0, name: b.employee_name };
-    byAgent[b.employee_id].breaks.push(b);
-    byAgent[b.employee_id].total += (b.duration || 0);
-  });
-
   let html = '';
   Object.values(byAgent).forEach(agent => {
+    const over = agent.total > OVER_LIMIT_SEC;
+    const totalCell = over
+      ? `<span class="total-dur-badge over">${formatTime(agent.total)}</span><span class="over-note">+${Math.round((agent.total - OVER_LIMIT_SEC) / 60)} min</span>`
+      : `<span class="total-dur-badge">${formatTime(agent.total)}</span>`;
     agent.breaks.forEach((b, i) => {
       html += `
         <tr>
@@ -573,7 +671,7 @@ function updateCompletedBreaks(breaks) {
           <td>${formatDateTime(b.break_start)}</td>
           <td>${formatDateTime(b.break_end)}</td>
           <td><span class="dur-badge">${formatTime(b.duration)}</span></td>
-          <td>${i === 0 ? `<span class="total-dur-badge">${formatTime(agent.total)}</span>` : ''}</td>
+          <td>${i === 0 ? totalCell : ''}</td>
         </tr>
       `;
     });
@@ -601,7 +699,7 @@ function updateDateFilterDisplay() {
   }[type] || [];
   show.forEach(id => {
     const el = document.getElementById(id);
-    if (el) el.style.display = 'flex';
+    if (el) el.style.display = 'block';   // label above the input, like the other filters
   });
 }
 
