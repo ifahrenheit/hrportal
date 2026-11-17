@@ -544,10 +544,12 @@ function updateActiveBreaks(breaks, completedBreaks) {
   const tbody = document.getElementById('activeBreaksTable');
   activeBreakTimers = {};
 
-  // Build completed totals per agent
+  // Ended breaks on each active break's own shift day, from the server
+  // (completed_today). Not built from the completed table: that follows the
+  // date filter, and a week/month/year filter inflated "Total Today".
   const completedTotals = {};
-  (completedBreaks || []).forEach(b => {
-    completedTotals[b.employee_id] = (completedTotals[b.employee_id] || 0) + (b.duration || 0);
+  (breaks || []).forEach(brk => {
+    completedTotals[brk.employee_id] = Number(brk.completed_today) || 0;
   });
 
   // Overbreaks only: just the agents already past 1:30 including this break

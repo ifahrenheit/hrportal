@@ -692,9 +692,18 @@ def supervisor_api():
     try:
         _force_close_stale(db)
         with db.cursor() as c:
-            # Active breaks (no date filter — always show current)
+            # Active breaks (no date filter — always show current).
+            # completed_today = the agent's ended breaks on THIS break's shift
+            # day, so "Total Today"/OVERTIME never depends on the viewer's
+            # date filter (a year filter used to add the whole year's breaks).
             c.execute(f"""
                 SELECT bl.id, bl.employee_id, bl.break_start, bl.account_type,
+                       bl.shift_date,
+                       CAST(COALESCE((SELECT SUM(TIMESTAMPDIFF(SECOND, b2.break_start, b2.break_end))
+                                      FROM break_logs b2
+                                      WHERE b2.employee_id = bl.employee_id
+                                        AND b2.shift_date = bl.shift_date
+                                        AND b2.break_end IS NOT NULL), 0) AS SIGNED) AS completed_today,
                        CONCAT(e.FirstName, ' ', e.LastName) AS employee_name,
                        es.shift_time, es.is_rest_day
                 FROM break_logs bl
