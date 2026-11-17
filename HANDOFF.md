@@ -16,6 +16,13 @@ Commit: `be8dece` (code uncommitted) · Branch: `main`
 - `/api/supervisor/breaks?over=1` filters completed rows server side, so the stats cards and the CSV (`overbreaks.csv`) match the table. — `break_log/routes.py`
 - Fix: the Completed table used to group by agent only, so "Total Today" summed the whole date range. It now groups by agent + shift_date.
 - Backups: `*.bak.20261117230515` for both files.
+- Later the same day:
+  - Fixed filter alignment. Date panels now show as `block`; the toggle CSS uses a `.filter-group .over-toggle` selector.
+  - Added **Group** (`gsheet_employees.group_name`) and **Team (TL)** (`gsheet_employees.tl`) filters, sent as API params `group` / `team` (EXISTS on the agent's *current* sheet row).
+  - The Agent list narrows by account + group + team.
+  - A TL whose email maps to exactly one `tl_view_map.tl_name` opens on their own team, marked "(my team)". `team=all` overrides it.
+  - Backups: `*.bak.20261117232826`.
+  - Tested: team/group rows match the sheet. Flor's login preselects Flor. Only 5 TLs currently have Break Log data this cycle (GYG has barely started).
 
 ### Why / decisions
 - The threshold is the shift total over 90 min (strictly greater), the same as `/overbreak-review` (`OVERBREAK_LIMIT_SEC`).
