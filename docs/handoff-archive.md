@@ -2,6 +2,108 @@
 
 Entries moved out of HANDOFF.md, newest first.
 
+## 2026-10-29 — Mailing lists follow the employee sheet; admins via .env
+Commit: `239367b` (changes below uncommitted) · Branch: `main`
+
+### What was built / changed
+- **`PORTAL_ADMIN_EMAILS`:** a comma-separated list in `.env` that grants full admin at login, on top of `central_db.Employees.role = 'Admin'`. Listed emails are also exempt from the Separated-status login block. Code: `_env_admin_emails()` and `_is_separated_non_admin()`, plus the `session['is_admin']` line in `auth_callback` in `app.py`.
+- **Mailing list sheet sync:** `scripts/mailing_list_sheet_sync.py` makes the cPanel/Mailman groups match `gsheet_employees.mailing_list`. Tests are in `tests/test_mailing_list_sheet_sync.py`, docs in the "Sync from the employee sheet" section of `docs/mailing-lists.md`.
+- **`modules/mailing_lists.py`:** `_actor()` returns `system:sheet-sync` / "Sheet sync" outside a request, so cron changes are audited.
+- **Webhook (outside this repo):** `/var/www/html/UMMS-Core/webapp/app.py`, run by systemd `employee-sync` (gunicorn :5000, behind `webhook.cohere.ph`). Its `batch_sync` now saves `'Mailing List'` into `mailing_list`, and it logs a warning when that field is missing from a batch. Backup: `app.py.bak.20261028225000`; the folder is not under git. `/var/www/html/automation/webhook_server.py` is an old copy that is not running.
+- **cPanel:** deleted the `gygbo1@` forwarder (21 targets, recorded in mailing list History). The `gygbo1@` mailbox remains. First live sync run: 17 added, 31 removed, all verified.
+
+### Why / decisions
+- The user is leaving and handing the portal to a new full admin. Sub-admins can't manage sub-admins, supervisors or login-as, so the successor needs full admin.
+- Sheet data chain: Cohere Employee List → "Employee Master List" (IMPORTRANGE `A:AF`, widened from `A:AD`) → "CSAT and MasterList sheet", which holds the Apps Script `scheduledSync` that sends every header to the webhook. Pushes happen about every 6h (00/06/12/18), or on demand with "Sync Employees Now".
+- Sync rules agreed with the user:
+  - Add Active employees the sheet assigns to a list.
+  - Remove sheet employees who are Separated, or whose filled cell no longer names the list.
+  - Leave blank and `#N/A` cells alone.
+  - Never touch addresses that aren't in the sheet.
+- Aliases and exclusions:
+  - `gygL2@` is treated as `l2-agents@`, and `gygbo1@` as `bo-cohere@`.
+  - `soms@` is not managed (it isn't a cPanel group).
+  - `hr@` is not managed: it forwards HR's mailbox, and the sheet maps all of SGA to it.
+- The Finest group (managers) is add-only.
+- `gygccall@` is synced as its Mailman list. Its forwarder targets are other groups, not people.
+- Removal guard: more than 20 removals, or more than 25% of a list, in one run skips that list. `--allow-big` was used once for the catch-up run.
+- The user accepts that manual adds of sheet employees with a filled cell get undone by the next sync.
+
+### Database changes
+```sql
+-- central_db
+ALTER TABLE gsheet_employees ADD COLUMN mailing_list VARCHAR(500) NULL DEFAULT NULL AFTER call_email_mode, ALGORITHM=INSTANT;
+```
+
+### Config / environment
+- New `.env` key `PORTAL_ADMIN_EMAILS`, currently empty. Changes need a `leavesystem` restart, then the person logs out and back in.
+- `.gitignore` now includes `mailing_list_sheet_sync.state`, which holds the last applied push timestamp.
+- Services restarted: `leavesystem` and `employee-sync`.
+
+### How to verify
+- `venv/bin/python scripts/mailing_list_sheet_sync.py` (dry run): every list should say "in sync".
+- Portal → Admin → Mailing Lists → History, filtered by "Sheet sync".
+
+### Open items / next steps
+- [ ] **The user must add the cron line**, because Claude was blocked from editing root's crontab: `*/30 * * * * cd /var/www/html/leavesystem && venv/bin/python scripts/mailing_list_sheet_sync.py --live >> mailing_list_sheet_sync.log 2>&1`
+- [ ] Name the successor admin, add them to `PORTAL_ADMIN_EMAILS`, then remove `andrewvincentt@gmail.com` from Admin and rotate credentials. The secrets in the `employee-sync` unit file and the Apps Script were exposed in chat.
+- [ ] Run Separated cleanup for lists the sheet doesn't cover (gygcs@ has 7).
+- [ ] Fix the one `#N/A` Mailing List formula in the sheet. Arctic CS Adelfa Maderazo and Jessamae Salazar are still on bo-cohere@ because their cells are blank.
+- [ ] Commit this session's code: `.gitignore`, the `app.py` admin change, `modules/mailing_lists.py`, `docs/mailing-lists.md`, the new script and its tests. The `app.py` diff also contains the pending documents-module work.
+
+---
+
+## 2026-10-27 — Absences page now skips SUS days; absence sheet syncs every 2h
+Commit: `fd68361` (app.py change uncommitted) · Branch: `main`
+
+### What was built / changed
+- `get_absence_records()` in `app.py` now loads SUS dates from `central_db.absence_records` (code `'SUS'`, within the date range) and skips those scheduled days. Same rule as `admin_attendance_grid()` and `admin_awol_report()`. Fixes `/admin/absences` listing suspended agents as Absent (e.g. Jayne Cuajao 220404-14, Oct 24–25).
+- Apps Script (user's Google account, outside repo): "Untitled project" → `syncAbsenceRecords`, bound to the user's sheet that IMPORTRANGEs Jovin's "Absence Data" `AbsenceRecord` tab. `createTrigger()` was rewritten to delete the old 6 AM/6 PM triggers and create one every-2-hours trigger. Added an `onOpen` "Portal Sync → Sync absences now" menu.
+
+### Why / decisions
+- SUS is usually entered late (schedule balancing). The page is computed live, so a fresh sync is enough. Every 2h instead of hourly keeps runtime (~63 s/run, ~17k rows) inside the consumer trigger quota.
+- `absence_notify.py` already skipped SUS itself, so its emails are unchanged. Its `skipped_sus` count will now read 0.
+
+### Deploy / run notes
+- Backup `app.py.bak.20261027*`, ast gate passed, `leavesystem` restarted and active.
+
+### How to verify
+- `/admin/absences?date_from=2026-10-24&date_to=2026-10-25`: Cuajao not listed.
+- script.google.com/home/executions: `syncAbsenceRecords` runs about every 2h.
+
+### Open items / next steps
+- [ ] Commit the `app.py` SUS change (left uncommitted; unrelated documents-module edits are also pending).
+- [ ] The sync never deletes rows and keys on `sheet_row`, so deleted or shifted sheet rows can leave stale SUS in `absence_records`.
+- [ ] Late SUS can't retract a 1:05 PM absence email that was already sent.
+
+---
+
+## 2026-10-27 — Absence alerts: false "RD" absences fixed; absence_notify.py now live
+Commit: `f7378ec` · Branch: `main`
+
+### What was built / changed
+- Diagnosed false REPEATED ABSENCE email for Aileen Perez (230411-29), Oct 23–25. The sender was the sheet-based `/var/www/html/automation/send_absence_report.php` (outside this repo), not the portal. The sheet's Scheduled IN was `RD` and its `Possible Absent` tab only treats the exact text "Rest Day" as a day off, so it read RD as a shift with no punches. The portal (`employee_schedules.is_rest_day=1`) and the `absence_notify.py` dry run were correct.
+- `send_absence_report.php`: added `isRestDaySchedule()` (RD / Rest Day / Rest / Off / Day off, case-insensitive). Skips the alert when the reported day is a rest day (logged as "Rest-day suppression") and drops rest-day rows from the 7-day window list. Backup: `send_absence_report.php.bak_20261027_051922`.
+- Switched to the portal-based notifier: the root crontab now runs `absence_notify.py --live` at 13:05, and the PHP 13:00 line is commented out (user installed it; the auto-mode classifier blocks `crontab` edits from Claude).
+
+### Why / decisions
+- User chose "guard the PHP script, then go live": the guard is a safety net in case the PHP job is re-enabled. The portal notifier also covers the ~60 scheduled employees the sheet misses.
+- Dry run Oct 7–26 had no FATAL/errors; ~86 would-be emails over 20 days.
+
+### Config / environment
+- Root crontab: PHP absence line disabled, `absence_notify.py` gets `--live`. Pre-change crontab saved to that session's scratchpad (`crontab.bak`).
+
+### How to verify
+- `grep "$(date +%F) 13:05" absence_notify.log`: expect "Sent '...'" lines and a summary without "[DRY RUN]".
+- `crontab -l | grep -i absen`
+
+### Open items / next steps
+- [ ] After 13:05 on 2026-10-27 (first live run, for 2026-10-26), check absence_notify.log for "Sent" / "Email error" / "FATAL".
+- [ ] `tl_view_map` is missing some TLs (e.g. Khristofer Mozo, Magdaleno II Arong, Rachel Marikit, Lee Anne Borgonia logged "no TL email"); those alerts go to the SOM + OM only.
+- [ ] Rollback: uncomment the PHP line and drop `--live`.
+
+---
+
 ## 2026-10-22 (3) — Timestamp Records page (raw punches from Google Drive)
 Commit: `c5141e3` · Branch: `main`
 

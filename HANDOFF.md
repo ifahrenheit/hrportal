@@ -8,6 +8,49 @@
 
 ---
 
+## 2026-11-18 — Numa Stats page (NUMA Stat Dashboard sheet → portal)
+Commit: `1750a75` (code uncommitted) · Branch: `main`
+
+### What was built / changed
+- New page `/numa-stats/` (blueprint `numa_stats`): Monthly / Weekly views with a period picker, plus Daily once the sheet has it. It has team tiles, an agent table (conversations, WhatsApp CSAT, email CSAT, email SLA, median first reply, median response) with ▲/▼ arrows against the previous period and a team-median row, and a month-by-month grid like the sheet's Stat Board. Admin **Sync now** button. — `modules/numa_stats.py`, `templates/numa_stats/index.html`
+- Sync from the sheet: `helpers/numa_stats.py`, cron script `scripts/sync_numa_stats.py` (dry run by default, `--live`, `--force`).
+- Nav link "Numa Stats" (My section) in `templates/nav/_sidebar.html` and `templates/nav/_topnav.html`. It's gated by the template global `numa_stats_can_view()`, which is registered in `app.py` after `csr_bp` and also mocked in `/admin/nav-parity`.
+- Tests: `tests/test_numa_stats.py` (20, fully mocked). Doc: `docs/numa-stats.md`.
+- Backups: `app.py.bak.20261118212042`, `templates/nav/_sidebar.html.bak.20261118212042` and `_topnav.html.bak.20261118212042`.
+
+### Why / decisions
+- The sheet (owned by kim.bolongaita@numastays.com, ID `1fewDc0GG1GDZuvyMLJ5U8K_aupnHC_-ZXp87Z_HGK8s`) has "MoM Numa CS" / "WoW Numa CS" tabs that are just C1-dropdown FILTER() views. The portal therefore reads the **raw** tabs (`Raw`, `Raw-Weekly`, future `Raw-Daily`) and matches columns by header name. Reading the views would only ever give whichever month is currently selected. The sheet also matches on month name or week number only, which will collide in 2027; the raw tabs carry full dates.
+- Reads go through the existing Drive service account (`GOOGLE_DRIVE_SA_KEY_FILE`, `timestamp-drive-reader@…`). Kim shared the sheet with it as Viewer, and the user enabled the Google Sheets API on the GCP project.
+- Each sync replaces one period type's rows in a single transaction. A tab missing its headers, with no rows, or shrinking below 50% of what's stored is skipped, so the data is kept. A MySQL `GET_LOCK` stops the cron and the button from running a sync at the same time.
+- Access is decided by the user: **whole-team view** for admins, Active/Training `gsheet_employees.group_name` IN ('Numa CS','Numa BO'), and the `approver` of such an employee (Jareth, group Finest). It's cached in the session for 10 minutes. No new `can_*` permission, which avoids altering `leave4day_sub_admins`.
+- Roster: email local part with `.` → `_` gives the Numa username (checked against all 17 CS agents). Agents with no data for the selected period type are hidden, so BO agents and the 5 GYG-account Numa CS agents don't show yet. Numa's own staff in the raw tabs are stored but never shown.
+
+### Database changes
+```sql
+-- central_db (scripts/numa_stats_schema.sql)
+CREATE TABLE IF NOT EXISTS numa_stats (... UNIQUE (period_type, period_start, username));
+CREATE TABLE IF NOT EXISTS numa_stats_sync_log (...);
+```
+- First live load: month 304 rows, week 1087 rows.
+
+### Config / environment
+- Optional `.env` keys (with defaults in code): `NUMA_STATS_SHEET_ID`, `NUMA_STATS_MONTH_TAB`, `NUMA_STATS_WEEK_TAB`, `NUMA_STATS_DAY_TAB`.
+- Root cron added: `5 * * * * cd /var/www/html/leavesystem && venv/bin/python scripts/sync_numa_stats.py --live >> numa_stats_sync.log 2>&1`
+- `leavesystem` restarted at about 21:23 and came up clean.
+
+### How to verify
+- Test client against the live DB: CS agent, BO agent, Jareth and an admin each get 200 and see the nav link. A non-Numa user is redirected and the API returns 403. November (17 agents, median 339) and week 46 match the sheet's MoM/WoW tabs, and the trend medians match the Stat Board median row.
+- `./venv/bin/python -m unittest tests.test_numa_stats -v`
+
+### Open items / next steps
+- [ ] Ask Kim or Jareth what "Email SLA %" now means (about 65% in January, about 5% since mid-year). The page shows it neutrally.
+- [ ] When `Raw-Daily` is added, check it uses the same headers and a full date in a `Created …` column. The Daily button appears after the next sync.
+- [ ] Real browser check by a Numa agent (phone width, dark mode).
+- [ ] Commit the Numa Stats files: `helpers/numa_stats.py`, `modules/numa_stats.py`, `templates/numa_stats/`, `scripts/numa_stats_schema.sql`, `scripts/sync_numa_stats.py`, `tests/test_numa_stats.py`, `docs/numa-stats.md`, plus the Numa hunks in `app.py` and both nav templates. The other uncommitted files belong to earlier work.
+- [ ] Existing test failures, not caused by this work (they still fail with the Numa nav check switched off): `test_awol_report` / `test_undertime_report` `test_empty_scheduled_renders_empty_state_no_crash`, and `test_undertime_report.test_leave_covered_short_shift_is_excluded`.
+
+---
+
 ## 2026-11-17 — Supervisor Break Logs: "Overbreaks only" filter
 Commit: `be8dece` (code uncommitted) · Branch: `main`
 
@@ -331,108 +374,6 @@ ALTER USER 'employee_sync'@'203.28.65.222' IDENTIFIED BY '<new>';
 - [ ] After 1–2 weeks of clean syncs, ask before deleting the old employee-sync unit file and UMMS-Core webapp.
 - [ ] Handover note for Jovin/Jericho published as an artifact (private until the user shares it): https://claude.ai/artifact/KcfeqkNmzPtT8exzBCtmdX
 - [x] From 2026-10-29: mailing-list sync cron line added by the user; that session's code committed.
-
----
-
-## 2026-10-29 — Mailing lists follow the employee sheet; admins via .env
-Commit: `239367b` (changes below uncommitted) · Branch: `main`
-
-### What was built / changed
-- **`PORTAL_ADMIN_EMAILS`:** a comma-separated list in `.env` that grants full admin at login, on top of `central_db.Employees.role = 'Admin'`. Listed emails are also exempt from the Separated-status login block. Code: `_env_admin_emails()` and `_is_separated_non_admin()`, plus the `session['is_admin']` line in `auth_callback` in `app.py`.
-- **Mailing list sheet sync:** `scripts/mailing_list_sheet_sync.py` makes the cPanel/Mailman groups match `gsheet_employees.mailing_list`. Tests are in `tests/test_mailing_list_sheet_sync.py`, docs in the "Sync from the employee sheet" section of `docs/mailing-lists.md`.
-- **`modules/mailing_lists.py`:** `_actor()` returns `system:sheet-sync` / "Sheet sync" outside a request, so cron changes are audited.
-- **Webhook (outside this repo):** `/var/www/html/UMMS-Core/webapp/app.py`, run by systemd `employee-sync` (gunicorn :5000, behind `webhook.cohere.ph`). Its `batch_sync` now saves `'Mailing List'` into `mailing_list`, and it logs a warning when that field is missing from a batch. Backup: `app.py.bak.20261028225000`; the folder is not under git. `/var/www/html/automation/webhook_server.py` is an old copy that is not running.
-- **cPanel:** deleted the `gygbo1@` forwarder (21 targets, recorded in mailing list History). The `gygbo1@` mailbox remains. First live sync run: 17 added, 31 removed, all verified.
-
-### Why / decisions
-- The user is leaving and handing the portal to a new full admin. Sub-admins can't manage sub-admins, supervisors or login-as, so the successor needs full admin.
-- Sheet data chain: Cohere Employee List → "Employee Master List" (IMPORTRANGE `A:AF`, widened from `A:AD`) → "CSAT and MasterList sheet", which holds the Apps Script `scheduledSync` that sends every header to the webhook. Pushes happen about every 6h (00/06/12/18), or on demand with "Sync Employees Now".
-- Sync rules agreed with the user:
-  - Add Active employees the sheet assigns to a list.
-  - Remove sheet employees who are Separated, or whose filled cell no longer names the list.
-  - Leave blank and `#N/A` cells alone.
-  - Never touch addresses that aren't in the sheet.
-- Aliases and exclusions:
-  - `gygL2@` is treated as `l2-agents@`, and `gygbo1@` as `bo-cohere@`.
-  - `soms@` is not managed (it isn't a cPanel group).
-  - `hr@` is not managed: it forwards HR's mailbox, and the sheet maps all of SGA to it.
-- The Finest group (managers) is add-only.
-- `gygccall@` is synced as its Mailman list. Its forwarder targets are other groups, not people.
-- Removal guard: more than 20 removals, or more than 25% of a list, in one run skips that list. `--allow-big` was used once for the catch-up run.
-- The user accepts that manual adds of sheet employees with a filled cell get undone by the next sync.
-
-### Database changes
-```sql
--- central_db
-ALTER TABLE gsheet_employees ADD COLUMN mailing_list VARCHAR(500) NULL DEFAULT NULL AFTER call_email_mode, ALGORITHM=INSTANT;
-```
-
-### Config / environment
-- New `.env` key `PORTAL_ADMIN_EMAILS`, currently empty. Changes need a `leavesystem` restart, then the person logs out and back in.
-- `.gitignore` now includes `mailing_list_sheet_sync.state`, which holds the last applied push timestamp.
-- Services restarted: `leavesystem` and `employee-sync`.
-
-### How to verify
-- `venv/bin/python scripts/mailing_list_sheet_sync.py` (dry run): every list should say "in sync".
-- Portal → Admin → Mailing Lists → History, filtered by "Sheet sync".
-
-### Open items / next steps
-- [ ] **The user must add the cron line**, because Claude was blocked from editing root's crontab: `*/30 * * * * cd /var/www/html/leavesystem && venv/bin/python scripts/mailing_list_sheet_sync.py --live >> mailing_list_sheet_sync.log 2>&1`
-- [ ] Name the successor admin, add them to `PORTAL_ADMIN_EMAILS`, then remove `andrewvincentt@gmail.com` from Admin and rotate credentials. The secrets in the `employee-sync` unit file and the Apps Script were exposed in chat.
-- [ ] Run Separated cleanup for lists the sheet doesn't cover (gygcs@ has 7).
-- [ ] Fix the one `#N/A` Mailing List formula in the sheet. Arctic CS Adelfa Maderazo and Jessamae Salazar are still on bo-cohere@ because their cells are blank.
-- [ ] Commit this session's code: `.gitignore`, the `app.py` admin change, `modules/mailing_lists.py`, `docs/mailing-lists.md`, the new script and its tests. The `app.py` diff also contains the pending documents-module work.
-
----
-
-## 2026-10-27 — Absences page now skips SUS days; absence sheet syncs every 2h
-Commit: `fd68361` (app.py change uncommitted) · Branch: `main`
-
-### What was built / changed
-- `get_absence_records()` in `app.py` now loads SUS dates from `central_db.absence_records` (code `'SUS'`, within the date range) and skips those scheduled days. Same rule as `admin_attendance_grid()` and `admin_awol_report()`. Fixes `/admin/absences` listing suspended agents as Absent (e.g. Jayne Cuajao 220404-14, Oct 24–25).
-- Apps Script (user's Google account, outside repo): "Untitled project" → `syncAbsenceRecords`, bound to the user's sheet that IMPORTRANGEs Jovin's "Absence Data" `AbsenceRecord` tab. `createTrigger()` was rewritten to delete the old 6 AM/6 PM triggers and create one every-2-hours trigger. Added an `onOpen` "Portal Sync → Sync absences now" menu.
-
-### Why / decisions
-- SUS is usually entered late (schedule balancing). The page is computed live, so a fresh sync is enough. Every 2h instead of hourly keeps runtime (~63 s/run, ~17k rows) inside the consumer trigger quota.
-- `absence_notify.py` already skipped SUS itself, so its emails are unchanged. Its `skipped_sus` count will now read 0.
-
-### Deploy / run notes
-- Backup `app.py.bak.20261027*`, ast gate passed, `leavesystem` restarted and active.
-
-### How to verify
-- `/admin/absences?date_from=2026-10-24&date_to=2026-10-25`: Cuajao not listed.
-- script.google.com/home/executions: `syncAbsenceRecords` runs about every 2h.
-
-### Open items / next steps
-- [ ] Commit the `app.py` SUS change (left uncommitted; unrelated documents-module edits are also pending).
-- [ ] The sync never deletes rows and keys on `sheet_row`, so deleted or shifted sheet rows can leave stale SUS in `absence_records`.
-- [ ] Late SUS can't retract a 1:05 PM absence email that was already sent.
-
----
-
-## 2026-10-27 — Absence alerts: false "RD" absences fixed; absence_notify.py now live
-Commit: `f7378ec` · Branch: `main`
-
-### What was built / changed
-- Diagnosed false REPEATED ABSENCE email for Aileen Perez (230411-29), Oct 23–25. The sender was the sheet-based `/var/www/html/automation/send_absence_report.php` (outside this repo), not the portal. The sheet's Scheduled IN was `RD` and its `Possible Absent` tab only treats the exact text "Rest Day" as a day off, so it read RD as a shift with no punches. The portal (`employee_schedules.is_rest_day=1`) and the `absence_notify.py` dry run were correct.
-- `send_absence_report.php`: added `isRestDaySchedule()` (RD / Rest Day / Rest / Off / Day off, case-insensitive). Skips the alert when the reported day is a rest day (logged as "Rest-day suppression") and drops rest-day rows from the 7-day window list. Backup: `send_absence_report.php.bak_20261027_051922`.
-- Switched to the portal-based notifier: the root crontab now runs `absence_notify.py --live` at 13:05, and the PHP 13:00 line is commented out (user installed it; the auto-mode classifier blocks `crontab` edits from Claude).
-
-### Why / decisions
-- User chose "guard the PHP script, then go live": the guard is a safety net in case the PHP job is re-enabled. The portal notifier also covers the ~60 scheduled employees the sheet misses.
-- Dry run Oct 7–26 had no FATAL/errors; ~86 would-be emails over 20 days.
-
-### Config / environment
-- Root crontab: PHP absence line disabled, `absence_notify.py` gets `--live`. Pre-change crontab saved to that session's scratchpad (`crontab.bak`).
-
-### How to verify
-- `grep "$(date +%F) 13:05" absence_notify.log`: expect "Sent '...'" lines and a summary without "[DRY RUN]".
-- `crontab -l | grep -i absen`
-
-### Open items / next steps
-- [ ] After 13:05 on 2026-10-27 (first live run, for 2026-10-26), check absence_notify.log for "Sent" / "Email error" / "FATAL".
-- [ ] `tl_view_map` is missing some TLs (e.g. Khristofer Mozo, Magdaleno II Arong, Rachel Marikit, Lee Anne Borgonia logged "no TL email"); those alerts go to the SOM + OM only.
-- [ ] Rollback: uncomment the PHP line and drop `--live`.
 
 ---
 
