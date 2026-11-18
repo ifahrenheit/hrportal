@@ -25,11 +25,17 @@ Commit: `1750a75` (code uncommitted) · Branch: `main`
 - Access is decided by the user: **whole-team view** for admins, Active/Training `gsheet_employees.group_name` IN ('Numa CS','Numa BO'), and the `approver` of such an employee (Jareth, group Finest). It's cached in the session for 10 minutes. No new `can_*` permission, which avoids altering `leave4day_sub_admins`.
 - Roster: email local part with `.` → `_` gives the Numa username (checked against all 17 CS agents). Agents with no data for the selected period type are hidden, so BO agents and the 5 GYG-account Numa CS agents don't show yet. Numa's own staff in the raw tabs are stored but never shown.
 
+- Later the same day:
+  - Team CSAT figures switched from median to a plain average of the agents. The user's call.
+  - Team split added: **GX Team** / **GX Night Shift**. It comes with a Team filter, per-team sections and team rows, and an admin **Edit teams** dialog backed by `numa_stats_teams`. Agents without a row are GX Team. Seeded night shift: clavil_mancao, april_dequino, peter_inson, elen_lumbab.
+  - The user expected a team WhatsApp CSAT of 91.8 for November, but the portal's average is 89.82. No calculation from the sheet's columns gives 91.8: the per-agent percentages are rounded and there are no response counts. It most likely comes from Looker across all responses, and needs a response-count column in the raw tabs.
+
 ### Database changes
 ```sql
 -- central_db (scripts/numa_stats_schema.sql)
 CREATE TABLE IF NOT EXISTS numa_stats (... UNIQUE (period_type, period_start, username));
 CREATE TABLE IF NOT EXISTS numa_stats_sync_log (...);
+CREATE TABLE IF NOT EXISTS numa_stats_teams (username PK, team, updated_by, updated_at);  -- + 4 night-shift rows
 ```
 - First live load: month 304 rows, week 1087 rows.
 
@@ -43,6 +49,7 @@ CREATE TABLE IF NOT EXISTS numa_stats_sync_log (...);
 - `./venv/bin/python -m unittest tests.test_numa_stats -v`
 
 ### Open items / next steps
+- [ ] Ask Kim or Jareth for a **CSAT response count** column in Raw/Raw-Weekly, so the team CSAT can be weighted by responses and match Looker (user expects 91.8 for November WhatsApp).
 - [ ] Ask Kim or Jareth what "Email SLA %" now means (about 65% in January, about 5% since mid-year). The page shows it neutrally.
 - [ ] When `Raw-Daily` is added, check it uses the same headers and a full date in a `Created …` column. The Daily button appears after the next sync.
 - [ ] Real browser check by a Numa agent (phone width, dark mode).
