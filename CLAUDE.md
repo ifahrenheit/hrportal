@@ -77,7 +77,7 @@ These run as root's crontab using `venv/bin/python`. Each is a standalone proces
 ## House workflow
 
 - **Editing `app.py`:**
-  1. Keep a timestamped backup (`app.py.bak.YYYYMMDDHHMMSS`). These backups are gitignored.
+  1. Keep a timestamped backup under `backups/`, mirroring the file's path (`backups/app.py.bak.YYYYMMDDHHMMSS`, `backups/templates/admin/x.html.bak.YYYYMMDDHHMMSS`). `backups/` is gitignored.
   2. Pass the `ast.parse` gate.
   3. Restart the service and check `journalctl`.
 - **Before any destructive SQL:** run a `SELECT`/count of the rows it will touch first.

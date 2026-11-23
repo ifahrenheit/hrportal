@@ -38,3 +38,6 @@ wpforms-smtp-*.json
 
 # Mailing list sheet sync: last applied push timestamp
 mailing_list_sheet_sync.state
+
+# Timestamped file backups (house workflow), see CLAUDE.md
+backups/
