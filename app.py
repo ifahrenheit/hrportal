@@ -17342,6 +17342,11 @@ from modules.leave_hold import leave_hold_bp, init_leave_hold
 init_leave_hold(get_db=get_db)
 app.register_blueprint(leave_hold_bp)
 
+# Admin > System Health: cron jobs, backups, disk, services, SSL, portal errors
+from modules.system_health import system_health_bp, init_system_health
+init_system_health(get_db=get_db)
+app.register_blueprint(system_health_bp)
+
 # SL Conversion report (policy 3.2.2), read-only: Analytics > SL Conversion.
 from modules.sl_conversion import sl_conversion_bp, init_sl_conversion
 init_sl_conversion(get_db=get_db, get_central_db=get_central_db)

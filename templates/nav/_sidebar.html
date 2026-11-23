@@ -580,6 +580,9 @@
         <a class="nav-link {% if request.endpoint == 'magic_cws_balance_admin' %}active{% endif %}" href="{{ url_for('magic_cws_balance_admin') }}">
           <i data-lucide="zap" style="color:#a78bfa"></i> <span class="nav-label">Magic CWS Balance</span>
         </a>
+        <a class="nav-link {% if request.endpoint == 'system_health.page' %}active{% endif %}" href="{{ url_for('system_health.page') }}">
+          <i data-lucide="activity"></i> <span class="nav-label">System Health</span>
+        </a>
         {% endif %}
       </div>
       {% endif %}

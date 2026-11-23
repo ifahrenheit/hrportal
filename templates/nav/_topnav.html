@@ -919,6 +919,8 @@
           <i data-lucide="shield-check"></i> Sub-Admins</a>
         <a class="tn-item {% if EP == 'magic_cws_balance_admin' %}active{% endif %}" href="{{ url_for('magic_cws_balance_admin') }}" data-k="magic cws balance hours">
           <i data-lucide="zap" style="color:#a78bfa"></i> Magic CWS Balance</a>
+        <a class="tn-item {% if EP == 'system_health.page' %}active{% endif %}" href="{{ url_for('system_health.page') }}" data-k="system health server cron jobs backup disk services ssl errors">
+          <i data-lucide="activity"></i> System Health</a>
         {% endif %}
       </div>
     </div>
@@ -1153,7 +1155,7 @@
   <a class="tn-subtab {% if EP == 'admin_emp_settings' %}active{% endif %}" href="{{ url_for('admin_emp_settings') }}">Work Mode</a>
   {% endif %}
 </div></div>
-{% elif EP in ['admin_quick_links', 'admin_supervisors', 'admin_sub_admins', 'magic_cws_balance_admin'] %}
+{% elif EP in ['admin_quick_links', 'admin_supervisors', 'admin_sub_admins', 'magic_cws_balance_admin', 'system_health.page'] %}
 <div class="tn-subnav"><div class="tn-subnav-inner">
   <span class="tn-subnav-label">Admin Tools</span>
   {% if ADMIN %}
@@ -1161,6 +1163,7 @@
   <a class="tn-subtab {% if EP == 'admin_supervisors' %}active{% endif %}" href="{{ url_for('admin_supervisors') }}">Supervisor Assignments</a>
   <a class="tn-subtab {% if EP == 'admin_sub_admins' %}active{% endif %}" href="{{ url_for('admin_sub_admins') }}">Sub-Admins</a>
   <a class="tn-subtab {% if EP == 'magic_cws_balance_admin' %}active{% endif %}" href="{{ url_for('magic_cws_balance_admin') }}">Magic CWS Balance</a>
+  <a class="tn-subtab {% if EP == 'system_health.page' %}active{% endif %}" href="{{ url_for('system_health.page') }}">System Health</a>
   {% endif %}
 </div></div>
 {% elif EP in ['coaching.index', 'coaching.new_session', 'coaching.all_sessions', 'coaching.agents', 'coaching.agent_profile', 'coaching.view_session', 'coaching.edit_session', 'coaching.reports'] %}

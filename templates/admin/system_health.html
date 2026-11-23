@@ -1,0 +1,261 @@
+{% extends "base.html" %}
+{% block title %}System Health{% endblock %}
+{% block page_title %}System Health{% endblock %}
+{% block page_subtitle %}Cron jobs, backups, disk, services, SSL and portal errors on this server. Read-only. Checked {{ r.now|ago }} ({{ r.now.strftime('%b %d, %H:%M') }}); results are kept for {{ cache_seconds // 60 }} minutes.{% endblock %}
+{% block page_actions %}<a href="{{ url_for('system_health.page', refresh=1, jobs=jobs_filter) }}" class="btn btn-sm btn-outline-secondary" id="shRefresh"><i class="me-1" data-lucide="refresh-cw"></i>Check now</a>{% endblock %}
+{% block content %}
+{% set LABEL = {'ok': 'OK', 'info': 'Note', 'warn': 'Warning', 'error': 'Problem'} %}
+{% set ICON = {'ok': 'circle-check', 'info': 'info', 'warn': 'triangle-alert', 'error': 'circle-x'} %}
+<style>
+  .sh-pill { display:inline-flex; align-items:center; gap:.3rem; font-size:.72rem; font-weight:600;
+             padding:.15rem .5rem; border-radius:999px; border:1px solid transparent; white-space:nowrap; }
+  .sh-pill svg { width:13px; height:13px; }
+  .sh-ok    { background:#ecfdf5; color:#047857; border-color:#a7f3d0; }
+  .sh-info  { background:#f1f5f9; color:#475569; border-color:#cbd5e1; }
+  .sh-warn  { background:#fffbeb; color:#b45309; border-color:#fde68a; }
+  .sh-error { background:#fef2f2; color:#b91c1c; border-color:#fecaca; }
+  [data-theme="dark"] .sh-ok    { background:#022c22; color:#34d399; border-color:#065f46; }
+  [data-theme="dark"] .sh-info  { background:#1e293b; color:#94a3b8; border-color:#334155; }
+  [data-theme="dark"] .sh-warn  { background:#422006; color:#fbbf24; border-color:#78350f; }
+  [data-theme="dark"] .sh-error { background:#450a0a; color:#f87171; border-color:#7f1d1d; }
+
+  .sh-tiles { display:grid; grid-template-columns:repeat(auto-fit, minmax(170px, 1fr)); gap:.75rem; }
+  .sh-tile { background:var(--surface); border:1px solid var(--border); border-radius:10px; padding:.8rem .9rem;
+             box-shadow:var(--card-shadow); border-left-width:4px; }
+  .sh-tile.t-ok { border-left-color:#10b981; } .sh-tile.t-info { border-left-color:#94a3b8; }
+  .sh-tile.t-warn { border-left-color:#f59e0b; } .sh-tile.t-error { border-left-color:#ef4444; }
+  .sh-tile .k { font-size:.72rem; text-transform:uppercase; letter-spacing:.04em; color:var(--text-muted); font-weight:600; }
+  .sh-tile .v { font-size:1.25rem; font-weight:700; color:var(--text); margin-top:.15rem; font-variant-numeric:tabular-nums; }
+  .sh-tile .s { font-size:.75rem; color:var(--text-muted); }
+  .sh-bar { height:6px; border-radius:3px; background:var(--border); overflow:hidden; margin-top:.4rem; }
+  .sh-bar > span { display:block; height:100%; }
+
+  .sh-card { background:var(--surface); border:1px solid var(--border); border-radius:10px; box-shadow:var(--card-shadow); }
+  .sh-card > .hd { display:flex; align-items:center; gap:.5rem; padding:.7rem .9rem; border-bottom:1px solid var(--border); }
+  .sh-card > .hd h6 { margin:0; font-weight:700; color:var(--text); }
+  .sh-card > .hd .sp { flex:1; }
+  .sh-card table { margin:0; font-size:.82rem; }
+  .sh-card td, .sh-card th { vertical-align:top; }
+  .sh-num { font-variant-numeric:tabular-nums; white-space:nowrap; }
+  .sh-mono { font-family:ui-monospace, SFMono-Regular, Menlo, monospace; font-size:.74rem; word-break:break-all; }
+  .sh-err { color:#b91c1c; } [data-theme="dark"] .sh-err { color:#f87171; }
+  .sh-tail { max-height:260px; overflow:auto; background:var(--bg); border:1px solid var(--border);
+             border-radius:6px; padding:.5rem .6rem; margin:.4rem 0 0; white-space:pre-wrap; }
+  .sh-problems li { padding:.35rem 0; border-bottom:1px dashed var(--border); display:flex; gap:.5rem; align-items:flex-start; }
+  .sh-problems li:last-child { border-bottom:0; }
+  .sh-area { font-weight:600; min-width:92px; color:var(--text); }
+  @media (max-width: 768px) { .sh-hide-sm { display:none; } }
+</style>
+
+<div class="container-fluid py-3">
+
+  {# ── Summary ─────────────────────────────────────────── #}
+  <div class="sh-tiles mb-3">
+    <div class="sh-tile t-{{ r.overall }}">
+      <div class="k">Overall</div>
+      <div class="v"><span class="sh-pill sh-{{ r.overall }}"><i data-lucide="{{ ICON[r.overall] }}"></i>{{ LABEL[r.overall] }}</span></div>
+      <div class="s">{{ r.problems|length }} item{{ '' if r.problems|length == 1 else 's' }} need{{ 's' if r.problems|length == 1 else '' }} a look</div>
+    </div>
+    <div class="sh-tile t-{{ r.sections.jobs }}">
+      <div class="k">Cron jobs</div>
+      <div class="v">{{ job_counts.ok }} / {{ r.jobs|length }} OK</div>
+      <div class="s">{{ job_counts.error }} problem · {{ job_counts.warn }} warning · {{ job_counts.info }} note</div>
+    </div>
+    <div class="sh-tile t-{{ r.sections.backup }}">
+      <div class="k">Database backup</div>
+      <div class="v">{{ r.backup.finished|ago if r.backup.finished else 'Never' }}</div>
+      <div class="s">{{ r.backup.total_bytes|human_bytes }} kept · nightly 03:00</div>
+    </div>
+    <div class="sh-tile t-{{ r.disk.status }}">
+      <div class="k">Disk /</div>
+      <div class="v">{{ r.disk.pct }}%</div>
+      <div class="s">{{ r.disk.free|human_bytes }} free of {{ r.disk.total|human_bytes }}</div>
+      <div class="sh-bar"><span style="width:{{ r.disk.pct }}%;background:{{ '#ef4444' if r.disk.status == 'error' else '#f59e0b' if r.disk.status == 'warn' else '#10b981' }}"></span></div>
+    </div>
+    <div class="sh-tile t-{{ r.sections.services }}">
+      <div class="k">Services</div>
+      <div class="v">{{ r.services|selectattr('status', 'equalto', 'ok')|list|length }} / {{ r.services|length }} up</div>
+      <div class="s">Portal up since {{ r.portal.started.strftime('%b %d %H:%M') if r.portal.started else '—' }}{% if r.portal.memory %} · {{ r.portal.memory|human_bytes }}{% endif %}</div>
+    </div>
+    <div class="sh-tile t-{{ r.app_errors.status }}">
+      <div class="k">Portal errors (24 h)</div>
+      <div class="v">{{ '{:,}'.format(r.app_errors.total) }}</div>
+      <div class="s">{{ r.app_errors.groups|length }} kind{{ '' if r.app_errors.groups|length == 1 else 's' }}</div>
+    </div>
+  </div>
+
+  {# ── Needs attention ─────────────────────────────────── #}
+  {% if r.problems %}
+  <div class="sh-card mb-3">
+    <div class="hd"><i data-lucide="list-checks"></i><h6>Needs attention</h6></div>
+    <ul class="list-unstyled mb-0 px-3 py-1 sh-problems">
+      {% for st, area, text in r.problems %}
+      <li><span class="sh-pill sh-{{ st }}"><i data-lucide="{{ ICON[st] }}"></i>{{ LABEL[st] }}</span>
+          <span class="sh-area">{{ area }}</span><span class="small">{{ text }}</span></li>
+      {% endfor %}
+    </ul>
+  </div>
+  {% endif %}
+
+  {# ── Cron jobs ───────────────────────────────────────── #}
+  <div class="sh-card mb-3">
+    <div class="hd">
+      <i data-lucide="clock"></i><h6>Cron jobs</h6><span class="sp"></span>
+      <div class="btn-group btn-group-sm">
+        <a class="btn btn-outline-secondary {% if jobs_filter == 'issues' %}active{% endif %}" href="{{ url_for('system_health.page', jobs='issues') }}">Not OK ({{ r.jobs|length - job_counts.ok }})</a>
+        <a class="btn btn-outline-secondary {% if jobs_filter == 'all' %}active{% endif %}" href="{{ url_for('system_health.page', jobs='all') }}">All ({{ r.jobs|length }})</a>
+      </div>
+    </div>
+    <div class="table-responsive">
+      <table class="table table-sm table-hover">
+        <thead><tr>
+          <th>Status</th><th>Job</th><th>Schedule</th>
+          <th class="sh-hide-sm">Last start</th><th class="sh-hide-sm">Last log write</th><th>Details</th>
+        </tr></thead>
+        <tbody>
+        {% for j in jobs %}
+          <tr>
+            <td><span class="sh-pill sh-{{ j.status }}"><i data-lucide="{{ ICON[j.status] }}"></i>{{ LABEL[j.status] }}</span></td>
+            <td>
+              <div class="fw-semibold">{{ j.name }}</div>
+              {% if j.note %}<div class="small text-muted">{{ j.note }}</div>{% endif %}
+            </td>
+            <td class="sh-num">{{ j.schedule_text }}</td>
+            <td class="sh-num sh-hide-sm">{{ j.fired_at|ago if j.fired_at else '—' }}</td>
+            <td class="sh-num sh-hide-sm">{{ j.log_mtime|ago if j.log_mtime else '—' }}{% if j.log_size %}<div class="small text-muted">{{ j.log_size|human_bytes }}</div>{% endif %}</td>
+            <td>
+              {% for p in j.problems %}<div class="small">{{ p }}</div>{% endfor %}
+              {% if j.error_line %}<div class="sh-mono sh-err mt-1">{{ j.error_line }}</div>{% endif %}
+              <details class="mt-1">
+                <summary class="small text-muted">Command{% if j.log_tail %} and last {{ j.log_tail|length }} log lines{% endif %}</summary>
+                <div class="sh-mono mt-1">{{ j.command }}</div>
+                {% if j.log %}<div class="small text-muted mt-1">Log: <span class="sh-mono">{{ j.log }}</span></div>{% endif %}
+                {% if j.log_tail %}<pre class="sh-mono sh-tail">{{ j.log_tail|join('\n') }}</pre>{% endif %}
+              </details>
+            </td>
+          </tr>
+        {% else %}
+          <tr><td colspan="6" class="text-center text-muted py-4">Every cron job is OK.</td></tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="row g-3">
+    {# ── Backup ──────────────────────────────────────────── #}
+    <div class="col-lg-6">
+      <div class="sh-card h-100">
+        <div class="hd"><i data-lucide="database-backup"></i><h6>Database backup</h6><span class="sp"></span>
+          <span class="sh-pill sh-{{ r.backup.status }}"><i data-lucide="{{ ICON[r.backup.status] }}"></i>{{ LABEL[r.backup.status] }}</span></div>
+        <div class="px-3 pt-2 small">
+          {{ r.backup.message }}{% if r.backup.finished %}, finished {{ r.backup.finished.strftime('%b %d %H:%M') }}{% endif %}.
+          <span class="text-muted">Kept in <span class="sh-mono">/var/backups/mysql</span>: 7 daily + 4 weekly. Restore steps are at the top of <span class="sh-mono">scripts/backup_databases.sh</span>.</span>
+        </div>
+        <table class="table table-sm mt-2">
+          <thead><tr><th>Database</th><th>File</th><th class="text-end">Size</th></tr></thead>
+          <tbody>
+          {% for f in r.backup.files %}
+            <tr><td>{{ f.db }}</td><td class="sh-mono">{{ f.file }}</td><td class="text-end sh-num">{{ f.bytes|human_bytes }}</td></tr>
+          {% else %}
+            <tr><td colspan="3" class="text-muted text-center py-3">No backup files yet.</td></tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    {# ── Services ────────────────────────────────────────── #}
+    <div class="col-lg-6">
+      <div class="sh-card h-100">
+        <div class="hd"><i data-lucide="server"></i><h6>Services</h6></div>
+        <table class="table table-sm">
+          <thead><tr><th>Service</th><th>Name</th><th>State</th></tr></thead>
+          <tbody>
+          {% for s in r.services %}
+            <tr>
+              <td>{{ s.label }}</td>
+              <td class="sh-mono">{{ s.name }}{% if s.kind == 'container' %} <span class="text-muted">(docker)</span>{% endif %}</td>
+              <td><span class="sh-pill sh-{{ s.status }}"><i data-lucide="{{ ICON[s.status] }}"></i>{{ s.state }}</span></td>
+            </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+        {% if r.portal.restarts is not none %}<div class="px-3 pb-2 small text-muted">Portal: up since {{ r.portal.started.strftime('%b %d, %H:%M') if r.portal.started else '—' }}, {{ r.portal.restarts }} automatic restarts.</div>{% endif %}
+      </div>
+    </div>
+
+    {# ── Portal errors ───────────────────────────────────── #}
+    <div class="col-12">
+      <div class="sh-card">
+        <div class="hd"><i data-lucide="bug"></i><h6>Portal errors, last {{ r.app_errors.hours }} hours</h6><span class="sp"></span>
+          <span class="small text-muted">from <span class="sh-mono">journalctl -u leavesystem</span>, grouped by message</span></div>
+        <div class="table-responsive">
+          <table class="table table-sm">
+            <thead><tr><th class="text-end">Count</th><th>Message</th><th class="sh-hide-sm">Last seen</th></tr></thead>
+            <tbody>
+            {% for g in r.app_errors.groups %}
+              <tr>
+                <td class="text-end sh-num fw-semibold">{{ '{:,}'.format(g.count) }}</td>
+                <td><div class="sh-mono">{{ g.pattern }}</div>
+                    <details><summary class="small text-muted">Latest example</summary><div class="sh-mono mt-1">{{ g.sample }}</div></details></td>
+                <td class="sh-num sh-hide-sm">{{ g.last|ago if g.last else '—' }}</td>
+              </tr>
+            {% else %}
+              <tr><td colspan="3" class="text-center text-muted py-3">No errors logged.</td></tr>
+            {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    {# ── Database sizes ──────────────────────────────────── #}
+    <div class="col-lg-6">
+      <div class="sh-card h-100">
+        <div class="hd"><i data-lucide="database"></i><h6>Database sizes</h6></div>
+        <table class="table table-sm">
+          <thead><tr><th>Database</th><th class="text-end">Tables</th><th class="text-end">Size on disk</th></tr></thead>
+          <tbody>
+          {% for d in r.db_sizes %}
+            <tr><td>{{ d.name }}</td><td class="text-end sh-num">{{ d.tables }}</td><td class="text-end sh-num">{{ d.bytes|human_bytes }}</td></tr>
+          {% else %}
+            <tr><td colspan="3" class="text-muted text-center py-3">Could not read database sizes.</td></tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    {# ── SSL ─────────────────────────────────────────────── #}
+    <div class="col-lg-6">
+      <div class="sh-card h-100">
+        <div class="hd"><i data-lucide="lock"></i><h6>SSL certificates</h6><span class="sp"></span>
+          <span class="small text-muted">certbot renews at 30 days left</span></div>
+        <table class="table table-sm">
+          <thead><tr><th>Domain</th><th>Expires</th><th class="text-end">Days left</th></tr></thead>
+          <tbody>
+          {% for c in r.certs %}
+            <tr>
+              <td>{{ c.domain }}</td>
+              <td class="sh-num">{{ c.expires.strftime('%b %d, %Y') if c.expires else '—' }}</td>
+              <td class="text-end"><span class="sh-pill sh-{{ c.status }}">{{ c.days_left if c.days_left is not none else '?' }}</span></td>
+            </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  // "Check now" re-runs every check (a few seconds): show that it's working.
+  document.getElementById('shRefresh')?.addEventListener('click', function () {
+    this.classList.add('disabled');
+    this.innerHTML = 'Checking…';
+  });
+</script>
+{% endblock %}
