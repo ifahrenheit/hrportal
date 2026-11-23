@@ -8,6 +8,28 @@
 
 ---
 
+## 2026-11-24 (2) — PIM "Employee 360": Discipline, Coaching, Documents tabs
+Commit: `46eeeb3` (this work and Payroll Readiness uncommitted) · Branch: `main`
+
+### What was built / changed
+- Per the user's choice, #9 "Employee 360" was built by **extending PIM**, not as a new page. PIM already had the profile, attendance summary, CSAT, leaves, requests, balance, punches and memos.
+- New lazy-loaded tabs on `/pim/<employee_id>`: **Discipline** (incident reports + undertime per payroll period), **Coaching** (sessions), **Documents** (library files + CoE requests). Fragment route `/pim/<employee_id>/tab/<name>` (blueprint `pim360`). — `modules/pim_360.py`, `templates/pim/_tab_360.html`, `templates/pim/profile.html` (tab buttons, panes, CSS, loader), `app.py` registration + Jinja global `pim360_tabs`, `docs/pim-360.md`.
+- Tests: `tests/test_pim_360.py` (13). Full suite 602 OK.
+
+### Why / decisions
+- Access stays the same as PIM (admin, `can_pim`), the user's choice. Each tab also applies its feature's own rules: IRs via `report_scope_conds`, coaching via `coaching._scope`, documents via `_visible_levels`, CoE via `coe_can_manage`. Verified live: a PIM-only sub-admin gets only Discipline and sees 0 of an employee's 11 IRs.
+- Undertime isn't in the monthly summary pills. Payroll periods don't line up with months, and computing live is heavy. The tab shows `undertime_cycle_state` totals per period, with a link to the Undertime Report for daily detail.
+- `coaching_sessions` ⋈ `gsheet_employees` needs `COLLATE utf8mb4_unicode_ci` (0900_ai_ci vs unicode_ci).
+
+### Deploy / run notes
+- **Incident:** at 00:23 a user hit a 500 on `/pim/220525-01` (`'pim360_tabs' is undefined`). The live process picked up the edited template before the restart at 00:24:44. Since then the template guards it (`pim360_tabs is defined`). Lesson saved: ship the Python side and restart before template edits that depend on it.
+
+### Open items / next steps
+- [ ] Commit + push Payroll Readiness and PIM 360 (waiting for the user).
+- [ ] Next in the user's list: #10 approval reminders, #11 TL home page.
+
+---
+
 ## 2026-11-24 — Payroll Readiness page (Analytics), nav-parity checker repaired
 Commit: `b21674d` (this work uncommitted) · Branch: `main`
 
