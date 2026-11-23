@@ -452,6 +452,11 @@
           <i data-lucide="timer"></i> <span class="nav-label">OT Hours</span>
         </a>
         {% endif %}
+        {% if session.get('is_admin') or session.get('permissions', {}).get('can_ot_hours') or session.get('permissions', {}).get('can_reports') %}
+        <a class="nav-link {% if request.endpoint == 'payroll_readiness.page' %}active{% endif %}" href="{{ url_for('payroll_readiness.page') }}">
+          <i data-lucide="clipboard-check"></i> <span class="nav-label">Payroll Readiness</span>
+        </a>
+        {% endif %}
         {% if session.get('is_admin') or session.get('permissions', {}).get('can_timestamp_records') %}
         <a class="nav-link {% if request.endpoint == 'timestamp_records.timestamp_records_page' %}active{% endif %}" href="{{ url_for('timestamp_records.timestamp_records_page') }}">
           <i data-lucide="fingerprint"></i> <span class="nav-label">Timestamp Records</span>

@@ -17347,6 +17347,18 @@ from modules.system_health import system_health_bp, init_system_health
 init_system_health(get_db=get_db)
 app.register_blueprint(system_health_bp)
 
+# Analytics > Payroll Readiness: what's still open in a payroll period
+from modules.payroll_readiness import payroll_readiness_bp, init_payroll_readiness
+init_payroll_readiness(get_db=get_db, get_central_db=get_central_db,
+                       get_approver_names=get_approver_names)
+app.register_blueprint(payroll_readiness_bp)
+
+# PIM profile "Employee 360" tabs: Discipline, Coaching, Documents (lazy-loaded)
+from modules.pim_360 import pim360_bp, init_pim_360, pim360_tabs
+init_pim_360(get_central_db=get_central_db)
+app.register_blueprint(pim360_bp)
+app.jinja_env.globals.update(pim360_tabs=pim360_tabs)
+
 # SL Conversion report (policy 3.2.2), read-only: Analytics > SL Conversion.
 from modules.sl_conversion import sl_conversion_bp, init_sl_conversion
 init_sl_conversion(get_db=get_db, get_central_db=get_central_db)
@@ -17633,6 +17645,12 @@ def nav_parity_check():
             "qa_can_view_data": lambda: bool(fs.get("is_admin") or perms.get("can_qa_updates")),
             "coe_can_manage": lambda: bool(fs.get("is_admin")),
             "numa_stats_can_view": lambda: bool(fs.get("is_admin")),
+            # break_log/routes.py context processor; profiles carry bl_is_overhead
+            "break_log_user_access": lambda: not fs.get("bl_is_overhead", False),
+            # modules/documents.py and modules/mailing_lists.py (admin or their own permission)
+            "docs_can_access": lambda: bool(fs.get("is_admin") or perms.get("can_documents")),
+            "ml_can_view": lambda: bool(fs.get("is_admin") or perms.get("can_mailing_lists")
+                                        or perms.get("can_mailing_lists_view")),
             "break_log_supervisor_access": lambda: bool(
                 fs.get("is_admin") or fs.get("is_supervisor") or fs.get("is_sub_admin")
             ),

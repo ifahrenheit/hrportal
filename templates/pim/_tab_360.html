@@ -1,0 +1,121 @@
+{# Fragment loaded into a PIM profile tab by modules/pim_360.py. No base.html. #}
+{% macro pill(label, tone) -%}
+<span class="p3-pill p3-{{ tone }}">{{ label }}</span>
+{%- endmacro %}
+
+{% if name == 'discipline' %}
+  <div class="p3-sec">
+    <div class="p3-hd"><i data-lucide="file-warning"></i><h6>Incident reports</h6>
+      <span class="p3-n">{{ irs|length }}</span><span class="p3-sp"></span>
+      <span class="small text-muted">Only reports you can open on the IR dashboard</span></div>
+    {% if irs %}
+    <div class="table-responsive"><table class="table table-sm table-hover align-middle mb-0">
+      <thead><tr><th>Report</th><th>Incident date</th><th>Summary</th><th>Category</th><th>Status</th><th class="p3-hide-sm">Filed by</th></tr></thead>
+      <tbody>
+      {% for r in irs %}
+        <tr>
+          <td class="text-nowrap"><a href="{{ url_for('incident_reports.view_report', report_number=r.report_number) }}">{{ r.report_number }}</a></td>
+          <td class="text-nowrap">{{ r.incident_date.strftime('%b %d, %Y') if r.incident_date else '—' }}</td>
+          <td><div class="p3-clip" title="{{ r.summary }}">{{ r.summary or '—' }}</div></td>
+          <td>{{ r.memo_category or '—' }}{% if r.disciplinary_action %}<div class="small text-muted">{{ r.disciplinary_action }}</div>{% endif %}</td>
+          <td>{{ pill(r.status_label, r.status_tone) }}</td>
+          <td class="p3-hide-sm">{{ r.submitted_by_name or '—' }}</td>
+        </tr>
+      {% endfor %}
+      </tbody></table></div>
+    {% else %}<div class="p3-empty">No incident reports about this employee{{ ' that you can see' }}.</div>{% endif %}
+  </div>
+
+  <div class="p3-sec">
+    <div class="p3-hd"><i data-lucide="hourglass"></i><h6>Undertime by payroll period</h6>
+      <span class="p3-n">{{ undertime|length }}</span><span class="p3-sp"></span>
+      <span class="small text-muted">From the daily undertime check (undertime_notify.py)</span></div>
+    {% if undertime %}
+    <div class="table-responsive"><table class="table table-sm table-hover align-middle mb-0">
+      <thead><tr><th>Payroll period</th><th class="text-end">Days</th><th class="text-end">Minutes</th><th class="text-end">Memos sent</th><th class="p3-hide-sm">Days since last memo</th><th></th></tr></thead>
+      <tbody>
+      {% for u in undertime %}
+        <tr>
+          <td class="text-nowrap">{{ u.start.strftime('%b %d') }} – {{ u.end.strftime('%b %d, %Y') }}</td>
+          <td class="text-end">{{ u.count }}</td>
+          <td class="text-end">{{ u.minutes }}</td>
+          <td class="text-end">{{ u.memos }}</td>
+          <td class="p3-hide-sm small">{{ u.recent_days|join(', ') or '—' }}</td>
+          <td class="text-end"><a class="small text-nowrap" href="{{ url_for('admin_undertime_report', date_from=u.start.isoformat(), date_to=u.end.isoformat(), emp_search=employee_id) }}">Day by day</a></td>
+        </tr>
+      {% endfor %}
+      </tbody></table></div>
+    {% else %}<div class="p3-empty">No undertime recorded. The daily check records it per payroll period.</div>{% endif %}
+  </div>
+
+{% elif name == 'coaching' %}
+  <div class="p3-sec">
+    <div class="p3-hd"><i data-lucide="messages-square"></i><h6>Coaching sessions</h6>
+      <span class="p3-n">{{ sessions|length }}</span><span class="p3-sp"></span>
+      {% if not coaching_all %}<span class="small text-muted">Sessions you can see in Coaching (yours or your team's)</span>{% endif %}
+      <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('coaching.agent_profile', employee_id=employee_id) }}">Open in Coaching</a></div>
+    {% if sessions %}
+    <div class="table-responsive"><table class="table table-sm table-hover align-middle mb-0">
+      <thead><tr><th>Date</th><th>Type</th><th>Topic</th><th class="p3-hide-sm">Coach</th><th>Status</th><th class="p3-hide-sm">Follow-up</th></tr></thead>
+      <tbody>
+      {% for s in sessions %}
+        <tr>
+          <td class="text-nowrap">{% if coaching_all or s.supervisor_id == session['user']['employee_id'] %}<a href="{{ url_for('coaching.view_session', session_id=s.id) }}">{{ s.session_date.strftime('%b %d, %Y') if s.session_date else '—' }}</a>{% else %}{{ s.session_date.strftime('%b %d, %Y') if s.session_date else '—' }}{% endif %}</td>
+          <td>{{ (s.coaching_type or '—')|replace('_', ' ')|title }}</td>
+          <td><div class="p3-clip" title="{{ s.topic }}">{{ s.topic or '—' }}</div></td>
+          <td class="p3-hide-sm">{{ s.coach or '—' }}</td>
+          <td>{{ pill(s.status_label, s.status_tone) }}</td>
+          <td class="p3-hide-sm text-nowrap">{{ s.follow_up_date.strftime('%b %d, %Y') if s.follow_up_date else '—' }}</td>
+        </tr>
+      {% endfor %}
+      </tbody></table></div>
+    {% else %}<div class="p3-empty">No coaching sessions{{ '' if coaching_all else ' that you can see' }}.</div>{% endif %}
+  </div>
+
+{% elif name == 'documents' %}
+  {% if show_docs %}
+  <div class="p3-sec">
+    <div class="p3-hd"><i data-lucide="folder-open"></i><h6>Documents library</h6>
+      <span class="p3-n">{{ docs|length }}</span><span class="p3-sp"></span>
+      {% if hr_hidden %}<span class="small text-muted">HR-only files are hidden (needs the Memos permission)</span>{% endif %}</div>
+    {% if docs %}
+    <div class="table-responsive"><table class="table table-sm table-hover align-middle mb-0">
+      <thead><tr><th>Title</th><th>Category</th><th>Date</th><th class="p3-hide-sm">Visible to</th><th class="p3-hide-sm text-end">Size</th></tr></thead>
+      <tbody>
+      {% for d in docs %}
+        <tr>
+          <td><a href="{{ url_for('documents.detail', doc_id=d.id) }}">{{ d.title or d.original_name }}</a></td>
+          <td>{{ d.category or '—' }}</td>
+          <td class="text-nowrap">{{ d.doc_date.strftime('%b %d, %Y') if d.doc_date else (d.uploaded_at.strftime('%b %d, %Y') if d.uploaded_at else '—') }}</td>
+          <td class="p3-hide-sm">{{ 'HR only' if d.visibility == 'hr' else 'Everyone with access' }}</td>
+          <td class="p3-hide-sm text-end text-nowrap">{% if d.file_size %}{{ '%.0f KB'|format(d.file_size / 1024) if d.file_size < 1048576 else '%.1f MB'|format(d.file_size / 1048576) }}{% else %}—{% endif %}</td>
+        </tr>
+      {% endfor %}
+      </tbody></table></div>
+    {% else %}<div class="p3-empty">No documents filed under this employee{{ ' that you can see' if hr_hidden }}.</div>{% endif %}
+  </div>
+  {% endif %}
+
+  {% if show_coe %}
+  <div class="p3-sec">
+    <div class="p3-hd"><i data-lucide="file-badge"></i><h6>Certificate of Employment requests</h6>
+      <span class="p3-n">{{ coes|length }}</span><span class="p3-sp"></span>
+      <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('coe.manage_queue') }}">Open CoE queue</a></div>
+    {% if coes %}
+    <div class="table-responsive"><table class="table table-sm table-hover align-middle mb-0">
+      <thead><tr><th>Requested</th><th>Purpose</th><th class="p3-hide-sm">Addressee</th><th>Status</th><th class="p3-hide-sm">Released</th></tr></thead>
+      <tbody>
+      {% for c in coes %}
+        <tr>
+          <td class="text-nowrap">{{ c.requested_at.strftime('%b %d, %Y') if c.requested_at else '—' }}</td>
+          <td>{{ c.purpose_other or c.purpose or '—' }}</td>
+          <td class="p3-hide-sm">{{ c.addressee or '—' }}</td>
+          <td>{{ pill((c.status or '—')|replace('_', ' ')|capitalize, 'ok' if c.status == 'released' else 'info') }}</td>
+          <td class="p3-hide-sm text-nowrap">{{ c.released_at.strftime('%b %d, %Y') if c.released_at else '—' }}{% if c.released_via %} <span class="small text-muted">({{ c.released_via }})</span>{% endif %}</td>
+        </tr>
+      {% endfor %}
+      </tbody></table></div>
+    {% else %}<div class="p3-empty">No CoE requests.</div>{% endif %}
+  </div>
+  {% endif %}
+{% endif %}

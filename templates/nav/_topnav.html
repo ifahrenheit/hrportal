@@ -854,6 +854,10 @@
         <a class="tn-item {% if EP == 'admin_ot_hours' %}active{% endif %}" href="{{ url_for('admin_ot_hours') }}" data-k="ot hours overtime">
           <i data-lucide="timer"></i> OT Hours</a>
         {% endif %}
+        {% if WRAP and (ADMIN or P.get('can_ot_hours') or P.get('can_reports')) %}
+        <a class="tn-item {% if EP == 'payroll_readiness.page' %}active{% endif %}" href="{{ url_for('payroll_readiness.page') }}" data-k="payroll readiness cutoff pending ot fts cws rdw missing punch leave">
+          <i data-lucide="clipboard-check"></i> Payroll Readiness</a>
+        {% endif %}
         {% if WRAP and (ADMIN or P.get('can_timestamp_records')) %}
         <a class="tn-item {% if EP == 'timestamp_records.timestamp_records_page' %}active{% endif %}" href="{{ url_for('timestamp_records.timestamp_records_page') }}" data-k="timestamp records biometric clock in out punches raw logs payroll">
           <i data-lucide="fingerprint"></i> Timestamp Records</a>
@@ -1008,7 +1012,7 @@
   <a class="tn-subtab {% if EP == 'memos.memos_list' %}active{% endif %}" href="{{ url_for('memos.memos_list') }}">Memos</a>
   {% endif %}
 </div></div>
-{% elif EP in ['admin_absences', 'admin_attendance_grid', 'admin_awol_report', 'admin_undertime_report', 'admin_attendance_stack_rank', 'tardiness.tardiness_page', 'admin_holiday_awol', 'admin_overbreak', 'admin_ot_hours', 'on_shift', 'fts_review.review_page', 'timestamp_records.timestamp_records_page'] %}
+{% elif EP in ['admin_absences', 'admin_attendance_grid', 'admin_awol_report', 'admin_undertime_report', 'admin_attendance_stack_rank', 'tardiness.tardiness_page', 'admin_holiday_awol', 'admin_overbreak', 'admin_ot_hours', 'payroll_readiness.page', 'on_shift', 'fts_review.review_page', 'timestamp_records.timestamp_records_page'] %}
 <div class="tn-subnav"><div class="tn-subnav-inner">
   <span class="tn-subnav-label">Attendance</span>
   {% if WRAP and (ADMIN or P.get('can_absences')) %}
@@ -1029,6 +1033,9 @@
   {% endif %}
   {% if WRAP and (ADMIN or P.get('can_ot_hours')) %}
   <a class="tn-subtab {% if EP == 'admin_ot_hours' %}active{% endif %}" href="{{ url_for('admin_ot_hours') }}">OT Hours</a>
+  {% endif %}
+  {% if WRAP and (ADMIN or P.get('can_ot_hours') or P.get('can_reports')) %}
+  <a class="tn-subtab {% if EP == 'payroll_readiness.page' %}active{% endif %}" href="{{ url_for('payroll_readiness.page') }}">Payroll Readiness</a>
   {% endif %}
   {% if ADMIN or P.get('can_absences') %}
   <a class="tn-subtab {% if EP == 'on_shift' %}active{% endif %}" href="{{ url_for('on_shift') }}">On Shift</a>

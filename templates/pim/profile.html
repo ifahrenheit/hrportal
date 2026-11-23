@@ -734,7 +734,50 @@
             <i class="me-1" data-lucide="file-text" style="width:14px;height:14px;"></i>Memos
           </button>
         </li>
+        {% for key, label, icon in (pim360_tabs() if pim360_tabs is defined else []) %}
+        <li class="nav-item" role="presentation">
+          <button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-{{ key }}" type="button" role="tab">
+            <i class="me-1" data-lucide="{{ icon }}" style="width:14px;height:14px;"></i>{{ label }}
+          </button>
+        </li>
+        {% endfor %}
       </ul>
+      <style>
+        /* Employee 360 tabs (templates/pim/_tab_360.html) */
+        .p3-sec { background:var(--surface); border:1px solid var(--border); border-radius:10px; box-shadow:var(--card-shadow); margin-bottom:1rem; }
+        .p3-hd { display:flex; flex-wrap:wrap; align-items:center; gap:.5rem; padding:.65rem .9rem; border-bottom:1px solid var(--border); }
+        .p3-hd h6 { margin:0; font-weight:700; color:var(--text); }
+        .p3-hd .p3-sp { flex:1; }
+        .p3-n { font-size:.72rem; font-weight:700; padding:.05rem .5rem; border-radius:999px; background:var(--bg); border:1px solid var(--border); color:var(--text-muted); }
+        .p3-sec table { font-size:.84rem; }
+        .p3-empty, .p3-loading { padding:.9rem; color:var(--text-muted); font-size:.86rem; }
+        .p3-clip { max-width:360px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+        .p3-pill { font-size:.72rem; font-weight:600; padding:.12rem .5rem; border-radius:999px; border:1px solid transparent; white-space:nowrap; }
+        .p3-ok { background:#ecfdf5; color:#047857; border-color:#a7f3d0; }
+        .p3-info { background:#eff6ff; color:#1d4ed8; border-color:#bfdbfe; }
+        .p3-warn { background:#fffbeb; color:#b45309; border-color:#fde68a; }
+        .p3-muted { background:#f1f5f9; color:#475569; border-color:#cbd5e1; }
+        [data-theme="dark"] .p3-ok { background:#022c22; color:#34d399; border-color:#065f46; }
+        [data-theme="dark"] .p3-info { background:#172554; color:#93c5fd; border-color:#1e3a8a; }
+        [data-theme="dark"] .p3-warn { background:#422006; color:#fbbf24; border-color:#78350f; }
+        [data-theme="dark"] .p3-muted { background:#1e293b; color:#94a3b8; border-color:#334155; }
+        @media (max-width: 768px) { .p3-hide-sm { display:none; } .p3-clip { max-width:180px; } }
+      </style>
+      <script>
+      // Employee 360 tabs: fetch each tab's HTML the first time it is shown.
+      document.addEventListener('shown.bs.tab', function (ev) {
+        var pane = document.querySelector(ev.target.getAttribute('data-bs-target'));
+        if (!pane || !pane.dataset.p3Src || pane.dataset.p3Loaded) return;
+        pane.dataset.p3Loaded = '1';
+        fetch(pane.dataset.p3Src, { credentials: 'same-origin' })
+          .then(function (r) { if (!r.ok) throw new Error(r.status); return r.text(); })
+          .then(function (html) { pane.innerHTML = html; if (window.lucide) lucide.createIcons(); })
+          .catch(function () {
+            pane.dataset.p3Loaded = '';
+            pane.innerHTML = '<div class="p3-empty text-danger">Could not load this tab. Reload the page to try again.</div>';
+          });
+      });
+      </script>
 
       <div class="tab-content" id="profileTabsContent">
       <div class="tab-pane fade show active" id="tab-csat" role="tabpanel">
@@ -1652,6 +1695,14 @@
         </div>
       </div>
       </div>
+
+      {# Employee 360 tabs (modules/pim_360.py): loaded on first click #}
+      {% for key, label, icon in (pim360_tabs() if pim360_tabs is defined else []) %}
+      <div class="tab-pane fade" id="tab-{{ key }}" role="tabpanel"
+           data-p3-src="{{ url_for('pim360.tab', employee_id=employee.employee_id, name=key) }}">
+        <div class="p3-loading"><span class="spinner-border spinner-border-sm me-2"></span>Loading {{ label|lower }}…</div>
+      </div>
+      {% endfor %}
       </div>
 
     </div>

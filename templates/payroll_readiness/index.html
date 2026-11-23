@@ -1,0 +1,160 @@
+{% extends "base.html" %}
+{% block title %}Payroll Readiness{% endblock %}
+{% block page_title %}Payroll Readiness{% endblock %}
+{% block page_subtitle %}What is still open in a payroll period, and who it is waiting on. Check before running payroll for the cutoff.{% endblock %}
+{% block page_actions %}<a href="{{ url_for('payroll_readiness.export_csv', start=start.isoformat()) }}" class="btn btn-sm btn-outline-secondary"><i class="me-1" data-lucide="download"></i>Export CSV</a>{% endblock %}
+{% block content %}
+<style>
+  .pr-bar { display:flex; flex-wrap:wrap; align-items:center; gap:.5rem .75rem; margin-bottom:1rem; }
+  .pr-period { font-size:1.15rem; font-weight:700; color:var(--text); }
+  .pr-state { font-size:.78rem; font-weight:600; padding:.2rem .6rem; border-radius:999px; border:1px solid transparent; }
+  .pr-state.closed   { background:#f1f5f9; color:#475569; border-color:#cbd5e1; }
+  .pr-state.open     { background:#eff6ff; color:#1d4ed8; border-color:#bfdbfe; }
+  .pr-state.upcoming { background:#f5f3ff; color:#6d28d9; border-color:#ddd6fe; }
+  [data-theme="dark"] .pr-state.closed   { background:#1e293b; color:#94a3b8; border-color:#334155; }
+  [data-theme="dark"] .pr-state.open     { background:#172554; color:#93c5fd; border-color:#1e3a8a; }
+  [data-theme="dark"] .pr-state.upcoming { background:#2e1065; color:#c4b5fd; border-color:#4c1d95; }
+
+  .pr-tiles { display:grid; grid-template-columns:repeat(auto-fit, minmax(180px, 1fr)); gap:.75rem; margin-bottom:1rem; }
+  .pr-tile { background:var(--surface); border:1px solid var(--border); border-left-width:4px; border-radius:10px;
+             padding:.8rem .9rem; box-shadow:var(--card-shadow); text-decoration:none; display:block; }
+  .pr-tile.t-ok { border-left-color:#10b981; } .pr-tile.t-open { border-left-color:#f59e0b; }
+  .pr-tile .k { font-size:.72rem; text-transform:uppercase; letter-spacing:.04em; color:var(--text-muted); font-weight:600; }
+  .pr-tile .v { font-size:1.5rem; font-weight:700; color:var(--text); font-variant-numeric:tabular-nums; line-height:1.3; }
+  .pr-tile .s { font-size:.75rem; color:var(--text-muted); }
+
+  .pr-ready { display:flex; gap:.6rem; align-items:center; padding:.8rem 1rem; border-radius:10px; margin-bottom:1rem;
+              background:#ecfdf5; color:#047857; border:1px solid #a7f3d0; font-weight:600; }
+  [data-theme="dark"] .pr-ready { background:#022c22; color:#34d399; border-color:#065f46; }
+  .pr-note { display:flex; gap:.6rem; align-items:flex-start; padding:.7rem 1rem; border-radius:10px; margin-bottom:1rem;
+             background:#fffbeb; color:#92400e; border:1px solid #fde68a; font-size:.88rem; }
+  [data-theme="dark"] .pr-note { background:#422006; color:#fbbf24; border-color:#78350f; }
+
+  .pr-card { background:var(--surface); border:1px solid var(--border); border-radius:10px; box-shadow:var(--card-shadow); margin-bottom:1rem; }
+  .pr-card > .hd { display:flex; flex-wrap:wrap; align-items:center; gap:.5rem; padding:.7rem .9rem; border-bottom:1px solid var(--border); }
+  .pr-card > .hd h6 { margin:0; font-weight:700; color:var(--text); }
+  .pr-card > .hd .sp { flex:1; }
+  .pr-card > .hint { padding:.45rem .9rem; font-size:.78rem; color:var(--text-muted); border-bottom:1px solid var(--border); }
+  .pr-count { font-size:.75rem; font-weight:700; padding:.1rem .5rem; border-radius:999px; background:#fef3c7; color:#92400e; }
+  .pr-count.zero { background:#d1fae5; color:#065f46; }
+  [data-theme="dark"] .pr-count { background:#422006; color:#fbbf24; } [data-theme="dark"] .pr-count.zero { background:#022c22; color:#34d399; }
+  .pr-card table { margin:0; font-size:.84rem; }
+  .pr-type { font-size:.72rem; font-weight:600; padding:.1rem .45rem; border-radius:6px; background:var(--bg); border:1px solid var(--border); white-space:nowrap; }
+  .pr-num { font-variant-numeric:tabular-nums; white-space:nowrap; }
+  .pr-old { color:#b91c1c; font-weight:600; } [data-theme="dark"] .pr-old { color:#f87171; }
+  .pr-empty { padding:1rem .9rem; color:var(--text-muted); font-size:.86rem; }
+  @media (max-width: 768px) { .pr-hide-sm { display:none; } }
+</style>
+
+<div class="container-fluid py-3">
+
+  {# ── Period picker ───────────────────────────────────── #}
+  <div class="pr-bar">
+    <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('payroll_readiness.page', start=prev_start.isoformat()) }}" title="Previous period"><i data-lucide="chevron-left"></i></a>
+    <span class="pr-period">{{ start.strftime('%b %d') }} – {{ end.strftime('%b %d, %Y') }}</span>
+    <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('payroll_readiness.page', start=next_start.isoformat()) }}" title="Next period"><i data-lucide="chevron-right"></i></a>
+    <span class="pr-state {{ state }}">{{ state_text }}</span>
+    <span class="flex-grow-1"></span>
+    {% if start != default_start %}<a class="btn btn-sm btn-link" href="{{ url_for('payroll_readiness.page') }}">Last closed period</a>{% endif %}
+    {% if start != current_start %}<a class="btn btn-sm btn-link" href="{{ url_for('payroll_readiness.page', start=current_start.isoformat()) }}">Current period</a>{% endif %}
+  </div>
+
+  {% if d.total == 0 %}
+  <div class="pr-ready"><i data-lucide="circle-check"></i>Nothing open for this period. It's ready for payroll.</div>
+  {% endif %}
+
+  {% if d.earlier_pending %}
+  <div class="pr-note"><i data-lucide="history"></i>
+    <div><b>{{ d.earlier_pending }}</b> request{{ '' if d.earlier_pending == 1 else 's' }} from earlier periods {{ 'is' if d.earlier_pending == 1 else 'are' }} still pending. If approved now, {{ 'it needs' if d.earlier_pending == 1 else 'they need' }} a payroll adjustment.
+      <a href="{{ url_for('file_requests_approvals', date_from='2000-01-01', date_to=earlier_to.isoformat()) }}">Open in Approvals</a></div>
+  </div>
+  {% endif %}
+
+  {# ── Summary ─────────────────────────────────────────── #}
+  <div class="pr-tiles">
+    <div class="pr-tile {{ 't-ok' if d.total == 0 else 't-open' }}">
+      <div class="k">Open items</div>
+      <div class="v">{{ d.total }}</div>
+      <div class="s">{{ d.people }} employee{{ '' if d.people == 1 else 's' }}</div>
+    </div>
+    {% for s in d.sections %}
+    <a class="pr-tile {{ 't-ok' if not s.rows else 't-open' }}" href="#{{ s.key }}">
+      <div class="k">{{ s.title }}</div>
+      <div class="v">{{ s.rows|length }}</div>
+      <div class="s">
+        {% set types = {} %}
+        {% for r in s.rows %}{% set _ = types.update({r.type: types.get(r.type, 0) + 1}) %}{% endfor %}
+        {% for t, n in types.items() %}{{ n }} {{ t }}{{ ' · ' if not loop.last }}{% else %}None{% endfor %}
+      </div>
+    </a>
+    {% endfor %}
+  </div>
+
+  {# ── Sections ────────────────────────────────────────── #}
+  {% for s in d.sections %}
+  <div class="pr-card" id="{{ s.key }}">
+    <div class="hd">
+      <i data-lucide="{{ s.icon }}"></i><h6>{{ s.title }}</h6>
+      <span class="pr-count {{ 'zero' if not s.rows }}">{{ s.rows|length }}</span>
+      <span class="sp"></span>
+      {% if s.key == 'requests' %}<a class="btn btn-sm btn-outline-secondary" href="{{ url_for('file_requests_approvals', date_from=start.isoformat(), date_to=end.isoformat()) }}">Open Approvals</a>{% endif %}
+      {% if s.key == 'punches' %}<a class="btn btn-sm btn-outline-secondary" href="{{ url_for('fts_review.review_page') }}">Open FTS Review</a>{% endif %}
+      {% if s.rows %}<button type="button" class="btn btn-sm btn-outline-secondary pr-copy" data-target="tbl-{{ s.key }}"><i class="me-1" data-lucide="copy"></i>Copy table</button>{% endif %}
+    </div>
+    <div class="hint">{{ s.hint }}</div>
+    {% if s.rows %}
+    <div class="table-responsive">
+      <table class="table table-sm table-hover align-middle" id="tbl-{{ s.key }}">
+        <thead><tr>
+          <th>Type</th><th>Employee</th><th class="pr-hide-sm">TL</th><th>Date</th><th>Details</th>
+          <th>Waiting on</th><th class="text-end">Days open</th>
+        </tr></thead>
+        <tbody>
+        {% for r in s.rows %}
+          <tr>
+            <td><span class="pr-type">{{ r.type }}</span></td>
+            <td><div class="fw-semibold">{{ r.name }}</div><div class="small text-muted">{{ r.employee_id }}</div></td>
+            <td class="pr-hide-sm">{{ r.tl or '—' }}</td>
+            <td class="pr-num">{{ r.date.strftime('%a %b %d') if r.date else '—' }}</td>
+            <td>{{ r.details or '—' }}</td>
+            <td>{{ r.waiting_on }}</td>
+            <td class="text-end pr-num {{ 'pr-old' if r.age_days is not none and r.age_days >= 3 }}">{{ r.age_days if r.age_days is not none else '—' }}</td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <div class="pr-empty"><i class="me-1" data-lucide="circle-check"></i>{{ s.empty }}</div>
+    {% endif %}
+  </div>
+  {% endfor %}
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  // "Copy table": tab-separated, so it pastes into Excel / Google Sheets as columns.
+  document.querySelectorAll('.pr-copy').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      var t = document.getElementById(btn.dataset.target);
+      if (!t) return;
+      var lines = Array.from(t.rows).map(function (tr) {
+        return Array.from(tr.cells).map(function (td) {
+          return td.innerText.replace(/\s*\n\s*/g, ' ').trim();
+        }).join('\t');
+      });
+      var done = function () {
+        var old = btn.innerHTML; btn.textContent = 'Copied';
+        setTimeout(function () { btn.innerHTML = old; if (window.lucide) lucide.createIcons(); }, 1500);
+      };
+      if (navigator.clipboard && window.isSecureContext) {
+        navigator.clipboard.writeText(lines.join('\n')).then(done);
+      } else {
+        var ta = document.createElement('textarea'); ta.value = lines.join('\n');
+        document.body.appendChild(ta); ta.select(); document.execCommand('copy'); ta.remove(); done();
+      }
+    });
+  });
+</script>
+{% endblock %}
