@@ -9,7 +9,7 @@
 ---
 
 ## 2026-11-23 — System Health page, nightly DB backups, dead payroll-email cron removed
-Commit: `fa0cbae` (health page + backup script uncommitted) · Branch: `main`
+Commit: `6215f29` · Branch: `main`
 
 ### What was built / changed
 - Earlier the same day the pending work was committed and pushed as 4 commits: Numa Stats `64223da`, AWOL CWS skip `367d6ff`, IR visibility `1e09654`, SL conversion tier filter `fa0cbae`.
@@ -43,7 +43,7 @@ Commit: `fa0cbae` (health page + backup script uncommitted) · Branch: `main`
 
 ### Open items / next steps
 - [x] Alert live: `HEALTH_ALERT_TO='andrew.tacdoro@cohere.ph'` in `.env` (comma-separated, add more there, no restart needed). Cron `30 7 * * *` runs `scripts/system_health_check.py --send` → `system_health_check.log`. A test email was sent 2026-11-23 23:07 and the mail server accepted it.
-- [ ] Commit the health page, backup script and cleanup (not committed yet).
+- [x] Committed and pushed: `a14b257` System Health + backup + alert, `101a36b` sheet webhook fixes, `672396b` test fixes, `6215f29` backups/ folder.
 - [ ] Optional, needs the user's OK (blocked by the permission check): cap the journal for good with `/etc/systemd/journald.conf.d/size.conf` → `SystemMaxUse=1G`.
 - [x] `/webhook/schedule-sync` now skips `#N/A`/blank IDs and duplicate employee+date rows, with one info log line per sync (`_clean_schedule_rows` in `modules/sheet_webhooks.py`, doc in `docs/sheet-webhooks.md`). The Portal errors warning clears once the old errors age out of the 24-hour window.
 - [x] System Health shows a plain-English description for every cron job: `JOB_DESCRIPTIONS` in `helpers/system_health.py`, matched on part of the command. **Add a line there when adding a cron job**, otherwise the page shows the crontab comment.
