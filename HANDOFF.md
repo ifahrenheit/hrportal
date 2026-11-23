@@ -50,7 +50,8 @@ Commit: `fa0cbae` (health page + backup script uncommitted) · Branch: `main`
 - [x] Crontab now has `MAILTO=""` under the header: cron mail to root had been undeliverable since Nov 2025. `sync_userdata.py`, `process_timerecords.php` and `sync_csat.php` now append to `/var/log/<name>.log`. The 08:00 VS Code cleanup always logs (`pkill exit=0/1`) to `/var/log/vscode_cleanup.log`.
 - [x] System Health: a job with no log and no start yet, whose last slot came before the last crontab save (or before the 50-hour journal window, e.g. the Jan 1 rollover), shows OK with "Waiting for its first run: <next run>". If a slot after the save passes with no start, that's a warning. `CronSchedule.next_run()` was added.
 - [x] Deleted ~274k undeliverable cron mails (1.1 GB) from `/var/spool/mqueue-client` with the user's OK, and recreated the folder (smmsp:smmsp, 2770). Disk is at 56%. New mail can't pile up there: root's crontab has `MAILTO=""`.
-- [ ] Still seen occasionally: `sheet_webhooks: Error syncing <id>: Deadlock found` on employee-sync (about 2 a day). Low priority; a retry would fix it.
+- [x] Employee-sync deadlocks fixed: `batch_sync` now commits per row and retries MySQL 1213/1205 up to 3 times (`_write_row` in `modules/sheet_webhooks.py`). Before, a deadlock (~00:47, when the employee and schedule syncs overlap) silently rolled back the earlier rows of its batch; they self-healed on the next sync because their `last_synced_at` was rolled back too. Tests: 574 OK.
+- [ ] Check after the 00:47 sync on 2026-11-24: `sheet_webhooks.log` should show `Skipped N row(s)...` and no `#N/A`, duplicate or deadlock errors.
 - [ ] Next, per the user: payroll cutoff readiness, Employee 360, approval reminders, TL home page (#8–11).
 
 ---
