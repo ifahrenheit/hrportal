@@ -42,7 +42,7 @@ Commit: `fa0cbae` (health page + backup script uncommitted) · Branch: `main`
 - User decisions: the schedule sheet's old months (`#N/A` rows in March/July, Glane listed twice in June) are to be ignored. Uploaded files aren't backed up (users keep local copies). No off-server backup for now (Drive is nearly full).
 
 ### Open items / next steps
-- [ ] User to pick `HEALTH_ALERT_TO` recipients, then add cron: `30 7 * * * cd /var/www/html/leavesystem && venv/bin/python scripts/system_health_check.py --send >> system_health_check.log 2>&1`.
+- [x] Alert live: `HEALTH_ALERT_TO='andrew.tacdoro@cohere.ph'` in `.env` (comma-separated, add more there, no restart needed). Cron `30 7 * * *` runs `scripts/system_health_check.py --send` → `system_health_check.log`. A test email was sent 2026-11-23 23:07 and the mail server accepted it.
 - [ ] Commit the health page, backup script and cleanup (not committed yet).
 - [ ] Optional, needs the user's OK (blocked by the permission check): cap the journal for good with `/etc/systemd/journald.conf.d/size.conf` → `SystemMaxUse=1G`.
 - [ ] Optional: make `/webhook/schedule-sync` skip `#N/A`/blank IDs and duplicate pairs quietly, so old-month rows stop adding ~200 errors a day to System Health.
