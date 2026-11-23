@@ -208,9 +208,14 @@ def sort_key(row):
 def summarize(rows):
     s = {'t100': 0, 't50': 0, 't25': 0, 't0': 0, 'qualified': 0, 'review': 0,
          'not_qualified': 0, 'not_convertible': 0,
+         'q100': 0, 'q50': 0, 'q25': 0, 'r100': 0, 'r50': 0, 'r25': 0,
          'qualified_days': 0.0, 'review_days': 0.0, 'total': len(rows)}
     for r in rows:
         s[{100: 't100', 50: 't50', 25: 't25'}.get(r['tier'], 't0')] += 1
+        # Tier cards count qualified employees only (q*); review cases per
+        # tier (r*) are shown underneath as "+N needs review".
+        if r['tier'] in (100, 50, 25) and r['status'] in ('qualified', 'review'):
+            s[('q' if r['status'] == 'qualified' else 'r') + str(r['tier'])] += 1
         s[r['status']] += 1
         if r['status'] == 'qualified':
             s['qualified_days'] += r['converted_days']
@@ -381,8 +386,11 @@ def build_report(year, today=None):
     return rows
 
 
-def filter_rows(rows, group='', status='all', q=''):
-    """group / q filters (summary scope) and status filter, returned separately."""
+TIER_OPTIONS = (100, 50, 25, 0)
+
+
+def filter_rows(rows, group='', status='all', q='', tier=None):
+    """group / q filters (summary scope) and status / tier filters, returned separately."""
     scoped = rows
     if group:
         g = group.casefold()
@@ -392,6 +400,8 @@ def filter_rows(rows, group='', status='all', q=''):
         scoped = [r for r in scoped
                   if ql in r['name'].casefold() or ql in r['employee_id'].casefold()]
     shown = scoped if status == 'all' else [r for r in scoped if r['status'] == status]
+    if tier is not None:
+        shown = [r for r in shown if r['tier'] == tier]
     return scoped, shown
 
 
@@ -442,9 +452,15 @@ def sl_conversion_report():
     if status != 'all' and status not in STATUS_LABELS:
         status = 'all'
     q = (request.args.get('q') or '').strip()[:100]
+    try:
+        tier = int(request.args.get('tier', ''))
+    except (TypeError, ValueError):
+        tier = None
+    if tier not in TIER_OPTIONS:
+        tier = None
 
     rows = build_report(year, today)
-    scoped, shown = filter_rows(rows, group, status, q)
+    scoped, shown = filter_rows(rows, group, status, q, tier)
 
     if request.args.get('format') == 'csv':
         return _csv_response(shown, year)
@@ -457,7 +473,7 @@ def sl_conversion_report():
     return render_template(
         'admin/sl_conversion.html',
         rows=shown, summary=summarize(scoped), total=len(rows),
-        year=year, years=years, group=group, groups=groups, status=status, q=q,
+        year=year, years=years, group=group, groups=groups, status=status, q=q, tier=tier,
         status_labels=STATUS_LABELS, projection=is_projection(year, today),
         release=release_date(year), today=today, reg_months=REG_MONTHS,
     )

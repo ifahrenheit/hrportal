@@ -78,12 +78,21 @@
     </select>
   </div>
   <div>
+    <label for="slc-tier" class="d-block">Tier</label>
+    <select id="slc-tier" name="tier" class="form-select form-select-sm" onchange="this.form.submit()">
+      <option value="">All tiers</option>
+      {% for t, label in [(100, '100% (96 h+)'), (50, '50% (88 h+)'), (25, '25% (80 h+)'), (0, 'Below 80 h')] %}
+      <option value="{{ t }}" {% if tier == t %}selected{% endif %}>{{ label }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div>
     <label for="slc-q" class="d-block">Search</label>
     <input id="slc-q" type="text" name="q" value="{{ q }}" class="form-control form-control-sm"
            placeholder="Name or employee ID" style="min-width:200px;">
   </div>
   <button type="submit" class="btn btn-primary btn-sm"><i class="me-1" data-lucide="search"></i>Apply</button>
-  {% if group or q or status != 'all' %}
+  {% if group or q or status != 'all' or tier is not none %}
   <a href="{{ url_for('sl_conversion.sl_conversion_report', year=year) }}" class="btn btn-outline-secondary btn-sm">Clear</a>
   {% endif %}
   {% if rows %}
@@ -95,10 +104,14 @@
 </form>
 
 <div class="slc-stats">
-  <div class="slc-stat"><div class="lbl">100% tier (96 h+)</div><div class="val">{{ summary.t100 }}</div></div>
-  <div class="slc-stat"><div class="lbl">50% tier (88 h+)</div><div class="val">{{ summary.t50 }}</div></div>
-  <div class="slc-stat"><div class="lbl">25% tier (80 h+)</div><div class="val">{{ summary.t25 }}</div></div>
-  <div class="slc-stat"><div class="lbl">Below 80 h</div><div class="val">{{ summary.t0 }}</div></div>
+  {% for t, hrs in [(100, 96), (50, 88), (25, 80)] %}
+  <div class="slc-stat">
+    <div class="lbl">Qualified &middot; {{ t }}% tier ({{ hrs }} h+)</div>
+    <div class="val">{{ summary['q' ~ t] }}</div>
+    {% if summary['r' ~ t] %}<div class="sub">+{{ summary['r' ~ t] }} needs review</div>{% endif %}
+  </div>
+  {% endfor %}
+  <div class="slc-stat"><div class="lbl">Not convertible (below 80 h)</div><div class="val">{{ summary.t0 }}</div></div>
   <div class="slc-stat" style="border-color:#a7f3d0;">
     <div class="lbl">Qualified</div><div class="val" style="color:#065f46;">{{ summary.qualified }}</div>
     <div class="sub">{{ summary.not_qualified }} not qualified</div>

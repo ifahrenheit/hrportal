@@ -108,10 +108,21 @@ class MiscTests(unittest.TestCase):
                 dict(evaluate(emp(unused_days=5), [], [], 2026, TODAY), name='B', employee_id='2', group_name='L2')]
         s = summarize(rows)
         self.assertEqual((s['t100'], s['t0'], s['qualified'], s['qualified_days']), (1, 1, 1, 12))
+        self.assertEqual((s['q100'], s['q50'], s['q25'], s['r100']), (1, 0, 0, 0))
+        nq = dict(rows[0], status='not_qualified')
+        rv = dict(rows[0], status='review')
+        s = summarize([nq, rv])
+        self.assertEqual((s['t100'], s['q100'], s['r100']), (2, 0, 1))
         scoped, shown = filter_rows(rows, group='cs', status='all', q='')
         self.assertEqual([r['name'] for r in shown], ['A'])
         scoped, shown = filter_rows(rows, status='not_convertible')
         self.assertEqual((len(scoped), [r['name'] for r in shown]), (2, ['B']))
+        scoped, shown = filter_rows(rows, tier=100)
+        self.assertEqual((len(scoped), [r['name'] for r in shown]), (2, ['A']))
+        scoped, shown = filter_rows(rows, tier=0)
+        self.assertEqual([r['name'] for r in shown], ['B'])
+        scoped, shown = filter_rows(rows, tier=50)
+        self.assertEqual(shown, [])
 
 
 
