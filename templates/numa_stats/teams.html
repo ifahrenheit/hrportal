@@ -1,0 +1,226 @@
+{% extends "base.html" %}
+{% block title %}Numa Stats · Teams{% endblock %}
+{% block page_title %}Numa Stats{% endblock %}
+{% block page_subtitle %}Team figures straight from Looker (Jareth's SLA sheet){% endblock %}
+{% block content %}
+<style>
+  .ns-card { background:var(--surface); border:1px solid var(--border); border-radius:14px; padding:18px; box-shadow:var(--card-shadow); }
+  .ns-toolbar { display:flex; flex-wrap:wrap; gap:12px; align-items:flex-end; }
+  .ns-toolbar .form-label { font-size:.66rem; text-transform:uppercase; letter-spacing:.07em; color:var(--text-muted); font-weight:700; margin-bottom:.3rem; }
+  .ns-period { min-width:260px; }
+  .ns-sync-note { font-size:.78rem; color:var(--text-muted); margin-left:auto; text-align:right; }
+  .ns-sync-note.bad { color:var(--danger); }
+  .ns-help { font-size:.78rem; color:var(--text-muted); }
+  .ns-empty { color:var(--text-muted); }
+
+  .nt-grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(320px, 1fr)); gap:14px; }
+  .nt-team h2 { font-size:1rem; font-weight:700; margin:0 0 12px; display:flex; justify-content:space-between; align-items:baseline; gap:8px; }
+  .nt-team h2 small { font-size:.72rem; color:var(--text-muted); font-weight:600; }
+  .nt-stats { display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:10px; }
+  .nt-stat { border:1px solid var(--border); border-radius:12px; padding:12px 14px; }
+  .nt-stat .lbl { font-size:.68rem; text-transform:uppercase; letter-spacing:.06em; color:var(--text-muted); font-weight:700; }
+  .nt-stat .val { font-size:1.45rem; font-weight:700; line-height:1.2; margin-top:4px; font-variant-numeric:tabular-nums; }
+  .nt-stat .sub { font-size:.74rem; color:var(--text-muted); margin-top:2px; font-variant-numeric:tabular-nums; }
+  .ns-delta { display:inline-block; font-size:.72rem; font-weight:600; color:var(--text-muted); margin-left:6px; }
+  .ns-delta.up { color:var(--success); }
+  .ns-delta.down { color:var(--danger); }
+  @media (max-width: 420px) { .nt-stats { grid-template-columns:1fr; } }
+
+  .nt-table { font-size:.84rem; margin:0; }
+  .nt-table th { white-space:nowrap; font-size:.72rem; background:var(--bg); }
+  .nt-table td, .nt-table th { vertical-align:middle; }
+  .nt-table .num { text-align:right; font-variant-numeric:tabular-nums; }
+  .nt-table tr.sec td { background:var(--bg); font-weight:700; font-size:.74rem; text-transform:uppercase; letter-spacing:.05em; color:var(--accent); }
+  .nt-gap.big { color:var(--danger); font-weight:700; }
+</style>
+
+<ul class="nav nav-pills mb-3">
+  <li class="nav-item"><a class="nav-link" href="{{ url_for('numa_stats.page') }}">Agents</a></li>
+  <li class="nav-item"><a class="nav-link active" href="{{ url_for('numa_stats.teams_page') }}">Teams · Looker</a></li>
+</ul>
+
+<div class="ns-card mb-3">
+  <div class="ns-toolbar">
+    <div>
+      <div class="form-label">View</div>
+      <div class="btn-group btn-group-sm" role="group" id="ntType">
+        {% for t in available_types %}
+        <button type="button" class="btn btn-outline-primary{% if t == default_type %} active{% endif %}" data-type="{{ t }}">
+          {{ {'week': 'Weekly', 'month': 'Monthly', 'year': 'Yearly'}[t] }}</button>
+        {% endfor %}
+      </div>
+    </div>
+    <div class="ns-period">
+      <label class="form-label" for="ntPeriod">Period</label>
+      <select id="ntPeriod" class="form-select form-select-sm"></select>
+    </div>
+    <div class="ns-sync-note" id="ntSync"><span id="ntSyncText">Loading…</span>
+      {% if can_sync %}
+      <div class="mt-1"><button type="button" class="btn btn-sm btn-outline-secondary" id="ntSyncBtn">
+        <i data-lucide="refresh-cw"></i> Sync now</button></div>
+      {% endif %}
+    </div>
+  </div>
+</div>
+
+<div class="nt-grid mb-3" id="ntTeams"><div class="ns-card ns-empty">Loading…</div></div>
+
+<div class="ns-card mb-3" id="ntCompareCard">
+  <div class="d-flex justify-content-between align-items-baseline flex-wrap gap-2 mb-2">
+    <h2 class="h6 mb-0">Looker vs the Agents page</h2>
+    <span class="ns-help" id="ntCompareNote"></span>
+  </div>
+  <div class="table-responsive">
+    <table class="table table-sm nt-table">
+      <thead><tr id="ntCompareHead"></tr></thead>
+      <tbody id="ntCompareBody"></tbody>
+    </table>
+  </div>
+  <div class="ns-help">
+    Looker counts per team (each conversation once, CSAT and SLA from every survey and message).
+    The Agents page adds up each agent's own row: conversations are summed (a conversation two agents touched counts twice),
+    CSAT is each agent's WhatsApp CSAT weighted by their conversations, and email SLA is the agents' median.
+    Team membership also differs: Looker uses Numa's team attribute, the Agents page uses our GX / Night Shift split.
+  </div>
+</div>
+
+<div class="ns-card mb-3">
+  <h2 class="h6 mb-2" id="ntTrendTitle">Trend</h2>
+  <div class="table-responsive">
+    <table class="table table-sm nt-table mb-0">
+      <thead><tr id="ntTrendHead"></tr></thead>
+      <tbody id="ntTrendBody"></tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+  const $ = id => document.getElementById(id);
+  const TEAMS = {{ teams | list | tojson }};
+  const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  const dash = '<span class="ns-empty">–</span>';
+  const n0 = v => v === null || v === undefined ? dash : Math.round(v).toLocaleString();
+  const p2 = v => v === null || v === undefined ? dash : (+v).toFixed(2) + '%';
+  const d2 = v => v === null || v === undefined ? dash : (+v).toFixed(2);
+  let state = { type: document.querySelector('#ntType .active')?.dataset.type || 'month', period: '', data: null };
+
+  function delta(cur, prev, kind) {
+    if (cur === null || cur === undefined || prev === null || prev === undefined) return '';
+    const d = cur - prev;
+    if (Math.abs(d) < 1e-9) return '<span class="ns-delta">no change</span>';
+    const cls = kind === 'neutral' ? '' : (d > 0 ? 'up' : 'down');
+    const mag = kind === 'count' || kind === 'neutral' ? Math.round(Math.abs(d)).toLocaleString() : Math.abs(d).toFixed(2) + ' pts';
+    return `<span class="ns-delta ${cls}">${d > 0 ? '▲' : '▼'} ${mag}</span>`;
+  }
+
+  async function getJSON(url) {
+    const r = await fetch(url, { credentials: 'same-origin' });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    return r.json();
+  }
+
+  async function load() {
+    const qs = new URLSearchParams({ type: state.type });
+    if (state.period) qs.set('period', state.period);
+    let d;
+    try { d = await getJSON('/numa-stats/api/team-stats?' + qs); }
+    catch (e) { $('ntTeams').innerHTML = '<div class="ns-card text-danger">Could not load the team figures. Try again in a moment.</div>'; return; }
+    state.data = d; state.period = d.period || '';
+    $('ntPeriod').innerHTML = (d.periods || []).map(p => `<option value="${p.value}"${p.value === d.period ? ' selected' : ''}>${esc(p.label)}</option>`).join('');
+    syncNote(d);
+    if (!d.teams || !d.teams.length) { $('ntTeams').innerHTML = '<div class="ns-card ns-empty">No team figures synced yet.</div>'; return; }
+    const running = d.periods.length && d.period === d.periods[0].value;
+    renderTeams(d, running);
+    renderCompare(d);
+    renderTrend(d);
+  }
+
+  function renderTeams(d, running) {
+    const pre = running ? 'Running ' : '';
+    $('ntTeams').innerHTML = d.teams.map(t => {
+      const L = t.looker, P = t.prev || {};
+      if (!L) return `<div class="ns-card nt-team"><h2>${esc(t.team)}</h2><div class="ns-empty">No Looker figures for ${esc(d.period_label)}.</div></div>`;
+      const ch = L.by_channel || {};
+      const stat = (lbl, val, dl, sub) => `<div class="nt-stat"><div class="lbl">${lbl}</div><div class="val">${val}${dl}</div><div class="sub">${sub}</div></div>`;
+      return `<div class="ns-card nt-team">
+        <h2>${esc(t.team)} <small>${esc(d.period_label)}${running ? ' · so far' : ''}</small></h2>
+        <div class="nt-stats">
+          ${stat('Conversations', n0(L.conversations), delta(L.conversations, P.conversations, 'neutral'),
+                 `Email ${n0(ch.email)} · WhatsApp ${n0(ch.whatsapp)} · Threads ${n0(ch.whatsapp_threads)} · SMS ${n0(ch.sms)}`)}
+          ${stat(esc(L.csat_label), p2(L.csat_pct), delta(L.csat_pct, P.csat_pct),
+                 `Avg ${d2(L.avg_csat)} / 5 · ${n0(L.csat_responses)} responses · ${p2(L.csat_response_rate_pct)} response rate`)}
+          ${stat(pre + 'email SLA', p2(L.email_sla_pct), delta(L.email_sla_pct, P.email_sla_pct),
+                 `${n0(L.email_sla_met)} met · ${n0(L.email_sla_not_met)} not met`)}
+          ${stat(pre + 'WhatsApp SLA', p2(L.chatbot_sla_pct), delta(L.chatbot_sla_pct, P.chatbot_sla_pct),
+                 `${n0(L.chatbot_sla_met)} met · ${n0(L.chatbot_sla_not_met)} not met`)}
+        </div>
+        ${d.prev_period_label ? `<div class="ns-help mt-2">Arrows compare with ${esc(d.prev_period_label)}</div>` : ''}
+      </div>`;
+    }).join('');
+  }
+
+  function renderCompare(d) {
+    const card = $('ntCompareCard');
+    if (d.type === 'year') { card.hidden = true; return; }
+    card.hidden = false;
+    $('ntCompareNote').textContent = d.period_label;
+    $('ntCompareHead').innerHTML = '<th>Metric</th>' + d.teams.map(t =>
+      `<th class="num">${esc(t.team)}<br><span class="ns-help">Looker</span></th><th class="num"><br><span class="ns-help">Agents page</span></th><th class="num"><br><span class="ns-help">Gap</span></th>`).join('');
+    const rows = [
+      ['Conversations', t => t.looker && t.looker.conversations, t => t.agents && t.agents.conversations, n0, 'count'],
+      ['CSAT (Looker agent CSAT vs agents\' WhatsApp CSAT)', t => t.looker && t.looker.csat_pct, t => t.agents && t.agents.whatsapp_csat_pct, p2, 'pts'],
+      ['Email SLA', t => t.looker && t.looker.email_sla_pct, t => t.agents && t.agents.email_sla_pct, p2, 'pts'],
+    ];
+    $('ntCompareBody').innerHTML = rows.map(([lbl, lk, ag, f, unit]) => '<tr><td>' + esc(lbl) + '</td>' + d.teams.map(t => {
+      const a = lk(t), b = ag(t);
+      let gap = dash, big = false;
+      if (a !== null && a !== undefined && b !== null && b !== undefined) {
+        const g = a - b;
+        big = unit === 'count' ? Math.abs(g) > 0.1 * Math.max(a, b) : Math.abs(g) >= 5;
+        gap = (g > 0 ? '+' : g < 0 ? '−' : '') + (unit === 'count' ? Math.round(Math.abs(g)).toLocaleString() : Math.abs(g).toFixed(2) + ' pts');
+      }
+      return `<td class="num">${f(a)}</td><td class="num">${f(b)}${t.agents ? ` <span class="ns-help">(${t.agents.agents})</span>` : ''}</td><td class="num nt-gap${big ? ' big' : ''}">${gap}</td>`;
+    }).join('') + '</tr>').join('');
+  }
+
+  function renderTrend(d) {
+    const tr = d.trend; if (!tr) return;
+    $('ntTrendTitle').textContent = 'Trend · last ' + tr.labels.length + ' ' + ({ week: 'weeks', month: 'months', year: 'years' }[d.type]);
+    $('ntTrendHead').innerHTML = '<th>Team</th>' + tr.labels.map(l => `<th class="num">${esc(l.replace(/^Week (\d+) · .*/, 'W$1'))}</th>`).join('');
+    const metrics = [['Conversations', 'conversations', n0], ['CSAT', 'csat_pct', p2], ['Email SLA', 'email_sla_pct', p2], ['WhatsApp SLA', 'chatbot_sla_pct', p2]];
+    $('ntTrendBody').innerHTML = metrics.map(([lbl, k, f]) =>
+      `<tr class="sec"><td colspan="${tr.labels.length + 1}">${lbl}</td></tr>` +
+      TEAMS.map(t => `<tr><td>${esc(t)}</td>${(tr.teams[t] || []).map(x => `<td class="num">${f(x ? x[k] : null)}</td>`).join('')}</tr>`).join('')
+    ).join('');
+  }
+
+  function syncNote(d) {
+    const el = $('ntSync'), txt = $('ntSyncText');
+    el.classList.remove('bad');
+    if (!d.last_ok_at) { txt.textContent = 'Not synced yet'; return; }
+    const ago = Math.round((Date.now() - new Date(d.last_ok_at.replace(' ', 'T')).getTime()) / 60000);
+    txt.textContent = 'Synced from the sheet ' + (ago < 1 ? 'just now' : ago < 60 ? `${ago} min ago` : ago < 1440 ? `${Math.round(ago / 60)} h ago` : d.last_ok_at.slice(0, 16));
+    if (d.last_run_ok === false) { el.classList.add('bad'); txt.textContent += ' · last attempt failed'; txt.title = d.last_run_summary || ''; }
+  }
+
+  document.querySelectorAll('#ntType button').forEach(b => b.addEventListener('click', () => {
+    document.querySelectorAll('#ntType button').forEach(x => x.classList.toggle('active', x === b));
+    state.type = b.dataset.type; state.period = ''; load();
+  }));
+  $('ntPeriod').addEventListener('change', e => { state.period = e.target.value; load(); });
+  const syncBtn = $('ntSyncBtn');
+  if (syncBtn) syncBtn.addEventListener('click', async () => {
+    syncBtn.disabled = true; $('ntSyncText').textContent = 'Syncing…';
+    try {
+      const r = await fetch('/numa-stats/api/sync', { method: 'POST', credentials: 'same-origin', headers: { 'X-CSRF-Token': getCsrfToken() } });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) alert('Sync had a problem:\n' + ((j.lines || [j.error || ('HTTP ' + r.status)]).join('\n')));
+    } finally { syncBtn.disabled = false; load(); }
+  });
+  load();
+})();
+</script>
+{% endblock %}

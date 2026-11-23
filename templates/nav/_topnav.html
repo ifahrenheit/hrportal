@@ -614,6 +614,10 @@
           <i data-lucide="clipboard-check"></i> My Records</a>
         <a class="tn-item {% if EP and EP.startswith('coaching.my') %}active{% endif %}" href="{{ url_for('coaching.my_sessions') }}" data-k="coaching action plan">
           <i data-lucide="presentation"></i> My Coaching</a>
+        {% if numa_stats_can_view() %}
+        <a class="tn-item {% if EP in ['numa_stats.page', 'numa_stats.teams_page'] %}active{% endif %}" href="{{ url_for('numa_stats.page') }}" data-k="numa stats csat sla conversations performance">
+          <i data-lucide="bar-chart-3"></i> Numa Stats</a>
+        {% endif %}
       </div>
     </div>
 

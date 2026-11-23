@@ -62,6 +62,10 @@ app.register_blueprint(memos_bp)
 # CSR % Blueprint
 from modules.csr_percentage import csr_bp
 app.register_blueprint(csr_bp)
+# Numa Stats (NUMA Stat Dashboard sheet -> central_db.numa_stats)
+from modules.numa_stats import numa_stats_bp, numa_stats_can_view
+app.register_blueprint(numa_stats_bp)
+app.jinja_env.globals.update(numa_stats_can_view=numa_stats_can_view)
 from modules.request_hub import request_hub_bp
 app.register_blueprint(request_hub_bp)
 
@@ -17623,6 +17627,7 @@ def nav_parity_check():
                 "topnav_count": len(topnav_eps),
             })
         except Exception as ex:
+            "numa_stats_can_view": lambda: bool(fs.get("is_admin")),
             all_ok = False
             results.append({
                 "name": profile["name"],

@@ -118,6 +118,13 @@
         <i data-lucide="presentation"></i>
         <span class="nav-label">My Coaching</span>
       </a>
+      {% if numa_stats_can_view() %}
+      <a class="nav-link {% if request.endpoint in ['numa_stats.page', 'numa_stats.teams_page'] %}active{% endif %}"
+         href="{{ url_for('numa_stats.page') }}">
+        <i data-lucide="bar-chart-3"></i>
+        <span class="nav-label">Numa Stats</span>
+      </a>
+      {% endif %}
     </div>
 
     {# ── MY TEAM (Supervisors) ────────────────────────────── #}

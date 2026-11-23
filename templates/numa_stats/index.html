@@ -1,0 +1,425 @@
+{% extends "base.html" %}
+{% block title %}Numa Stats{% endblock %}
+{% block page_title %}Numa Stats{% endblock %}
+{% block page_subtitle %}Numa CS performance from the NUMA Stat Dashboard (Looker){% endblock %}
+{% block content %}
+<style>
+  .ns-card { background:var(--surface); border:1px solid var(--border); border-radius:14px; padding:18px; box-shadow:var(--card-shadow); }
+  .ns-toolbar { display:flex; flex-wrap:wrap; gap:12px; align-items:flex-end; }
+  .ns-toolbar .form-label { font-size:.66rem; text-transform:uppercase; letter-spacing:.07em; color:var(--text-muted); font-weight:700; margin-bottom:.3rem; }
+  .ns-period { min-width:260px; }
+  .ns-search { min-width:200px; }
+  .ns-sync-note { font-size:.78rem; color:var(--text-muted); margin-left:auto; text-align:right; }
+  .ns-sync-note.bad { color:var(--danger); }
+
+  .ns-tiles { display:grid; grid-template-columns:repeat(auto-fit, minmax(170px, 1fr)); gap:12px; }
+  .ns-tile { background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:14px 16px; }
+  .ns-tile .lbl { font-size:.7rem; text-transform:uppercase; letter-spacing:.06em; color:var(--text-muted); font-weight:700; }
+  .ns-tile .val { font-size:1.5rem; font-weight:700; color:var(--text); line-height:1.2; margin-top:4px; font-variant-numeric:tabular-nums; }
+  .ns-tile .sub { font-size:.75rem; color:var(--text-muted); }
+  .ns-split { margin-top:8px; padding-top:6px; border-top:1px solid var(--border); font-size:.78rem; }
+  .ns-split div { display:flex; justify-content:space-between; align-items:baseline; gap:6px; }
+  .ns-split .tn { color:var(--text-muted); }
+  .ns-split .tv { font-weight:700; font-variant-numeric:tabular-nums; }
+  .ns-split .ns-delta { display:inline; margin-left:4px; }
+
+  .ns-table { font-size:.86rem; margin:0; }
+  .ns-table th { white-space:nowrap; position:sticky; top:0; background:var(--bg); z-index:2; cursor:pointer; user-select:none; font-size:.75rem; }
+  .ns-table th:first-child { cursor:pointer; }
+  .ns-table th .arr { opacity:.3; font-size:.7rem; margin-left:2px; }
+  .ns-table th.sorted .arr { opacity:1; }
+  .ns-table td, .ns-table th { vertical-align:middle; }
+  .ns-table td.num, .ns-table th.num { text-align:right; font-variant-numeric:tabular-nums; }
+  .ns-table td.name { white-space:nowrap; font-weight:600; }
+  .ns-table tr.me td { background:color-mix(in srgb, var(--accent) 10%, transparent); }
+  .ns-table tr.me td.name::after { content:'You'; font-size:.65rem; font-weight:700; margin-left:6px; padding:1px 6px;
+                                   border-radius:8px; background:var(--accent); color:#fff; vertical-align:middle; }
+  .ns-table tfoot td { font-weight:700; border-top:2px solid var(--border); background:var(--bg); }
+  .ns-delta { display:block; font-size:.7rem; font-weight:600; color:var(--text-muted); }
+  .ns-delta.up { color:var(--success); }
+  .ns-delta.down { color:var(--danger); }
+  .ns-empty { color:var(--text-muted); }
+  .ns-group { font-size:.68rem; color:var(--text-muted); font-weight:600; margin-left:4px; }
+  .ns-table tr.grp td { background:var(--bg); font-weight:700; font-size:.78rem; text-transform:uppercase;
+                        letter-spacing:.05em; color:var(--accent); padding-top:10px; }
+  .ns-table tr.grp-sum td { font-weight:700; border-bottom:2px solid var(--border); }
+  .ns-team-list .row-agent { display:flex; align-items:center; justify-content:space-between; gap:12px;
+                             padding:6px 0; border-bottom:1px solid var(--border); }
+  .ns-team-list select { width:auto; }
+  .ns-saved { color:var(--success); font-size:.75rem; min-width:40px; }
+
+  .ns-trend th, .ns-trend td { font-size:.8rem; }
+  .ns-trend td.num { min-width:62px; }
+  .ns-heat { border-radius:4px; padding:2px 6px; display:inline-block; min-width:48px; }
+  .ns-help { font-size:.78rem; color:var(--text-muted); }
+</style>
+
+<ul class="nav nav-pills mb-3">
+  <li class="nav-item"><a class="nav-link active" href="{{ url_for('numa_stats.page') }}">Agents</a></li>
+  <li class="nav-item"><a class="nav-link" href="{{ url_for('numa_stats.teams_page') }}">Teams · Looker</a></li>
+</ul>
+
+<div class="ns-card mb-3">
+  <div class="ns-toolbar">
+    <div>
+      <div class="form-label">View</div>
+      <div class="btn-group btn-group-sm" role="group" id="nsType">
+        {% for t in available_types %}
+        <button type="button" class="btn btn-outline-primary{% if loop.first %} active{% endif %}" data-type="{{ t }}">
+          {{ {'month': 'Monthly', 'week': 'Weekly', 'day': 'Daily'}[t] }}</button>
+        {% endfor %}
+      </div>
+    </div>
+    <div>
+      <label class="form-label" for="nsTeam">Team</label>
+      <select id="nsTeam" class="form-select form-select-sm" style="width:auto">
+        <option value="all">All teams</option>
+        {% for t in teams %}<option value="{{ t }}">{{ t }}</option>{% endfor %}
+      </select>
+    </div>
+    <div class="ns-period">
+      <label class="form-label" for="nsPeriod">Period</label>
+      <select id="nsPeriod" class="form-select form-select-sm"></select>
+    </div>
+    <div class="ns-search">
+      <label class="form-label" for="nsSearch">Agent</label>
+      <input id="nsSearch" type="search" class="form-control form-control-sm" placeholder="Search name">
+    </div>
+    <div class="ns-sync-note" id="nsSync">
+      <span id="nsSyncText">Loading…</span>
+      {% if is_admin or can_sync %}
+      <div class="mt-1 d-flex gap-1 justify-content-end">
+        {% if is_admin %}
+        <button type="button" class="btn btn-sm btn-outline-secondary" id="nsTeamsBtn" data-bs-toggle="modal" data-bs-target="#nsTeamsModal">
+          <i data-lucide="users"></i> Edit teams</button>
+        {% endif %}
+        <button type="button" class="btn btn-sm btn-outline-secondary" id="nsSyncBtn">
+          <i data-lucide="refresh-cw"></i> Sync now</button></div>
+      {% endif %}
+    </div>
+  </div>
+</div>
+
+<div class="ns-tiles mb-3" id="nsTiles"></div>
+
+<div class="ns-card mb-3">
+  <div class="d-flex justify-content-between align-items-baseline mb-2 flex-wrap gap-2">
+    <h2 class="h6 mb-0" id="nsTableTitle">&nbsp;</h2>
+    <span class="ns-help" id="nsPrevNote"></span>
+  </div>
+  <div class="table-responsive" style="max-height:70vh">
+    <table class="table table-sm table-hover ns-table" id="nsTable">
+      <thead><tr>
+        <th data-k="name">Agent<span class="arr">↕</span></th>
+        <th class="num" data-k="conversations">Conversations<span class="arr">↕</span></th>
+        <th class="num" data-k="whatsapp_csat_pct">WhatsApp CSAT<span class="arr">↕</span></th>
+        <th class="num" data-k="email_csat" title="Average email CSAT, 1 to 5">Email CSAT<span class="arr">↕</span></th>
+        <th class="num" data-k="email_sla_pct" title="Email Message SLA Percentage, as reported by Looker">Email SLA<span class="arr">↕</span></th>
+        <th class="num" data-k="median_first_reply_sec">Median first reply<span class="arr">↕</span></th>
+        <th class="num" data-k="median_response_sec">Median response<span class="arr">↕</span></th>
+      </tr></thead>
+      <tbody id="nsBody"><tr><td colspan="7" class="ns-empty">Loading…</td></tr></tbody>
+      <tfoot id="nsFoot"></tfoot>
+    </table>
+  </div>
+</div>
+
+<div class="ns-card mb-3" id="nsTrendCard">
+  <div class="d-flex justify-content-between align-items-end flex-wrap gap-2 mb-2">
+    <h2 class="h6 mb-0">Month by month</h2>
+    <div class="d-flex gap-2">
+      <select id="nsTrendMetric" class="form-select form-select-sm" style="width:auto">
+        <option value="conversations">Conversations</option>
+        <option value="whatsapp_csat_pct">WhatsApp CSAT</option>
+        <option value="email_csat">Email CSAT</option>
+        <option value="email_sla_pct">Email SLA</option>
+      </select>
+      <select id="nsTrendYear" class="form-select form-select-sm" style="width:auto"></select>
+    </div>
+  </div>
+  <div class="table-responsive">
+    <table class="table table-sm ns-table ns-trend mb-0">
+      <thead><tr id="nsTrendHead"></tr></thead>
+      <tbody id="nsTrendBody"></tbody>
+      <tfoot id="nsTrendFoot"></tfoot>
+    </table>
+  </div>
+</div>
+{% if is_admin %}
+<div class="modal fade" id="nsTeamsModal" tabindex="-1" aria-labelledby="nsTeamsTitle" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="nsTeamsTitle">Edit teams</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <p class="ns-help mb-2">Changes save as soon as you pick a team. New agents start in {{ teams[0] }}.</p>
+        <div class="ns-team-list" id="nsTeamList">Loading…</div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+  const ME = {{ my_username | tojson }};
+  const $ = id => document.getElementById(id);
+  const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  // metric -> formatter, delta style ('good-up' | 'good-down' | 'neutral')
+  const M = {
+    conversations:          { f: v => Math.round(v).toLocaleString(), d: 'neutral', u: '' },
+    whatsapp_csat_pct:      { f: v => Math.round(v) + '%', d: 'good-up', u: ' pts' },
+    email_csat:             { f: v => (+v).toFixed(2).replace(/\.?0+$/, ''), d: 'good-up', u: '' },
+    email_sla_pct:          { f: v => (+v).toFixed(2) + '%', d: 'neutral', u: ' pts' },
+    median_first_reply_sec: { f: dur, d: 'good-down', u: '' },
+    median_response_sec:    { f: dur, d: 'good-down', u: '' },
+  };
+  const COLS = Object.keys(M);
+  let state = { type: document.querySelector('#nsType .active')?.dataset.type || 'month', period: '', data: null,
+                sort: { k: 'name', dir: 1 }, q: '', team: 'all' };
+
+  function dur(s) {
+    s = Math.round(s);
+    if (s < 60) return s + 's';
+    const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), r = s % 60;
+    return h ? `${h}h ${String(m).padStart(2, '0')}m` : `${m}m ${String(r).padStart(2, '0')}s`;
+  }
+  const fmt = (k, v) => (v === null || v === undefined) ? '<span class="ns-empty">–</span>' : M[k].f(v);
+  // team figures (tiles, team rows): CSAT averages always show 2 decimals, e.g. 90.62%
+  const fmtSum = (k, v) => (v === null || v === undefined) ? '<span class="ns-empty">–</span>'
+    : k === 'whatsapp_csat_pct' ? (+v).toFixed(2) + '%'
+    : k === 'email_csat' ? (+v).toFixed(2) : M[k].f(v);
+  const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+  function delta(k, cur, prev) {
+    if (cur === null || cur === undefined || prev === null || prev === undefined) return '';
+    const d = cur - prev;
+    if (Math.abs(d) < 1e-9) return '<span class="ns-delta">no change</span>';
+    let cls = '';
+    if (M[k].d === 'good-up') cls = d > 0 ? 'up' : 'down';
+    if (M[k].d === 'good-down') cls = d < 0 ? 'up' : 'down';
+    const mag = k.endsWith('_sec') ? dur(Math.abs(d))
+              : k === 'conversations' ? Math.round(Math.abs(d)).toLocaleString()
+              : (Math.abs(d) < 10 ? Math.abs(d).toFixed(2).replace(/\.?0+$/, '') : Math.round(Math.abs(d))) + M[k].u;
+    return `<span class="ns-delta ${cls}">${d > 0 ? '▲' : '▼'} ${mag}</span>`;
+  }
+
+  async function getJSON(url) {
+    const r = await fetch(url, { credentials: 'same-origin' });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    return r.json();
+  }
+
+  async function load() {
+    const qs = new URLSearchParams({ type: state.type, team: state.team });
+    if (state.period) qs.set('period', state.period);
+    try {
+      state.data = await getJSON('/numa-stats/api/data?' + qs);
+    } catch (e) {
+      $('nsBody').innerHTML = '<tr><td colspan="7" class="text-danger">Could not load the stats. Try again in a moment.</td></tr>';
+      return;
+    }
+    const d = state.data;
+    state.period = d.period || '';
+    $('nsPeriod').innerHTML = (d.periods || []).map(p =>
+      `<option value="${p.value}"${p.value === d.period ? ' selected' : ''}>${esc(p.label)}</option>`).join('');
+    syncNote(d);
+    if (!d.rows || !d.rows.length) {
+      $('nsTableTitle').textContent = 'No data yet';
+      $('nsTiles').innerHTML = '';
+      $('nsFoot').innerHTML = '';
+      $('nsPrevNote').textContent = '';
+      $('nsBody').innerHTML = '<tr><td colspan="7" class="ns-empty">No stats have been synced for this view yet.</td></tr>';
+      return;
+    }
+    $('nsTableTitle').textContent = d.period_label + (state.team !== 'all' ? ' · ' + state.team : '');
+    $('nsPrevNote').textContent = d.prev_period_label ? 'Arrows compare with ' + d.prev_period_label : '';
+    tiles(d);
+    render();
+  }
+
+  function tiles(d) {
+    const withData = d.rows.filter(r => r.conversations !== null).length;
+    const t = (lbl, val, sub, extra) => `<div class="ns-tile"><div class="lbl">${lbl}</div><div class="val">${val}</div><div class="sub">${sub || '&nbsp;'}</div>${extra || ''}</div>`;
+    // per-team breakdown under a tile (only when showing all teams)
+    const split = k => (state.team === 'all' && (d.groups || []).length > 1)
+      ? '<div class="ns-split">' + d.groups.map(g => `<div><span class="tn">${esc(g.team)}</span><span class="tv">${fmtSum(k, g.summary[k])}${delta(k, g.summary[k], (g.prev_summary || {})[k])}</span></div>`).join('') + '</div>'
+      : '';
+    const pt = d.prev_summary || {};
+    const tile = (k, lbl) => t(lbl, fmtSum(k, d.summary[k]), delta(k, d.summary[k], pt[k]));
+    $('nsTiles').innerHTML =
+      t(state.team === 'all' ? 'Team conversations' : esc(state.team) + ' conversations', fmt('conversations', d.total_conversations),
+        delta('conversations', d.total_conversations, d.prev_total_conversations) || `${withData} agents`) +
+      t('Median per agent', fmt('conversations', d.median_conversations), 'conversations') +
+      t('Average WhatsApp CSAT', fmtSum('whatsapp_csat_pct', d.summary.whatsapp_csat_pct),
+        delta('whatsapp_csat_pct', d.summary.whatsapp_csat_pct, pt.whatsapp_csat_pct), split('whatsapp_csat_pct')) +
+      tile('email_csat', 'Average email CSAT') +
+      tile('email_sla_pct', 'Median email SLA');
+  }
+
+  function render() {
+    const d = state.data; if (!d || !d.rows) return;
+    const { k, dir } = state.sort;
+    const q = state.q.trim().toLowerCase();
+    const sorted = d.rows.filter(r => !q || r.name.toLowerCase().includes(q)).sort((a, b) => {
+      if (k === 'name') return dir * a.name.localeCompare(b.name);
+      const av = a[k], bv = b[k];
+      if (av === null && bv === null) return a.name.localeCompare(b.name);
+      if (av === null) return 1; if (bv === null) return -1;
+      return dir * (av - bv);
+    });
+    const agentRow = r => `
+      <tr class="${r.username === ME ? 'me' : ''}">
+        <td class="name">${esc(r.name)}${r.group === 'Numa BO' ? '<span class="ns-group">BO</span>' : ''}</td>
+        ${COLS.map(c => `<td class="num">${fmt(c, r[c])}${delta(c, r[c], r['prev_' + c])}</td>`).join('')}
+      </tr>`;
+    const kinds = d.summary_kinds || {};
+    const KIND_TITLE = { total: 'Total of the agents', weighted: 'Average across all conversations (each agent weighted by conversations)', median: 'Median of the agents' };
+    const sumRow = (label, s, prevS, cls) => `<tr class="${cls || ''}"><td title="Conversations: total. CSAT: average across all conversations. Other columns: median of the agents.">${esc(label)} <span class="ns-group">total · CSAT per conversation · median others</span></td>${COLS.map(c =>
+      `<td class="num" title="${KIND_TITLE[kinds[c]] || ''}">${fmtSum(c, s[c])}${prevS ? delta(c, s[c], prevS[c]) : ''}</td>`).join('')}</tr>`;
+    const grouped = state.team === 'all' && (d.groups || []).length > 1;
+    let body = '';
+    if (grouped) {
+      d.groups.forEach(g => {
+        const rs = sorted.filter(r => r.team === g.team);
+        if (!rs.length) return;
+        body += `<tr class="grp"><td colspan="7">${esc(g.team)} <span class="ns-group">${g.agents} agents · ${fmt('conversations', g.total_conversations)} conversations</span></td></tr>`;
+        body += rs.map(agentRow).join('');
+        body += sumRow(g.team, g.summary, g.prev_summary, 'grp-sum');
+      });
+    } else {
+      body = sorted.map(agentRow).join('');
+    }
+    $('nsBody').innerHTML = body || '<tr><td colspan="7" class="ns-empty">No agent matches that search.</td></tr>';
+    $('nsFoot').innerHTML = sumRow(grouped ? 'All teams' : (state.team === 'all' ? 'Team' : state.team), d.summary);
+    document.querySelectorAll('#nsTable th').forEach(th => {
+      const on = th.dataset.k === k;
+      th.classList.toggle('sorted', on);
+      th.querySelector('.arr').textContent = on ? (dir > 0 ? '▲' : '▼') : '↕';
+    });
+  }
+
+  function syncNote(d) {
+    const el = $('nsSync'), txt = $('nsSyncText');
+    el.classList.remove('bad');
+    if (!d.last_ok_at) { txt.textContent = 'Not synced yet'; return; }
+    const ago = Math.round((Date.now() - new Date(d.last_ok_at.replace(' ', 'T')).getTime()) / 60000);
+    const when = ago < 1 ? 'just now' : ago < 60 ? `${ago} min ago` : ago < 1440 ? `${Math.round(ago / 60)} h ago` : d.last_ok_at.slice(0, 16);
+    txt.textContent = 'Synced from the sheet ' + when;
+    if (d.last_run_ok === false) {
+      el.classList.add('bad');
+      txt.textContent += ' · last attempt failed';
+      txt.title = d.last_run_summary || '';
+    }
+  }
+
+  // ── month-by-month grid ──
+  async function loadTrend(year) {
+    const metric = $('nsTrendMetric').value;
+    const qs = new URLSearchParams({ metric, team: state.team });
+    if (year) qs.set('year', year);
+    let t;
+    try { t = await getJSON('/numa-stats/api/trend?' + qs); } catch (e) { return; }
+    if (!t.years.length) { $('nsTrendCard').hidden = true; return; }
+    $('nsTrendCard').hidden = false;
+    $('nsTrendYear').innerHTML = t.years.map(y => `<option${y === t.year ? ' selected' : ''}>${y}</option>`).join('');
+    const used = MONTHS.map((_, i) => t.summary[i] !== null || t.rows.some(r => r.values[i] !== null));
+    const last = used.lastIndexOf(true);
+    const idx = MONTHS.map((_, i) => i).filter(i => i <= last);
+    $('nsTrendHead').innerHTML = '<th>Agent</th>' + idx.map(i => `<th class="num">${MONTHS[i]}</th>`).join('');
+    const all = t.rows.flatMap(r => r.values).filter(v => v !== null);
+    const lo = Math.min(...all), hi = Math.max(...all);
+    const shade = v => {
+      if (v === null || hi === lo || metric === 'email_sla_pct') return '';
+      const a = Math.round(8 + 22 * (v - lo) / (hi - lo));
+      return `style="background:color-mix(in srgb, var(--accent) ${a}%, transparent)"`;
+    };
+    const kind = { total: 'total', weighted: 'average', median: 'median' }[t.team_kind] || '';
+    const agentRow = r => `<tr class="${r.username === ME ? 'me' : ''}"><td class="name">${esc(r.name)}</td>` +
+      idx.map(i => `<td class="num">${r.values[i] === null ? '<span class="ns-empty">–</span>' : `<span class="ns-heat" ${shade(r.values[i])}>${M[metric].f(r.values[i])}</span>`}</td>`).join('') + '</tr>';
+    const sumRow = (label, vals, cls) => `<tr class="${cls || ''}"><td>${esc(label)} ${kind}</td>` + idx.map(i => `<td class="num">${fmtSum(metric, vals[i])}</td>`).join('') + '</tr>';
+    const grouped = state.team === 'all' && (t.groups || []).length > 1;
+    $('nsTrendBody').innerHTML = grouped
+      ? t.groups.map(g => `<tr class="grp"><td colspan="${idx.length + 1}">${esc(g.team)}</td></tr>` +
+          t.rows.filter(r => r.team === g.team).map(agentRow).join('') + sumRow(g.team, g.summary, 'grp-sum')).join('')
+      : t.rows.map(agentRow).join('');
+    $('nsTrendFoot').innerHTML = sumRow(grouped ? 'All teams' : (state.team === 'all' ? 'Team' : state.team), t.summary);
+  }
+
+  // ── events ──
+  document.querySelectorAll('#nsType button').forEach(b => b.addEventListener('click', () => {
+    document.querySelectorAll('#nsType button').forEach(x => x.classList.toggle('active', x === b));
+    state.type = b.dataset.type; state.period = '';
+    $('nsTrendCard').hidden = state.type !== 'month';
+    load();
+  }));
+  $('nsPeriod').addEventListener('change', e => { state.period = e.target.value; load(); });
+  $('nsTeam').addEventListener('change', e => { state.team = e.target.value; load(); loadTrend($('nsTrendYear').value); });
+  $('nsSearch').addEventListener('input', e => { state.q = e.target.value; render(); });
+  document.querySelectorAll('#nsTable th').forEach(th => th.addEventListener('click', () => {
+    const k = th.dataset.k;
+    state.sort = { k, dir: state.sort.k === k ? -state.sort.dir : (k === 'name' ? 1 : -1) };
+    render();
+  }));
+  $('nsTrendMetric').addEventListener('change', () => loadTrend($('nsTrendYear').value));
+  $('nsTrendYear').addEventListener('change', e => loadTrend(e.target.value));
+
+  const syncBtn = $('nsSyncBtn');
+  if (syncBtn) syncBtn.addEventListener('click', async () => {
+    syncBtn.disabled = true;
+    $('nsSyncText').textContent = 'Syncing…';
+    try {
+      const r = await fetch('/numa-stats/api/sync', { method: 'POST', credentials: 'same-origin',
+                                                      headers: { 'X-CSRF-Token': getCsrfToken() } });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) alert('Sync had a problem:\n' + ((j.lines || [j.error || ('HTTP ' + r.status)]).join('\n')));
+    } finally {
+      syncBtn.disabled = false;
+      load(); if (state.type === 'month') loadTrend($('nsTrendYear').value);
+    }
+  });
+
+  // ── admin: edit teams ──
+  const teamsModal = $('nsTeamsModal');
+  if (teamsModal) {
+    let changed = false;
+    teamsModal.addEventListener('show.bs.modal', async () => {
+      changed = false;
+      $('nsTeamList').textContent = 'Loading…';
+      let j;
+      try { j = await getJSON('/numa-stats/api/teams'); } catch (e) { $('nsTeamList').textContent = 'Could not load the agents.'; return; }
+      $('nsTeamList').innerHTML = j.agents.map(a => `
+        <div class="row-agent"><span>${esc(a.name)}${a.group === 'Numa BO' ? '<span class="ns-group">BO</span>' : ''}</span>
+          <span class="d-flex align-items-center gap-2"><span class="ns-saved" data-saved="${esc(a.username)}"></span>
+          <select class="form-select form-select-sm" data-user="${esc(a.username)}">
+            ${j.teams.map(t => `<option${t === a.team ? ' selected' : ''}>${esc(t)}</option>`).join('')}
+          </select></span></div>`).join('');
+    });
+    $('nsTeamList').addEventListener('change', async e => {
+      const sel = e.target.closest('select[data-user]'); if (!sel) return;
+      const note = $('nsTeamList').querySelector(`[data-saved="${CSS.escape(sel.dataset.user)}"]`);
+      sel.disabled = true; note.textContent = '…';
+      try {
+        const r = await fetch('/numa-stats/api/teams', { method: 'POST', credentials: 'same-origin',
+          headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': getCsrfToken() },
+          body: JSON.stringify({ username: sel.dataset.user, team: sel.value }) });
+        const j = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(j.error || ('HTTP ' + r.status));
+        note.textContent = 'Saved'; changed = true;
+      } catch (err) {
+        note.textContent = ''; alert('Could not save: ' + err.message);
+      } finally { sel.disabled = false; }
+    });
+    teamsModal.addEventListener('hidden.bs.modal', () => { if (changed) { load(); loadTrend($('nsTrendYear').value); } });
+  }
+
+  $('nsTrendCard').hidden = state.type !== 'month';
+  load();
+  loadTrend();
+})();
+</script>
+{% endblock %}
