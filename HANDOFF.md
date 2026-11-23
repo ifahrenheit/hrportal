@@ -32,14 +32,21 @@ Commit: `fa0cbae` (health page + backup script uncommitted) · Branch: `main`
 ### How to verify
 - `/admin/system-health` as an admin. `cat /var/backups/mysql/last_status.json` after 03:00. `venv/bin/python scripts/system_health_check.py` (dry run).
 
+### Later the same day: cleanup round
+- Cron: removed `/var/www/html/automation/check_mysql_disk.sh` (script gone) and `/root/check_disk.sh` (only echoed; the health page covers disk). Crontab copies are in `/root/crontab-backups/`.
+- Cron: the 08:00 `killall -u root node` had **never matched anything**, because VS Code's processes aren't named `node`. It's now `pkill -f '/root/[.]vscode-server/'` and logs to `/var/log/vscode_cleanup.log`. Purpose per the user: end VS Code remote sessions daily so they don't pile up. It doesn't touch `calendar-app` (PM2).
+- Disk 75% → 58%: removed 7 old VS Code server versions (kept the 2 running), npm/pip/composer/typescript/playwright caches, and ran `journalctl --vacuum-size=1G`. Kept `~/.cache/chroma` (RAG embeddings).
+- `.env`: quoted 8 values that had spaces (SMTP_FROM_NAME, IR_SGA, IR_OVERHEAD, IR_ALL_ACCESS, IR_FROM_NAME, TARDINESS_SENDER_NAME, ONBOARDING_FROM_NAME, COE_FROM_NAME). Checked that all 81 keys parse the same before and after. Shell `. ./.env` is now clean. `.env` and its backups are now `chmod 600` (only the root-run portal reads them).
+- 61 `*.bak*` files moved into `backups/` (mirrored paths; `.backups/` merged in). `backups/` is gitignored, and CLAUDE.md's workflow now says to put backups there.
+- Tests: three stale tests fixed. AWOL and undertime "empty schedule" now check which tables are queried instead of counting connections. The undertime leave-covered test now expects the row shown with a leave badge (behavior changed on purpose in `1022f01`). Full suite: 563 OK.
+- User decisions: the schedule sheet's old months (`#N/A` rows in March/July, Glane listed twice in June) are to be ignored. Uploaded files aren't backed up (users keep local copies). No off-server backup for now (Drive is nearly full).
+
 ### Open items / next steps
 - [ ] User to pick `HEALTH_ALERT_TO` recipients, then add cron: `30 7 * * * cd /var/www/html/leavesystem && venv/bin/python scripts/system_health_check.py --send >> system_health_check.log 2>&1`.
-- [ ] Commit the health page + backup script (not committed yet).
-- [ ] Found by the page: hourly cron `/var/www/html/automation/check_mysql_disk.sh` no longer exists (fix path or remove the line).
-- [ ] Found by the page: ~200 errors a day from the schedule sheet sync, `sheet_webhooks: Schedule for #N/A` (a sheet row with an `#N/A` employee ID), plus some duplicate-entry errors.
-- [ ] Backups are only on this server; an off-server copy (DigitalOcean Spaces / Drive) would cover losing the droplet.
-- [ ] Old: `tests/test_awol_report.py::test_empty_scheduled_renders_empty_state_no_crash` expects 1 DB call, gets 4 (fails on committed code too).
-- [ ] Journal is 3.9 GB; `journalctl --vacuum-size=1G` would free space.
+- [ ] Commit the health page, backup script and cleanup (not committed yet).
+- [ ] Optional, needs the user's OK (blocked by the permission check): cap the journal for good with `/etc/systemd/journald.conf.d/size.conf` → `SystemMaxUse=1G`.
+- [ ] Optional: make `/webhook/schedule-sync` skip `#N/A`/blank IDs and duplicate pairs quietly, so old-month rows stop adding ~200 errors a day to System Health.
+- [ ] Next, per the user: payroll cutoff readiness, Employee 360, approval reminders, TL home page (#8–11).
 
 ---
 
