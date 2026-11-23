@@ -397,10 +397,16 @@ class TestAwolBoundaries(unittest.TestCase):
                                     query_string={'date_from': str(d), 'date_to': str(d)})
         self.assertEqual(resp.status_code, 200)
         self.assertIn('No AWOL occurrences', resp.data.decode())
-        # scheduled empty -> route never enters the `if scheduled:` block,
-        # so exactly one get_central_db() call (the scheduled query) and
-        # zero get_db() calls should have happened.
-        self.assertEqual(len(cursor_log), 1)
+        # scheduled empty -> route never enters the `if scheduled:` block, so
+        # none of the per-employee lookups (attendance, OT, leave, CWS) run.
+        # Other connections are expected and fine: the TL/group filter lists,
+        # the holiday lookup and the nav's break-log permission check.
+        # (This used to assert exactly 1 connection, which broke as soon as
+        # those unrelated queries were added.)
+        queried = ' '.join((c.last_query or '').lower() for c in cursor_log)
+        self.assertIn('employee_schedules', queried)
+        for table in ('dailytimerecordsfiltered', 'ot_requests', 'leave4day_requests', 'cws_requests'):
+            self.assertNotIn(table, queried, f'{table} should not be queried when nobody is scheduled')
 
     def test_null_personid_does_not_crash_and_surfaces_as_unverified(self):
         # The join allows personid to come back NULL when userdata has no

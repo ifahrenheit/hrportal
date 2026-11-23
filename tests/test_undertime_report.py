@@ -433,10 +433,11 @@ class TestUndertimeFiltering(unittest.TestCase):
         self.assertNotIn('Bad Shift Employee', html)
         self.assertIn('No undertime occurrences', html)
 
-    def test_leave_covered_short_shift_is_excluded(self):
-        # Worked short (would otherwise qualify) but has an Approved leave
-        # filed covering that date -- must be excluded entirely (e.g.
-        # approved half-day leave), per the deliberate design decision.
+    def test_leave_covered_short_shift_is_shown_with_leave_badge(self):
+        # Worked short but has an Approved leave covering that date (e.g. a
+        # half-day VL). Since 2026-09-28 (1022f01) the row is SHOWN with the
+        # leave attached, not hidden, so a supervisor can see why the shift is
+        # short (app.py admin_undertime_report, "Step 5: Leave coverage").
         d = date(2026, 9, 1)
         scheduled = [{
             'employee_id': 'EMP-LEAVE', 'schedule_name': 'Leave Covered Employee', 'tl': 'TL1',
@@ -453,8 +454,9 @@ class TestUndertimeFiltering(unittest.TestCase):
         resp, _ = self._get(d, d, table_rows)
         self.assertEqual(resp.status_code, 200)
         html = resp.data.decode()
-        self.assertNotIn('Leave Covered Employee', html)
-        self.assertIn('No undertime occurrences', html)
+        self.assertIn('Leave Covered Employee', html)
+        self.assertIn('title="Vacation Leave"', html)   # leave badge on the row
+        self.assertNotIn('No undertime occurrences', html)
 
     def test_rejected_leave_does_not_clear_undertime(self):
         # Mirrors the AWOL rejected-leave test: a Rejected leave record does
@@ -584,10 +586,14 @@ class TestUndertimeBoundaries(unittest.TestCase):
                                     query_string={'date_from': str(d), 'date_to': str(d)})
         self.assertEqual(resp.status_code, 200)
         self.assertIn('No undertime occurrences', resp.data.decode())
-        # scheduled empty -> route never enters the `if scheduled:` block,
-        # so exactly one get_central_db() call (the scheduled query) and
-        # zero get_db() calls should have happened.
-        self.assertEqual(len(cursor_log), 1)
+        # scheduled empty -> route never enters the `if scheduled:` block, so
+        # the attendance and leave lookups never run. Other connections (the
+        # filter lists, the nav's break-log permission check) are expected;
+        # this used to assert exactly 1 connection and broke when they were added.
+        queried = ' '.join((c.last_query or '').lower() for c in cursor_log)
+        self.assertIn('employee_schedules', queried)
+        for table in ('dailytimerecordsfiltered', 'leave4day_requests'):
+            self.assertNotIn(table, queried, f'{table} should not be queried when nobody is scheduled')
 
     def test_malformed_date_param_falls_back_safely(self):
         cursor_log = []
