@@ -47,6 +47,9 @@ Commit: `fa0cbae` (health page + backup script uncommitted) · Branch: `main`
 - [ ] Optional, needs the user's OK (blocked by the permission check): cap the journal for good with `/etc/systemd/journald.conf.d/size.conf` → `SystemMaxUse=1G`.
 - [x] `/webhook/schedule-sync` now skips `#N/A`/blank IDs and duplicate employee+date rows, with one info log line per sync (`_clean_schedule_rows` in `modules/sheet_webhooks.py`, doc in `docs/sheet-webhooks.md`). The Portal errors warning clears once the old errors age out of the 24-hour window.
 - [x] System Health shows a plain-English description for every cron job: `JOB_DESCRIPTIONS` in `helpers/system_health.py`, matched on part of the command. **Add a line there when adding a cron job**, otherwise the page shows the crontab comment.
+- [x] Crontab now has `MAILTO=""` under the header: cron mail to root had been undeliverable since Nov 2025. `sync_userdata.py`, `process_timerecords.php` and `sync_csat.php` now append to `/var/log/<name>.log`. The 08:00 VS Code cleanup always logs (`pkill exit=0/1`) to `/var/log/vscode_cleanup.log`.
+- [x] System Health: a job with no log and no start yet, whose last slot came before the last crontab save (or before the 50-hour journal window, e.g. the Jan 1 rollover), shows OK with "Waiting for its first run: <next run>". If a slot after the save passes with no start, that's a warning. `CronSchedule.next_run()` was added.
+- [ ] Waiting on the user's OK: `/var/spool/mqueue-client` holds ~274k undeliverable cron mails to root (1.1 GB, since 2025-11-30; every sampled message was "Cron Daemon" → root). Deleting them is irreversible but they're junk; sendmail's queue runner keeps retrying them.
 - [ ] Still seen occasionally: `sheet_webhooks: Error syncing <id>: Deadlock found` on employee-sync (about 2 a day). Low priority; a retry would fix it.
 - [ ] Next, per the user: payroll cutoff readiness, Employee 360, approval reminders, TL home page (#8–11).
 
