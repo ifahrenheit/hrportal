@@ -19,6 +19,7 @@ import hmac
 import logging
 import os
 import re
+import time
 from datetime import datetime, timedelta
 from functools import wraps
 
@@ -118,6 +119,37 @@ def _single_values(data):
     )
 
 
+# MySQL error codes worth a retry: 1213 deadlock, 1205 lock wait timeout.
+RETRYABLE_DB_ERRORS = (1213, 1205)
+DB_RETRIES = 3
+
+
+def _write_row(conn, sql, params, retries=DB_RETRIES, pause=0.3):
+    """Execute one write and commit it on its own, retrying deadlocks.
+
+    The sheet sends the employee batch and the schedule sync at the same
+    moment (~00:47, 08:47, 16:47). Schedule inserts lock gsheet_employees rows
+    through the foreign key while the employee upsert updates them, so now and
+    then MySQL picks one as a deadlock victim -- and a deadlock rolls back the
+    WHOLE transaction. With one commit per batch that silently undid the rows
+    before it. One commit per row keeps the others safe, and a short retry
+    usually gets the victim through.
+    """
+    for attempt in range(1, retries + 1):
+        try:
+            with conn.cursor() as cur:
+                cur.execute(sql, params)
+            conn.commit()
+            return
+        except Exception as e:
+            conn.rollback()
+            code = e.args[0] if getattr(e, 'args', None) else None
+            if code in RETRYABLE_DB_ERRORS and attempt < retries:
+                time.sleep(pause * attempt)
+                continue
+            raise
+
+
 @sheet_webhooks_bp.route('/webhook/employee-sync', methods=['POST'])
 @require_secret_key
 def employee_sync():
@@ -150,19 +182,17 @@ def employee_sync():
                 log.warning(f'Batch sync: no "Mailing List" field; keys: {list(employees[0].keys())}')
             success = errors = 0
             conn = get_db_connection()
-            with conn.cursor() as cur:
-                for data in employees:
-                    if not data or not isinstance(data, dict):
-                        errors += 1
-                        log.warning(f'Skipping invalid employee data: {data}')
-                        continue
-                    try:
-                        cur.execute(BATCH_UPSERT, _batch_values(data))
-                        success += 1
-                    except Exception as e:
-                        log.error(f'Error syncing {data.get("Employee ID", "unknown")}: {e}')
-                        errors += 1
-            conn.commit()
+            for data in employees:
+                if not data or not isinstance(data, dict):
+                    errors += 1
+                    log.warning(f'Skipping invalid employee data: {data}')
+                    continue
+                try:
+                    _write_row(conn, BATCH_UPSERT, _batch_values(data))
+                    success += 1
+                except Exception as e:
+                    log.error(f'Error syncing {data.get("Employee ID", "unknown")}: {e}')
+                    errors += 1
             log.info(f'Batch sync: {success} synced, {errors} errors')
             return jsonify({'status': 'success', 'synced': success, 'errors': errors}), 200
 
@@ -186,6 +216,33 @@ def employee_sync():
 
 
 # ─── Schedule sheet -> employee_schedules ────────────────────────────────────
+def _clean_schedule_rows(schedules):
+    """Drop rows the sheet can't have meant, before touching the database.
+
+    - No usable employee ID: blank, or a spreadsheet error such as '#N/A' or
+      '#REF!' (the sheet looks the ID up from the agent's name, and a
+      misspelled or blank name gives #N/A).
+    - The same employee + date twice in one payload (a person listed twice in
+      a tab). The first one wins, which is what the old code ended up with
+      too: its second INSERT failed on the unique key.
+    Returns (kept_rows, skipped_bad_id, skipped_dupes).
+    """
+    kept, seen = [], set()
+    bad_id = dupes = 0
+    for s in schedules:
+        eid = str(s.get('employee_id') or '').strip()
+        if not eid or eid.startswith('#'):
+            bad_id += 1
+            continue
+        key = (eid, s.get('schedule_date'))
+        if s.get('schedule_date') and key in seen:
+            dupes += 1
+            continue
+        seen.add(key)
+        kept.append(s)
+    return kept, bad_id, dupes
+
+
 @sheet_webhooks_bp.route('/webhook/schedule-sync', methods=['POST'])
 @require_secret_key
 def schedule_sync():
@@ -194,6 +251,13 @@ def schedule_sync():
         return jsonify({'error': 'No data provided'}), 400
     schedules = payload.get('schedules', [])
     log.info(f'Received schedule sync request - Total schedules: {payload.get("total", len(schedules))}')
+    schedules, skipped_bad_id, skipped_dupes = _clean_schedule_rows(schedules)
+    if skipped_bad_id or skipped_dupes:
+        # One quiet line instead of one ERROR per row. These come from old
+        # month tabs the sheet keeps re-sending (a name the ID lookup can't
+        # find, or a person listed twice) -- see docs/sheet-webhooks.md.
+        log.info(f'Skipped {skipped_bad_id} row(s) with no valid employee ID and '
+                 f'{skipped_dupes} duplicate employee+date row(s)')
     conn = None
     try:
         conn = get_db_connection()
@@ -230,6 +294,7 @@ def schedule_sync():
         log.info(f'Schedule sync completed - Success: {success_count}, Errors: {error_count}')
         return jsonify({'status': 'success', 'message': 'Schedule sync completed',
                         'success_count': success_count, 'error_count': error_count,
+                        'skipped_count': skipped_bad_id + skipped_dupes,
                         'errors': errors[:10]}), 200
     except Exception as e:
         log.error(f'Error processing schedule webhook: {e}', exc_info=True)

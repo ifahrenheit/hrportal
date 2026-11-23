@@ -15,6 +15,20 @@ so there is one service to run.
 | `GET /api/biometric/pending`, `POST /api/biometric/complete` | Blade Server on the office PCs (113.19.42.130, 203.28.65.222) | `pending_biometric_sync`, filled by the portal's new-hire flow |
 | `GET /health` | anyone | nothing (DB check) |
 
+`/webhook/schedule-sync` skips rows it can't use before writing, and logs one summary line
+(not an error) per sync: rows whose employee ID is blank or a sheet error such as `#N/A`
+(the sheet looks the ID up from the agent's name, so a misspelled or blank name gives `#N/A`),
+and a repeated employee + date in the same payload (a person listed twice in a tab; the first
+row wins). The reply includes `skipped_count`. Added 2026-11-23: the "GYG CC & BO Schedule
+2026" sheet keeps re-sending old month tabs with such rows, which logged about 200 errors a day.
+
+`/webhook/employee-sync` `batch_sync` commits **each employee separately** and retries a
+deadlock or lock-wait timeout (MySQL 1213/1205) up to 3 times (`_write_row`). The sheet sends
+the employee batch and the schedule sync at the same moment (~00:47, 08:47, 16:47). Schedule
+inserts lock `gsheet_employees` rows through the foreign key while the upsert updates them,
+which caused a deadlock or two a night. A deadlock rolls back the whole transaction, so with
+the old one-commit-per-batch the rows before it were silently undone. Changed 2026-11-23.
+
 The `/webhook/*` routes require the `X-Secret-Key` header to equal `WEBHOOK_SECRET_KEY` in
 `.env`. The biometric routes have no key, the same as before, so the PCs did not need changes.
 

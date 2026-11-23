@@ -94,14 +94,57 @@ class EmployeeSyncTests(Base):
         self.assertEqual(r.status_code, 400)
         cur.execute.assert_not_called()
 
-    def test_db_error_rolls_back(self):
+    def test_db_error_rolls_back_that_row_only(self):
+        # One commit per row: a failing row is rolled back and counted, the
+        # request still answers 200, and the connection is closed.
         conn, cur = self.with_db()
         conn.commit.side_effect = RuntimeError('boom')
         r = self.client.post('/webhook/employee-sync', headers=HDR,
                              json={'action': 'batch_sync', 'employees': [{'Employee ID': 'X'}]})
-        self.assertEqual(r.status_code, 500)
+        self.assertEqual(r.get_json(), {'status': 'success', 'synced': 0, 'errors': 1})
         conn.rollback.assert_called_once()
         conn.close.assert_called_once()
+
+    def test_batch_commits_each_row(self):
+        conn, cur = self.with_db()
+        emps = [{'Employee ID': f'E{i}'} for i in range(3)]
+        r = self.client.post('/webhook/employee-sync', headers=HDR,
+                             json={'action': 'batch_sync', 'employees': emps})
+        self.assertEqual(r.get_json()['synced'], 3)
+        self.assertEqual(conn.commit.call_count, 3)
+
+    @patch.object(sw.time, 'sleep')
+    def test_deadlock_is_retried(self, _sleep):
+        import pymysql
+        conn, cur = self.with_db()
+        cur.execute.side_effect = [pymysql.err.OperationalError(1213, 'Deadlock found'), None]
+        r = self.client.post('/webhook/employee-sync', headers=HDR,
+                             json={'action': 'batch_sync', 'employees': [{'Employee ID': 'E1'}]})
+        self.assertEqual(r.get_json(), {'status': 'success', 'synced': 1, 'errors': 0})
+        self.assertEqual(cur.execute.call_count, 2)
+        conn.rollback.assert_called_once()
+
+    @patch.object(sw.time, 'sleep')
+    def test_persistent_deadlock_does_not_undo_other_rows(self, _sleep):
+        import pymysql
+        conn, cur = self.with_db()
+        dl = pymysql.err.OperationalError(1213, 'Deadlock found')
+        # E1 ok, E2 deadlocks on every attempt, E3 ok
+        cur.execute.side_effect = [None] + [dl] * sw.DB_RETRIES + [None]
+        emps = [{'Employee ID': e} for e in ('E1', 'E2', 'E3')]
+        r = self.client.post('/webhook/employee-sync', headers=HDR,
+                             json={'action': 'batch_sync', 'employees': emps})
+        self.assertEqual(r.get_json(), {'status': 'success', 'synced': 2, 'errors': 1})
+        self.assertEqual(conn.commit.call_count, 2)   # E1 and E3 each committed
+
+    def test_other_errors_are_not_retried(self):
+        import pymysql
+        conn, cur = self.with_db()
+        cur.execute.side_effect = pymysql.err.IntegrityError(1452, 'FK fails')
+        r = self.client.post('/webhook/employee-sync', headers=HDR,
+                             json={'action': 'batch_sync', 'employees': [{'Employee ID': 'E1'}]})
+        self.assertEqual(r.get_json()['errors'], 1)
+        self.assertEqual(cur.execute.call_count, 1)
 
 
 class ScheduleSyncTests(Base):
@@ -115,6 +158,30 @@ class ScheduleSyncTests(Base):
         cur.executemany.assert_called_once()
         self.assertEqual(cur.executemany.call_args[0][1], [('A', '2026-10-30')])
         self.assertEqual(cur.execute.call_args[0][1], ('A', '2026-10-30', '9pm-6am', False, '2026-10'))
+
+    def test_skips_bad_ids_and_duplicates_quietly(self):
+        conn, cur = self.with_db(rowcount=0)
+        row = lambda eid, d, shift='9am-6pm': {'employee_id': eid, 'schedule_date': d,
+                                              'shift_time': shift, 'is_rest_day': False}
+        scheds = [row('#N/A', '2026-03-09'),            # misspelled name in the sheet
+                  row('', '2026-03-09'),                 # blank name
+                  row('#REF!', '2026-03-10'),
+                  row('990101-01', '2026-06-22', '3pm-12mn'),
+                  row('990101-01', '2026-06-22', '8pm-5am'),   # listed twice: first wins
+                  row('990101-02', '2026-06-22')]
+        r = self.client.post('/webhook/schedule-sync', headers=HDR, json={'schedules': scheds})
+        body = r.get_json()
+        self.assertEqual((body['success_count'], body['error_count'], body['skipped_count']), (2, 0, 4))
+        self.assertEqual(cur.executemany.call_args[0][1],
+                         [('990101-01', '2026-06-22'), ('990101-02', '2026-06-22')])
+        inserted = [c[0][1] for c in cur.execute.call_args_list]
+        self.assertEqual([i[0] for i in inserted], ['990101-01', '990101-02'])
+        self.assertEqual(inserted[0][2], '3pm-12mn')
+
+    def test_clean_rows_keeps_missing_date_for_error_reporting(self):
+        kept, bad, dupes = sw._clean_schedule_rows([{'employee_id': 'A', 'schedule_date': None},
+                                                    {'employee_id': 'A', 'schedule_date': None}])
+        self.assertEqual((len(kept), bad, dupes), (2, 0, 0))
 
 
 class BreakAutofixTests(Base):
