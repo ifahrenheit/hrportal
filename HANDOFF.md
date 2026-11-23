@@ -45,7 +45,9 @@ Commit: `fa0cbae` (health page + backup script uncommitted) · Branch: `main`
 - [x] Alert live: `HEALTH_ALERT_TO='andrew.tacdoro@cohere.ph'` in `.env` (comma-separated, add more there, no restart needed). Cron `30 7 * * *` runs `scripts/system_health_check.py --send` → `system_health_check.log`. A test email was sent 2026-11-23 23:07 and the mail server accepted it.
 - [ ] Commit the health page, backup script and cleanup (not committed yet).
 - [ ] Optional, needs the user's OK (blocked by the permission check): cap the journal for good with `/etc/systemd/journald.conf.d/size.conf` → `SystemMaxUse=1G`.
-- [ ] Optional: make `/webhook/schedule-sync` skip `#N/A`/blank IDs and duplicate pairs quietly, so old-month rows stop adding ~200 errors a day to System Health.
+- [x] `/webhook/schedule-sync` now skips `#N/A`/blank IDs and duplicate employee+date rows, with one info log line per sync (`_clean_schedule_rows` in `modules/sheet_webhooks.py`, doc in `docs/sheet-webhooks.md`). The Portal errors warning clears once the old errors age out of the 24-hour window.
+- [x] System Health shows a plain-English description for every cron job: `JOB_DESCRIPTIONS` in `helpers/system_health.py`, matched on part of the command. **Add a line there when adding a cron job**, otherwise the page shows the crontab comment.
+- [ ] Still seen occasionally: `sheet_webhooks: Error syncing <id>: Deadlock found` on employee-sync (about 2 a day). Low priority; a retry would fix it.
 - [ ] Next, per the user: payroll cutoff readiness, Employee 360, approval reminders, TL home page (#8–11).
 
 ---
