@@ -8,6 +8,41 @@
 
 ---
 
+## 2026-11-23 — System Health page, nightly DB backups, dead payroll-email cron removed
+Commit: `fa0cbae` (health page + backup script uncommitted) · Branch: `main`
+
+### What was built / changed
+- Earlier the same day the pending work was committed and pushed as 4 commits: Numa Stats `64223da`, AWOL CWS skip `367d6ff`, IR visibility `1e09654`, SL conversion tier filter `fa0cbae`.
+- **Removed 4 dead cron lines**: `cohere_dashboard/send_{ot,rdw,cws,fts}_email.php` (cutoff-day lists to payroll@cohere.ph). The log path was typo'd as `/var/www/htm/...`; that folder doesn't exist, so cron's shell failed the redirect and **never ran them since May 2025**. No one missed them, so the user said to delete them. PHP files left on disk. Crontab before the change: `/root/crontab-backups/root.crontab.20261123215339`.
+- **Nightly MySQL backup**: `scripts/backup_databases.sh`, cron `0 3 * * *` → `backup_databases.log`. Dumps `central_db`, `orangehrm2`, `orangehrm` (`--single-transaction`, all InnoDB) to `/var/backups/mysql/daily/<db>-YYYYmmdd-HHMM.sql.gz`, Sunday hard-link to `weekly/`, keeps 7 daily + 4 weekly. Verifies gzip + "Dump completed", skips if under 3 GB free, writes `/var/backups/mysql/last_status.json`. Restore steps in the script header.
+- **Admin › System Health** `/admin/system-health` (blueprint `system_health`, full admins only): overall/cron/backup/disk/services/errors tiles, "Needs attention" list, cron job table (Not OK / All), backup files, services + Keycloak containers, portal errors (24 h, grouped), DB sizes, SSL certs. Cached 2 min, **Check now** forces a run. — `helpers/system_health.py` (checks), `modules/system_health.py`, `templates/admin/system_health.html`; registered in `app.py` after `leave_hold_bp`; nav links in `_sidebar.html` + `_topnav.html` (Administration, admin-only; also in the Admin Tools subnav).
+- **Daily alert script** `scripts/system_health_check.py` (dry run by default, `--send`, `--always`): emails only when something is at Problem level. Not in cron yet.
+- Tests: `tests/test_system_health.py` (35, offline; page tests patch `get_report`). Backup: `app.py.bak.20261123220454`.
+
+### Why / decisions
+- Cron jobs are read from `crontab -l`, so new jobs show up by themselves. Each job's last scheduled run comes from a small built-in cron evaluator (croniter isn't installed). It's compared against the cron journal (did it fire?), the log's mtime (did it write anything?) and the last 25 log lines (Traceback/ERROR). A missing log folder is an error, which would have caught the payroll-email bug.
+- `leavesystem.service` runs with `PATH=venv/bin`, so `_bin()` finds tools under the system paths. Docker is read from `/var/run/docker.sock`, because the snap CLI hangs without a login environment.
+- Journal reads use `-g` (about 3x faster). The checks run in threads; a full run takes about 5–10 s, hence the cache.
+- DB password for backups lives in `/root/.config/db-backup.cnf` (600, outside the repo — the repo is public).
+
+### Config / environment
+- New `.env` key (not set yet): `HEALTH_ALERT_TO` (comma-separated).
+- Cron added: `0 3 * * * scripts/backup_databases.sh`. Removed: the 4 `send_*_email.php` lines.
+
+### How to verify
+- `/admin/system-health` as an admin. `cat /var/backups/mysql/last_status.json` after 03:00. `venv/bin/python scripts/system_health_check.py` (dry run).
+
+### Open items / next steps
+- [ ] User to pick `HEALTH_ALERT_TO` recipients, then add cron: `30 7 * * * cd /var/www/html/leavesystem && venv/bin/python scripts/system_health_check.py --send >> system_health_check.log 2>&1`.
+- [ ] Commit the health page + backup script (not committed yet).
+- [ ] Found by the page: hourly cron `/var/www/html/automation/check_mysql_disk.sh` no longer exists (fix path or remove the line).
+- [ ] Found by the page: ~200 errors a day from the schedule sheet sync, `sheet_webhooks: Schedule for #N/A` (a sheet row with an `#N/A` employee ID), plus some duplicate-entry errors.
+- [ ] Backups are only on this server; an off-server copy (DigitalOcean Spaces / Drive) would cover losing the droplet.
+- [ ] Old: `tests/test_awol_report.py::test_empty_scheduled_renders_empty_state_no_crash` expects 1 DB call, gets 4 (fails on committed code too).
+- [ ] Journal is 3.9 GB; `journalctl --vacuum-size=1G` would free space.
+
+---
+
 ## 2026-11-18 — Numa Stats page (NUMA Stat Dashboard sheet → portal)
 Commit: `1750a75` (code uncommitted) · Branch: `main`
 
@@ -335,59 +370,6 @@ CREATE TABLE IF NOT EXISTS fts_reminder_log (
 - [ ] Bug: Sub-Admins **IT Ticket Queue** / **HR Ticket Queue** checkboxes are never saved or loaded (`can_it_tickets`, `can_hr_tickets` missing from the save SQL and `get_sub_admin_permissions` in `app.py`). Only full admins see the Ticket Queue/Routine Tracker. Noted in the admin guide FAQ.
 - [ ] Option offered, not built: CC the TL on FTS reminder emails.
 - [ ] `.claude/agents/lead-researcher.md` is untracked (not part of this work).
-
----
-
-## 2026-10-30 — Admin handover: successors, webhooks moved into the portal, credentials rotated
-Commit: `8596b93` · Branch: `main`
-
-### What was built / changed
-- Documents library: company folders, employee A–Z tree, bulk move (`modules/documents.py`, `templates/documents/*`) — committed `fc85877` (was pending work).
-- Inventory: Max Stock column; Copy Table includes min/max (`templates/admin/inventory.html`) — `c336776`.
-- Login-as keeps the target's admin status (Employees.role Admin or `PORTAL_ADMIN_EMAILS`) and keeps the first `original_admin` on a nested login-as (`app.py` `login_as`) — `c9b7539`.
-- IR emails: BCC comes from new `IR_EMAIL_BCC`; `helpers/ir_autofile.py` splits `OVERBREAK_NOTIFY_BCC` into a list (`modules/incident_reports.py`, `scripts/cron_incident_reminder.py`) — `4ccd454`.
-- **employee-sync retired:** its live endpoints now live in `modules/sheet_webhooks.py` (registered in `app.py`): `POST /webhook/employee-sync`, `/webhook/schedule-sync`, `/webhook/break-autofix`, `GET /api/biometric/pending`, `POST /api/biometric/complete`, `GET /health`. Same requests/responses as the old UMMS-Core app. Logs to `sheet_webhooks.log`. Tests `tests/test_sheet_webhooks.py`; doc `docs/sheet-webhooks.md` — `f7bbea1`, `8596b93`.
-
-### Why / decisions
-- Successors: Jovin Lumapat and Jericho Garcia (full admins via `PORTAL_ADMIN_EMAILS`). The user keeps both own Admin accounts (consultant later); don't offer to remove them.
-- `TARDINESS_NOTIFY_BCC`, `OVERBREAK_NOTIFY_BCC`, `SL_VERIFY_CC`, `IR_EMAIL_BCC` are **empty on purpose** (user had added themselves for testing; successors already get IRs). Keep the keys present: deleted, the notify scripts fall back to the user's Gmail and SL_VERIFY_CC to som@/wfm@/hr@.
-- `MATERIAL_FINAL_EMAIL` left as the user: single-address check, admins pass anyway.
-- Webhooks moved instead of re-pointing callers: Apps Script and the office biometric PCs keep calling `webhook.cohere.ph`; only the vhost changed.
-- Old `cohere_dashboard` PHP site is ignored per user. Its 4 cron mailers (OT/RDW/CWS/FTS) never ran: their log path is `/var/www/htm/...` (typo, dir missing), so the shell aborts before PHP.
-
-### Database changes
-```sql
--- MySQL (as root): employee_sync password changed on all three accounts
-ALTER USER 'employee_sync'@'localhost'     IDENTIFIED BY '<new>';
-ALTER USER 'employee_sync'@'113.19.42.130' IDENTIFIED BY '<new>';
-ALTER USER 'employee_sync'@'203.28.65.222' IDENTIFIED BY '<new>';
--- validate_password.policy = MEDIUM: needs mixed case, digit and a special char
-```
-
-### Config / environment
-- `.env` new keys: `IR_EMAIL_BCC` (empty), `WEBHOOK_SECRET_KEY`. Changed: `MAILING_LIST_ALERT_EMAILS` (both successors), `SMTP_PASSWORD`, `KEYCLOAK_ADMIN_CLIENT_SECRET`, `MAIN_DB_PASSWORD`, `WEBHOOK_SECRET_KEY`.
-- Rotated 2026-10-30: send_email@ SMTP password (also `calendar-app/.env` `MAIL_PASS`, `pm2 restart calendar-app`), Keycloak client `employee-management-service` secret, MySQL `employee_sync`, webhook secret (Apps Script "CSAT and MasterList sheet" > `EmployeeSync.gs` line 9 `SECRET_KEY`).
-- Apache `webhook.cohere.ph` (`/etc/apache2/sites-available/employee-sync.conf` and `-le-ssl.conf`): proxies only `/webhook/`, `/api/biometric/`, `/health` to :5001; everything else 302 to hrportal. Backups `*.bak.20261030*`.
-- systemd `employee-sync` stopped + disabled (files kept for rollback, steps in `docs/sheet-webhooks.md`).
-- Moved public user-import files out of `cohere_dashboard/uploads/` to `/root/private/dashboard_uploads_20251113/`.
-
-### How to verify
-- `curl -s https://webhook.cohere.ph/health` → healthy; `tail sheet_webhooks.log` shows `Batch sync: N synced, 0 errors` after each Apps Script run (00/06/12/18h). First real run 2026-10-30 04:20: 972 synced, 0 errors.
-- Full suite: 403 tests, only the 3 known pre-existing failures (awol/undertime boundary cases).
-
-### Open items / next steps
-- [ ] Re-rotate `WEBHOOK_SECRET_KEY` once more: the user's screenshot showed the full new key (and part of `MEMO_SECRET_KEY` = `.env` `MEMO_SYNC_SECRET`). Have the user copy from `.env`; never print secrets in chat.
-- [x] 2026-11-02: dropped `employee_sync`@113.19.42.130 and @203.28.65.222; MySQL `bind-address` and `mysqlx-bind-address` set to 127.0.0.1 in `/etc/mysql/mysql.conf.d/mysql.cnf` + `mysqld.cnf` (backups in `/root/private/mysql_conf_bak_20261102204958/`), MySQL restarted. Before: 178 outside IPs had hit 3306. Verified portal, webhooks, calendar app, cron DB users all on localhost. `rehire_fix.py` (manual scripts) still point at the public IP and would need `localhost` if run again.
-- [ ] MySQL root password is hardcoded in several PHP/cron files (e.g. `cloud-leave/process_timerecords.php`) and appeared in this session's chat. Lower risk now that 3306 is local-only; rotate when the files using it are moved to a shared config.
-- [x] December 2026 added to Apps Script `SCHEDULE_SHEETS` (2026-11-02); 2026-12 rows arriving. Each new month still needs its tab added before it starts.
-- [x] First schedule-sync through the portal 2026-11-02 16:49: 7433 rows, 0 errors.
-- [ ] Watch the first break-autofix through the portal in `sheet_webhooks.log`.
-- [x] 2026-11-03 (`14645e3`): Admin > File Leave for employee (`admin_file_leave`) now saves leave as `pending` (ohrm status 1, SL `sl_hr_stage='pending_hr'`) instead of approved/scheduled; `_notify_leave_filed_for_employee` emails the employee, approver and (SL) HR verifiers. No "file as approved" option (Separated employees aren't in that form's list). Watch the first real one reach an approver.
-- [x] 2026-11-02 (`fc56acd`): leave filing checks each date against its own year's balance (`helpers/leave_credits.available_by_year` / `year_shortfalls`, used by `file_leave` and file-for-employee in `app.py`). Unloaded year = current year's full allowance minus already filed for that year. Use Remaining Balance refused across Jan 1. Display-only leftovers: `templates/file_leave.html` labels and the custom-hours max still show the current year's balance. Closes the "balance-checked against the current year" items in the 2026-10-22 entries.
-- [x] 2026-11-02: held-mail queues on managers@, sga@, qns_agents@, gygcc5@ are empty; `max_message_size` is 0 (unlimited) on all four (managers@ changed from 40 KB by Claude; not in `mailing_list_audit`, whose `action` enum has no settings type).
-- [ ] After 1–2 weeks of clean syncs, ask before deleting the old employee-sync unit file and UMMS-Core webapp.
-- [ ] Handover note for Jovin/Jericho published as an artifact (private until the user shares it): https://claude.ai/artifact/KcfeqkNmzPtT8exzBCtmdX
-- [x] From 2026-10-29: mailing-list sync cron line added by the user; that session's code committed.
 
 ---
 

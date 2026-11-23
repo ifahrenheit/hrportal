@@ -2,6 +2,59 @@
 
 Entries moved out of HANDOFF.md, newest first.
 
+## 2026-10-30 — Admin handover: successors, webhooks moved into the portal, credentials rotated
+Commit: `8596b93` · Branch: `main`
+
+### What was built / changed
+- Documents library: company folders, employee A–Z tree, bulk move (`modules/documents.py`, `templates/documents/*`) — committed `fc85877` (was pending work).
+- Inventory: Max Stock column; Copy Table includes min/max (`templates/admin/inventory.html`) — `c336776`.
+- Login-as keeps the target's admin status (Employees.role Admin or `PORTAL_ADMIN_EMAILS`) and keeps the first `original_admin` on a nested login-as (`app.py` `login_as`) — `c9b7539`.
+- IR emails: BCC comes from new `IR_EMAIL_BCC`; `helpers/ir_autofile.py` splits `OVERBREAK_NOTIFY_BCC` into a list (`modules/incident_reports.py`, `scripts/cron_incident_reminder.py`) — `4ccd454`.
+- **employee-sync retired:** its live endpoints now live in `modules/sheet_webhooks.py` (registered in `app.py`): `POST /webhook/employee-sync`, `/webhook/schedule-sync`, `/webhook/break-autofix`, `GET /api/biometric/pending`, `POST /api/biometric/complete`, `GET /health`. Same requests/responses as the old UMMS-Core app. Logs to `sheet_webhooks.log`. Tests `tests/test_sheet_webhooks.py`; doc `docs/sheet-webhooks.md` — `f7bbea1`, `8596b93`.
+
+### Why / decisions
+- Successors: Jovin Lumapat and Jericho Garcia (full admins via `PORTAL_ADMIN_EMAILS`). The user keeps both own Admin accounts (consultant later); don't offer to remove them.
+- `TARDINESS_NOTIFY_BCC`, `OVERBREAK_NOTIFY_BCC`, `SL_VERIFY_CC`, `IR_EMAIL_BCC` are **empty on purpose** (user had added themselves for testing; successors already get IRs). Keep the keys present: deleted, the notify scripts fall back to the user's Gmail and SL_VERIFY_CC to som@/wfm@/hr@.
+- `MATERIAL_FINAL_EMAIL` left as the user: single-address check, admins pass anyway.
+- Webhooks moved instead of re-pointing callers: Apps Script and the office biometric PCs keep calling `webhook.cohere.ph`; only the vhost changed.
+- Old `cohere_dashboard` PHP site is ignored per user. Its 4 cron mailers (OT/RDW/CWS/FTS) never ran: their log path is `/var/www/htm/...` (typo, dir missing), so the shell aborts before PHP.
+
+### Database changes
+```sql
+-- MySQL (as root): employee_sync password changed on all three accounts
+ALTER USER 'employee_sync'@'localhost'     IDENTIFIED BY '<new>';
+ALTER USER 'employee_sync'@'113.19.42.130' IDENTIFIED BY '<new>';
+ALTER USER 'employee_sync'@'203.28.65.222' IDENTIFIED BY '<new>';
+-- validate_password.policy = MEDIUM: needs mixed case, digit and a special char
+```
+
+### Config / environment
+- `.env` new keys: `IR_EMAIL_BCC` (empty), `WEBHOOK_SECRET_KEY`. Changed: `MAILING_LIST_ALERT_EMAILS` (both successors), `SMTP_PASSWORD`, `KEYCLOAK_ADMIN_CLIENT_SECRET`, `MAIN_DB_PASSWORD`, `WEBHOOK_SECRET_KEY`.
+- Rotated 2026-10-30: send_email@ SMTP password (also `calendar-app/.env` `MAIL_PASS`, `pm2 restart calendar-app`), Keycloak client `employee-management-service` secret, MySQL `employee_sync`, webhook secret (Apps Script "CSAT and MasterList sheet" > `EmployeeSync.gs` line 9 `SECRET_KEY`).
+- Apache `webhook.cohere.ph` (`/etc/apache2/sites-available/employee-sync.conf` and `-le-ssl.conf`): proxies only `/webhook/`, `/api/biometric/`, `/health` to :5001; everything else 302 to hrportal. Backups `*.bak.20261030*`.
+- systemd `employee-sync` stopped + disabled (files kept for rollback, steps in `docs/sheet-webhooks.md`).
+- Moved public user-import files out of `cohere_dashboard/uploads/` to `/root/private/dashboard_uploads_20251113/`.
+
+### How to verify
+- `curl -s https://webhook.cohere.ph/health` → healthy; `tail sheet_webhooks.log` shows `Batch sync: N synced, 0 errors` after each Apps Script run (00/06/12/18h). First real run 2026-10-30 04:20: 972 synced, 0 errors.
+- Full suite: 403 tests, only the 3 known pre-existing failures (awol/undertime boundary cases).
+
+### Open items / next steps
+- [ ] Re-rotate `WEBHOOK_SECRET_KEY` once more: the user's screenshot showed the full new key (and part of `MEMO_SECRET_KEY` = `.env` `MEMO_SYNC_SECRET`). Have the user copy from `.env`; never print secrets in chat.
+- [x] 2026-11-02: dropped `employee_sync`@113.19.42.130 and @203.28.65.222; MySQL `bind-address` and `mysqlx-bind-address` set to 127.0.0.1 in `/etc/mysql/mysql.conf.d/mysql.cnf` + `mysqld.cnf` (backups in `/root/private/mysql_conf_bak_20261102204958/`), MySQL restarted. Before: 178 outside IPs had hit 3306. Verified portal, webhooks, calendar app, cron DB users all on localhost. `rehire_fix.py` (manual scripts) still point at the public IP and would need `localhost` if run again.
+- [ ] MySQL root password is hardcoded in several PHP/cron files (e.g. `cloud-leave/process_timerecords.php`) and appeared in this session's chat. Lower risk now that 3306 is local-only; rotate when the files using it are moved to a shared config.
+- [x] December 2026 added to Apps Script `SCHEDULE_SHEETS` (2026-11-02); 2026-12 rows arriving. Each new month still needs its tab added before it starts.
+- [x] First schedule-sync through the portal 2026-11-02 16:49: 7433 rows, 0 errors.
+- [ ] Watch the first break-autofix through the portal in `sheet_webhooks.log`.
+- [x] 2026-11-03 (`14645e3`): Admin > File Leave for employee (`admin_file_leave`) now saves leave as `pending` (ohrm status 1, SL `sl_hr_stage='pending_hr'`) instead of approved/scheduled; `_notify_leave_filed_for_employee` emails the employee, approver and (SL) HR verifiers. No "file as approved" option (Separated employees aren't in that form's list). Watch the first real one reach an approver.
+- [x] 2026-11-02 (`fc56acd`): leave filing checks each date against its own year's balance (`helpers/leave_credits.available_by_year` / `year_shortfalls`, used by `file_leave` and file-for-employee in `app.py`). Unloaded year = current year's full allowance minus already filed for that year. Use Remaining Balance refused across Jan 1. Display-only leftovers: `templates/file_leave.html` labels and the custom-hours max still show the current year's balance. Closes the "balance-checked against the current year" items in the 2026-10-22 entries.
+- [x] 2026-11-02: held-mail queues on managers@, sga@, qns_agents@, gygcc5@ are empty; `max_message_size` is 0 (unlimited) on all four (managers@ changed from 40 KB by Claude; not in `mailing_list_audit`, whose `action` enum has no settings type).
+- [ ] After 1–2 weeks of clean syncs, ask before deleting the old employee-sync unit file and UMMS-Core webapp.
+- [ ] Handover note for Jovin/Jericho published as an artifact (private until the user shares it): https://claude.ai/artifact/KcfeqkNmzPtT8exzBCtmdX
+- [x] From 2026-10-29: mailing-list sync cron line added by the user; that session's code committed.
+
+---
+
 ## 2026-10-29 — Mailing lists follow the employee sheet; admins via .env
 Commit: `239367b` (changes below uncommitted) · Branch: `main`
 
