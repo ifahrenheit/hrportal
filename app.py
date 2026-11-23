@@ -12284,6 +12284,32 @@ def admin_awol_report():
             app.logger.warning(f"awol-report: SUS lookup failed, continuing without it: {e}")
             sus_lookup = {}
 
+        # ── Step 3d: CWS moved-out dates. A Change Work Schedule moves the
+        # shift on original_date to new_date, but employee_schedules still
+        # shows the original day as a work day -- so without this the
+        # employee is flagged AWOL for a day they were no longer expected
+        # to work. Pending + Approved both count, same policy as
+        # modules/tardiness.get_cws_moves_for_range(). ──
+        cws_moved_out = set()
+        try:
+            cdb_cws = get_central_db()
+            try:
+                with cdb_cws.cursor() as c:
+                    c.execute(f"""
+                        SELECT employee_id, original_date
+                        FROM cws_requests
+                        WHERE employee_id IN ({','.join(['%s'] * len(all_emp_ids))})
+                          AND status IN ('Pending', 'Approved')
+                          AND original_date BETWEEN %s AND %s
+                    """, all_emp_ids + [date_from, date_to])
+                    for row in c.fetchall():
+                        cws_moved_out.add((row['employee_id'], str(row['original_date'])))
+            finally:
+                cdb_cws.close()
+        except Exception as e:
+            app.logger.warning(f"awol-report: CWS lookup failed, continuing without it: {e}")
+            cws_moved_out = set()
+
         # ── Step 4: Match scheduled rows to attendance_map, keep Absent
         # only. Present, FTS IN and FTS OUT are all cases where a punch
         # record exists -- they're attendance anomalies, not no-shows, and
@@ -12294,6 +12320,9 @@ def admin_awol_report():
 
             if str(sched_date) in sus_lookup.get(row['employee_id'], ()):
                 continue  # suspended that day -- fully explains the absence, not AWOL
+
+            if (row['employee_id'], str(sched_date)) in cws_moved_out:
+                continue  # shift moved to another date via CWS -- not a work day anymore
 
             if pid is None:
                 # No personid mapping in `userdata` for this employee, so
@@ -17598,6 +17627,7 @@ def nav_parity_check():
             "qa_can_manage": lambda: bool(fs.get("is_admin") or perms.get("can_qa_updates")),
             "qa_can_view_data": lambda: bool(fs.get("is_admin") or perms.get("can_qa_updates")),
             "coe_can_manage": lambda: bool(fs.get("is_admin")),
+            "numa_stats_can_view": lambda: bool(fs.get("is_admin")),
             "break_log_supervisor_access": lambda: bool(
                 fs.get("is_admin") or fs.get("is_supervisor") or fs.get("is_sub_admin")
             ),
@@ -17627,7 +17657,6 @@ def nav_parity_check():
                 "topnav_count": len(topnav_eps),
             })
         except Exception as ex:
-            "numa_stats_can_view": lambda: bool(fs.get("is_admin")),
             all_ok = False
             results.append({
                 "name": profile["name"],

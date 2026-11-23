@@ -237,6 +237,21 @@ class TestAwolFiltering(unittest.TestCase):
         self.assertNotIn('Leave Covered Employee', html)
         self.assertIn('No AWOL occurrences', html)
 
+    def test_cws_moved_out_date_is_not_awol(self):
+        d = date(2026, 11, 1)
+        scheduled = [{
+            'employee_id': 'EMP-CWS', 'schedule_name': 'CWS Moved Employee', 'tl': 'TL1',
+            'group_name': 'Group A', 'shift_time': '6am-5pm', 'absent_date': d, 'personid': 220,
+        }]
+        cws = [{'employee_id': 'EMP-CWS', 'original_date': d}]
+        table_rows = {'employee_schedules': scheduled, 'dailytimerecordsfiltered': [],
+                       'ot_requests': [], 'leave4day_requests': [], 'cws_requests': cws}
+        resp, _ = self._get(d, d, table_rows)
+        self.assertEqual(resp.status_code, 200)
+        html = resp.data.decode()
+        self.assertNotIn('CWS Moved Employee', html)
+        self.assertIn('No AWOL occurrences', html)
+
     def test_rejected_leave_does_not_clear_awol(self):
         d = date(2026, 9, 1)
         scheduled = [{
