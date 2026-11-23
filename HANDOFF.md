@@ -8,6 +8,27 @@
 
 ---
 
+## 2026-11-24 — Payroll Readiness page (Analytics), nav-parity checker repaired
+Commit: `b21674d` (this work uncommitted) · Branch: `main`
+
+### What was built / changed
+- **Analytics › Payroll Readiness** `/admin/payroll-readiness` (blueprint `payroll_readiness`). For one payroll period it lists what is still open, with who it's waiting on and days open: pending OT/FTS/CWS/RDW/Magic CWS, missing punches with no FTS filed (`fts_pathb_incidents`), and unsettled leave (pending, SL pending HR, `credit_pending`). It also notes requests pending from earlier periods. CSV export and "Copy table". — `modules/payroll_readiness.py`, `templates/payroll_readiness/index.html`, `docs/payroll-readiness.md`; registered in `app.py` after `system_health_bp`; nav links in `_sidebar.html` + `_topnav.html` (Analytics, next to OT Hours, plus the Attendance subnav).
+- Tests: `tests/test_payroll_readiness.py` (15). Full suite 589 OK.
+- `/admin/nav-parity` was broken for every profile (`break_log_user_access`, `docs_can_access`, `ml_can_view` had no stand-ins). Stand-ins added in `app.py`; it runs again.
+
+### Why / decisions
+- Access: admins plus `can_reports` or `can_ot_hours`, with no new permission column. Renalyn Comeda (Reports + OT Hours + File Requests) looks like the payroll user; 12 sub-admins have Reports.
+- Default period = the most recently closed one (payroll is run for it). "Waiting on" reuses `get_approver_names()`, so it matches File Requests › Approvals.
+- Missing punches already covered by a Pending/Approved FTS are dropped, using the FTS engine's matching rule (IN same day; OUT same or next day). Without this, 6 of 15 rows for Nov 8–22 were double-counted.
+- First real run (Nov 8–22): 14 open items (2 FTS, 3 OT pending, 9 missing punches). The current period showed one LWOP pending 43 days.
+
+### Open items / next steps
+- [ ] Commit + push this work (asked the user).
+- [ ] `/admin/nav-parity` now shows real, older differences: top nav only has On Shift, Overbreak Review, Inventory Medicine, Documents library, Requirements; sidebar only has Night Diff and Coaching index for some roles. Not touched.
+- [ ] Next in the user's list: #10 approval reminders, #11 TL home page, #9 Employee 360.
+
+---
+
 ## 2026-11-23 — System Health page, nightly DB backups, dead payroll-email cron removed
 Commit: `6215f29` · Branch: `main`
 
@@ -344,45 +365,6 @@ UPDATE ohrm_leave_entitlement SET days_used=4.0 WHERE id=2499;  -- was 3.75
 ### Open items / next steps
 - [ ] Commit `modules/leave_recalc.py`, template, test and the `app.py`/emp_settings edits (app.py also has other uncommitted changes from before this session).
 - [ ] No Apply has been run through the tool on real data yet.
-
----
-
-## 2026-11-05 — Absence Report FTS filing check + reminder emails; coaching draft 500 fixed; admin guide
-Commits: `c9fc071`, `959308e` · Branch: `main`
-
-### What was built / changed
-- Coaching: saving a Draft with blank Topic/Discussion Notes gave a 500 (`IntegrityError 1048`, both columns NOT NULL). `_parse_form` now stores `''` — `coaching.py`.
-- Absence Report (`/admin/absences`, `admin_absences` in `app.py`, `templates/admin/absences.html`):
-  - **Status** checkbox filter (repeated `?status=`) via `templates/supervisor/_multi_filter.html`. Pills still count the whole range; "N of M record(s) shown" when filtered.
-  - FTS IN/OUT rows show **FTS filed (status) / FTS rejected / FTS not filed** + "reminded <date>"; **FTS filing** filter (`?fts=filed|rejected|not_filed`).
-  - **Email FTS reminders** button: modal preview (agents with unfiled/rejected FTS in the range), tick, Send. One email per agent, Reply-To = sender, "disregard if already filed".
-- New `modules/fts_reminders.py` (blueprint `fts_reminders`, registered in `app.py`): `fts_filing_map(records)`, `POST /admin/absences/fts-reminders/preview` and `/send` (JSON, `X-CSRF-Token`, admin or `can_absences`).
-- Admin guide + FAQ for Jovin/Jericho as a Claude Doc: https://claude.ai/artifact/JW1aoFqHfNCjacDUmZ5tsb
-
-### Why / decisions
-- FTS match: same employee + type, not Deleted/Cancelled; IN = shift date; OUT = shift date or next day when the shift crosses midnight (e.g. 7pm-6am filed under the next date; 1pm-12mn filed as next day 00:00). Unparseable shift: next-day OUT only if time <= 12:00. Best status wins: Approved > Pending > Rejected.
-- Rejected counts as needing a reminder. Emails go to the agent only (TLs already get the 16:00 `fts_notify.py` digest from `/home/cohere/fts_pathb`). Send re-computes server-side and skips agents who filed meanwhile; agents reminded in the last 24h start unticked.
-- Send is synchronous SMTP (per-recipient results), not the threaded `send_email`.
-
-### Database changes
-```sql
--- central_db, created on first use by modules/fts_reminders.py (_ensure_log_table)
-CREATE TABLE IF NOT EXISTS fts_reminder_log (
-  id INT AUTO_INCREMENT PRIMARY KEY, employee_id VARCHAR(50) NOT NULL, shift_date DATE NOT NULL,
-  fts_type ENUM('IN','OUT') NOT NULL, email VARCHAR(255) NOT NULL, sent_by VARCHAR(255) NOT NULL,
-  sent_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP, KEY idx_emp_date (employee_id, shift_date));
-```
-
-### Deploy / run notes
-- Backups `app.py.bak.20261105221912`, `templates/admin/absences.html.bak.2026110522*`. Service restarted 22:27, clean.
-
-### How to verify
-- `/admin/absences?date_from=2026-10-08&date_to=2026-10-22&status=FTS+IN&status=FTS+OUT` -> 14 rows, 11 filed, 3 not filed (Rachel Marikit, Honey Mae Tradio, Kimberly Rose Cobol). Test send used a mocked SMTP; ZZTEST log row deleted. One sample email sent to the user only.
-
-### Open items / next steps
-- [ ] Bug: Sub-Admins **IT Ticket Queue** / **HR Ticket Queue** checkboxes are never saved or loaded (`can_it_tickets`, `can_hr_tickets` missing from the save SQL and `get_sub_admin_permissions` in `app.py`). Only full admins see the Ticket Queue/Routine Tracker. Noted in the admin guide FAQ.
-- [ ] Option offered, not built: CC the TL on FTS reminder emails.
-- [ ] `.claude/agents/lead-researcher.md` is untracked (not part of this work).
 
 ---
 
