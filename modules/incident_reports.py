@@ -309,27 +309,34 @@ def report_scope_conds(u, conn):
         params.append(u['email'])
 
     elif not u['is_admin'] and not u['is_supervisor'] and not _is_tl_sup:
-        user_group = None
-        if not u['is_sga']:
-            with conn.cursor() as cur:
-                cur.execute("""SELECT group_name FROM gsheet_employees
-                               WHERE email=%s AND group_name IS NOT NULL
-                               AND group_name != 'TL' AND status='Active' LIMIT 1""",
-                            (u['email'],))
-                row = cur.fetchone()
-                user_group = row['group_name'] if row else None
-
-        if user_group and not u['is_hr'] and not u['is_sga']:
-            conds.append("""ir.submitted_by_id IN (
-                SELECT employee_id FROM gsheet_employees
-                WHERE group_name=%s AND status='Active')""")
-            params.append(user_group)
+        if u['is_sga']:
+            pass  # SGA sees all reports (no filter)
         elif u['is_hr']:
             # Everything that has reached HR, including closed ones that went through RWE
             conds.append("""(ir.rwe_requested_at IS NOT NULL OR ir.status IN
                 ('rwe_request','rwe_for_signature','rwe_for_service','awaiting_explanation',
                  'rwe_served','forwarded','for_memo','reviewed'))""")
-        # SGA sees all reports (no filter)
+        else:
+            from app import _ir_is_overhead, IR_RTA
+            if _ir_is_overhead(u['email']) or u['email'].lower() in IR_RTA:
+                # Overhead groups (QA, RTA, IT, ...) see what their group filed.
+                # Plain 'TL' group / RTA without a group keep the full list.
+                with conn.cursor() as cur:
+                    cur.execute("""SELECT group_name FROM gsheet_employees
+                                   WHERE email=%s AND group_name IS NOT NULL
+                                   AND group_name != 'TL' AND status='Active' LIMIT 1""",
+                                (u['email'],))
+                    row = cur.fetchone()
+                if row:
+                    conds.append("""ir.submitted_by_id IN (
+                        SELECT employee_id FROM gsheet_employees
+                        WHERE group_name=%s AND status='Active')""")
+                    params.append(row['group_name'])
+            else:
+                # Agents (CS, Numa CS, ...) only see IRs they filed themselves,
+                # e.g. a former TL moved back to CS. Never their groupmates' filings.
+                conds.append("ir.submitted_by_id = %s")
+                params.append(u['employee_id'])
     return conds, params
 
 def can_view_report_files(u, report, conn):
@@ -718,6 +725,9 @@ def dashboard():
                 INNER JOIN gsheet_employees g ON sm.agent_email COLLATE utf8mb4_unicode_ci = g.email
                 WHERE sm.supervisor_email COLLATE utf8mb4_unicode_ci = %s)""")
             s_params.append(u['email'])
+        elif not (u['is_admin'] or u['is_hr'] or u['is_sga']):
+            # Everyone else: cards count only the reports they can see
+            s_conds, s_params = report_scope_conds(u, conn)
         with conn.cursor() as cur:
             cur.execute(f"""SELECT COUNT(*) as total,
                 SUM(CASE WHEN ir.status='pending'     THEN 1 ELSE 0 END) as pending,
@@ -1119,6 +1129,9 @@ def view_report(report_number):
             report = cur.fetchone()
         if not report:
             return "Report not found", 404
+        if not can_view_report_files(u, report, conn):
+            logging.warning(f"[IR] view denied: {u['email']} -> {report_number}")
+            return "You do not have access to this incident report.", 403
 
         with conn.cursor() as cur:
             cur.execute("SELECT * FROM incident_attachments WHERE report_id=%s ORDER BY uploaded_at",
@@ -1405,7 +1418,7 @@ def add_comment():
             cur.execute("""SELECT id, employee_id, submitted_by_id, status
                            FROM incident_reports WHERE report_number=%s""", (report_number,))
             report = cur.fetchone()
-        if not report:
+        if not report or not can_view_report_files(u, report, conn):
             return jsonify({'success': False, 'message': 'Report not found'})
 
         if status_action:
@@ -1545,6 +1558,18 @@ def edit_history():
                      WHERE h.comment_id=%s ORDER BY h.edited_at DESC"""
         else:
             return jsonify({'success': False, 'message': 'Invalid type'})
+
+        # Only for people who can open the report the edit belongs to
+        with conn.cursor() as cur:
+            if h_type == 'report':
+                cur.execute("SELECT * FROM incident_reports WHERE id=%s", (h_id,))
+            else:
+                cur.execute("""SELECT ir.* FROM incident_comments c
+                               JOIN incident_reports ir ON ir.id = c.report_id
+                               WHERE c.id=%s""", (h_id,))
+            report = cur.fetchone()
+        if not report or not can_view_report_files(ir_user(), report, conn):
+            return jsonify({'success': False, 'message': 'Not found'})
 
         with conn.cursor() as cur:
             cur.execute(sql, (h_id,))
